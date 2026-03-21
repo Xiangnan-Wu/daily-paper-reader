@@ -1,0 +1,1063 @@
+Title: Shifting Uncertainty to Critical Moments: Towards Reliable Uncertainty Quantification for VLA Model
+
+URL Source: https://arxiv.org/pdf/2603.18342v1
+
+Published Time: Fri, 20 Mar 2026 00:25:13 GMT
+
+Number of Pages: 17
+
+Markdown Content:
+# Shifting Uncertainty to Critical Moments: Towards Reliable Uncertainty Quantification for VLA Model 
+
+Yanchuan Tang 1∗† , Taowen Wang 1∗
+
+, Yuefei Chen 1, Boxuan Zhang 1, Qiang Guan 2
+
+Ruixiang Tang 1†
+
+> 1
+
+Rutgers University 2Kent State University March 20, 2026 
+
+Abstract 
+
+Vision-Language-Action (VLA) models enable general-purpose robotic policies by mapping visual observations and language instructions to low-level actions, but they often lack reliable in-trospection. A common practice is to compute a token-level uncertainty signal and take its mean over a rollout. However, mean aggregation can dilute short-lived but safety-critical uncertainty spikes in continuous control. In particular, successful rollouts may contain localized high-entropy segments due to benign noise or non-critical micro-adjustments, while failure rollouts can appear low-entropy for most timesteps and only exhibit brief spikes near the onset of failure. We propose a unified uncertainty quantification approach for predicting rollout success versus failure that (1) uses max-based sliding window pooling to preserve transient risk signals, (2) applies motion-aware stability weighting to emphasize high-frequency action oscillations associated with unstable behav-iors, and (3) performs DoF-adaptive calibration via Bayesian Optimization to prioritize kinemat-ically critical axes. Experiments on the LIBERO benchmark show that our method substantially improves failure prediction accuracy and yields more reliable signals for failure detection, which can support downstream human-in-the-loop interventions. 
+
+# 1 Introduction 
+
+Vision-Language-Action (VLA) models have emerged as a promising direction for developing general-purpose robotic policies, using large language models as backbones to map visual observations and language instructions directly to low-level control signals [ZYX +23, TGW +24, KPK +24, BBD +24, BBD +25]. Despite their impressive scalability, these models often lack built-in mechanisms for intro-spection. Errors in robotic decision-making can lead to physical collisions, safety hazards, or hardware damage. Therefore, Uncertainty Quantification (UQ), which enables the model to estimate its con-fidence and identify potential failures before they occur, is essential for safe deployment and reliable human-robot collaboration. Few pioneering studies have attempted to understand uncertainty in VLA models. For exam-ple, π0-FAST leverages token-level entropy to trigger human intervention when uncertainty is de-tected [KKF25]. While insightful, these efforts mainly apply existing LLM uncertainty metrics, such as entropy averaged over tokens. Our empirical analysis suggests that this direct application of LLM-style metrics to the continuous domain of robotics faces a significant challenge, which we term the 
+
+Averaging Trap . In robotic manipulation, successful trajectories often contain high-entropy seg-ments due to benign noise or non-critical micro-adjustments. Conversely, failure cases may exhibit low entropy for the majority of execution, masking the transient spikes that actually cause the failure. As a result, global statistics or simple thresholds often fail to distinguish between benign fluctuations and fatal errors, leading to performance that can be indistinguishable from random guessing in precise spatial tasks. 
+
+> ∗These authors contributed equally to this work. Work done during Yanchuan Tang’s and Taowen Wang’s remote internship at Rutgers University.
+> †Corresponding author: ruixiang.tang@rutgers.edu
+
+1
+
+> arXiv:2603.18342v1 [cs.RO] 18 Mar 2026
+
+A. Sliding Window Pooling             
+
+> Capture Transient Spikes -
+> Uncertainty
+>    
+> 
+>  
+>  
+>    
+>  
+>  
+>  
+> Similar Averages
+> (Indistinguishable)
+> Average Trap Hide the Spike!
+>    
+> 
+>  
+>  
+>    
+> Sliding Window and Max Pooling
+>  
+> 
+> 
+> Entropy
+> Action Value
+
+B. Stability Weighting  
+
+> Assign High
+> Weight ɑ
+> Assign Low
+> Weight 1-ɑ
+> Smooth
+> Execution
+> Physical
+> Shaking
+
+C. Bayesian Optimization     
+
+> w*, ɑ*, β*
+> Maximize AUROC
+> Reweigh ɑMax Sliding
+> Window
+> w
+
+Figure 1: Overview of the proposed uncertainty quantification framework. Standard global averaging often masks failure signals. We propose: (A) Sliding Window Pooling (SW) to capture transient uncertainty spikes; (B) Action Transfer Reweighting (ATR) to prioritize uncertainty during oscillatory actions; and (C) Bayesian Optimization (BO) to learn adaptive weights for kinematically critical DoFs. Our motivation arises from the limitations of global, uniform uncertainty estimation in capturing the nuanced dynamics of robotic control. We argue that effective introspection should focus on local temporal windows to preserve transient failure signals rather than averaging uncertainty over an entire episode, a perspective supported by recent advances in related domains [SDZ +25, CSTW25]. In addition, physical instability, reflected in high-frequency action oscillations [LYZ +25], serves as an important indicator of uncertainty and should be emphasized accordingly. Finally, different degrees of freedom (DoF) contribute unequally to task risk, which calls for an adaptive weighting mechanism. Our approach, therefore, consists of three key components: 
+
+• Sliding Window Pooling: Instead of global averaging, we employ a max-based temporal sliding window to capture local uncertainty density. This allows the system to detect transient spikes hidden within long-horizon trajectories. 
+
+• Motion-Aware Stability Weighting: We design a dynamic weighting scheme, which we term Action Transfer Reweighting (ATR), based on action stability. Since uncertainty often appears as erratic motion, actions with high-frequency fluctuations receive higher uncertainty weights, while smooth and stable trajectories are down-weighted, aligning model logits with the physical behavior of the end-effector. 
+
+• DoF-Adaptive Calibration with Bayesian Optimization: Since different joints contribute unequally to task risk, we move beyond uniform uncertainty averaging. We use Bayesian Op-timization to automatically learn adaptive weights for each DoF, producing a calibrated uncer-tainty metric that prioritizes more critical axes according to the task’s kinematic requirements. We evaluate our framework on the widely used LIBERO [LZG +23] benchmark. Results show that our method effectively captures model uncertainty, leading to more reliable failure detection and supporting safer analysis and monitoring of VLA behavior. 22 Related Work 
+
+2.1 Vision-Language-Action Models 
+
+Vision-Language-Action (VLA) models unify visual perception, language understanding, and action generation, enabling robots to execute manipulation tasks from high-level instructions. Recent works such as RT-2 [ZYX +23], Octo [TGW +24], and OpenVLA [KPK +24] demonstrate strong generalization by leveraging large-scale vision-language backbones trained on robot demonstrations. More recently, models like π0 [BBD +24] and π0.5 [BBD +25] have advanced this paradigm by employing flow matching techniques to generate continuous, high-frequency action trajectories. Despite their success, these models are typically deployed as black boxes and lack explicit mechanisms to assess the reliability of their predicted actions, which limits their applicability in safety-critical and long-horizon settings. 
+
+2.2 Uncertainty Metrics in Foundation Models and Robotics 
+
+Uncertainty estimation in foundation models is commonly based on entropy- or likelihood-related measures, such as token-level entropy and perplexity, which provide signals of model confidence during autoregressive decoding [KCA +22, KGF23, LZZ +24, LTS23]. These metrics have been widely used for introspection and out-of-distribution detection in large language models [HYM +25]. Beyond token statistics, recent work has also utilized internal representations to enhance LVLM safety [HLS +25]. In robotics, uncertainty has traditionally been modeled using ensembles or Bayesian approaches [CCML18, HSW23], but such methods are often impractical for large VLA models. Recent work has begun to ex-tract uncertainty directly from VLA token distributions [RDB +23, ZYX +23], typically by aggregating entropy into global statistics. However, such global aggregation can obscure localized and transient uncertainty in long-horizon control. Similarly, recent advancements in vision-language model adapta-tion indicate that treating all entropy signals uniformly is suboptimal, as high-entropy samples often contain critical boundary information for robust prediction calibration [CZZ +25]. Our work builds on these metrics and introduces aggregation strategies that better reflect the temporal and kinematic structure of robotic manipulation. 
+
+# 3 The Averaging Trap: Why Mean-Entropy Fails for VLA Uncertainty 
+
+Task setup. We study rollout-level uncertainty quantification for long-horizon robotic manipulation. A rollout is defined as a sequence τ = {(ot, at)}Tt=1 , where ot denotes multimodal observations and 
+
+at the executed low-level action at timestep t over a horizon T . Each rollout is associated with a binary outcome y ∈ { 0, 1}, indicating task success (y=1) or failure (y=0). Our objective is to compute a scalar uncertainty score S(τ ) that reflects the risk of failure of an entire rollout, such that failed executions are assigned consistently higher scores than successful ones. This score is intended to serve as a reliable trigger for intervention, enabling early termination or human-in-the-loop control before irreversible failures occur. 
+
+Per-step per-DoF token entropy. In OpenVLA, each action at ∈ R7 corresponds to a 7-DoF Cartesian task-space command, consisting of delta end-effector motions and a binary gripper control signal, i.e., at = {at,d }7
+
+> d=1
+
+. Specifically, for each dimension d ∈ { 1, . . . , 7}, the model decodes actions into a categorical distribution pt,d (·) over 256 discrete bins. Thus, the token set Vd refers precisely to the logits corresponding to these 256 bins. We quantify the uncertainty of the d-th action component at time t using the token entropy: 
+
+Ht,d = − X
+
+> v∈V d
+
+pt,d (v) log pt,d (v), (1) where pt,d (v) denotes the probability assigned to token v for the d-th action dimension. This per-DoF entropy measures the model’s uncertainty in generating the corresponding Cartesian control command at each timestep. 3(a) Train (AUROC=0.51) (b) Test (AUROC=0.47) 
+
+Figure 2: Empirical evidence of the Averaging Trap on LIBERO-10. The plots show the probability density of the global mean entropy SAvg (τ ) for success (blue) and failure (red) rollouts. The significant overlap between the two distributions, coupled with near-random AUROC scores (0.51 on train and 0.47 on test), demonstrates that global averaging masks critical failure signals and fails to distinguish between successful and failed executions. 
+
+Baseline: Global Averaging and the Averaging Trap. We begin with an empirical evaluation of a simple and widely used baseline that summarizes token-level uncertainty by globally averaging entropy across time and the 7 action DoFs: 
+
+SAvg (τ ) = 17T
+
+> T
+
+X
+
+> t=1 7
+
+X
+
+> d=1
+
+Ht,d . (2) However, this global statistic is prone to the Averaging Trap in continuous control. Successful rollouts can contain localized high-entropy segments due to benign noise or non-critical micro-adjustments, which inflate SAvg . Conversely, many failures appear low-entropy for most timesteps and only exhibit brief spikes near the onset of failure, which are masked by the average. As a consequence, SAvg often fails to reliably separate success from failure, especially in precise manipulation tasks where a short critical mistake can invalidate an entire rollout (see Fig. 2). To escape this Averaging Trap, an effective uncertainty score should answer two questions: 
+
+• Temporal locality: How can we aggregate uncertainty so that brief high-risk segments are preserved rather than averaged away? 
+
+• Physical relevance: How can we emphasize uncertainty that aligns with unstable action exe-cution instead of benign fluctuations? 
+
+# 4 The Proposed Method 
+
+Motivated by our observations, we develop an adaptive uncertainty estimation framework for VLA models. We first address temporal locality by replacing global averaging with a sliding-window operator, and then incorporate physical relevance via stability-aware reweighting in subsequent components. 
+
+4.1 Sliding Window Pooling (SW) 
+
+To preserve transient risk signals, we replace global averaging with max-based temporal pooling. We first aggregate per-step entropy across DoF as et = 17
+
+P7 
+
+> d=1
+
+Ht,d . Given a window size w, we compute window means: ¯et = 1
+
+w
+
+> t+w−1
+
+X
+
+> k=t
+
+ek, t ∈ { 1, 2, . . . }, (3) 4and define the rollout score by max pooling over these windows: SSW (τ ) = max t ¯et. This directly targets a common failure mode in manipulation: brief local uncertainty spikes may be decisive even when the remainder of the rollout is well executed. In practice, the resulting window-level score SSW (τ )can be compared against a predefined threshold to trigger early termination or human intervention, thereby preventing irreversible failures such as object drops, collisions, or task-invalidating errors. 
+
+4.2 Action Transfer Reweighting (ATR) 
+
+Token-level uncertainty becomes most informative when it coincides with physically unstable action execution. Motivated by this observation, we introduce Action Transfer Reweighting (ATR), which assigns higher importance to entropy values at timesteps where the executed actions exhibit oscillatory behavior, as such patterns often precede rollout failure. We define a per-step, per-DoF instability indicator using sign inconsistency between consecutive actions: 
+
+ct,d = 1[sign( at,d )̸ = sign( at−1,d )] , t ≥ 2, (4) where we treat 0 as non-negative, and explicitly set c1,d = 0 since there is no preceding action. Crucially, our instability indicator ct,d is computed directly on the VLA’s inferred action commands ,rather than on proprioceptive sensor readings. Since model-predicted actions are purely computational, this binary sign-flip remains a clean and robust signal immune to downstream mechanical or sensor noise during real-world deployment. We then apply a stability weight: 
+
+αt,d =
+
+(
+
+1 − α, ct,d = 0 ,α, ct,d = 1 , (5) with hyperparameter α ∈ (0 , 1) controlling the contrast between stable versus oscillatory behavior. We typically choose α > 0.5 to emphasize unstable moments. The reweighted entropy is ˜Ht,d = αt,d Ht,d ,and the ATR rollout score is: 
+
+SATR (τ ) = 17T
+
+> T
+
+X
+
+> t=1 7
+
+X
+
+> d=1
+
+˜Ht,d . (6) Intuitively, ATR down-weights benign uncertainty occurring under stable motion, while amplifying uncertainty that coincides with shaking or hesitation patterns, yielding a more discriminative and physically grounded uncertainty signal. 
+
+4.3 Unified SW+ATR Scoring 
+
+We combine spike-preserving pooling (SW) with motion-aware weighting (ATR) by applying max-based sliding window pooling to the reweighted entropy: ˜et = 17
+
+> 7
+
+X
+
+> d=1
+
+˜Ht,d ,SSW+ATR (τ ) = max 
+
+> t
+
+1
+
+w
+
+> t+w−1
+
+X
+
+> k=t
+
+˜ek.
+
+(7) SW prevents critical spikes from being averaged out, while ATR makes spikes more discriminative by anchoring them to unstable physical motion, resulting in a unified scoring function that is both temporally sensitive and physically grounded. 
+
+4.4 DoF-Adaptive Calibration with Bayesian Optimization 
+
+Different DoFs contribute unequally to task risk (e.g., certain axes require tighter precision or have smaller tolerance margins). Uniform DoF averaging can therefore be suboptimal. We introduce non-negative DoF weights β ∈ R7 to adaptively prioritize kinematically critical axes. Specifically, we replace uniform DoF aggregation with a weighted step score ˜ e(β) 
+
+> t
+
+= P7 
+
+> d=1
+
+βd ˜Ht,d . The final uncertainty score is then computed using max-based sliding window pooling: 
+
+SSW+ATR+BO (τ ) = max 
+
+> t
+
+1
+
+w
+
+> t+w−1
+
+X
+
+> k=t
+
+˜e(β) 
+
+> k
+
+. (8) 5Bayesian Optimization objective. We tune ( w, α, β ) on a calibration split by directly maximizing the discriminative power of the uncertainty score. Concretely, each rollout τi yields a scalar score S(τi)and a binary label yi; we optimize (w⋆, α ⋆, β ⋆) = arg max  
+
+> w,α,β
+
+AUROC 
+
+
+
+{SSW+ATR+BO (τi)}, {1 − yi}
+
+
+
+. (9) where AUROC is computed on the calibration set and (1 − yi) treats failures as the positive class. This objective is expensive to evaluate because it requires evaluating the uncertainty score over a large set of rollouts for each candidate hyperparameter setting. We therefore use Bayesian Optimiza-tion [SLA12, Nog14], which models the unknown mapping from hyperparameters to AUROC with a Gaussian process and selects new evaluations by maximizing an acquisition function, enabling sample-efficient search in a continuous parameter space. 
+
+Search space. We optimize the window length w ∈ [10 , 100], the stability contrast α ∈ [0 .05 , 0.95], and DoF weights βd ∈ [1 , 10] for d = 1 , . . . , 7. In all experiments, the resulting hyperparameters are fixed and reused for evaluation on held-out tasks. 
+
+From scores to decisions (thresholding). For deployment, S(τ ) is converted into a binary pre-diction indicating success or failure . We select a threshold γ⋆ on the calibration split and then keep it fixed for testing. In our experiments, we use Youden’s index [You50] on the ROC curve to choose γ⋆
+
+(Sec. 5.1). We describe this threshold selection in the experimental protocol for clarity, but note that it is compatible with any operating-point selection strategy. 
+
+# 5 Experiments 
+
+5.1 Experiment Details 
+
+LIBERO task suites. We evaluate rollout-level uncertainty quantification on four LIBERO suites: LIBERO-SPATIAL, LIBERO-OBJECT, and LIBERO-GOAL, which each contain 10 curated tasks designed to isolate transfer of spatial relationships, object identities, and task goals. In addition, we evaluate on LIBERO-10, a subset of 10 long-horizon tasks drawn from LIBERO-100 (the suite of 100 entangled tasks). All rollouts are labeled by the simulator as success or failure .
+
+OpenVLA model. We use OpenVLA [KPK +24] as the underlying VLA model. OpenVLA is a 7B-parameter open-source vision-language-action model trained on a large-scale collection of real-world robot demonstrations and built on a Llama-2 language backbone with a visual encoder that fuses DINOv2 and SigLIP features. We treat OpenVLA as a black-box model and only use its per-step token distributions to compute entropy-based uncertainty signals (Sec. 3). 
+
+Train/Test split. For each suite, we split rollouts into two disjoint halves: the train split is used to tune hyperparameters and to select the decision threshold, and the test split is used for reporting. 
+
+Metrics. We follow common practices in Uncertainty Quantification (UQ) [HG16] by treating failure 
+
+as the positive class and reporting: (i) AUROC on the test split, and (ii) Accuracy on the test split after thresholding scores using a threshold γ⋆ chosen on the train split by Youden’s index [You50]: 
+
+J(γ) = TPR( γ) − FPR( γ),γ⋆ = arg max  
+
+> γ
+
+J(γ). (10) Accuracy is computed using γ⋆ fixed from the train split; thus AUROC reflects separability, while Accuracy reflects a deployment-style discrete trigger. 6Computational Overhead. The online inference cost of our method is negligible ( O(1) per step). The Sliding Window is implemented as an efficient rolling queue, and Action Transfer Reweighting requires only a lightweight sign comparison. As a result, our framework runs seamlessly at OpenVLA’s default control frequency without introducing measurable latency. For the offline BO stage, the pro-cedure is highly sample-efficient: it uses only a small calibration set (e.g., 50 rollouts) and typically converges in fewer than 50 iterations, requiring under 5 minutes on a single RTX 4090 GPU. This modest calibration overhead makes the overall approach highly practical for rapid adaptation to new tasks and environments. 
+
+5.2 Methods Compared 
+
+We compare our framework against standard uncertainty baselines and progressive ablations. 
+
+Global Averaging (Baseline). This method follows the standard practice in VLA uncertainty quantification by computing the mean of token-level entropy across all timesteps and degrees of freedom (DoF). As shown in our experiments, this approach suffers from the Averaging Trap , where long horizons of successful execution mask localized uncertainty spikes associated with failure. 
+
+Sliding Window Pooling (SW). SW replaces global averaging with max-based temporal sliding window pooling. By aggregating uncertainty over short windows and retaining the maximum response, SW captures transient high-risk segments that would otherwise be masked by global statistics. 
+
+Action Transfer Reweighting (ATR). ATR reweights token-level entropy based on action stabil-ity, assigning higher weight to timesteps exhibiting oscillatory behavior. This emphasizes uncertainty that coincides with unstable physical execution while down-weighting entropy under smooth motion. 
+
+SW+ATR (Combined). This variant applies sliding window pooling to stability-weighted entropy, combining temporal locality with motion-aware weighting to capture uncertainty that is both tempo-rally localized and physically relevant. 
+
+SW+ATR+BO (DoF-Adaptive Calibration with Bayesian Optimization). This method jointly calibrates the sliding window size, stability weighting, and DoF importance by learning task-specific parameters via Bayesian Optimization. Rather than assuming uniform contribution from all joints or fixed temporal and stability settings, it captures a consistent pattern in which certain axes and time scales are more critical for uncertainty prediction, producing a calibrated uncertainty score aligned with the task’s kinematic structure. 
+
+5.3 Main Results 
+
+We report the test AUROC and Accuracy in Table 1. Our proposed framework consistently outper-forms the global averaging baseline across all task suites, indicating that local and adaptive uncertainty estimation plays an important role in robotic introspection. 
+
+Performance Overview. The Baseline method (mean t,d ) performs poorly, particularly on long-horizon tasks such as LIBERO-10, where it achieves an AUROC of only 0.468. This empirically confirms the Averaging Trap : in long trajectories, the large number of low-entropy tokens obscures the small number of high-entropy tokens that are associated with failure. To ensure a rigorous evalu-ation, we additionally investigated statistical extrema aggregators (e.g., Global Max, Top-5% CVaR, Log-Sum-Exp). However, empirical results showed that these extrema methods consistently underper-formed the global mean. Successful trajectories naturally exhibit brief, benign entropy spikes during active manipulation, which extrema-based methods fail to isolate from actual failures. Therefore, we report the global mean as our strongest standard baseline. In contrast, our fully calibrated method (SW+ATR+BO) achieves the highest AUROC in 3 out of 4 suites, showing that focused uncertainty extraction is more effective than global aggregation. 7Table 1: Rollout-level failure prediction on LIBERO suites with OpenVLA. We report test AUROC and test Accuracy (threshold chosen by Youden’s index on the train split). Bold denotes the best result and underline denotes the second-best result for each metric within a suite. LIBERO-SPATIAL LIBERO-OBJECT LIBERO-GOAL LIBERO-10 Method (best params) AUROC ↑ Acc ↑ AUROC ↑ Acc ↑ AUROC ↑ Acc ↑ AUROC ↑ Acc ↑                                        
+
+> Baseline (mean t,d )0.845 0.892 0.542 0.744 0.641 0.755 0.468 0.622 SW ( w=70) 0.908 0.912 0.765 0.744 0.837 0.846 0.699 0.691 ATR ( α=0 .9) 0.847 0.868 0.567 0.768 0.670 0.819 0.508 0.606 SW+ATR ( w=60 , α =0 .9) 0.919 0.948 0.772 0.768 0.841 0.843 0.738 0.711 SW+ATR+BO ( w⋆, α ⋆, β ⋆)0.936 0.939 0.793 0.692 0.811 0.807 0.838 0.743
+
+Task-Specific Analysis. On LIBERO-SPATIAL, which is designed to test transfer of spatial re-lationships with visually similar objects, our method improves AUROC from 0.845 to 0.936. This suggests that uncertainty spikes tend to concentrate around short decision points where the model needs to resolve the correct spatial configuration, which can be masked by global averaging. For LIBERO-OBJECT, which requires identifying and manipulating a specific object type, the SW com-ponent alone yields a substantial improvement (e.g., +0 .223 AUROC on OBJECT). This is consistent with the idea that uncertainty is localized to brief interaction phases, such as approaching, grasping, or lifting, even when the rest of the rollout is stable. For LIBERO-GOAL, where objects and spatial layouts are fixed but task goals differ, the gains from SW suggest that uncertainty is often tied to selecting the correct action sequence to satisfy the goal. Notably, on the challenging LIBERO-10 suite, the addition of BO leads to a clear improvement in performance (0.738 to 0.838). This indicates that for long-horizon, multi-stage tasks, emphasizing the DoFs that are more critical at interaction-heavy phases can improve failure separation. 
+
+5.4 Ablation Study 
+
+To keep the main paper concise, we present hyperparameter ablations on LIBERO-10 and defer ab-lations on the other suites (as well as additional thresholded metrics such as Precision/Recall/F1) to the appendix. 
+
+SW window size ablation. We sweep the sliding-window size w (stride fixed) and report test AUROC in Fig. 3(a). Performance improves rapidly as w increases from 10 to 50 and plateaus between 
+
+w = 50 and w = 90. This suggests that very short windows are sensitive to benign noise, while a window of approximately 50–90 steps (roughly 2.5–4.5 seconds) is optimal for capturing the duration of atomic actions in failure sequences. 
+
+ATR weight ablation. We sweep the ATR contrast parameter α and report test AUROC in Fig. 3(b). We observe a monotonic increase in performance as α grows, with the highest accuracy achieved at α = 0 .9. This confirms that high-frequency action oscillation is a strong indicator of failure, and heavily weighting these unstable moments significantly helps to distinguish uncertainty. 
+
+SW+ATR joint ablation. We evaluate a grid over ( w, α ) and visualize test AUROC as a heatmap in Fig. 3(c). The results show a synergistic effect between the two components. The global maximum (marked by the red star) is located at w = 70 and α = 0 .9, indicating that the model performs best when it combines a sufficiently large temporal receptive field with a high sensitivity to physical instability. 
+
+5.5 Bayesian-Optimized Hyperparameters 
+
+The hyperparameters learned via Bayesian Optimization provide information about the physical sources of task risk (we detail the optimal parameters in Appendix, see Table A1). Visualizing the learned DoF weights β⋆ (Appendix Fig. A1) makes cross-suite patterns more apparent. We observe a con-sistent pattern in which the gripper dimension, and in several suites the vertical axis (∆ z), receive 810 30 50 70 90  
+
+> Window Size w
+> 0.62
+> 0.64
+> 0.66
+> 0.68
+> 0.70
+> AUROC
+
+(a) SW Ablation     
+
+> Train AUROC
+> Val AUROC
+> 0.1 0.3 0.5 0.7 0.9
+> Stability Contrast
+> 0.44
+> 0.46
+> 0.48
+> 0.50
+> 0.52
+> AUROC
+
+(b) ATR Ablation           
+
+> Train AUROC
+> Val AUROC
+> 10 20 30 40 50 60 70 80 90 100
+> Window Size w
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> 0.9
+> Stability Contrast
+
+(c) SW+ATR Joint Ablation    
+
+> SPATIAL OBJECT GOAL 10
+> LIBERO Suite
+> 0.70
+> 0.75
+> 0.80
+> 0.85
+> 0.90
+> 0.95
+> 1.00
+> AUROC
+> 0.919
+> 0.772
+> 0.841
+> 0.738
+> 0.936
+> 0.793
+> 0.811
+> 0.838
+
+(d) Bayesian Optimization Impact  
+
+> SW+ATR
+> SW+ATR+BO
+> 0.50
+> 0.55
+> 0.60
+> 0.65
+> 0.70
+> 0.75
+> 0.80 Val AUROC
+
+Figure 3: Ablation studies on LIBERO-10. (a) SW window size ablation on LIBERO-10. (b) ATR stability contrast α ablation on LIBERO-10. (c) Joint SW+ATR ablation on LIBERO-10; the red star indicates the best-performing ( w, α ) pair. (d) Effect of DoF-adaptive calibration, comparing SW+ATR with and without Bayesian Optimization across LIBERO suites. the highest weights. This is consistent with the observation that manipulation failures often occur during object interaction phases, such as missing a grasp or colliding during lifting. Additionally, for LIBERO-OBJECT and LIBERO-GOAL, the model assigns the highest weight to the pitch rotation (∆pitch). In LIBERO-OBJECT, this suggests that orientation-related uncertainty is particularly in-formative when transferring to novel object geometries, while in LIBERO-GOAL it reflects the role of precise end-effector orientation in satisfying goal-specific motion and placement constraints. These results indicate that the method assigns higher importance to kinematic axes that are more informative for failure prediction. 
+
+5.6 Zero-Shot Generalization Across Suites 
+
+To address potential concerns regarding overfitting during Bayesian Optimization tuning, we conducted a comprehensive cross-suite transfer experiment. We evaluated the optimal parameters ( w⋆, α ⋆, β ⋆)calibrated exclusively on the LIBERO-SPATIAL train split directly on the held-out test splits of the remaining three suites in a zero-shot manner. As shown in Table 2, the zero-shot transfer consistently outperforms the global mean baseline across all unseen suites. Notably, on LIBERO-OBJECT and LIBERO-GOAL, the transferred parameters 9Table 2: Cross-suite zero-shot transfer test AUROC. Parameters calibrated solely on the LIBERO-SPATIAL train split transfer robustly to unseen suites. Target Suite Global Mean Zero-Shot Transfer Oracle BO LIBERO-OBJECT 0.542 0.780 0.793 LIBERO-GOAL 0.641 0.819 0.811 LIBERO-10 0.468 0.715 0.838 perform on par with or even slightly exceed the suite-specific Oracle BO. This confirms that our framework learns generalizable physical uncertainty principles, including the prioritization of gripper dimensions and the penalization of high-frequency oscillations, rather than overfitting to specific tasks. This robust cross-suite transferability underscores the real-world deployment potential of our approach. 
+
+# 6 Conclusion 
+
+In this work, we identified the Averaging Trap as a fundamental limitation in applying standard LLM uncertainty metrics to continuous robotic control, where transient failure signals are often masked by global statistics. To address this, we proposed a unified uncertainty quantification framework that shifts the focus from global averaging to local, physically grounded risk detection. By integrating max-based Sliding Window Pooling (SW) to capture temporal spikes, Action Transfer Reweighting (ATR) to penalize oscillatory behavior, and Bayesian Optimization (BO) for adaptive DoF calibration, our method effectively isolates critical moments of instability. Evaluations on the LIBERO benchmark demonstrate that our approach significantly outperforms standard entropy baselines in distinguishing successful rollouts from failures. These improvements provide a more reliable signal for human-in-the-loop intervention, a prerequisite for deploying Vision-Language-Action models in real-world environments. Future work will focus on leveraging these cal-ibrated uncertainty signals not just for passive detection, but for active uncertainty-aware planning and closed-loop error recovery. 
+
+# References 
+
+[BBD +24] Kevin Black, Noah Brown, Danny Driess, Adnan Esmail, Michael Equi, Chelsea Finn, Niccolo Fusai, Lachy Groom, Karol Hausman, Brian Ichter, et al. π0: A vision-language-action flow model for general robot control. arXiv preprint arXiv:2410.24164 , 2024. [BBD +25] Kevin Black, Noah Brown, James Darpinian, Karan Dhabalia, Danny Driess, Adnan Es-mail, Michael Robert Equi, Chelsea Finn, Niccolo Fusai, Manuel Y Galliker, et al. π0.5:a vision-language-action model with open-world generalization. In 9th Annual Conference on Robot Learning , 2025. [CCML18] Kurtland Chua, Roberto Calandra, Rowan McAllister, and Sergey Levine. Deep reinforce-ment learning in a handful of trials using probabilistic dynamics models. Advances in neural information processing systems , 31, 2018. [CSTW25] Zechuan Chen, TianMing Sha, Ziyi Tang, and Keze Wang. Tskan: A transparent architec-ture for improving the interpretability of multivariate time series forecasting. In ICLR 2025 Workshop on Navigating and Addressing Data Problems for Foundation Models , 2025. [CZZ +25] Xinyu Chen, Haotian Zhai, Can Zhang, Xiupeng Shi, and Ruirui Li. Multi-cache enhanced prototype learning for test-time generalization of vision-language models. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 2281–2291, 2025. [HG16] Dan Hendrycks and Kevin Gimpel. A baseline for detecting misclassified and out-of-distribution examples in neural networks. arXiv preprint arXiv:1610.02136 , 2016. 10 [HLS +25] Peichun Hua, Hao Li, Shanghao Shi, Zhiyuan Yu, and Ning Zhang. Rethinking jailbreak detection of large vision language models with representational contrastive scoring. arXiv preprint arXiv:2512.12069 , 2025. [HSW23] Nicklas Hansen, Hao Su, and Xiaolong Wang. Td-mpc2: Scalable, robust world models for continuous control. arXiv preprint arXiv:2310.16828 , 2023. [HYM +25] Lei Huang, Weijiang Yu, Weitao Ma, Weihong Zhong, Zhangyin Feng, Haotian Wang, Qianglong Chen, Weihua Peng, Xiaocheng Feng, Bing Qin, et al. A survey on hallucination in large language models: Principles, taxonomy, challenges, and open questions. ACM Transactions on Information Systems , 43(2):1–55, 2025. [KCA +22] Saurav Kadavath, Tom Conerly, Amanda Askell, Tom Henighan, Dawn Drain, Ethan Perez, Nicholas Schiefer, Zac Hatfield-Dodds, Nova DasSarma, Eli Tran-Johnson, et al. Language models (mostly) know what they know. arXiv preprint arXiv:2207.05221 , 2022. [KGF23] Lorenz Kuhn, Yarin Gal, and Sebastian Farquhar. Semantic uncertainty: Linguistic invariances for uncertainty estimation in natural language generation. arXiv preprint arXiv:2302.09664 , 2023. [KKF25] Ulas Berk Karli, Tetsu Kurumisawa, and Tesca Fitzgerald. Ask before you act: Token-level uncertainty for intervention in vision-language-action models. In Second Workshop on Out-of-Distribution Generalization in Robotics at RSS 2025 , 2025. [KPK +24] Moo Jin Kim, Karl Pertsch, Siddharth Karamcheti, Ted Xiao, Ashwin Balakrishna, Suraj Nair, Rafael Rafailov, Ethan Foster, Grace Lam, Pannag Sanketi, et al. Openvla: An open-source vision-language-action model. arXiv preprint arXiv:2406.09246 , 2024. [LTS23] Zhen Lin, Shubhendu Trivedi, and Jimeng Sun. Generating with confidence: Uncertainty quantification for black-box large language models. arXiv preprint arXiv:2305.19187 , 2023. [LYZ +25] Yuqi Li, Chuanguang Yang, Hansheng Zeng, Zeyu Dong, Zhulin An, Yongjun Xu, Yingli Tian, and Hao Wu. Frequency-aligned knowledge distillation for lightweight spatiotempo-ral forecasting. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 7262–7272, 2025. [LZG +23] Bo Liu, Yifeng Zhu, Chongkai Gao, Yihao Feng, Qiang Liu, Yuke Zhu, and Peter Stone. Libero: Benchmarking knowledge transfer for lifelong robot learning. Advances in Neural Information Processing Systems , 36:44776–44791, 2023. [LZZ +24] Chen Ling, Xujiang Zhao, Xuchao Zhang, Wei Cheng, Yanchi Liu, Yiyou Sun, Mika Oishi, Takao Osaki, Katsushi Matsuda, Jie Ji, et al. Uncertainty quantification for in-context learning of large language models. arXiv preprint arXiv:2402.10189 , 2024. [Nog14] Fernando Nogueira. Bayesian Optimization: Open source constrained global optimization tool for Python, 2014. Version used in this work. [RDB +23] Allen Z Ren, Anushri Dixit, Alexandra Bodrova, Sumeet Singh, Stephen Tu, Noah Brown, Peng Xu, Leila Takayama, Fei Xia, Jake Varley, et al. Robots that ask for help: Uncertainty alignment for large language model planners. arXiv preprint arXiv:2307.01928 , 2023. [SDZ +25] Linxin Song, Xuwei Ding, Jieyu Zhang, Taiwei Shi, Ryotaro Shimizu, Rahul Gupta, Yang Liu, Jian Kang, and Jieyu Zhao. Discovering knowledge deficiencies of language models on massive knowledge base. arXiv preprint arXiv:2503.23361 , 2025. [SLA12] Jasper Snoek, Hugo Larochelle, and Ryan P Adams. Practical bayesian optimization of machine learning algorithms. Advances in neural information processing systems , 25, 2012. [TGW +24] Octo Model Team, Dibya Ghosh, Homer Walke, Karl Pertsch, Kevin Black, Oier Mees, Sudeep Dasari, Joey Hejna, Tobias Kreiman, Charles Xu, et al. Octo: An open-source generalist robot policy. arXiv preprint arXiv:2405.12213 , 2024. 11 [You50] William J Youden. Index for rating diagnostic tests. Cancer , 3(1):32–35, 1950. [ZYX +23] Brianna Zitkovich, Tianhe Yu, Sichun Xu, Peng Xu, Ted Xiao, Fei Xia, Jialin Wu, Paul Wohlhart, Stefan Welker, Ayzaan Wahid, et al. Rt-2: Vision-language-action models transfer web knowledge to robotic control. In Conference on Robot Learning , pages 2165– 2183. PMLR, 2023. 12 A Additional Experimental Details 
+
+A.1 Bayesian-Optimized Hyperparameters Details 
+
+This section provides the detailed hyperparameters ( w⋆, α ⋆, β ⋆) optimized via Bayesian Optimization on the train split of each suite, as discussed in Section 5.5. We also provide a visualization of the learned Degrees of Freedom (DoF) weights β⋆.Table A1: Best SW+ATR+BO hyperparameters found on the train split of each suite. All β⋆ values are rounded to one decimal place for readability. Suite w⋆ α⋆ β⋆ (7-DoF) LIBERO-SPATIAL 93 0.95 [1.0, 2.6, 10.0, 1.0, 1.0, 1.0, 10.0] LIBERO-OBJECT 62 0.05 [2.6, 1.0, 1.2, 1.0, 10.0, 7.5, 10.0] LIBERO-GOAL 72 0.05 [1.0, 1.0, 4.6, 1.0, 10.0, 1.0, 10.0] LIBERO-10 100 0.95 [1.6, 6.9, 10.0, 1.0, 1.0, 1.0, 10.0] x y z roll pitch yaw gripper 
+
+> Degrees of Freedom
+> 0
+> 2
+> 4
+> 6
+> 8
+> 10
+> Weight Value
+> SPATIAL
+> OBJECT
+> GOAL
+> LIBERO-10
+
+Figure A1: DoF importance learned by Bayesian Optimization. We visualize the optimized DoF weights β⋆ across LIBERO suites. Gripper and ∆ z consistently receive high weights, while ∆pitch is emphasized in LIBERO-OBJECT and LIBERO-GOAL, supporting DoF-adaptive calibration. 
+
+A.2 Benchmark Success Rates per Task 
+
+This section reports the raw task-level success rates of the OpenVLA model on the LIBERO benchmark. Each suite contains 10 tasks with 50 evaluation episodes per task. These statistics provide additional context for the uncertainty quantification results reported in the main paper, and help explain task difficulty variations across suites. 13 SPATIAL OBJECT GOAL 10                               
+
+> LIBERO Suite
+> Task 1
+> Task 2
+> Task 3
+> Task 4
+> Task 5
+> Task 6
+> Task 7
+> Task 8
+> Task 9
+> Task 10
+> Task Index
+> 84 72 52 58
+> 94 54 88 80
+> 90 74 80 64
+> 94 48 48 42
+> 74 80 88 46
+> 50 74 80 70
+> 88 68 82 54
+> 80 86 92 68
+> 72 54 84 22
+> 70 70 68 38
+> 20
+> 30
+> 40
+> 50
+> 60
+> 70
+> 80
+> 90
+> Success Rate (%)
+
+Figure A2: Per-task success rates (%) of OpenVLA baseline across LIBERO suites. Darker cells indicate higher success. Task difficulty varies significantly both across and within suites, motivating the need for reliable failure prediction via uncertainty quantification. We visualize the success rates in Fig. A2. SPATIAL and GOAL suites generally exhibit higher success rates, while LIBERO-10 remains the most challenging, with frequent long-horizon or multi-stage failures. This variation further motivates our focus on task-level uncertainty estimation and robust failure prediction. The detailed per-task results are listed below for each suite. 
+
+A.2.1 LIBERO-SPATIAL Overall Success Rate: 79.6% (398/500) Task 1: pick up the black bowl between plate & ramekin and place it on the plate 84.0% Task 2: pick up the black bowl next to the ramekin and place it on the plate 94.0% Task 3: pick up the black bowl from table center and place it on the plate 90.0% Task 4: pick up the black bowl on the cookie box and place it on the plate 94.0% Task 5: pick up the black bowl in the top drawer of the wooden cabinet and place it on the plate 74.0% Task 6: pick up the black bowl on the ramekin and place it on the plate 50.0% Task 7: pick up the black bowl next to the cookie box and place it on the plate 88.0% Task 8: pick up the black bowl on the stove and place it on the plate 80.0% Task 9: pick up the black bowl next to the plate and place it on the plate 72.0% Task 10: pick up the black bowl on the wooden cabinet and place it on the plate 70.0% 
+
+A.2.2 LIBERO-OBJECT Overall Success Rate: 68.0% (340/500) 14 Task 1: pick up the alphabet soup and place it in the basket 72.0% Task 2: pick up the cream cheese and place it in the basket 54.0% Task 3: pick up the salad dressing and place it in the basket 74.0% Task 4: pick up the bbq sauce and place it in the basket 48.0% Task 5: pick up the ketchup and place it in the basket 80.0% Task 6: pick up the tomato sauce and place it in the basket 74.0% Task 7: pick up the butter and place it in the basket 68.0% Task 8: pick up the milk and place it in the basket 86.0% Task 9: pick up the chocolate pudding and place it in the basket 54.0% Task 10: pick up the orange juice and place it in the basket 70.0% 
+
+A.2.3 LIBERO-GOAL Overall Success Rate: 76.2% (381/500) Task 1: open the middle drawer of the cabinet 52.0% Task 2: put the bowl on the stove 88.0% Task 3: put the wine bottle on top of the cabinet 80.0% Task 4: open the top drawer and put the bowl inside 48.0% Task 5: put the bowl on top of the cabinet 88.0% Task 6: push the plate to the front of the stove 80.0% Task 7: put the cream cheese in the bowl 82.0% Task 8: turn on the stove 92.0% Task 9: put the bowl on the plate 84.0% Task 10: put the wine bottle on the rack 68.0% 
+
+A.2.4 LIBERO-10 Overall Success Rate: 54.2% (271/500) Task 1: put both the alphabet soup and the tomato sauce in the basket 58.0% Task 2: put both the cream cheese box and the butter in the basket 80.0% Task 3: turn on the stove and put the moka pot on it 64.0% Task 4: put the black bowl in the bottom drawer of the cabinet and close it 42.0% Task 5: place mugs on left/right plates 46.0% Task 6: pick up the book and place it in the caddy 70.0% Task 7: place mug and pudding beside plate 54.0% Task 8: put both soup and cream cheese in the basket 68.0% Task 9: put both moka pots on the stove 22.0% Task 10: microwave the yellow and white mug and close it 38.0% 
+
+A.3 Detailed Ablation and Metric Breakdown 
+
+This appendix provides additional experimental results referenced in the main paper. Specifically, we present detailed hyperparameter ablation studies and metric breakdowns (AUROC, Accuracy, Pre-cision, Recall, and F1-score) for the LIBERO-SPATIAL, LIBERO-OBJECT, LIBERO-GOAL, and LIBERO-10 task suites. 15 10 30 50 70 90 
+
+Window Size w
+
+0.85 
+
+0.86 
+
+0.87 
+
+0.88 
+
+0.89 
+
+0.90 
+
+0.91 
+
+0.92 
+
+> AUROC
+
+(a) SW: LIBERO-SPATIAL 
+
+Train 
+
+Val 
+
+0.1 0.3 0.5 0.7 0.9 
+
+Stability Contrast 
+
+0.82 
+
+0.83 
+
+0.84 
+
+0.85 
+
+0.86 
+
+0.87 
+
+0.88 
+
+> AUROC
+
+(b) ATR: LIBERO-SPATIAL 
+
+Train 
+
+Val 
+
+10 20 30 40 50 60 70 80 90 100 
+
+Window Size w
+
+0.1 
+
+0.2 
+
+0.3 
+
+0.4 
+
+0.5 
+
+0.6 
+
+0.7 
+
+0.8 
+
+0.9 
+
+(c) SW+ATR: LIBERO-SPATIAL 
+
+10 30 50 70 90 
+
+Window Size w
+
+0.60 
+
+0.65 
+
+0.70 
+
+0.75 
+
+0.80 
+
+0.85 
+
+0.90 
+
+0.95 
+
+> Metric
+
+(d) SW Metrics: LIBERO-SPATIAL 
+
+Acc 
+
+Precision 
+
+Recall 
+
+F1 
+
+0.1 0.3 0.5 0.7 0.9 
+
+Stability Contrast 
+
+0.55 
+
+0.60 
+
+0.65 
+
+0.70 
+
+0.75 
+
+0.80 
+
+0.85 
+
+0.90 
+
+> Metric
+
+(e) ATR Metrics: LIBERO-SPATIAL 
+
+Acc 
+
+Precision 
+
+Recall 
+
+F1 
+
+0.80 
+
+0.82 
+
+0.84 
+
+0.86 
+
+0.88 
+
+0.90 
+
+0.92 Val AUROC Figure A3: Ablation Study on LIBERO-SPATIAL. (a) Impact of window size w on AUROC. (b) Impact of stability contrast α on AUROC. (c) Joint heatmap of AUROC across w and α. (d-e) Detailed metrics (Accuracy, Precision, Recall, F1) for SW and ATR components respectively. 10 30 50 70 90 
+
+Window Size w
+
+0.68 
+
+0.70 
+
+0.72 
+
+0.74 
+
+0.76 
+
+0.78 
+
+0.80 
+
+0.82 
+
+0.84 
+
+> AUROC
+
+(a) SW: LIBERO-OBJECT 
+
+Train 
+
+Val 
+
+0.1 0.3 0.5 0.7 0.9 
+
+Stability Contrast 
+
+0.52 
+
+0.53 
+
+0.54 
+
+0.55 
+
+0.56 
+
+0.57 
+
+0.58 
+
+0.59 
+
+> AUROC
+
+(b) ATR: LIBERO-OBJECT 
+
+Train 
+
+Val 
+
+10 20 30 40 50 60 70 80 90 100 
+
+Window Size w
+
+0.1 
+
+0.2 
+
+0.3 
+
+0.4 
+
+0.5 
+
+0.6 
+
+0.7 
+
+0.8 
+
+0.9 
+
+(c) SW+ATR: LIBERO-OBJECT 
+
+10 30 50 70 90 
+
+Window Size w
+
+0.50 
+
+0.55 
+
+0.60 
+
+0.65 
+
+0.70 
+
+0.75 
+
+0.80 
+
+> Metric
+
+(d) SW Metrics: LIBERO-OBJECT 
+
+Acc 
+
+Precision 
+
+Recall 
+
+F1 
+
+0.1 0.3 0.5 0.7 0.9 
+
+Stability Contrast 
+
+0.3 
+
+0.4 
+
+0.5 
+
+0.6 
+
+0.7 
+
+0.8 
+
+> Metric
+
+(e) ATR Metrics: LIBERO-OBJECT 
+
+Acc 
+
+Precision 
+
+Recall 
+
+F1 
+
+0.66 
+
+0.68 
+
+0.70 
+
+0.72 
+
+0.74 
+
+0.76 
+
+0.78 Val AUROC 
+
+Figure A4: Ablation Study on LIBERO-OBJECT. (a) Impact of window size w on AUROC. (b) Impact of stability contrast α on AUROC. (c) Joint heatmap of AUROC across w and α. (d-e) Detailed metrics (Accuracy, Precision, Recall, F1) for SW and ATR components respectively. 16 10 30 50 70 90 
+
+Window Size w
+
+0.79 
+
+0.80 
+
+0.81 
+
+0.82 
+
+0.83 
+
+> AUROC
+
+(a) SW: LIBERO-GOAL 
+
+Train 
+
+Val 
+
+0.1 0.3 0.5 0.7 0.9 
+
+Stability Contrast 
+
+0.62 
+
+0.64 
+
+0.66 
+
+0.68 
+
+0.70 
+
+> AUROC
+
+(b) ATR: LIBERO-GOAL 
+
+Train 
+
+Val 
+
+10 20 30 40 50 60 70 80 90 100 
+
+Window Size w
+
+0.1 
+
+0.2 
+
+0.3 
+
+0.4 
+
+0.5 
+
+0.6 
+
+0.7 
+
+0.8 
+
+0.9 
+
+(c) SW+ATR: LIBERO-GOAL 
+
+10 30 50 70 90 
+
+Window Size w
+
+0.55 
+
+0.60 
+
+0.65 
+
+0.70 
+
+0.75 
+
+0.80 
+
+0.85 
+
+> Metric
+
+(d) SW Metrics: LIBERO-GOAL 
+
+Acc 
+
+Precision 
+
+Recall 
+
+F1 
+
+0.1 0.3 0.5 0.7 0.9 
+
+Stability Contrast 
+
+0.4 
+
+0.5 
+
+0.6 
+
+0.7 
+
+0.8 
+
+> Metric
+
+(e) ATR Metrics: LIBERO-GOAL 
+
+Acc 
+
+Precision 
+
+Recall 
+
+F1 
+
+0.76 
+
+0.78 
+
+0.80 
+
+0.82 
+
+0.84 Val AUROC Figure A5: Ablation Study on LIBERO-GOAL. (a) Impact of window size w on AUROC. (b) Impact of stability contrast α on AUROC. (c) Joint heatmap of AUROC across w and α. (d-e) Detailed metrics (Accuracy, Precision, Recall, F1) for SW and ATR components respectively. 10 30 50 70 90 
+
+Window Size w
+
+0.62 
+
+0.64 
+
+0.66 
+
+0.68 
+
+0.70 
+
+> AUROC
+
+(a) SW: LIBERO-10 
+
+Train 
+
+Val 
+
+0.1 0.3 0.5 0.7 0.9 
+
+Stability Contrast 
+
+0.44 
+
+0.46 
+
+0.48 
+
+0.50 
+
+0.52 
+
+> AUROC
+
+(b) ATR: LIBERO-10 
+
+Train 
+
+Val 
+
+10 20 30 40 50 60 70 80 90 100 
+
+Window Size w
+
+0.1 
+
+0.2 
+
+0.3 
+
+0.4 
+
+0.5 
+
+0.6 
+
+0.7 
+
+0.8 
+
+0.9 
+
+(c) SW+ATR: LIBERO-10 
+
+10 30 50 70 90 
+
+Window Size w
+
+0.3 
+
+0.4 
+
+0.5 
+
+0.6 
+
+0.7 
+
+0.8 
+
+> Metric
+
+(d) SW Metrics: LIBERO-10 
+
+Acc 
+
+Precision 
+
+Recall 
+
+F1 
+
+0.1 0.3 0.5 0.7 0.9 
+
+Stability Contrast 
+
+0.2 
+
+0.3 
+
+0.4 
+
+0.5 
+
+0.6 
+
+0.7 
+
+0.8 
+
+> Metric
+
+(e) ATR Metrics: LIBERO-10 
+
+Acc 
+
+Precision 
+
+Recall 
+
+F1 
+
+0.60 
+
+0.62 
+
+0.64 
+
+0.66 
+
+0.68 
+
+0.70 
+
+0.72 
+
+0.74 Val AUROC 
+
+Figure A6: Ablation Study on LIBERO-10. (a) Impact of window size w on AUROC. (b) Impact of stability contrast α on AUROC. (c) Joint heatmap of AUROC across w and α. (d-e) Detailed metrics (Accuracy, Precision, Recall, F1) for SW and ATR components respectively. 17

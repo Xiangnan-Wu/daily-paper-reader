@@ -1,0 +1,2446 @@
+Global Prior Meets Local Consistency: Dual-Memory Augmented
+Vision-Language-Action Model for Efficient Robotic Manipulation
+Zaijing Li1 2, Bing Hu1, Rui Shao1 3*, Gongwei Chen1, Dongmei Jiang2*,
+Pengwei Xie4, Jianye HAO4, Liqiang Nie1
+1Harbin Institute of Technology, Shenzhen
+2PengCheng Laboratory
+3Shenzhen Loop Area Institute
+4Huawei Noah’s Ark Lab
+https://cybertronagent.github.io/OptimusVLA.github.io/
+Abstract
+Hierarchical Vision–Language–Action (VLA) models have
+rapidly become a dominant paradigm for robotic manip-
+ulation. It typically comprising a Vision–Language back-
+bone for perception and understanding, together with a gen-
+erative policy for action generation. However, its perfor-
+mance is increasingly bottlenecked by the action genera-
+tion proceess. (i) Low inference efficiency. A pronounced
+distributional gap between isotropic noise priors and target
+action distributions, which increases denoising steps and
+the incidence of infeasible samples. (ii) Poor robustness.
+Existing policies condition solely on the current observa-
+tion, neglecting the constraint of history sequence and thus
+lacking awareness of task progress and temporal consis-
+tency. To address these issues, we introduce OptimusVLA,
+a dual-memory VLA framework with Global Prior Memory
+(GPM) and Local Consistency Memory (LCM). GPM re-
+places Gaussian noise with task-level priors retrieved from
+semantically similar trajectories, thereby shortening the
+generative path and reducing the umber of function eval-
+uations (NFE). LCM dynamically models executed action
+sequence to infer task progress and injects a learned con-
+sistency constraint that enforces temporal coherence and
+smoothness of trajectory. Across three simulation bench-
+marks, OptimusVLA consistently outperforms strong base-
+lines: it achieves 98.6% average success rate on LIBERO,
+improves over π0 by 13.5% on CALVIN, and attains 38%
+average success rate on RoboTwin 2.0 Hard. In Real-World
+evaluation, OptimusVLA ranks best on Generalization and
+Long-horizon suites, surpassing π0 by 42.9% and 52.4%,
+respectively, while delivering 2.9× inference speedup.
+1. Introduction
+Vision–Language–Action (VLA) models [1, 12, 14, 18,
+19, 37, 43, 49, 55, 59] are rapidly emerging as a domi-
+VLM
+GPM
+image
+instruction
+action
+policy
+VLM
+image
+instruction
+action
+policy
+LCM
+noise
+action
+98.6
+Ours
+π0.5
+π0
+SR on LIBERO
+96.9 94.2
+85.0
+Ours
+π0.5
+π0
+SR on Real World
+75.0 59.5
+π0.5
+3.2
+Ours
+π0
+NFE on LIBERO
+10
+10
+3.4
+Ours
+π0.5
+π0
+NFE on Real World
+10
+10
+prior
+Figure 1. Top: Comparison between the standard VLA architec-
+ture (left) and our proposed OptimusVLA (right). (ii) Poor ro-
+bustness to temporal dependence. Middle: Illustration of how
+GPM (blue) and LCM (green) address two key limitations of ex-
+isting VLA models: (i) Low inference efficiency due to a large
+prior–target gap.
+(ii) Poor robustness to temporal dependence.
+Bottom: Efficiency and performance comparison.
+nant paradigm for robotic manipulation [13, 20, 41]. As
+shown in Fig.
+1 Top, it integrates observation percep-
+tion, natural-language understanding, and action genera-
+tion within an end-to-end framework. Leveraging advances
+in vision–language models [4, 26] and generative policies
+[6, 16, 53], VLA models have demonstrated strong perfor-
+mance across a variety of benchmarks [5, 25, 34]. However,
+1
+arXiv:2602.20200v1  [cs.RO]  22 Feb 2026
+
+
+the action generation process has become a dominant bot-
+tleneck in terms of both efficiency and robustness.
+Limitation I: Inefficient action generation due to a large
+prior–target gap. As shown in Fig. 1 Middle, mainstream
+VLA models map a prior noise distribution (typically Gaus-
+sian) to the target action distribution via diffusion denois-
+ing or flow matching [12, 36]. However, the cross-domain
+transformation from isotropic noise to structured actions is
+large, necessitating multi-steps denoising to reach high(-
+quality actions [31]. Moreover, the stochastic starting point
+frequently initializes the generative process in regions that
+kinematically invalid actions [33, 35]. While a naive strat-
+egy might use action-prior as starting point, this approach
+severely curtails diversity, collapsing the learned mapping
+to a restrictive similar-to-target function and failing to ad-
+dress how such priors are obtained.
+Limitation II: Poor robustness to temporal dependence.
+VLA models [12, 14] rely solely on the current observation
+often fails to distinguish between distinct task phases that
+yield similar visual inputs (e.g., distinguishing an unopened
+drawer from one that has just been closed). Moreover, lack-
+ing temporal dependency weakens consistency with the ex-
+ecuted trajectory, leading to jittery control. While a straight-
+forward solution [8, 28] is to concatenate long-sequence
+historical observation to the input, it substantially increases
+inference overhead and memory usage. Moreover, it mis-
+aligned the pre-training distribution of VLA models [42].
+To address these issues, we propose OptimusVLA, a
+VLA framework jointly driven by Global Prior Memory
+(GPM) and Local Consistency Memory (LCM). GPM re-
+places isotropic noise with task-level priors as the genera-
+tive start, narrowing the prior–target distributional gap and
+reducing required number of function evaluations (NFE).
+LCM dynamically models recent action sequences to in-
+fer task progress and injects a consistency constraint that
+smooths controls. Together, GPM and LCM improve effi-
+ciency and robustness of OptimusVLA through global prior
+alignment and local consistency constraints.
+The core innovation of GPM is to treat prior initialization
+as a memory-driven retrieval problem rather than a fixed
+noise design. It consists of three components: a Prior Head
+that integrates current multimodal information; a Memory
+Bank that stores and retrieves task-level priors; and a Prior-
+Aware Sampler for prior action distribution sampling to-
+gether with adaptive noise scale and NFE. By initializing
+the generative flow in the neighborhood of similar tasks,
+GPM drastically narrows the prior-target gap. This not only
+reduce the required NFE but, critically, anchors the pro-
+cess in feasible action space. Adaptive noise injection re-
+tains the model’s exploratory power, preventing determinis-
+tic collapse and preserving generalization to novel tasks.
+Concurrently, the LCM endows the VLA model with
+temporal perception without the burden of long context
+modeling. It employs two lightweight structures: a Consis-
+tency Layer that ingests recent action chunks to model lo-
+cal consistency, and a Dynamic-Awareness module that dy-
+namicaly models historical sequence to infer task progress.
+The LCM learns a consistency constraint that injected into
+the policy input, without requiring any modification to the
+VLA pre-training paradigm. It enforces consistency with
+historical trajectory, and provides crucial progress aware-
+ness with negligible computational overhead.
+We conduct comprehensive evaluation across three sim-
+ulators and the real world. On LIBERO [25], OptimusVLA
+attains an average success rate of 98.6%, surpassing current
+SOTA baselines (e.g., π0.5 [12] and MemoryVLA [42]).
+On CALVIN [34], it improves over π0 by 13.5%, and it
+achieves 38% average success rate on RoboTwin 2.0 [5]
+Hard setting. In real-world evaluations, OptimusVLA ranks
+best on both the Generalization and Long-horizon suites,
+outperforming π0 by 42.9% and 52.4%, respectively, while
+delivering 2.9× inference speedup. These results indicate
+that memory-driven prior initialization and temporal con-
+straint can boost robustness of VLA models without sacri-
+ficing efficiency. Our contributions are as follows:
+• A novel Global Prior Memory that narrows the prior-
+target action distribution gap.
+By replacing isotropic
+noise with retrieved task-level prior, GPM significantly
+reduces NFE and lowers the risk of infeasible sampling.
+• A lightweight Local Consistency Memory that endows
+VLAs with temporal awareness. LCM dynamically mod-
+els recent actions to inject a consistency constraint, pro-
+viding progress-awareness without appreciable computa-
+tional overhead.
+• We propose a dual-memory VLA framework, Opti-
+musVLA, which driven by GPM and LCM. Extensive ex-
+periments results across 3 simulators and real-world show
+that OptimusVLA achieves higher performance with sub-
+stantially inference speedup.
+2. Preliminaries and Related Work
+Contemporary Vision–Language–Action (VLA) models
+typically divided into two categories: single-stream archi-
+tectures [14, 15, 29, 37, 60] and hierarchical architectures
+[1, 7, 12, 17, 36]. Single-stream architectures [22, 32, 58]
+employ a vision–language backbone and autoregressively
+generate discretized action tokens [11, 13]. To meet the
+high-frequency control demands of real-world scenarios,
+various efficiency techniques, such as parallel decoding [15,
+43], parameter quantization [48], and token compression
+[18, 20], have been adopted to increase inference speed.
+On the other hand, hierarchical approaches [21, 23, 54]
+contain a vision–language backbone for high-level, low-
+frequency planning, a generative policy [6, 53] for low-
+level, high-frequency action generation [1, 12, 50]. This de-
+composition substantially accelerates inference compared
+2
+
+
+Query
+Vision-Language Backbone
+Flow Policy
+Prior Head
+Consistency Layer
+Linear
+Linear
+Conv
+SSM
+σ
+σ
+Local Consistency 
+Memory
+Memory Bank
+J1
+J2
+Jk
+Image Observation
+Place all the fruits 
+on the plate.
+Instruction
+���
+...
+......
+sliding window
+Action Chunk
+H=10
+Linear
+Global Prior 
+Memory
+�= ����−�+ 1
+2
+(����−����)
+��= �+ �(�⊙
+�)
+Prior-Aware Sampler
+Figure 2. Overview of OptimusVLA framework. Given a task and the current observation, the Vision–Language backbone first encodes
+the inputs into a multimodal representation. GPM then retrieves a task-level prior based on this representation, while LBM dynamically
+encodes the historical action sequence to produce a consistency constraint. Finally, the flow policy denoises the initialization with an
+adaptive NFEs schedule to generate the action chunk.
+with purely autoregressive pipelines.
+Nevertheless, even
+with flow matching [24, 31], the policy typically requires
+multiple NFEs to reach high quality actions, which ulti-
+mately caps the achievable speedup.
+Conditional Flow Matching (CFM) trains a time-
+conditioned velocity field vθ(x, t) that transports the noise
+x0 ∼P0 to the target action x1 ∼P1. A common and sta-
+ble approach is to define an Optimal Transport (OT) path as
+a straight line:
+xt = (1 −t)x0 + tx1.
+(1)
+The target velocity ut along this path is constant, given by
+ut(xt | x0, x1) = x1 −x0. The learning objective is to train
+vθ to match this target velocity field:
+min
+θ
+Et∼U[0,1],x∼pt(x)
+ vθ
+ t, x) −ut(x)
+
+2
+2,
+(2)
+When P0 is isotropic Gaussian distribution and P1 is a
+structured action distribution, the source-target gap can be
+large, which in practice yields more number of function
+evaluations (NFE) to reach high-quality actions. To narrow
+the gap, we introduce Global Prior Memory, which replaces
+the Gaussian source by a task-level prior constructed from
+semantically similar action trajectories.
+On the other hand, mainstream work [1, 12, 14] formu-
+lates action generation in VLA as a Markov Decision Pro-
+cess, conditioning the model solely on the current observa-
+tion while ignoring the historical sequence. This Marko-
+vian assumption hampers phase awareness: the agent can-
+not discern task progress from visually similar states (e.g.,
+whether the drawer has not yet been opened or has already
+been closed), leading to suboptimal or inconsistent behav-
+iors [42]. To provide temporal context, some work [8, 28]
+adapt the VLM paradigm to sequence modeling, explicitly
+encoding long observation streams. While effective, these
+approaches substantially increase latency and memory us-
+age. Other methods simply concatenate past states [57] or
+actions [3] to the input, which lacks a global representa-
+tion of long-range temporal context [38–40]. Moreover, it
+misaligned the VLA model’s single-frame pre-training dis-
+tribution [14]. A different line of work employs working
+memory [23, 42] to dynamically model observation history.
+However, these designs typically rely on the VLM back-
+bone to represent the current multimodal information at ev-
+ery step; consequently, each memory update incurs a full
+VLM forward pass, creating a throughput bottleneck for
+fast control loops. In this paper, we propose Local Con-
+sistency Memory (LCM), a lightweight working memory
+that dynamically encodes the recent sequence with mini-
+mal inference overhead. LCM equips VLA policies with
+explicit progress awareness and temporal consistency with-
+out repeatedly invoking heavy VLM computations, thereby
+preserving real-time efficiency.
+3. OptimusVLA
+In this section, we first give an overview of our proposed
+OptimusVLA. Next, we introduce the details of Global
+Prior Memory (GPM) in Sec. 3.2. Subsequently, we elab-
+orate on how to implement the proposed Local Consistency
+3
+
+
+Memory (LCM) (Sec. 3.3). Finally, the training strategy of
+the OptimusVLA is explained in Sec 3.4.
+3.1. Overview of OptimusVLA
+As shown in Figure 2,
+OptimusVLA comprises Vi-
+sion–Language backbone [4, 26], flow policy [53], Global
+Prior Memory (GPM), and Local Consistency Memory
+(LCM). The Vision–Language backbone and flow policy
+are the standard components of a hierarchical VLA archi-
+tecture. GPM explicitly tackles the distributional gap be-
+tween the standard noise prior and the structured action dis-
+tribution, while LCM injects progress-aware temporal con-
+straints, jointly enhancing efficiency and robustness of ac-
+tion generation.
+Formally, given a natural-language instruction ℓand
+the current observation Ot, the multimodal representation
+Eemb is embedded by Vision-Language backbone VLM:
+Eemb ←VLM(Ot, ℓ)
+(3)
+where Ot typically consists of the proprioceptive state qt,
+and multi-view images I1
+t , I2
+t , . . . , In
+t .
+Subsequently, the multimodal representation Eemb is
+projected into a retrieval token zre, which queries the mem-
+ory bank in GPM to obtain a task-level prior action distri-
+bution Pre:
+Pre ←GPM(zre)
+(4)
+At time t, the GPM samples an action chunk ˆXt ∈
+RH×A ∼Pre with adaptive noise and NFE, where H is the
+chunk length and A is the action dimension. Concurrently,
+the LCM processes the last action chunk At−1 to yield a
+consistency bias Bt ∈RH×A, then this bias is injected to
+form the final policy input Xt:
+Bt ←LCM(At−1)
+(5)
+Xt = ˆXt + Bt
+(6)
+Finally, the flow policy pθ transforms Xt into action
+chunk at+1:t+H based on adaptive NFE N:
+at+1:t+H ←pθ(Xt, N)
+(7)
+3.2. Global Prior Memory
+Standard flow matching transports isotropic Gaussian noise
+to the action space [24, 31]. Due to the large discrepancy be-
+tween these distributions, this process requires many NFEs
+and risks collapsing to infeasible actions. In robotics, how-
+ever, similar tasks share related action distributions (e.g.,
+pick a cup and pick a plate). Motivated by this, our
+Global Prior Memory (GPM) stores, retrieves, and com-
+poses trajectories into task-level priors. This fundamentally
+relocates the generative starting point from N(0, I) to the
+neighborhood of the target manifold, thereby narrowing the
+prior-target gap.
+GPM is a long-term memory module composed of a
+Prior Head, a Memory Bank, and a Prior-Aware Sampler.
+Prior Head. A lightweight MLP projects the multimodal
+representation Eemb into a retrieval token zre:
+zre = PriorHead(Eemb)
+(8)
+Memory Bank.
+zre queries the Memory Bank, which
+stores M key-value pairs {zm, Jm}M
+m=1 of task embed-
+dings and their corresponding full trajectories. We com-
+pute cosine similarities and retrieve the k nearest trajecto-
+ries {Ji}k
+i=1 and their scores si:
+{Ji, si}k
+i=1 ←MemoryBank(zre)
+(9)
+Then we compute a normalized global similarity ¯s and soft-
+max weights αi:
+αi = softmax(si/τs),
+¯s =
+k
+X
+i=1
+αisi,
+(10)
+where τs is a temperature. For each retrieved trajectory Ji,
+we extract action blocks Ci ∈RH×A based on a sliding
+window. The task-level prior Pre = N(µ, diag(Var)) is
+then formed by a weighted average:
+µ =
+k
+X
+i=1
+αiCi,
+Var =
+k
+X
+i=1
+αi (Ci −µ)⊙2,
+(11)
+where ⊙2 denotes element-wise power.
+Prior-Aware Sampler. Subsequently, Prior-Aware Sam-
+pler samples the initialization with similarity-adaptive noise
+λ, and adaptive NFE N:
+λ = λmax −¯s+1
+2 (λmax −λmin),
+(12)
+N = Nmin +
+ 1 −¯s+1
+2
+
+(Nmax −Nmin),
+(13)
+ˆXt = µ + λ
+ ϵ ⊙
+√
+Var
+
+,
+ϵ ∼N(0, I),
+(14)
+where λmin, λmax, Nmin, Nmax are hyper-parameters.
+GPM draws the prior distribution into the vicinity of
+the target distribution, thereby drastically curtailing the re-
+quired NFEs and improving the inference efficiency of the
+flow policy. Moreover, by initializing from a reliable prior,
+it reduces the likelihood that sampled actions fall into infea-
+sible regions.
+3.3. Local Consistency Memory
+Standard VLAs, adhering to the Markovian assumption,
+lack explicit progress awareness [42] and suffer from jittery
+control. Our Local Consistency Memory (LCM) addresses
+this by dynamically modeling the action history to infer task
+progress and enforce temporal consistency, all with min-
+imal computational overhead. LCM serves as a working
+4
+
+
+Table 1. Performance comparison on LIBERO [25]. We report the
+average success rate on each task suite (500 rollouts).
+Method
+LIBERO
+Spatial
+Object
+Goal
+Long
+Avg.
+DP [6]
+78.3
+92.5
+68.3
+50.5
+72.4
+Octo [45]
+78.9
+85.7
+84.6
+51.1
+75.1
+SpatialVLA [37]
+88.2
+89.9
+78.6
+55.5
+78.1
+π0-FAST [36]
+96.4
+96.8
+88.6
+60.2
+85.5
+CogACT [17]
+97.2
+98.0
+90.2
+88.8
+93.6
+MemoryVLA [42]
+98.4
+98.4
+96.4
+93.4
+96.7
+OpenVLA-OFT [15]
+97.6
+98.4
+97.9
+94.5
+97.1
+OpenVLA [14]
+84.7
+88.4
+79.2
+53.7
+76.5
+UniVLA [3]
+95.4
+98.8
+93.6
+94.0
+95.4
+π0 [1]
+96.8
+98.8
+95.8
+85.2
+94.2
+π0.5 [12]
+98.8
+98.2
+98.0
+92.4
+96.9
+OptimusVLA
+99.6
+99.8
+98.4
+96.4
+98.6
+memory, comprising a Consistency Layer and a Dynamic
+Awareness Module.
+Consistency Layer.
+At time step t, the Consistency
+Layer incorporates the previous action chunk At−1
+=
+[at−H+1, . . . , at] ∈RH×A and employs a self-attention
+mechanism [47] to capture inter-action dependencies and
+constraints within the chunk:
+ˆBt−1 ←ConsistencyLayer(At−1)
+(15)
+Dynamic Awareness Module. This module is designed to
+capture inter-chunk temporal dynamics. It takes the repre-
+sentation ˆBt−1 and updates its internal state to predict the
+consistency bias Bt for the next time step (as in Eq. 5).
+We implement this module using a Mamba-based structure
+[9], which efficiently models long-range dependencies with
+linear complexity:
+Bt ←DynamicAwareness(ˆBt−1)
+(16)
+LCM focuses on the temporal dependencies of the cur-
+rent trajectory, converting consistency in the action flow
+into an additive constraint, thereby yielding smoother sam-
+pled trajectories.
+3.4. Training Details
+The training pipeline consists of three stages. First, we pre-
+train a hierarchical VLA model based on the architecture
+and training protocol of π0.5 [12]. Next, we train the Prior
+Head to learn task-discriminative representations from the
+batch via InfoNCE objective:
+LGPM = −Eq
+"
+log
+exp(sim(zre, z+)/τc)
+P
+j∈N(q) exp(sim(zre, zj)/τc)
+#
+(17)
+Table 2. Performance comparison on CALVIN [34]. We report
+the success rate of each track and average completion length (Avg.
+Len). † represents the result we reproduced.
+Method
+CALVIN (ABC →D)
+1/5
+2/5
+3/5
+4/5
+5/5
+Avg. Len
+RoboVLM [27]
+98.0
+93.6
+85.4
+77.8
+70.4
+4.25
+ReconVLA [44]
+95.6
+87.6
+76.9
+69.3
+64.1
+3.95
+OpenVLA [14]
+91.3
+77.8
+62.0
+52.1
+43.5
+3.27
+UniVLA [3]
+95.5
+85.8
+75.4
+66.9
+56.5
+3.80
+UP-VLA [52]
+92.8
+86.5
+81.5
+76.9
+69.9
+4.08
+RoboDual [2]
+94.4
+82.7
+72.1
+62.4
+54.4
+3.66
+Seer [46]
+96.3
+91.6
+86.1
+80.3
+74.0
+4.28
+VPP [10]
+95.7
+91.2
+86.3
+81.0
+75.0
+4.29
+π0 [1]
+93.8
+85.0
+76.7
+68.1
+59.9
+3.92
+π0.5
+† [12]
+94.4
+88.4
+85.3
+80.1
+76.1
+4.26
+OptimusVLA
+97.6
+93.2
+88.8
+85.7
+78.1
+4.45
+where sim(·) denotes cosine similarity, τc is a temperature
+parameter, and N(q) denotes the set of in-batch negative
+samples. Finally, we freeze GPM and train LCM to predict
+the residual required to bridge the gap between the global
+prior mean µt and the ground-truth action chunk A⋆
+t :
+B⋆
+t = A⋆
+t −µt
+(18)
+LLCM = E(At−1,A⋆
+t ,µt)∼D
+
+∥Bt −B⋆
+t ∥2
+2
+
+(19)
+where A⋆
+t and µt are the ground-truth action chunk and
+mean prior at timme t. More details are in Appendix.
+4. Experiments
+We conduct comprehensive experiments to validate Opti-
+musVLA, focusing on three pivotal research questions: Q1.
+Does OptimusVLA outperform state-of-the-art VLA mod-
+els on diverse simulation benchmarks? Q2. Does Opti-
+musVLA demonstrate superior efficiency and performance
+in real-world? Q3. How do GPM and LCM individually
+contribute to the performance of OptimusVLA?
+4.1. Evaluation on Simulation Benchmarks
+Simulation Benchmarks. To evaluate the robustness of
+OptimusVLA across diverse simulation environments, we
+conduct experiments on LIBERO [25], CALVIN [34], and
+RoboTwin 2.0 [5].
+LIBERO is organized into four task
+suites (Spatial, Object, Goal, and Long) with each contains
+10 tasks. We report the average success rate in each suite
+with 500 rollouts. CALVIN consists of 4 distinct environ-
+ments, and we train on 3 environments and testing on the
+held-out one (ABC →D). We report the success rate for
+each track, as well as the average length over 5 tasks, us-
+ing 500 rollouts. On RoboTwin 2.0, we randomly select 16
+5
+
+
+Table 3. Performance comparison on RoboTwin 2.0 [5]. We report per-task success rates (SR) and rank (RK) over 100 rollouts under Hard
+setting. † represents the result we reproduced. 16 tasks results are available in Appendix.
+Task
+RDT [30]
+ACT [56]
+DP [6]
+DP3 [51]
+π0 [1]
+π0.5
+†[12]
+OptimusVLA
+SR
+RK
+SR
+RK
+SR
+RK
+SR
+RK
+SR
+RK
+SR
+RK
+SR RK
+Click Alarmclock
+12%
+4
+4%
+7
+5%
+6
+14%
+3
+11%
+5
+18%
+2
+31% 1
+Click Bell
+9%
+3
+3%
+4
+0%
+5
+0%
+5
+3%
+4
+28%
+2
+46% 1
+Dump Bin Bigbin
+32%
+3
+1%
+6
+0%
+7
+53%
+1
+24%
+5
+29%
+4
+35% 2
+Open Laptop
+32%
+4
+0%
+6
+0%
+6
+7%
+5
+46%
+2
+38%
+3
+48% 1
+Place Bread Skillet
+1%
+3
+0%
+4
+0%
+4
+0%
+4
+1%
+4
+2%
+2
+4%
+1
+Place Container Plate
+17%
+4
+1%
+5
+0%
+6
+1%
+5
+45%
+1
+30%
+3
+37% 2
+Press Stapler
+24%
+4
+6%
+5
+0%
+7
+3%
+6
+29%
+3
+36%
+2
+45% 1
+Stack Bowls Two
+30%
+4
+0%
+6
+0%
+6
+6%
+5
+41%
+3
+49%
+2
+58% 1
+Average
+20%
+4
+2%
+6
+1%
+7
+11%
+5
+25%
+3
+29%
+2
+38% 1
+Table 4. Ablation study of GPM and LCM on LIBERO-Long,
+CALVIN, and Real-World Generalization Tasks.
+Ablation Setting
+Simulation
+Real-World
+GPM
+LCM
+LIBERO-Long
+CALVIN
+Generalization Tasks
+!
+!
+96.4
+4.45
+85.0
+!
+93.2 (↓3.3%)
+4.28 (↓3.8%)
+77.0 (↓9.4%)
+!
+94.8 (↓1.7%)
+4.38 (↓1.6%)
+79.5 (↓6.5%)
+92.4 (↓4.1%)
+4.26 (↓4.3%)
+75.0 (↓11.8%)
+tasks for evaluation, and test the models with 100 rollouts
+under the Hard (domain-randomized with clutter, lighting,
+textures, and height variations) settings.
+Implementation Details. OptimusVLA is initialized from
+the weights of π0.5 [12], and then augment it with the pro-
+posed GPM and LCM modules, resulting in 3.6B parame-
+ters in total. We train OptimusVLA on 8× NVIDIA A800
+GPUs with a global batch size of 512 for 30,000 steps. The
+learning rates on LIBERO, CALVIN, and RoboTwin are set
+to 5e-5. More details are provided in the Appendix. in
+Results on LIBERO. As shown in Table 1, OptimusVLA
+achieves an average success rate of 98.6% on LIBERO,
+surpassing existing state-of-the-art methods, including π0.5
+[12] and OpenVLA-OFT [15]. In particular, most of VLA
+models struggle on the LIBERO-Long suite due to error ac-
+cumulation over long sequences. OptimusVLA mitigates
+this via GPM, which retrieves task-specific priors to anchor
+the generative process. By initializing the flow closer to
+the target manifold, GPM not only stabilizes long-horizon
+generation but also drastically reduces the NFEs (3.2 for
+OptimusVLA vs. 10.0 for π0.5)
+Results on CALVIN. As shown in Table 2, OptimusVLA
+attains an average episode length of 4.45 on CALVIN, out-
+performing π0 [1] by 13.5% and surpassing π0.5 [12]. Un-
+der the ABC →D setting, π0 relies on task-agnostic Gaus-
+sian noise, which is brittle to the distribution shifts inherent
+in unseen environments. In contrast, OptimusVLA lever-
+Table 5. Ablation study on memory size of GPM. We report av-
+erage success rate on LIBERO-Long. Num. denotes the number
+of trajectories in the memory bank, k. denotes the number of re-
+trieved trajectories.
+Metric
+Num=6500
+Num=1300
+Num=130
+k=8
+k=16
+k=1
+k=8
+k=1
+k=8
+SR
+96.4
+94.8
+92.6
+95.2
+92.4
+93.6
+ages GPM to retrieve semantically similar trajectories from
+training data as initialization.
+This semantic anchoring
+allows the model to adapt to novel scenes by deforming
+a viable action prior rather than generating from scratch,
+thereby exhibiting superior zero-shot robustness.
+Results on RoboTwin 2.0.
+As shown in Table 3, Op-
+timusVLA achieves the average success rate of 38% on
+RoboTwin 2.0 Hard setting. In particular, it attains a 58%
+success rate on the Stack Bowls Two task, outperforming
+RDT [30] by +28% success rate. Bimanual manipulation
+demands high temporal and inter-arm consistency, whereas
+RDT lack explicit mechanisms for enforcing such dual-arm
+coherence, leading to a lower performance.
+In contrast,
+LCM provides the necessary consistency constraints with
+OptimusVLA, enforcing smooth, coordinated trajectories.
+4.2. Evaluation on Real-World
+Training and Evaluation Setting. To validate the effec-
+tiveness of the proposed OptimusVLA in real-world robotic
+manipulation, we evaluate Generalization Tasks and Long-
+horizon Tasks on GALAXEA R1 Lite robot. It is a 14-DoF
+bimanual platform, and we use both wrist-mounted and
+third-person cameras with an image resolution of 224×224.
+For the Generalization Tasks, we train on 100–150 expert
+demonstrations per task and evaluate each task with 50 roll-
+outs (25 with varying lighting conditions, and 25 with scene
+variations). For the Long-horizon Tasks, we use 200–300
+6
+
+
+Generalization Tasks
+Long-horizon Tasks
+OpenVLA
+OptimusVLA
+OpenVLA-OFT
+Pi0
+Pi05
+Stand bottle 
+upright
+Place all 
+fruits on plate
+Place 2 fruits
+in 2 position 
+Place cup and 
+apple on plate
+place 3 blocks
+on tablecloth
+Place cup on 
+tablecloth
+90
+84
+68
+80
+28
+Place plate on 
+tablecloth
+Place one fruit 
+on plate
+60
+44
+32
+36
+12
+74
+62
+42
+44
+22
+88
+78
+72
+78
+52
+64
+52
+44
+36
+16
+68
+56
+44
+48
+16
+64
+52
+48
+40
+12
+88
+76
+56
+68
+34
+Figure 3. Real-world task setup and evaluation results. We evaluate the performance of OptimusVLA against OpenVLA [14], OpenVLA-
+OFT [15], π0 [1], and π0.5 [12] on the Generalization Tasks and Long-horizon Tasks suites.
+6000
+10000
+14000
+18000
+22000
+26000
+30000
+Training Step
+85.0
+87.5
+90.0
+92.5
+95.0
+97.5
+100.0
+Success Rate (%)
+87.4
+94.4
+96.0
+97.0
+97.6
+98.8
+99.6
+85.4
+92.6
+93.8
+95.0
+96.6
+97.2
+98.8
+OptimusVLA
+0.5
+(a) LIBERO-Spatial
+6000
+10000
+14000
+18000
+22000
+26000
+30000
+Training Step
+90
+92
+94
+96
+98
+100
+Success Rate (%)
+91.6
+97.2
+98.4
+99.0
+99.8
+99.6
+99.8
+90.8
+96.6
+97.2
+97.8
+98.2
+98.0
+98.2
+OptimusVLA
+0.5
+(b) LIBERO-Object
+6000
+10000
+14000
+18000
+22000
+26000
+30000
+Training Step
+84
+86
+88
+90
+92
+94
+96
+98
+Success Rate (%)
+88.4
+93.6
+96.8
+97.6
+98.0
+98.4
+98.4
+85.8
+89.8
+93.2
+95.8
+96.2
+97.8
+98.0
+OptimusVLA
+0.5
+(c) LIBERO-Goal
+6000
+10000
+14000
+18000
+22000
+26000
+30000
+Training Step
+75
+80
+85
+90
+95
+Success Rate (%)
+81.4
+83.4
+89.4
+91.0
+93.6
+94.8
+96.4
+76.4
+81.0
+86.4
+87.6
+89.6
+91.2
+92.4
+OptimusVLA
+0.5
+(d) LIBERO-Long
+Figure 4. Training efficiency comparison between OptimusVLA
+and π0.5 [12]. Initialized from same weights, OptimusVLA attains
+strong performance with substantially fewer training steps.
+expert demonstrations per task for training and conduct 25
+rollouts per task for evaluation. In each rollout, the objects
+are randomly initialized at different positions. More details
+are provided in Appendix.
+Results on Real-world. As shown in Fig. 3, OptimusVLA
+achieves average success rates of 85.0% and 64.0% on the
+Generalization Tasks and Long-horizon Tasks, respectively.
+In particular, on the Generalization Tasks, OptimusVLA ex-
+hibits strong robustness to variations in lighting and scenes.
+We attribute this to GPM, which retrieves task-level priors
+conditioned on multimodal semantics, thereby rendering
+the policy robust to visual distractions. On Long-horizon
+Tasks that require bimanual manipulation of multiple ob-
+jects, OptimusVLA outperforms π0 by 52.4%. This show-
+cases the superior long-horizon action stability and coherent
+bimanual coordination of OptimusVLA.
+4.3. Ablation Study
+To elucidate the benefits brought by the proposed GPM and
+LCM to OptimusVLA, we conduct extensive ablation stud-
+OpenVLA
+OptimusVLA
+OpenVLA-OFT
+Pi0
+Pi05
+3.1x
+Inference time (ms)
+10 10
+3.2
+552
+2.9x
+10 10
+3.4
+(a) Inference efficiency on LIBERO.
+(b) Inference efficiency on Real-World.
+Inference time (ms)
+NFE
+NFE
+334
+187 133 112
+4.9x
+254
+137
+69 57 39
+6.5x
+Figure 5. Inference efficiency comparison on LIBERO and Real-
+World. OptimusVLA attains strong performance with substan-
+tially fewer inference time and NFEs.
+ies on simulation benchmark and Real-World.
+Ablation on GPM and LCM. As shown in Table 4, remov-
+ing GPM causes a catastrophic performance drop of 3.8%
+on CALVIN and 9.4% on the Generalization Tasks. It can
+be attributed to the fact that, without GPM, OptimusVLA
+collapses into a standard flow-based policy whose general-
+ization is impaired by the large gap between the prior and
+target distributions. This highlights the crucial role of GPM
+in enhancing the cross-environment and cross-scene gener-
+alization of OptimusVLA. Similarly, removing LCM causes
+a 1.7% drop on LIBERO-Long. This occurs because Opti-
+musVLA loses the ability to generate temporally consistent
+actions. It highlights the critical role of LCM in maintaining
+trajectory smoothness and progress awareness.
+Ablation on Memory size. As shown in Table 5, we con-
+duct experiments to investigate how the size of the mem-
+ory bank in GPM affect overall performance. We observe
+that performance on LIBERO-Long scales with the richness
+of the memory bank. Storing only one trajectory per task
+causes performance to degrade, as the prior becomes too
+deterministic. Moreover, retrieving a sufficiently large k
+(e.g., k = 8) is crucial. A small k overfits to a single re-
+trieved trajectory, while a larger k allows GPM to construct
+a robust Gaussian mixture prior, balancing specificity with
+exploratory potential.
+7
+
+
+�= 10
+�= 10
+�= 10
+�= 10
+�= 3
+�= 3
+�= 3
+�= 4
+s: 0.92
+�: 0.32
+�= 1
+s: 0.63
+s: 0.42
+s: 0.42
+s: 0.53
+s: 0.53
+s: 0.49
+s: 0.40
+�: 0.44
+�: 0.51
+�: 0.51
+�: 0.47
+�: 0.47
+�: 0.48
+�: 0.50
+�= 3
+�= 4
+�= 4
+�= 3
+�= 3
+�= 3
+�= 4
+�= 10
+�= 10
+�= 10
+�= 10
+�= 10
+�= 10
+�= 10
+�= 10
+�0.5
+OptimusVLA
+�0.5
+OptimusVLA
+Real-World Task: Place the red apple onto the plate.
+Simulation Task: Pick up the bbq sauce and place it in the basket.
+Similar observations
+Figure 6. Qualitative results of OptimusVLA on simulation task and Real-World task. Top: On simulation task, we visualize the retrieval
+similarity ¯s, adaptive noise scales λ, and NFEs N of key frames. Bottom: On Real-World task, we demonstrate the role of LCM in
+modeling temporal dependencies, whereas π0.5 struggles to distinguish between similar observations.
+4.4. Efficiency Analysis
+Training Efficiency. As illustrated in Fig. 4, we com-
+pare the performance of OptimusVLA and π0.5 on LIBERO
+under different numbers of training steps.
+The results
+show that OptimusVLA achieves an 97.6% success rate
+on LIBERO-Goal in just 18,000 steps, while π0.5 requires
+26,000 steps to reach a similar level. We attribute this ac-
+celeration to the task-level priors provided by GPM. Unlike
+standard approaches that map from uninformative isotropic
+noise to the action space, OptimusVLA initiates inference
+from retrieved priors. This strategy effectively places the
+initialization in the vicinity of the target manifold, thereby
+substantially reducing the complexity of the transformation.
+Inference Efficiency. As illustrated in Fig. 5, we com-
+pare the inference time and NFEs of OptimusVLA against
+π0.5 on simulation benchmark and Real-World.
+Opti-
+musVLA achieves 6.5× faster inference time and 3.1×
+fewer NFEs on LIBERO, while simultaneously delivering
+the highest task performance. We attribute these gains to
+the lightweight design of GPM and LCM, which intro-
+duce only minimal overhead yet substantially reduce the
+required NFEs—one of the primary factors governing in-
+ference speed.
+4.5. Qualitative Analysis
+In Fig. 6, we present qualitative examples from both simu-
+lation and real-world tasks. The top panel shows key frames
+of LIBERO task, Pick up the bbq sauce and place it in the
+basket. In π0.5, the prior distribution is Gaussian noise, and
+actions are sampled using a fixed NFEs. This introduces
+a potential risk that the sampled action is infeasible.
+In
+contrast, GPM enables OptimusVLA to start inference in
+the vicinity of the target action distribution, with adaptive
+noise scale and NFEs. This results in faster inference and
+improved performance. The bottom panel illustrates real-
+world case, Place the red apple onto the plate. The π0.5
+lacks temporal awareness, thus, it struggles to determine
+if the apple has already been correctly placed when faced
+with visually similar observations. In contrast, LCM im-
+poses a consistency constraint on OptimusVLA, leading to
+smoother generated trajectories and mitigating the adverse
+effects of similar observations.
+5. Conclusion
+In this paper, we propose a dual-memory VLA framework,
+OptimusVLA, which contain Global Prior Memory (GPM)
+and Local Consistency Memory (LCM) for robotic manip-
+ulation. GPM replaces Gaussian noise with task-level pri-
+ors retrieved from semantically similar trajectories, thereby
+shortening the generative path and reducing invalid samples
+without sacrificing generalization. LCM models short his-
+tories of executed actions to infer task progress and injects
+a learned consistency constraint that enforces temporal co-
+herence. Together, GPM and LCM improve efficiency and
+robustness of OptimusVLA. Extensive experiments in both
+simulation platforms and the real world demonstrate the su-
+8
+
+
+perior performance of OptimusVLA, together with substan-
+tially higher inference efficiency.
+References
+[1] Kevin Black, Noah Brown, Danny Driess, Adnan Esmail,
+Michael Equi, Chelsea Finn, Niccolo Fusai, Lachy Groom,
+Karol Hausman, Brian Ichter, et al. pi 0: A vision-language-
+action flow model for general robot control. arXiv preprint
+arXiv:2410.24164, 2024. 1, 2, 3, 5, 6, 7
+[2] Qingwen Bu, Hongyang Li, Li Chen, Jisong Cai, Jia Zeng,
+Heming Cui, Maoqing Yao, and Yu Qiao. Towards synergis-
+tic, generalized, and efficient dual-system for robotic manip-
+ulation. arXiv preprint arXiv:2410.08001, 2024. 5
+[3] Qingwen Bu, Yanting Yang, Jisong Cai, Shenyuan Gao,
+Guanghui Ren, Maoqing Yao, Ping Luo, and Hongyang Li.
+Univla: Learning to act anywhere with task-centric latent ac-
+tions. arXiv preprint arXiv:2505.06111, 2025. 3, 5
+[4] Gongwei Chen, Leyang Shen, Rui Shao, Xiang Deng, and
+Liqiang Nie. Lion: Empowering multimodal large language
+model with dual-level visual knowledge. In Proceedings of
+the IEEE/CVF Conference on Computer Vision and Pattern
+Recognition, pages 26540–26550, 2024. 1, 4
+[5] Tianxing Chen, Zanxin Chen, Baijun Chen, Zijian Cai, Yibin
+Liu, Zixuan Li, Qiwei Liang, Xianliang Lin, Yiheng Ge,
+Zhenyu Gu, et al.
+Robotwin 2.0: A scalable data gen-
+erator and benchmark with strong domain randomization
+for robust bimanual robotic manipulation.
+arXiv preprint
+arXiv:2506.18088, 2025. 1, 2, 5, 6, 3
+[6] Cheng Chi, Zhenjia Xu, Siyuan Feng, Eric Cousineau, Yilun
+Du, Benjamin Burchfiel, Russ Tedrake, and Shuran Song.
+Diffusion policy: Visuomotor policy learning via action dif-
+fusion. The International Journal of Robotics Research, 44
+(10-11):1684–1704, 2025. 1, 2, 5, 6, 3
+[7] Shengliang Deng, Mi Yan, Songlin Wei, Haixin Ma, Yuxin
+Yang, Jiayi Chen, Zhiqi Zhang, Taoyu Yang, Xuheng Zhang,
+Wenhao Zhang, et al. Graspvla: a grasping foundation model
+pre-trained on billion-scale synthetic action data.
+arXiv
+preprint arXiv:2505.03233, 2025. 2
+[8] Cunxin Fan, Xiaosong Jia, Yihang Sun, Yixiao Wang,
+Jianglan Wei, Ziyang Gong, Xiangyu Zhao, Masayoshi
+Tomizuka, Xue Yang, Junchi Yan, et al. Interleave-vla: En-
+hancing robot manipulation with interleaved image-text in-
+structions. arXiv preprint arXiv:2505.02152, 2025. 2, 3
+[9] Albert Gu and Tri Dao. Mamba: Linear-time sequence mod-
+eling with selective state spaces. In First conference on lan-
+guage modeling, 2024. 5
+[10] Yucheng Hu, Yanjiang Guo, Pengchao Wang, Xiaoyu Chen,
+Yen-Jen Wang, Jianke Zhang, Koushil Sreenath, Chaochao
+Lu, and Jianyu Chen. Video prediction policy: A general-
+ist robot policy with predictive visual representations. arXiv
+preprint arXiv:2412.14803, 2024. 5
+[11] Jiangyong Huang, Silong Yong, Xiaojian Ma, Xiongkun
+Linghu, Puhao Li, Yan Wang, Qing Li, Song-Chun Zhu,
+Baoxiong Jia, and Siyuan Huang. An embodied generalist
+agent in 3d world. arXiv preprint arXiv:2311.12871, 2023.
+2
+[12] Physical Intelligence, Kevin Black, Noah Brown, James
+Darpinian, Karan Dhabalia, Danny Driess, Adnan Esmail,
+Michael Equi, Chelsea Finn, Niccolo Fusai, et al. pi05: a
+vision-language-action model with open-world generaliza-
+tion. arXiv preprint arXiv:2504.16054, 2025. 1, 2, 3, 5,
+6, 7
+[13] Yunfan Jiang, Agrim Gupta, Zichen Zhang, Guanzhi Wang,
+Yongqiang Dou, Yanjun Chen, Li Fei-Fei, Anima Anandku-
+mar, Yuke Zhu, and Linxi Fan. Vima: General robot manip-
+ulation with multimodal prompts. In NeurIPS 2022 Founda-
+tion Models for Decision Making Workshop, 2022. 1, 2
+[14] Moo Jin Kim, Karl Pertsch, Siddharth Karamcheti, Ted Xiao,
+Ashwin Balakrishna, Suraj Nair, Rafael Rafailov, Ethan
+Foster, Grace Lam, Pannag Sanketi, et al.
+Openvla: An
+open-source vision-language-action model. arXiv preprint
+arXiv:2406.09246, 2024. 1, 2, 3, 5, 7
+[15] Moo Jin Kim, Chelsea Finn, and Percy Liang. Fine-tuning
+vision-language-action models: Optimizing speed and suc-
+cess. arXiv preprint arXiv:2502.19645, 2025. 2, 5, 6, 7
+[16] Hao Li, Qi Lv, Rui Shao, Xiang Deng, Yinchuan Li, Jianye
+Hao, and Liqiang Nie. Star: Learning diverse robot skill ab-
+stractions through rotation-augmented vector quantization.
+In International Conference on Machine Learning, 2025. 1
+[17] Qixiu Li, Yaobo Liang, Zeyu Wang, Lin Luo, Xi Chen,
+Mozheng Liao, Fangyun Wei, Yu Deng, Sicheng Xu,
+Yizhong Zhang, et al.
+Cogact:
+A foundational vision-
+language-action model for synergizing cognition and action
+in robotic manipulation. arXiv preprint arXiv:2411.19650,
+2024. 2, 5
+[18] Wei Li, Renshan Zhang, Rui Shao, Jie He, and Liqiang
+Nie.
+Cogvla:
+Cognition-aligned vision-language-action
+model via instruction-driven routing & sparsification. arXiv
+preprint arXiv:2508.21046, 2025. 1, 2
+[19] Wei Li, Renshan Zhang, Rui Shao, Zhijian Fang, Kai-
+wen Zhou, Zhuotao Tian, and Liqiang Nie.
+Semanticvla:
+Semantic-aligned sparsification and enhancement for effi-
+cient robotic manipulation. In Proceedings of the AAAI Con-
+ference on Artificial Intelligence, 2026. 1
+[20] Xinghang Li, Minghuan Liu, Hanbo Zhang, Cunjun Yu, Jie
+Xu, Hongtao Wu, Chilam Cheang, Ya Jing, Weinan Zhang,
+Huaping Liu, et al. Vision-language foundation models as
+effective robot imitators. arXiv preprint arXiv:2311.01378,
+2023. 1, 2
+[21] Zaijing Li, Yuquan Xie, Rui Shao, Gongwei Chen, Dong-
+mei Jiang, and Liqiang Nie.
+Optimus-1:
+Hybrid mul-
+timodal memory empowered agents excel in long-horizon
+tasks. arXiv preprint arXiv:2408.03615, 2024. 2
+[22] Zaijing Li, Yuquan Xie, Rui Shao, Gongwei Chen, Weili
+Guan, Dongmei Jiang, Yaowei Wang, and Liqiang Nie.
+Optimus-3:
+Dual-router aligned mixture-of-experts agent
+with dual-granularity reasoning-aware policy optimization.
+arXiv preprint arXiv:2506.10357, 2025. 2
+[23] Zaijing Li, Yuquan Xie, Rui Shao, Gongwei Chen, Dongmei
+Jiang, and Liqiang Nie. Optimus-2: Multimodal minecraft
+agent with goal-observation-action conditioned policy.
+In
+Proceedings of the IEEE/CVF Conference on Computer Vi-
+sion and Pattern Recognition (CVPR), pages 9039–9049,
+2025. 2, 3
+9
+
+
+[24] Yaron Lipman, Ricky TQ Chen, Heli Ben-Hamu, Maximil-
+ian Nickel, and Matt Le. Flow matching for generative mod-
+eling. arXiv preprint arXiv:2210.02747, 2022. 3, 4
+[25] Bo Liu, Yifeng Zhu, Chongkai Gao, Yihao Feng, Qiang Liu,
+Yuke Zhu, and Peter Stone. Libero: Benchmarking knowl-
+edge transfer for lifelong robot learning. Advances in Neural
+Information Processing Systems, 36:44776–44791, 2023. 1,
+2, 5
+[26] Haotian Liu, Chunyuan Li, Qingyang Wu, and Yong Jae Lee.
+Visual instruction tuning. Advances in neural information
+processing systems, 36, 2024. 1, 4
+[27] Huaping Liu, Xinghang Li, Peiyan Li, Minghuan Liu, Dong
+Wang, Jirong Liu, Bingyi Kang, Xiao Ma, Tao Kong, and
+Hanbo Zhang. Towards generalist robot policies: What mat-
+ters in building vision-language-action models. 2025. 5
+[28] Huaping Liu, Xinghang Li, Peiyan Li, Minghuan Liu, Dong
+Wang, Jirong Liu, Bingyi Kang, Xiao Ma, Tao Kong, and
+Hanbo Zhang. Towards generalist robot policies: What mat-
+ters in building vision-language-action models. 2025. 2, 3
+[29] Jiaming Liu, Hao Chen, Pengju An, Zhuoyang Liu, Ren-
+rui Zhang, Chenyang Gu, Xiaoqi Li, Ziyu Guo, Sixiang
+Chen, Mengzhen Liu, et al. Hybridvla: Collaborative diffu-
+sion and autoregression in a unified vision-language-action
+model. arXiv preprint arXiv:2503.10631, 2025. 2
+[30] Songming Liu, Lingxuan Wu, Bangguo Li, Hengkai Tan,
+Huayu Chen, Zhengyi Wang, Ke Xu, Hang Su, and Jun Zhu.
+Rdt-1b: a diffusion foundation model for bimanual manipu-
+lation. arXiv preprint arXiv:2410.07864, 2024. 6, 3
+[31] Xingchao Liu, Chengyue Gong, and Qiang Liu.
+Flow
+straight and fast: Learning to generate and transfer data with
+rectified flow. arXiv preprint arXiv:2209.03003, 2022. 2, 3,
+4
+[32] Yibo Lyu, Rui Shao, Gongwei Chen, Yijie Zhu, Weili Guan,
+and Liqiang Nie. Puma: Layer-pruned language model for
+efficient unified multimodal retrieval with modality-adaptive
+learning. In Proceedings of the 33rd ACM International Con-
+ference on Multimedia, pages 7653–7662, 2025. 2
+[33] Xiao Ma, Sumit Patidar, Iain Haughton, and Stephen James.
+Hierarchical diffusion policy for kinematics-aware multi-
+task robotic manipulation. In Proceedings of the IEEE/CVF
+Conference on Computer Vision and Pattern Recognition,
+pages 18081–18090, 2024. 2
+[34] Oier Mees, Lukas Hermann, Erick Rosete-Beas, and Wol-
+fram Burgard.
+Calvin:
+A benchmark for language-
+conditioned policy learning for long-horizon robot manip-
+ulation tasks. IEEE Robotics and Automation Letters, 7(3):
+7327–7334, 2022. 1, 2, 5
+[35] Valerio Ortenzi, Naresh Marturi, Michael Mistry, Jef-
+frey Kuo, and Rustam Stolkin.
+Vision-based framework
+to estimate robot configuration and kinematic constraints.
+IEEE/ASME Transactions on Mechatronics, 23(5):2402–
+2412, 2018. 2
+[36] Karl Pertsch, Kyle Stachowicz, Brian Ichter, Danny Driess,
+Suraj Nair, Quan Vuong, Oier Mees, Chelsea Finn, and
+Sergey Levine. Fast: Efficient action tokenization for vision-
+language-action models. arXiv preprint arXiv:2501.09747,
+2025. 2, 5
+[37] Delin Qu, Haoming Song, Qizhi Chen, Yuanqi Yao, Xinyi
+Ye, Yan Ding, Zhigang Wang, JiaYuan Gu, Bin Zhao,
+Dong Wang, et al. Spatialvla: Exploring spatial represen-
+tations for visual-language-action model.
+arXiv preprint
+arXiv:2501.15830, 2025. 1, 2, 5
+[38] Rui Shao, Xiangyuan Lan, Jiawei Li, and Pong C Yuen.
+Multi-adversarial discriminative deep domain generalization
+for face presentation attack detection.
+In Proceedings of
+the IEEE/CVF conference on computer vision and pattern
+recognition, pages 10023–10031, 2019. 3
+[39] Rui Shao, Tianxing Wu, and Ziwei Liu.
+Detecting and
+grounding multi-modal media manipulation. In Proceedings
+of the IEEE/CVF Conference on Computer Vision and Pat-
+tern Recognition, pages 6904–6913, 2023.
+[40] Rui Shao, Tianxing Wu, Jianlong Wu, Liqiang Nie, and Zi-
+wei Liu. Detecting and grounding multi-modal media manip-
+ulation and beyond. IEEE Transactions on Pattern Analysis
+and Machine Intelligence, 2024. 3
+[41] Rui Shao, Wei Li, Lingsen Zhang, Renshan Zhang, Zhiyang
+Liu, Ran Chen, and Liqiang Nie. Large vlm-based vision-
+language-action models for robotic manipulation: A survey.
+arXiv preprint arXiv:2508.13073, 2025. 1
+[42] Hao Shi, Bin Xie, Yingfei Liu, Lin Sun, Fengrong Liu,
+Tiancai Wang, Erjin Zhou, Haoqiang Fan, Xiangyu Zhang,
+and Gao Huang. Memoryvla: Perceptual-cognitive memory
+in vision-language-action models for robotic manipulation.
+arXiv preprint arXiv:2508.19236, 2025. 2, 3, 4, 5
+[43] Wenxuan Song, Jiayi Chen, Pengxiang Ding, Han Zhao, Wei
+Zhao, Zhide Zhong, Zongyuan Ge, Jun Ma, and Haoang
+Li.
+Accelerating vision-language-action model integrated
+with action chunking via parallel decoding. arXiv preprint
+arXiv:2503.02310, 2025. 1, 2
+[44] Wenxuan Song, Ziyang Zhou, Han Zhao, Jiayi Chen, Pengx-
+iang Ding, Haodong Yan, Yuxin Huang, Feilong Tang,
+Donglin Wang, and Haoang Li. Reconvla: Reconstructive
+vision-language-action model as effective robot perceiver.
+arXiv preprint arXiv:2508.10333, 2025. 5
+[45] Octo Model Team, Dibya Ghosh, Homer Walke, Karl
+Pertsch, Kevin Black, Oier Mees, Sudeep Dasari, Joey
+Hejna,
+Tobias Kreiman,
+Charles Xu,
+et al.
+Octo:
+An open-source generalist robot policy.
+arXiv preprint
+arXiv:2405.12213, 2024. 5
+[46] Yang Tian, Sizhe Yang, Jia Zeng, Ping Wang, Dahua Lin,
+Hao Dong, and Jiangmiao Pang. Predictive inverse dynamics
+models are scalable learners for robotic manipulation. arXiv
+preprint arXiv:2412.15109, 2024. 5
+[47] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszko-
+reit, Llion Jones, Aidan N. Gomez, Łukasz Kaiser, and Illia
+Polosukhin.
+Attention is all you need.
+page 6000–6010,
+2017. 5
+[48] Hongyu Wang, Chuyan Xiong, Ruiping Wang, and Xilin
+Chen.
+Bitvla:
+1-bit vision-language-action models for
+robotics manipulation.
+arXiv preprint arXiv:2506.07530,
+2025. 2
+[49] Yihao Wang, Pengxiang Ding, Lingxiao Li, Can Cui, Zirui
+Ge, Xinyang Tong, Wenxuan Song, Han Zhao, Wei Zhao,
+Pengxu Hou, et al.
+Vla-adapter: An effective paradigm
+10
+
+
+for tiny-scale vision-language-action model. arXiv preprint
+arXiv:2509.09372, 2025. 1
+[50] Junjie Wen, Yichen Zhu, Jinming Li, Minjie Zhu, Zhibin
+Tang, Kun Wu, Zhiyuan Xu, Ning Liu, Ran Cheng, Chaomin
+Shen, et al.
+Tinyvla: Towards fast, data-efficient vision-
+language-action models for robotic manipulation.
+IEEE
+Robotics and Automation Letters, 2025. 2
+[51] Yanjie Ze, Gu Zhang, Kangning Zhang, Chenyuan Hu,
+Muhan Wang, and Huazhe Xu. 3d diffusion policy: Gen-
+eralizable visuomotor policy learning via simple 3d repre-
+sentations. arXiv preprint arXiv:2403.03954, 2024. 6, 3
+[52] Jianke Zhang, Yanjiang Guo, Yucheng Hu, Xiaoyu Chen, Xi-
+ang Zhu, and Jianyu Chen. Up-vla: A unified understanding
+and prediction model for embodied agent.
+arXiv preprint
+arXiv:2501.18867, 2025. 5
+[53] Qinglun Zhang, Zhen Liu, Haoqiang Fan, Guanghui Liu,
+Bing Zeng, and Shuaicheng Liu. Flowpolicy: Enabling fast
+and robust 3d flow-based policy via consistency flow match-
+ing for robot manipulation. In Proceedings of the AAAI Con-
+ference on Artificial Intelligence, pages 14754–14762, 2025.
+1, 2, 4
+[54] Renshan Zhang, Rui Shao, Gongwei Chen, Miao Zhang,
+Kaiwen Zhou, Weili Guan, and Liqiang Nie. Falcon: Resolv-
+ing visual redundancy and fragmentation in high-resolution
+multimodal large language models via visual registers. In
+Proceedings of the IEEE/CVF International Conference on
+Computer Vision, pages 23530–23540, 2025. 2
+[55] Wenyao Zhang, Hongsi Liu, Zekun Qi, Yunnan Wang, Xin-
+qiang Yu, Jiazhao Zhang, Runpei Dong, Jiawei He, Fan
+Lu, He Wang, et al.
+Dreamvla: a vision-language-action
+model dreamed with comprehensive world knowledge. arXiv
+preprint arXiv:2507.04447, 2025. 1
+[56] Tony Z Zhao, Vikash Kumar, Sergey Levine, and Chelsea
+Finn.
+Learning fine-grained bimanual manipulation with
+low-cost hardware. arXiv preprint arXiv:2304.13705, 2023.
+6, 3
+[57] Ruijie Zheng, Yongyuan Liang, Shuaiyi Huang, Jianfeng
+Gao, Hal Daum´e III, Andrey Kolobov, Furong Huang, and
+Jianwei Yang. Tracevla: Visual trace prompting enhances
+spatial-temporal awareness for generalist robotic policies.
+arXiv preprint arXiv:2412.10345, 2024. 3
+[58] Xurui Zhou, Gongwei Chen, Yuquan Xie, Zaijing Li, Kai-
+wen Zhou, Shuai Wang, Shuo Yang, Zhuotao Tian, and Rui
+Shao. Hiconagent: History context-aware policy optimiza-
+tion for gui agents. arXiv preprint arXiv:2512.01763, 2025.
+2
+[59] Yijie Zhu, Rui Shao, Ziyang Liu, Jie He, Jizhihui Liu, Ji-
+uru Wang, and Zitong Yu. H-gar: A hierarchical interaction
+framework via goal-driven observation-action refinement for
+robotic manipulation. In Proceedings of the AAAI Confer-
+ence on Artificial Intelligence, 2026. 1
+[60] Brianna Zitkovich, Tianhe Yu, Sichun Xu, Peng Xu, Ted
+Xiao, Fei Xia, Jialin Wu, Paul Wohlhart, Stefan Welker,
+Ayzaan Wahid, et al. Rt-2: Vision-language-action models
+transfer web knowledge to robotic control. In Conference on
+Robot Learning, pages 2165–2183. PMLR, 2023. 2
+11
+
+
+Global Prior Meets Local Consistency: Dual-Memory Augmented
+Vision-Language-Action Model for Efficient Robotic Manipulation
+Supplementary Material
+The supplementary document is organized as follows:
+• Sec. A: Limitation and Future Work.
+• Sec. B: Global Prior Memory.
+• Sec. C: Training Details.
+• Sec. D: Evaluation.
+• Sec. E: Case Study.
+A. Limitation and Future Work
+Although OptimusVLA improves both efficiency and ro-
+bustness of VLA model through Global Prior Memory
+and Local Consistency Memory, several limitations remain.
+First, the effectiveness of GPM is inherently constrained by
+the coverage and quality of the trajectory memory bank.
+When the current task or scene substantially departs from
+stored experiences, the retrieved priors may be misleading,
+potentially biasing the VLA model toward suboptimal be-
+haviors. Second, LCM focuses on local, action-centric tem-
+poral coherence and operates on fixed-length chunks. While
+this design keeps the overhead small, it may be insufficient
+for tasks that require reasoning over very long horizons,
+multi-stage dependencies, or delayed effects.
+A natural direction is to develop adaptive memory mech-
+anisms, where the GPM bank is updated online with con-
+solidation, forgetting, and uncertainty-aware retrieval, en-
+abling continual learning and more robust behavior under
+distribution shift. Another avenue is to jointly train GPM,
+LCM, and the flow policy end-to-end. These are remains as
+future work for this paper.
+B. Global Prior Memory
+B.1. Preliminaries
+We begin from Conditional Flow Matching (CFM) for ac-
+tion generation. Let x0 ∼P0 be a source sample (typically
+noise) and x1 ∼P1 an action from the data distribution.
+CFM defines a straight-line probability path between distri-
+butions:
+xt = (1 −t)x0 + tx1,
+t ∈[0, 1],
+(20)
+implying a constant target velocity field ut(xt | x0, x1) =
+x1 −x0. The flow policy vθ(t, x) is trained to regress this
+vector field by minimizing:
+LCFM(θ) = Et∼U[0,1], x0∼P0, x1∼P1
+vθ(t, xt)−(x1−x0)
+2
+2.
+(21)
+At inference, actions are generated by solving the Ordinary
+Differential Equation (ODE) dxt/dt = vθ(t, xt). Standard
+approaches set the source distribution P0 = N(0, I) during
+both training and inference. However, mapping isotropic
+Gaussian noise to the complex manifold of robotic actions
+requires a high Number of Function Evaluations (NFE). In
+OptimusVLA, we maintain P0 = N(0, I) during the pre-
+training of the flow policy to learn a generalizable vector
+field. Crucially, at inference time, GPM intervenes in this
+initialization stage. We construct a task-level prior Pre from
+retrieved memories and replace the standard noise source
+with Pre. This places the starting point of the flow ODE
+significantly closer to the target data manifold, enabling ef-
+ficient generation with reduced NFE.
+B.2. Offline Construction
+Let D
+=
+{(O(m), ℓ(m), J(m))}M
+m=1 be a dataset of
+episodes, where J(m) = {a(m)
+0
+, . . . , a(m)
+Tm−1} is the dense
+action sequence. We employ the pre-trained VLM back-
+bone to extract a compact representation for each episode.
+Specifically, we perform a forward pass to obtain multi-
+modal prefix tokens H(m) ∈RL×Dvlm and compute a
+mean-pooled embedding e(m):
+e(m) = 1
+L
+L
+X
+j=1
+H(m)
+j
+∈RDvlm.
+(22)
+This embedding is projected by the Prior Head fhead (a 2-
+layer MLP) into a normalized task embedding:
+zm = fhead(e(m)),
+˜zm =
+zm
+∥zm∥2
+∈RDz.
+(23)
+The Prior Head is trained via an InfoNCE objective to en-
+sure that embeddings from the same semantic task are clus-
+tered together while distinct tasks are separated. Formally,
+for a query zi, the loss is:
+LInfoNCE = −log
+P
+j∈P(i),j̸=i exp(⟨˜zi, ˜zj⟩/τc)
+P
+k∈A(i),k̸=i exp(⟨˜zi, ˜zk⟩/τc),
+(24)
+where P(i) is the set of positive indices (same task) and
+A(i) includes all indices in the batch. After training, we
+freeze fhead and construct a Key-Value Memory Bank:
+M =
+
+(˜zm, J(m), meta(m))
+	M
+m=1,
+(25)
+1
+
+
+where meta(m) contains trajectory metadata (length, chunk-
+ing parameters). For efficient retrieval, we build a FAISS
+IndexFlatIP index over the keys {˜zm}.
+B.3. Online Retrieval and Prior Construction
+At inference time t, given observation Ot and instruction ℓ,
+the VLM outputs current tokens Ht. We compute the query
+token ˜zre similarly:
+et = 1
+L
+L
+X
+j=1
+Ht,j,
+˜zre =
+fhead(et)
+∥fhead(et)∥2
+.
+(26)
+Querying the memory bank yields the top-k nearest trajec-
+tories with cosine similarity scores si = ⟨˜zre, ˜zi⟩. We com-
+pute soft weights αi and a global similarity metric ¯s:
+αi =
+exp(si/τs)
+Pk
+j=1 exp(sj/τs)
+,
+¯s =
+k
+X
+i=1
+αisi.
+(27)
+Here, ¯s ∈[−1, 1] serves as a confidence indicator for the
+adaptive scheduler.
+To construct the action prior, we align the retrieved full
+trajectories Ji to the current execution progress. We main-
+tain a progress scalar ρt ∈[0, 1] and extract the relevant
+action chunk Ci from each neighbor Ji. Using sliding win-
+dows of length H0 and stride ∆, we identify the window
+index ui = ⌊ρt · (N (i)
+chunks −1)⌋and extract:
+Ci = Resample
+ Ji[ui · ∆: ui · ∆+ H0]
+
+∈RH×A. (28)
+If the retrieved chunk length H0 differs from the model’s
+horizon H, we perform linear interpolation to match dimen-
+sions. The task-level prior Pre is then modeled as a Gaus-
+sian Mixture approximated by a single Moment-Matched
+Gaussian N(µ, Σ). The mean µ and diagonal covariance
+Σ = diag(Var) are:
+µ =
+k
+X
+i=1
+αiCi,
+Var =
+k
+X
+i=1
+αi(Ci −µ)⊙2,
+(29)
+where operations are element-wise. We enforce a minimum
+variance floor σ2
+min to prevent collapse.
+B.4. Similarity-Adaptive Sampling
+GPM dynamically adjusts the generative process based on
+retrieval confidence ¯s. We define monotonic mappings for
+the noise scale λ and discretization steps N:
+λ(¯s) = λmax −¯s + 1
+2
+(λmax −λmin),
+(30)
+N(¯s) = Round
+
+Nmin +
+
+1 −¯s + 1
+2
+
+(Nmax −Nmin)
+
+.
+(31)
+Table 6. Hyperparameter setting for each training phase.
+Hyperparameter
+Stage-1
+Stage-2
+Stage-3
+Optimizer
+AdamW
+AdamW
+AdamW
+Learning Rate
+5e-5
+1e-4
+1e-4
+Steps
+30000
+1000
+1000
+Batch Size
+512
+64
+64
+Warm Up Ratio
+0.10
+-
+-
+Ema Decay
+0.999
+-
+-
+When retrieval confidence is high (¯s ≈1), λ decreases (re-
+lying more on the retrieved mean) and N decreases (eas-
+ier transport); conversely, for novel scenarios (¯s ≈0), the
+model gracefully falls back to higher noise and more com-
+pute steps. The initialization ˆXt for the flow policy is sam-
+pled as:
+ϵ ∼N(0, I),
+ˆXt = µ + λ(¯s) ·
+ ϵ ⊙
+√
+Var
+
+.
+(32)
+This ˆXt replaces the standard Gaussian noise x0 in Eq. 21.
+B.5. Session-Level Caching
+To minimize latency, we implement a MemorySession
+module.
+Retrieval is performed once at the start of an
+episode (or when significant task drift is detected). The top-
+k trajectory indices and weights are cached. At each subse-
+quent step t, the session efficiently gathers the time-aligned
+chunks Ci based on ρt and computes Eq. 29 without re-
+querying the FAISS index, ensuring negligible overhead.
+C. Training Details
+We now provide a more detailed description of the three-
+stage training pipeline used to obtain OptimusVLA. The
+hyperparameter settings are shown in Table 6.
+C.1. Stage I: Hierarchical VLA Pre-training
+In
+the
+first
+stage,
+we
+pretrain
+a
+hierarchical
+Vi-
+sion–Language–Action model following the architecture
+and training protocol of π0.5 [12]. At this point, neither
+Global Prior Memory (GPM) nor Local Consistency Mem-
+ory (LCM) is attached; the goal is to obtain a strong base
+VLA that serves as the backbone for subsequent stages.
+Given an instruction ℓand observation Ot, the Vi-
+sion–Language backbone VLM produces a multimodal rep-
+resentation Eemb = VLM(Ot, ℓ), which is fed into the flow
+policy. We extract ground-truth action chunks A⋆
+t ∈RH×A
+from the dataset and train the flow policy pθ using a Condi-
+tional Flow Matching (CFM) objective.
+C.2. Stage II: GPM Training
+In the second stage, we attach a lightweight Prior Head on
+top of the pretrained Vision–Language backbone. All pa-
+2
+
+
+Table 7. Performance comparison on RoboTwin 2.0 [5]. We report per-task success rates (SR) and rank (RK) over 100 rollouts under Hard
+setting. † represents the result we reproduced.
+Task
+RDT [30]
+ACT [56]
+DP [6]
+DP3 [51]
+π0 [1]
+π0.5
+†[12]
+OptimusVLA
+SR
+RK
+SR
+RK
+SR
+RK
+SR
+RK
+SR
+RK
+SR
+RK
+SR RK
+Click Alarmclock
+12%
+4
+4%
+7
+5%
+6
+14%
+3
+11%
+5
+18%
+2
+31% 1
+Click Bell
+9%
+3
+3%
+4
+0%
+5
+0%
+5
+3%
+4
+28%
+2
+46% 1
+Dump Bin Bigbin
+32%
+3
+1%
+6
+0%
+7
+53%
+1
+24%
+5
+29%
+4
+35% 2
+Open Laptop
+32%
+4
+0%
+6
+0%
+6
+7%
+5
+46%
+2
+38%
+3
+48% 1
+Place Bread Skillet
+1%
+3
+0%
+4
+0%
+4
+0%
+4
+1%
+4
+2%
+2
+4%
+1
+Place Container Plate
+17%
+4
+1%
+5
+0%
+6
+1%
+5
+45%
+1
+30%
+3
+37% 2
+Press Stapler
+24%
+4
+6%
+5
+0%
+7
+3%
+6
+29%
+3
+36%
+2
+45% 1
+Stack Bowls Two
+30%
+4
+0%
+6
+0%
+6
+6%
+5
+41%
+3
+49%
+2
+58% 1
+Beat Block Hammer
+37%
+1
+3%
+5
+0%
+6
+8%
+4
+21%
+3
+21%
+3
+26% 2
+Lift Pot
+9%
+4
+0%
+5
+0%
+5
+0%
+5
+36%
+1
+28%
+3
+31% 2
+Move Playingcard Away
+11%
+4
+0%
+6
+0%
+6
+3%
+5
+22%
+3
+25%
+2
+32% 1
+Open Microwave
+20%
+5
+0%
+6
+0%
+6
+22%
+4
+50%
+1
+39%
+3
+41% 2
+Pick Diverse Bottles
+0%
+4
+0%
+4
+0%
+4
+1%
+3
+6%
+2
+6%
+2
+7%
+1
+Turn Switch
+15%
+3
+2%
+6
+1%
+7
+8%
+5
+23%
+1
+11%
+4
+16% 2
+Place Object Stand
+5%
+3
+0%
+4
+0%
+4
+0%
+4
+11%
+2
+11%
+2
+13% 1
+Stack Blocks Two
+2%
+3
+0%
+5
+0%
+5
+0%
+5
+1%
+4
+5%
+2
+11% 1
+Average
+16%
+4
+1%
+6
+1%
+6
+8%
+5
+23%
+3
+24%
+2
+30% 1
+rameters of the base VLA model are frozen, and only the
+Prior Head is updated.
+Training Procedure.
+We train the Prior Head to mini-
+mize the task-contrastive loss LInfoNCE (Eq. 24). Crucially,
+to ensure the objective is computable and robust, we em-
+ploy a Task-Pair Batch Sampler. Unlike standard random
+sampling, this sampler groups the training data by task ID
+and constructs mini-batches such that each batch contains
+at least two trajectories from the same task.
+This strictly batched sampling strategy guarantees that
+every anchor sample has at least one positive pair within
+the current batch (in-batch positives), while all trajectories
+from other tasks serve as hard negatives. We optimize the
+head using AdamW with a learning rate of 1×10−4, a batch
+size of 64, and a temperature τc = 0.07 for 20 epochs.
+C.3. Stage III: LCM Training
+In the final stage, we train the LCM. The VLM backbone,
+flow policy, and GPM are all frozen.
+Training Targets. LCM is trained to predict the residual
+needed to bridge the gap between the global prior and the
+ground truth. For the time step t, we first retrieve the top-k
+priors using GPM and compute the Gaussian mean µt (as
+defined in Eq. (29)). The regression target is:
+B⋆
+t = A⋆
+t −µt.
+(33)
+Optimization. We unroll the LCM model along the trajec-
+tory. The model takes the previous action chunk At−1 as in-
+put. To ensure robustness during the initial inference steps
+(where no history exists), we employ a cold-start strategy
+during training: with probability pcold, we mask At−1 with
+zeros, forcing the model to rely solely on internal dynamics
+or output a neutral bias. The loss is the MSE between the
+predicted bias Bt and the target B⋆
+t .
+D. Evaluation
+D.1. Evaluation on RoboTwin 2.0
+RoboTwin 2.0 defines a standardized bimanual manipula-
+tion benchmark built on the RoboTwin-OD object library,
+which contains 731 annotated objects from 147 categories,
+and a pre-collected dataset of over 100k expert dual-arm
+trajectories. The benchmark spans 50 collaborative dual-
+arm tasks instantiated on five distinct robot embodiments.
+For the main simulation protocol, each task is trained in
+a single-task manner on the Aloha–AgileX dual-arm plat-
+form using 50 clean expert demonstrations, and VLA mod-
+els are tested with 100 rollouts under two difficulty set-
+tings: an Easy regime with uncluttered, clean scenes and
+a Hard regime with strong domain randomization over clut-
+ter, background textures, lighting, and tabletop height. In
+this paper, we randomly select 16 tasks for evaluation, and
+test the models with 100 rollouts under the Hard (domain-
+randomized with clutter, lighting, textures, and height varia-
+tions) settings. As shown in Table 7, OptimusVLA achieves
+an average success rate of 30% across 16 tasks, surpassing
+3
+
+
+Table 8. Overview of Generalization Tasks on Real-World.
+Generalization Tasks
+Task name
+place one fruit on plate
+place plate on tablecloth
+stand bottle upright
+place cup on tablecloth
+Description
+Grasp a piece of fruit and
+place it onto the plate. The
+set of graspable fruits
+includes bananas, apples,
+lemons, and related
+varieties.
+Grasp a plate and place it
+on the tablecloth. Both the
+plates and the tablecloths
+come in multiple styles.
+Grasp a water bottle and
+then orient it to an upright
+pose. The bottles exhibit
+diverse shapes and
+appearances.
+Grasp a cup and place it on
+the tablecloth. The cups
+exhibit diverse shapes and
+appearances.
+# demonstrations
+100
+100
+150
+120
+# rollouts
+50
+50
+50
+50
+Performance (%)
+88
+90
+74
+88
+Table 9. Overview of Long-horizon Tasks on Real-World.
+Long-Horizon Tasks
+Task name
+place all fruits on plate
+place 2 fruits in 2 position place 2 obj on plate
+place blocks on tablecloth
+Description
+Grasp three different fruits
+and place them onto the
+plate. For each rollout, a
+different combination of
+fruits is randomly
+sampled.
+Grasp one fruit from the
+bowl and place it onto the
+tablecloth, then grasp
+another fruit from the plate
+and place it into the bowl.
+Grasp a cup and an apple
+in sequence and place
+them into the plate.
+Grasp three distinct blocks
+and place them on the
+tablecloth. For each
+rollout, a different
+combination of blocks is
+randomly sampled.
+# demonstrations
+200
+200
+250
+300
+# rollouts
+25
+25
+25
+25
+Performance (%)
+64
+60
+68
+64
+all baselines, including π0.5.
+D.2. Evaluation on Real-World
+In the Real-World evaluation, we employ Galaxea R1 Lite
+as our robot platform.
+The Galaxea R1 Lite is a mo-
+bile, wheeled humanoid robot with a bimanual upper body,
+specifically designed for operation in human-centric indoor
+environments.
+Its embodiment comprises 23 degrees of
+freedom: two 6-DoF arms with spherical wrists and paral-
+lel two-finger grippers, a 3-DoF torso providing vertical and
+pitch motion for workspace extension, and a 6-DoF vector-
+drive omnidirectional base enabling coordinated whole-
+body manipulation.
+As shown in Table 8 and Table 9, we construct two task
+suites: Generalization Tasks and Long-horizon Tasks. The
+Generalization Tasks primarily evaluate the model’s abil-
+ity to generalize across varying scenes, lighting conditions,
+and object instances, whereas the Long-horizon Tasks fo-
+cus on assessing the stability and robustness of the model
+when executing long-horizon sequences. For each evalu-
+ation episode, we randomly initialize the objects at differ-
+ent spatial locations. The experimental results in Table 8
+and Table 9 demonstrate the superior performance of Opti-
+musVLA in real-world environments. We show more visu-
+alization examples in the next section.
+E. Case Study
+In this section, we present qualitative Real-World exam-
+ples of OptimusVLA. Empowered by GPM and LCM, Op-
+timusVLA exhibits superior performance on the General-
+ization Tasks (Figs. 7) as well as on the Long-horizon Tasks
+(Figs. 8). Moreover, we provide unedited, real-time video
+examples of OptimusVLA performing Real-World tasks
+in the supplementary materials (see appendix/video).
+Specifically, Place plate on tablecloth evaluates the gener-
+alization ability of OptimusVLA to varying lighting con-
+ditions and object positions, while Place all fruits on plate
+assesses the stability of OptimusVLA when executing long-
+horizon action sequences.
+4
+
+
+third
+wrist
+Generalization Task: Place one fruit on plate.
+third
+wrist
+Generalization Task: Place plate on tablecloth.
+third
+wrist
+Generalization Task: Stand bottle upright.
+third
+wrist
+Generalization Task: Place cup on tablecloth.
+Figure 7. Qualitative results of OptimusVLA on Real-World. From top to bottom, we illustrate four Generalization Tasks: Place one fruit
+on plate, Place plate on tablecloth, Stand bottle upright, and Place cup on tablecloth. Here, third denotes third-person view images,
+while wrist denotes images captured from the robot’s wrist-mounted camera.
+5
+
+
+third
+wrist
+Long-horizon Task: Place all fruits on plate.
+third
+wrist
+Long-horizon Task: Place one fruit on tablecloth, then place another fruit into bowl.
+third
+wrist
+Long-horizon Task: Place cup and apple on plate.
+third
+wrist
+Long-horizon Task: Place 3 blocks on tablecloth.
+Figure 8. Qualitative results of OptimusVLA on Real-World. From top to bottom, we illustrate four Long-horizon Tasks: Place all fruits
+on plate, Place one fruit on tablecloth, then place another fruit into bowl, Place cup and apple on plate, and Place 3 blocks on tablecloth.
+Here, third denotes third-person view images, while wrist denotes images captured from the robot’s wrist-mounted camera.
+6

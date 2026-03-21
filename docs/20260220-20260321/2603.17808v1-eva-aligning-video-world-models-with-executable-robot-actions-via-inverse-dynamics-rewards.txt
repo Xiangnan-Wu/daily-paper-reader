@@ -1,0 +1,501 @@
+Title: EVA: Aligning Video World Models with Executable Robot Actions via Inverse Dynamics Rewards
+
+URL Source: https://arxiv.org/pdf/2603.17808v1
+
+Published Time: Thu, 19 Mar 2026 01:31:06 GMT
+
+Number of Pages: 26
+
+Markdown Content:
+# Aligning Video World Models with Executable Robot Actions via Inverse Dynamics Rewards 
+
+Ruixiang Wang 1,2, Qingming Liu 1, Yueci Deng 1,2, Guiliang Liu 1,Zhen Liu 1†, and Kui Jia 1
+
+https://eva-project-page.github.io/ 
+
+> 1
+
+The Chinese University of Hong Kong, Shenzhen 2DexForce Technology Co., Ltd.  
+
+> †
+
+Corresponding author 
+
+Abstract. Video generative models are increasingly used as world mod-els for robotics, where a model generates a future visual rollout condi-tioned on the current observation and task instruction, and an inverse dy-namics model (IDM) converts the generated frames into executable robot actions. However, current video world models lack explicit executability constraints. As a result, visually coherent rollouts may still violate rigid-body and kinematic consistency, producing unstable or infeasible control commands when decoded by an IDM. We refer to this mismatch between visual generation and physically executable control as the executability gap . While this gap can be mitigated at inference time using techniques such as rejection sampling, such approaches are inefficient due to the high cost of video generation. In this paper, we leverage the executability gap as a training signal and introduce Executable Video Alignment (EVA) , a reinforcement-learning post-training framework for aligning video world models. EVA trains an inverse dynamics model on real robot trajectories and repurposes it as a reward model that evaluates generated videos through the action sequences they induce, encouraging smooth motions measured by velocity, acceleration, and jerk while penalizing actions that violate embodiment constraints. Importantly, the reward remains informative even when generated videos contain severe visual artifacts, since such artifacts typically translate into unstable or out-of-bound actions. Experiments on the RoboTwin benchmark and a real bimanual robot show that EVA reduces embodiment-specific artifacts in generated rollouts and improves downstream task execution success. 
+
+Keywords: Video world models · Robotic manipulation · Reward-based alignment 
+
+# 1 Introduction 
+
+Developing generalist robot policies capable of executing diverse manipulation tasks remains a central pursuit in embodied AI. Vision-Language-Action (VLA) 
+
+> arXiv:2603.17808v1 [cs.RO] 18 Mar 2026
+
+2 R. Wang et al. Executable  
+
+> Video Model
+> Initial observation
+> “Place the red stapler on the
+> black rectangular displaystand.”
+> Text instruction
+> plausible video sequence
+> Inverse
+> Dynamic
+> Model
+> feasible action
+> Reward
+> Signal
+> Post-Training Alignment
+> Base
+> Video Model
+> Initial observation
+> “Place the red stapler on the
+> black rectangular displaystand.”
+> Text instruction
+> implausible video result
+> Inverse
+> Dynamic
+> Model
+> unreliable action
+
+(a) Execut ability Gap 
+
+(b) Reward-Aligned World Model (Ours) 
+
+Fig. 1: Overview of executable video world modeling. (a) Standard video world models generate rollouts with kinematic artifacts, leading to unreliable IDM-predicted actions, illustrating the executability gap . (b) Our reward-aligned world model optimizes video generation using IDM-derived rewards, producing physically plausible rollouts that result in feasible robot actions. 
+
+models [4, 5, 24, 31] have made significant progress by mapping 2D visual obser-vations and language instructions directly to low-level motor commands. How-ever, scaling robust long-horizon behavior remains challenging when physical and temporal dynamics must be learned primarily from limited robot interac-tion data [43]. In parallel, recent work has explored video generation models as world models for robotics [3, 10, 23, 33, 47]. Unlike static image-text pairs, videos provide rich spatiotemporal cues about state transitions and object inter-actions. This capability has catalyzed an emerging decoupled paradigm: a video world model first serves as a visual planner, generating a future visual trajectory conditioned on current observations and language instructions; subsequently, an inverse dynamics model (IDM) extracts the corresponding executable actions from the generated frames [2, 15, 37]. By separating high-level spatiotemporal reasoning from low-level control, this formulation offers a highly promising route toward scalable robot learning grounded in internet-scale video data. Despite this promise, we identify a critical and underexplored limitation in this decoupled pipeline: the absence of explicit executability constraints. We define executability as the extent to which a generated video trajectory can be translated into motor commands that accomplish the intended task while re-specting the robot’s physical and kinematic constraints. In cases when foundation video generative models [6,42] can produce visually coherent rollouts at the frame level, the robot trajectory can still be infeasible in the sense that violate rigid-body and kinematic consistency, such as arm deformations, self-intersections, or EVA 3
+
+abrupt temporal discontinuities. During execution of these extracted action se-quences, an IDM operating in an open-loop manner can then map these artifacts into infeasible control signals, resulting in abrupt joint jumps, high-frequency jit-ter, or out-of-bounds commands. More interestingly, even when generated videos contain severe visual artifacts, the decoded actions typically exhibit clear viola-tions such as abrupt joint jumps or out-of-bound commands. Such a mismatch between visual generation and physically executable control, which we term the 
+
+executability gap , can surely be bridged during inference time via techniques like rejection sampling, yet they are far from efficient given the high cost of video generation. Inspired by the recent success in reinforcement learning (RL) for alignment of foundation models [7, 44, 45], we propose to explicitly finetune video generative models with rewards constructed to penalize executability gap. We refer to this framework as Executable Video Alignment (EVA) . Specifically, we train an inverse dynamics model on real robot data that can predict executed actions in generated videos. Given the prior knowledge we have over the embodiment, the nature of the task and the implied properties of plausible robot trajectories, we construct an IDM-based reward model which naturally provides a dense reward throughout a whole video sequence: it (1) encourages smoothness of trajectories measured by velocity, acceleration and jerk, and (2) penalizes out-of-bound actions that is implausible given the robot embodiment. Standard RL algorithms can therefore be applied to align the video distributions to the priors from our domain knowledge, the real robot data, and the implicit regularization of the trained IDM. We evaluate our method on both the RoboTwin benchmark [11] and a real-world robotic platform. By measuring the visual quality of the generated videos and execute the action sequences extracted from them using trained IDMs, we observe that the video generative models finetuned with our IDM-based re-ward model can generate more realistic videos and, with the same IDM, extract smoother and more plausible action sequences from the generated videos. Our main contributions are summarized as follows: 
+
+– We identify and characterize the executability gap in video-based robotic planners: visually coherent video rollouts can violate the kinematic and em-bodiment constraints of real robots, leading to infeasible control signals when decoded by inverse dynamics models (IDMs). 
+
+– We propose an IDM-based executability reward for aligning video world models. By inferring actions from generated videos using a trained inverse dynamics model, we construct a dense reward that penalizes embodiment vi-olations such as out-of-bound commands and excessive velocity, acceleration, or jerk. 
+
+– Experiments on the RoboTwin benchmark and a real robotic platform show that our approach reduces kinematic artifacts in generated rollouts, produces smoother and more executable action sequences, and improves the photore-alism of generated videos, leading to more stable downstream execution. 4 R. Wang et al. 
+
+# 2 Related Works 
+
+Video World Models for Robotics. Video generation models have demon-strated remarkable capabilities in synthesizing high-quality, realistic videos [1, 6, 42]. Driven by these advancements, recent works have increasingly explored leveraging video generation as world models for robotics to predict future ob-servations of physical scenes. One line of research utilizes video world models as a data simulation pipeline, synthesizing extensive and diverse training data to scale up downstream Vision-Language-Action (VLA) models [1, 22, 40]. Another prominent direction formulates these models as forward simulators, condition-ing video generation on robotic action sequences [20,26,39,49,50]. By predicting the visual consequences of specific motor commands, these action-conditioned world models enable closed-loop planning and policy evaluation via visual fore-sight. Alternatively, other approaches employ video generation directly for vi-sual policies, where models synthesize videos of successful task completions to guide downstream robotic control [2, 8, 13, 16, 17, 21, 23, 46]. World model for robotics, unlike general-purpose video generation, must capture not only per-ceptual fidelity but also physically grounded, action-consistent dynamics. This embodiment-level consistency is critical for downstream embodied tasks, as gen-erated trajectories must go beyond visual plausibility to ensure strict physical executability in the real world. 
+
+Embodied Visuomotor Policies. The mapping from raw visual observations to robot actions has been a long-standing challenge in embodied AI. Recent Vision-Language-Action (VLA) policies [4, 5, 14, 24, 29, 38, 41], such as Diffu-sion Policy [12] and π0 [4], address this by directly mapping multimodal in-puts to low-level robot actions. In contrast, an emerging decoupled paradigm leverages video generation models as visual planners to synthesize realistic in-teraction videos depicting desired future states, from which executable actions are subsequently extracted via an Inverse Dynamics Model (IDM) [16–18, 21]. Decoupling future imagination from low-level action generation provides strong generalization capabilities, theoretically enabling the execution of arbitrary out-of-distribution tasks. However, a major challenge in this sequential pipeline is the lack of physical feedback during the video generation process. Since the IDM operates strictly as an open-loop extractor during deployment, it cannot correct upstream generative errors. Consequently, if the video model synthesizes frames with morphological deformations or temporal artifacts, the IDM blindly trans-lates these visual flaws into unstable, out-of-bounds motor commands, leading to catastrophic task failures. To bridge this executability gap, we incorporate the IDM directly into the post-training phase, transforming it from a passive inference decoder into a physical feedback for the upstream video generator. 
+
+Alignment and Post-Training in Generative Models. Reinforcement learn-ing has been widely adopted to align generative model outputs with specific objectives, driven either by human feedback [32] or automated reward mod-els [19, 35]. In large language models, policy optimization methods such as PPO [35] and GRPO [36] have established a standard paradigm for reward-based post-training. This approach has naturally extended to visual generation, where EVA 5
+
+reinforcement learning and preference optimization are utilized to fine-tune dif-fusion and flow-matching backbones, primarily to enhance human aesthetics and text-image alignment [27]. More recently in the embodied domain, foundation models like Cosmos-Predict [30] employ a VLM-based reward model [28] to post-train the backbone for improved text alignment, motion quality and visual qual-ity. However, these existing alignment objectives remain fundamentally focused on visual and semantic fidelity. In contrast, our work shifts the alignment target toward physical executability. By utilize the action signal to construct a dense reward, we directly penalize kinematic violations during post-training, ensuring that the generated video manifold adheres to the real-world physical constraints of the robotic embodiment. 
+
+# 3 Preliminaries 
+
+3.1 Flow-matching-based Video Generation 
+
+Recent large-scale video generation models (e.g., Wan-2.1) adopt a flow-matching formulation to model video distributions in a latent space. Given a video se-quence V = {I1, . . . , I T } in pixel space, a pretrained 3D Variational Autoen-coder (VAE) encodes the sequence into a compact latent representation x1 ∈ V .Generative modeling is then performed in this latent space for efficiency. Let x1 denote a latent video sample and x0 ∼ N (0 , I) denote Gaussian noise. Flow matching constructs a continuous probability path between noise and data by linear interpolation xt = (1 − t)x0 + tx 1 with t ∈ [0 , 1] . A neural velocity field vθ is trained to approximate the transport vector x1 − x0. Conditioning on context c (e.g., text prompts or visual observations), the training objective is 
+
+LFM = Ex0,x 1,t,c 
+
+h
+
+∥(x1 − x0) − vθ (xt, t, c )∥22
+
+i
+
+. (1) During inference, solving the ODE defined by vθ transports noise x0 to a latent video sample x1, which is subsequently decoded by the VAE. 
+
+3.2 Group Relative Policy Optimization 
+
+Group Relative Policy Optimization (GRPO) [36] is a policy-gradient method that estimates advantages from a group of sampled trajectories without learning a value function. Applying GRPO to flow models is non-trivial because standard flow-matching sampling follows the deterministic ODE: ˙x = vθ (x, t ), which does not define a stochastic policy. Flow-GRPO [27] addresses this by constructing a stochastic process whose marginals match those of the original flow. This yields an SDE: dx = fθ (x, t )dt + g(t)dw, where the drift fθ is derived from the flow velocity vθ and the diffusion term g(t) introduces stochasticity, defining a trajectory distribution πθ (τ |c).During training, GRPO samples G trajectories {τi}Gi=1 from this stochastic process and evaluates them with rewards {Ri}. The group-relative advantage 6 R. Wang et al. 
+
+is ˆAi = ( Ri − μR)/(σR + ϵ), where μR and σR denote the mean and standard deviation of the group rewards. The drift network fθ (x, t ) is then optimized using the clipped objective 
+
+E
+
+"
+
+1
+
+G
+
+> G
+
+X
+
+> i=1
+
+min 
+
+
+
+ri(θ) ˆAi, clip( ri(θ), 1 − ε, 1 + ε) ˆAi
+
+
+
+− βD KL (πθ ∥ πref )
+
+#
+
+. (2) After fine-tuning, sampling follows the original flow formulation using the updated network. 
+
+# 4 Method 
+
+We propose Executable Video Alignment (EVA) , a framework for improv-ing pretrained video generative models with an explicit executability objective. The key idea is to construct a reward model from an inverse dynamics model (IDM): a generated video is scored by whether the action sequence implied by the video is smooth and respects the robot’s kinematic limits. This reward is then used to fine-tune the video generator, aligning its rollout distribution toward physically plausible robot motions. 
+
+4.1 Inverse Dynamics Model 
+
+The IDM infers robot control commands from a short temporal window of visual observations. Given frames It−k:t+k centered at time t, the IDM predicts the executed action at. We train the IDM on robot trajectory data with supervised regression: 
+
+LIDM = E
+
+"X
+
+> t
+
+∥fϕ(It−k:t+k) − agt  
+
+> t
+
+∥22
+
+#
+
+, (3) where k denotes the temporal context radius. Architecturally, the IDM follows a standard visuomotor design [25]: a convo-lutional backbone extracts spatial features, a spatial softmax layer converts each channel into a 2D coordinate, and an MLP maps these coordinates to actions. Let F ∈ RC×H×W denote the feature map after stacking temporal frames in the channel dimension. Spatial softmax is defined as: 
+
+pcij = exp( F cij )
+
+P 
+
+> i′,j ′
+
+exp( F ci′j′ ) , (xc, y c) = X
+
+> i,j
+
+pcij (i, j ). (4) The coordinates {(xc, y c)}Cc=1 are concatenated and fed into an MLP to predict 
+
+at. In our setting, this keypoint-like representation is more stable than global pooling when decoding actions from generated rollouts. EVA 7
+
+4.2 IDM-based Executability Reward 
+
+Pretrained video generators are optimized for visual realism, but are not con-strained by robot kinematics. As a result, visually plausible rollouts may still correspond to unstable or infeasible robot motions (e.g., abrupt temporal jumps or ambiguous articulation), which becomes evident when translating the roll-out into control commands. We therefore define executability directly in action space : a rollout is executable if its IDM-decoded action sequence is smooth and satisfies embodiment limits. Given a generated video V , the frozen IDM predicts a sequence of joint commands A = {at}Tt=1 at control interval ∆t . We compute joint-space velocity 
+
+vt, acceleration at, and jerk jt via finite differences. To penalize non-smooth motions, we apply a robust Huber penalty to acceleration and jerk: 
+
+Huber( x; δ) = 
+
+( 12 x2, |x| ≤ δ, δ  |x| − 12 δ , |x| > δ,  (5) yielding 
+
+Pα = Et[Huber( αt; δα)] , Pj = Et[Huber( jt; δj )] . (6) We further enforce embodiment limits by penalizing violations of the robot’s velocity and acceleration bounds: 
+
+Pvel = Et ∥max( |vt| − vmax , 0) ∥22 , Pacc = Et ∥max( |αt| − amax , 0) ∥22 . (7) The total penalty is: 
+
+P(A) = λj Pj + λαPα + λv-lim Pvel + λa-lim Pacc . (8) We map the penalty into a bounded reward used for fine-tuning the video model: 
+
+R(V ) = 
+
+
+
+1 + P(A)
+
+P0
+
+−γ
+
+, (9) where P0 sets the penalty scale (estimated from rollouts of the pretrained video model) and γ controls the decay rate. This reward directly encourages generated videos whose implied robot motions are smooth and physically feasible. 
+
+# 5 Experiments 
+
+We evaluate EVA, our IDM-reward alignment framework for latent video diffu-sion world models, on RoboTwin 2.0 simulation and a real bimanual robot. Given a current observation and language instruction, the video model generates a fu-ture visual rollout; a pretrained inverse dynamics model (IDM) then maps short temporal windows of frames to per-step actions for execution. For long-horizon tasks, we use receding-horizon execution by conditioning each new rollout on the most recent 4 camera frames after executing the previous segment. We report (i) structured human ratings of rollout quality that target embodiment-specific failures, (ii) task success rates in RoboTwin, and (iii) real-robot success rates on seen and out-of-distribution (OOD) tasks. 8 R. Wang et al.      
+
+> Fig. 2: Illustration of how visual artifacts translate into kinematic violations. The plots display the 7-DOF joint angles (in radians) for the left arm, ordered from the base (Joint 1) to the gripper (Joint 7). (Top) A high-quality generation video. The translated actions are smooth and physically executable, yielding a high reward score of 7.94. (Bottom) A failure case exhibiting severe visual artifacts (highlighted in red). Consequently, the IDM translates these visual artifacts into erratic, high-frequency jitter, particularly visible in the distal joints (e.g., Joints 6 and 7), leading to a low reward of 3.04.
+
+5.1 Experimental Settings Base model. Our video world model is a latent video diffusion model based on the Diffusion Transformer (DiT) [34]. We instantiate it with the Wan2.1-14B backbone [42] and incorporate diffusion forcing [9] to improve rollout generation conditioned on observation history. We initialize from the Large Video Planner (LVP) checkpoint [10], which is pretrained on large-scale manipulation data, and then perform supervised fine-tuning (SFT) on our embodiment-specific dataset, yielding Ours (w/o RL) . We then apply GRPO post-training with the IDM-based executability reward in Section 4.2 to obtain Ours . The IDM is trained as in Section 4.1 and kept frozen during GRPO fine-tuning. 
+
+Baselines. For rollout-quality evaluation, we compare against Vidar [17], initialized from the Wan2.2-5B checkpoint [42] and fine-tuned under the same protocol and data. For simulation policy execution, we compare against strong imitation-learning and VLA baselines: ACT [48], Diffusion Policy (DP) [12], RDT [29], and π0 [4]. For real-robot evaluation, we additionally include GE-Act [26]. EVA 9
+
+Implementation details. During GRPO fine-tuning, we sample groups of 
+
+G = 8 rollouts per prompt. We update the video generator using LoRA with rank 32. All experiments are conducted on 8 NVIDIA A800 GPUs with a total batch size of 32. Additional hyperparameters are provided in the Appendix. 
+
+5.2 Visual Rollout Quality 
+
+We measure rollout quality with emphasis on embodiment-specific artifacts that directly affect executability. Traditional video metrics (e.g., FVD) capture global similarity but are insensitive to failures such as arm deformation or abrupt tem-poral discontinuity; we therefore use structured human evaluation. 
+
+Benchmark and prompts. We use RoboTwin 2.0 [11], a bimanual manipu-lation benchmark with diverse task structures, object variations, and randomized initial states. We select 21 tasks and construct a training set of 1,050 video tra-jectories; all evaluated models are fine-tuned on this same subset. Evaluation uses held-out instruction paraphrases. For each task, we create 10 observation– instruction prompts, resulting in 210 prompts in total. 
+
+Human evaluation rubric. Generated rollouts are anonymized and ran-domly shuffled before being rated along four criteria: (i) Kinematic plausibility :the robotic arm maintains structural integrity without deformation, joint am-biguity, or temporal discontinuities; (ii) Interaction plausibility : contacts and object motions are physically consistent (e.g., no penetration or floating); (iii) 
+
+Instruction adherence : the rollout matches the language-conditioned goal; and (iv) Perfect execution : the rollout completes the task while satisfying (i)–(iii). 
+
+Results. As shown in Table 1, EVA reduces embodiment-related artifacts in generated rollouts. Compared with EVA (w/o RL) , the aligned model im-proves Kinematic plausibility by +20.9% and consistently improves Interaction plausibility , while maintaining instruction adherence. As a result, EVA achieves an 83.8% Perfect execution rate under the same evaluation protocol. 
+
+5.3 Simulation Policy Execution on RoboTwin 
+
+We evaluate task success rates on RoboTwin 2.0 by executing the IDM-decoded actions derived from generated rollouts. We compare against imitation-learning and VLA baselines: ACT [48], DP [12], RDT [29], and π0 [4]. Following the official benchmark protocol, these baselines are trained in a single-task setting, fine-tuning a separate policy per task using 50 expert demonstrations. In contrast, we train a single multi-task policy across all 21 tasks using the same per-task demonstrations, and report results for both EVA (w/o RL) and EVA to isolate the effect of reward-based post-training. Table 2 shows that EVA achieves the best overall performance across the benchmark. Compared with the supervised baseline EVA (w/o RL) , reward-based alignment consistently improves task success rates, indicating that aligning the video generator with the executability reward produces more reliable action 10 R. Wang et al. EVA EVA(w/o RL) Vidar                      
+
+> (a) Open the laptop (b) Place the fork
+> Fig. 3: Qualitative comparison of generated visual plans. Unaligned models (Ours w/o RL, Vidar) often exhibit severe morphological deformations and joint melting (red circles). In contrast, our method maintains strict kinematic integrity (green circle).
+> Table 1: Visual planning quality evaluation across 210 manipulation prompts. Metrics report the average success rate (%) evaluated by human raters. Method Kinematic Interaction Instruction Perfect Vidar (Wan2.2) [17] 67.6 66.7 87.6 62.9 EVA (w/o RL) 70.5 83.3 90.5 68.1
+> EVA (with RL) 91.4 86.2 89.5 83.8
+
+sequences when decoded by the IDM. The improvements are particularly pro-nounced in contact-rich tasks such as ClickBell , OpenLaptop , and TurnSwitch ,where unstable motions frequently lead to execution failures without alignment. 
+
+5.4 Real-World Deployment 
+
+We evaluate on a physical robot to assess whether IDM-reward alignment im-proves feasibility under real dynamics and safety constraints. 
+
+Platform and data. We use an Agilex CobotMagic bimanual platform. We collect 50 human-teleoperated demonstrations for each of five tasks (250 trajectories total) and use them to SFT both the embodiment-specific video generator and the IDM. 
+
+Tasks. The evaluation split contains the five seen tasks used during training and five additional out-of-distribution (OOD) tasks designed to assess general-ization. The tasks cover object placement, coordinated transport, contact-rich interaction, and deformable-object handling. 
+
+Baselines and protocol. We compare against ACT [48], π0 [4], Vidar [17], and GE-Act [26]. ACT is trained per task, while the other methods are initialized from official checkpoints and fine-tuned on our dataset under the same split. We EVA 11 
+
+Table 2: Simulation success rates on the RoboTwin 2.0 benchmark. We evaluate 21 bimanual tasks in randomized scenes; a representative subset is shown here, with full results provided in the Appendix. Each entry reports successes out of 20 episodes. The 
+
+Average is computed over all 21 tasks. Is Video Backbone Method                                                                  
+
+> RoboTwin 2.0 tasks (subset)
+> Average (21 tasks)
+> ClickBell
+> HandoverMic
+> OpenLaptop
+> MovePillBtl
+> PlaceCans
+> PlaceMouse
+> PressStapler
+> StampSeal
+> TurnSwitch
+> · · ·
+> No ACT [48] 12/20 17/20 11/20 00/20 03/20 00/20 06/20 00/20 01/20 · · · 29.0% DP [12] 11/20 11/20 10/20 00/20 08/20 00/20 01/20 00/20 07/20 · · · 29.5% RDT [29] 16/20 18/20 12/20 02/20 01/20 00/20 08/20 00/20 07/20 · · · 37.1%
+> π0[4] 09/20 20/20 17/20 04/20 07/20 01/20 12/20 01/20 05/20 · · · 45.7% Yes EVA (w/o RL) 18/20 00/20 06/20 04/20 08/20 04/20 18/20 05/20 08/20 · · · 46.2%
+> EVA (with RL) 20/20 03/20 12/20 06/20 09/20 05/20 20/20 04/20 13/20 · · · 52.6%
+
+Table 3: Quantitative comparison results of real-robot success rates on five seen tasks and five OOD tasks . Each entry reports successes out of 20 trials. Method 
+
+Seen tasks Novel tasks (OOD) 
+
+> StackBowl
+> HangCable
+> Place2Basket
+> Place2tray
+> Foldtowel
+
+Average Success Rate 
+
+> PlaceBlock
+> PourWater
+> WipeTray
+> FoldCloth
+> PlaceToy
+
+Average Success Rate ACT [48] 11/20 05/20 12/20 09/20 05/20 42.0% N/A N/A N/A N/A N/A N/A 
+
+π0 [4] 12/20 08/20 13/20 12/20 06/20 51.0% 02/20 03/20 02/20 01/20 03/20 11.0% Vidar [17] 9/20 05/20 12/20 13/20 05/20 44.0% 07/20 08/20 06/20 07/20 06/20 34.0% GE-Act [26] 10/20 07/20 11/20 11/20 04/20 43.0% 01/20 00/20 01/20 00/20 01/20 3.0% EVA (w/o RL) 12/20 08/20 12/20 14/20 05/20 52.0% 08/20 11/20 07/20 08/20 08/20 42.0% 
+
+EVA (with RL) 16/20 08/20 16/20 17/20 07/20 64.0% 10/20 15/20 11/20 12/20 12/20 60.0% 
+
+perform 20 real-world trials per task. A trial is counted as successful if the robot completes the task objective without safety interruption or human intervention. 
+
+Results. Table 3 summarizes real-world success rates. Imitation-learning policies (ACT and π0) perform competitively on seen tasks but degrade on OOD tasks. Video world-model approaches (e.g., Vidar) show stronger OOD per-formance, consistent with benefiting from large-scale video priors. Our aligned model improves over EVA (w/o RL) across both seen and OOD tasks, in-dicating that explicitly optimizing action-space feasibility improves real-world executability. Figure 4 shows the video and the real robot execution result. 
+
+5.5 IDM evaluation 
+
+To validate the efficacy of our Inverse Dynamics Model (IDM) as a robust kinematic bridge, we evaluate its isolated action-decoding performance on the 12 R. Wang et al. Generated Video Sequences Real-world Robot Execution     
+
+> Novel task: Pour water into the bowl
+> Seen task: Stack bowls in the middle
+> Seen task: Place the spoon onto the tray
+> Seen task: Fold the towel upward
+
+Fig. 4: Real-world deployment and physical fidelity. We visualize the synthesized video sequences (left) alongside their corresponding real-world robot executions (right). 
+
+Table 4: Inverse Dynamics Model (IDM) success rates on the RoboTwin 2.0 bench-mark. Each entry reports successes out of 20 episodes based on ground-truth video demonstrations.            
+
+> Click Bell Handover Mic Open Laptop Move PillBtl Place Cans Place Mouse Press Stapler Stamp Seal Turn Switch · · · Average (21 tasks) IDM 20/20 19/20 18/20 18/20 20/20 15/20 20/20 20/20 14/20 · · · 89.52%
+
+RoboTwin 2.0 benchmark. Specifically, we feed the trained IDM with ground-truth video demonstrations and execute the predicted action sequences directly in the simulation environment. As detailed in Table 4, the IDM achieves a highly reliable average exe-cution success rate of 89.52% across 21 diverse bimanual manipulation tasks. This strong baseline performance confirms that given physically valid and struc-turally coherent visual trajectories, the IDM can accurately reconstruct stable, executable control signals. Crucially, this high decoding accuracy justifies our core methodological design: it proves that the IDM is exceptionally trustworthy, making it highly qualified to serve as the dense, kinematic reward model during the subsequent reinforcement learning alignment phase. EVA 13 Wrong contact Incorrect goal Implausible kinematic          
+
+> (a) (b) (c)
+> Fig. 5: Common failure modes observed in unaligned video world models during real-world execution. Implausible kinematics: violations of rigid-body consistency, in-cluding (a) morphological deformation, (b) ambiguous joint articulation, and (c) tem-poral discontinuity. Wrong contact: physically inconsistent object interaction. In-correct goal: failure to make progress toward the instruction-conditioned objective.
+
+5.6 Failure Modes 
+
+During real-world evaluation, we observe several characteristic failure patterns when executing rollouts generated by unaligned video world models. Although these rollouts may appear visually plausible, they often contain subtle kinematic inconsistencies that become evident once decoded into robot actions by the in-verse dynamics model (IDM). In practice, these inconsistencies frequently lead to unstable or out-of-distribution control commands, resulting in execution failures. Figure 5 illustrates representative examples. We group the dominant failure patterns into three categories. Implausible kinematics refers to violations of rigid-body consistency, including morphological deformation of the robot arm, ambiguous joint articulation, and abrupt temporal discontinuities across frames. 
+
+Wrong contact denotes physically inconsistent object interactions, such as pen-etration or missing contact events. Incorrect goal occurs when the generated rollout fails to make meaningful progress toward the instruction-conditioned ob-jective. 
+
+# 6 Conclusion 
+
+In this paper, we identify an executability gap in video world models for robotics: rollouts that appear visually plausible can still induce infeasible or unstable robot motions when decoded into control commands. We leverage this gap as a training signal by constructing an IDM-based reward model that evaluates generated videos through the action sequences they imply. Using this reward, we perform reinforcement-learning post-training of a pretrained video generator under our 
+
+Executable Video Alignment (EVA) framework, penalizing non-smooth and out-of-bound motions to encourage kinematically feasible trajectories under the target embodiment. Experiments on RoboTwin and a real bimanual robot show 14 R. Wang et al. Grasp the blue towel and wipe the white tray. 
+
+> Grasp the plush toy and place it into the basket.
+> Pick up the red block with the right arm and place it into the middle blue bowl.
+> Pull out a tissue using the right arm.
+> Pick up the yellow towel and drop it into the middle bowl.
+> Fold the clothing upwards from the bottom edge using both arms.
+
+Fig. 6: Visualization of the zero-shot video generation capabilities of the EVA-finetuned model on completely out-of-distribution (OOD) tasks. Each row shows a synthesized video sequence of six evenly sampled frames, where the first frame serves as the input conditioning image and the instructions below correspond to the task prompts. 
+
+that IDM-reward alignment reduces embodiment-specific artifacts in generated rollouts and improves downstream execution success while preserving instruction adherence. These results suggest that incorporating action-space priors through reward-based alignment is an effective way to improve the executability of video world models for robotic manipulation. 
+
+Limitations and Future Work. Our reward focuses on kinematic feasibil-ity and smoothness, and does not explicitly model contact dynamics such as forces, friction, or torques, which are critical for precision contact-rich manip-ulation. Diffusion-based video generation is also computationally expensive in our current setup, limiting applicability to high-frequency reactive control. Fu-ture work will explore richer dynamics-aware reward signals and faster sampling (e.g., distillation or fewer-step samplers) to enable more responsive closed-loop deployment. EVA 15 
+
+# References 
+
+1. Agarwal, N., Ali, A., Bala, M., Balaji, Y., Barker, E., Cai, T., Chattopadhyay, P., Chen, Y., Cui, Y., Ding, Y., et al.: Cosmos world foundation model platform for physical ai. arXiv preprint arXiv:2501.03575 (2025) 2. Bharadhwaj, H., Dwibedi, D., Gupta, A., Tulsiani, S., Doersch, C., Xiao, T., Shah, D., Xia, F., Sadigh, D., Kirmani, S.: Gen2act: Human video generation in novel sce-narios enables generalizable robot manipulation. arXiv preprint arXiv:2409.16283 (2024) 3. Bi, H., Tan, H., Xie, S., Wang, Z., Huang, S., Liu, H., Zhao, R., Feng, Y., Xiang, C., Rong, Y., Zhao, H., Liu, H., Su, Z., Ma, L., Su, H., Zhu, J.: Motus: A unified latent action world model (Dec 2025). https://doi.org/10.48550/arXiv.2512.13030 
+
+4. Black, K., Brown, N., Driess, D., Esmail, A., Equi, M., Finn, C., Fusai, N., Groom, L., Hausman, K., Ichter, B., et al.: pi_0: A vision-language-action flow model for general robot control. arXiv preprint arXiv:2410.24164 (2024) 5. Brohan, A., Brown, N., Carbajal, J., Chebotar, Y., Chen, X., Choromanski, K., Ding, T., Driess, D., Dubey, A., Finn, C., Florence, P., Fu, C., Arenas, M.G., Gopalakrishnan, K., Han, K., Hausman, K., Herzog, A., Hsu, J., Ichter, B., Irpan, A., Joshi, N., Julian, R., Kalashnikov, D., Kuang, Y., Leal, I., Lee, L., Lee, T.W.E., Levine, S., Lu, Y., Michalewski, H., Mordatch, I., Pertsch, K., Rao, K., Reymann, K., Ryoo, M., Salazar, G., Sanketi, P., Sermanet, P., Singh, J., Singh, A., Soricut, R., Tran, H., Vanhoucke, V., Vuong, Q., Wahid, A., Welker, S., Wohlhart, P., Wu, J., Xia, F., Xiao, T., Xu, P., Xu, S., Yu, T., Zitkovich, B.: Rt-2: Vision-language-action models transfer web knowledge to robotic control (2023), https: //arxiv.org/abs/2307.15818 
+
+6. Brooks, T., Peebles, B., Homes, C., DePue, W., Guo, Y., Jing, L., Schnurr, D., Taylor, J., Luhman, T., Luhman, E., Ng, C., Wang, R., Ramesh, A.: Video gener-ation models as world simulators (2024), https://openai.com/research/video-generation-models-as-world-simulators 
+
+7. Cai, Y., Li, K., Jia, M., Wang, J., Sun, J., Liang, F., Chen, W., Juefei-Xu, F., Wang, C., Thabet, A., et al.: Phygdpo: Physics-aware groupwise direct prefer-ence optimization for physically consistent text-to-video generation. arXiv preprint arXiv:2512.24551 (2025) 8. Cen, J., Yu, C., Yuan, H., Jiang, Y., Huang, S., Guo, J., Li, X., Song, Y., Luo, H., Wang, F., Zhao, D., Chen, H.: Worldvla: Towards autoregressive action world model (Jun 2025). https://doi.org/10.48550/arXiv.2506.21539 
+
+9. Chen, B., Monso, D.M., Du, Y., Simchowitz, M., Tedrake, R., Sitzmann, V.: Dif-fusion forcing: Next-token prediction meets full-sequence diffusion. Advances in Neural Information Processing Systems (NeurIPS) (2024) 10. Chen, B., Zhang, T., Geng, H., Song, K., Zhang, C., Li, P., Freeman, W.T., Malik, J., Abbeel, P., Tedrake, R., Sitzmann, V., Du, Y.: Large video planner enables generalizable robot control (Dec 2025). https://doi.org/10.48550/arXiv.2512. 15840 
+
+11. Chen, T., Chen, Z., Chen, B., Cai, Z., Liu, Y., Li, Z., Liang, Q., Lin, X., Ge, Y., Gu, Z., et al.: Robotwin 2.0: A scalable data generator and benchmark with strong domain randomization for robust bimanual robotic manipulation. arXiv preprint arXiv:2506.18088 (2025) 12. Chi, C., Feng, S., Du, Y., Xu, Z., Cousineau, E., Burchfiel, B., Song, S.: Diffusion policy: Visuomotor policy learning via action diffusion. In: Proceedings of Robotics: Science and Systems (RSS) (2023) 16 R. Wang et al. 13. Chi, X., Jia, P., Fan, C.K., Ju, X., Mi, W., Zhang, K., Qin, Z., Tian, W., Ge, K., Li, H., Qian, Z., Chen, A., Zhou, Q., Jia, Y., Liu, J., Dai, Y., Wuwu, Q., Bai, C., Wang, Y.K., Li, Y., Chen, L., Bao, Y., Jiang, Z., Zhu, J., Tang, K., An, R., Luo, Y., Feng, Q., Zhou, S., Chan, C.m., Hou, C., Xue, W., Han, S., Guo, Y., Zhang, S., Tang, J.: Wow: Towards a world omniscient world model through embodied interaction (Oct 2025). https://doi.org/10.48550/arXiv.2509.22642 
+
+14. Collaboration, O.X.E., O’Neill, A., Rehman, A., Gupta, A., Maddukuri, A., Gupta, A., Padalkar, A., Lee, A., Pooley, A., Gupta, A., Mandlekar, A., Jain, A., Tung, A., Bewley, A., Herzog, A., Irpan, A., Khazatsky, A., Rai, A., Gupta, A., Wang, A., Kolobov, A., Singh, A., Garg, A., Kembhavi, A., Xie, A., Brohan, A., Raffin, A., Sharma, A., Yavary, A., Jain, A., Balakrishna, A., Wahid, A., Burgess-Limerick, B., Kim, B., Schölkopf, B., Wulfe, B., Ichter, B., Lu, C., Xu, C., Le, C., Finn, C., Wang, C., Xu, C., Chi, C., Huang, C., Chan, C., Agia, C., Pan, C., Fu, C., Devin, C., Xu, D., Morton, D., Driess, D., Chen, D., Pathak, D., Shah, D., Büchler, D., Jayaraman, D., Kalashnikov, D., Sadigh, D., Johns, E., Foster, E., Liu, F., Ceola, F., Xia, F., Zhao, F., Frujeri, F.V., Stulp, F., Zhou, G., Sukhatme, G.S., Salhotra, G., Yan, G., Feng, G., Schiavi, G., Berseth, G., Kahn, G., Yang, G., Wang, G., Su, H., Fang, H.S., Shi, H., Bao, H., Amor, H.B., Christensen, H.I., Furuta, H., Bharadhwaj, H., Walke, H., Fang, H., Ha, H., Mordatch, I., Radosavovic, I., Leal, I., Liang, J., Abou-Chakra, J., Kim, J., Drake, J., Peters, J., Schneider, J., Hsu, J., Vakil, J., Bohg, J., Bingham, J., Wu, J., Gao, J., Hu, J., Wu, J., Wu, J., Sun, J., Luo, J., Gu, J., Tan, J., Oh, J., Wu, J., Lu, J., Yang, J., Malik, J., Silvério, J., Hejna, J., Booher, J., Tompson, J., Yang, J., Salvador, J., Lim, J.J., Han, J., Wang, K., Rao, K., Pertsch, K., Hausman, K., Go, K., Gopalakrishnan, K., Goldberg, K., Byrne, K., Oslund, K., Kawaharazuka, K., Black, K., Lin, K., Zhang, K., Ehsani, K., Lekkala, K., Ellis, K., Rana, K., Srinivasan, K., Fang, K., Singh, K.P., Zeng, K.H., Hatch, K., Hsu, K., Itti, L., Chen, L.Y., Pinto, L., Fei-Fei, L., Tan, L., Fan, L.J., Ott, L., Lee, L., Weihs, L., Chen, M., Lepert, M., Memmel, M., Tomizuka, M., Itkina, M., Castro, M.G., Spero, M., Du, M., Ahn, M., Yip, M.C., Zhang, M., Ding, M., Heo, M., Srirama, M.K., Sharma, M., Kim, M.J., Irshad, M.Z., Kanazawa, N., Hansen, N., Heess, N., Joshi, N.J., Suenderhauf, N., Liu, N., Palo, N.D., Shafiullah, N.M.M., Mees, O., Kroemer, O., Bastani, O., Sanketi, P.R., Miller, P.T., Yin, P., Wohlhart, P., Xu, P., Fagan, P.D., Mitrano, P., Sermanet, P., Abbeel, P., Sundaresan, P., Chen, Q., Vuong, Q., Rafailov, R., Tian, R., Doshi, R., Mart’in-Mart’in, R., Baijal, R., Scalise, R., Hendrix, R., Lin, R., Qian, R., Zhang, R., Mendonca, R., Shah, R., Hoque, R., Julian, R., Bustamante, S., Kirmani, S., Levine, S., Lin, S., Moore, S., Bahl, S., Dass, S., Sonawani, S., Tulsiani, S., Song, S., Xu, S., Haldar, S., Karamcheti, S., Adebola, S., Guist, S., Nasiriany, S., Schaal, S., Welker, S., Tian, S., Ramamoorthy, S., Dasari, S., Belkhale, S., Park, S., Nair, S., Mirchandani, S., Osa, T., Gupta, T., Harada, T., Matsushima, T., Xiao, T., Kollar, T., Yu, T., Ding, T., Davchev, T., Zhao, T.Z., Armstrong, T., Darrell, T., Chung, T., Jain, V., Kumar, V., Vanhoucke, V., Guizilini, V., Zhan, W., Zhou, W., Burgard, W., Chen, X., Chen, X., Wang, X., Zhu, X., Geng, X., Liu, X., Liangwei, X., Li, X., Pang, Y., Lu, Y., Ma, Y.J., Kim, Y., Chebotar, Y., Zhou, Y., Zhu, Y., Wu, Y., Xu, Y., Wang, Y., Bisk, Y., Dou, Y., Cho, Y., Lee, Y., Cui, Y., Cao, Y., Wu, Y.H., Tang, Y., Zhu, Y., Zhang, Y., Jiang, Y., Li, Y., Li, Y., Iwasawa, Y., Matsuo, Y., Ma, Z., Xu, Z., Cui, Z.J., Zhang, Z., Fu, Z., Lin, Z.: Open X-Embodiment: Robotic learning datasets and RT-X models. https://arxiv.org/abs/2310.08864 
+
+(2023) EVA 17 15. Du, Y., Yang, M., Dai, B., Dai, H., Nachum, O., Tenenbaum, J.B., Schuurmans, D., Abbeel, P.: Learning universal policies via text-guided video generation (Nov 2023). https://doi.org/10.48550/arXiv.2302.00111 
+
+16. Du, Y., Yang, S., Dai, B., Dai, H., Nachum, O., Tenenbaum, J., Schuurmans, D., Abbeel, P.: Learning universal policies via text-guided video generation. Advances in neural information processing systems 36 , 9156–9172 (2023) 17. Feng, Y., Tan, H., Mao, X., Xiang, C., Liu, G., Huang, S., Su, H., Zhu, J.: Vidar: Embodied video diffusion model for generalist manipulation (Sep 2025). https: //doi.org/10.48550/arXiv.2507.12898 
+
+18. Feng, Y., Xiang, C., Mao, X., Tan, H., Zhang, Z., Huang, S., Zheng, K., Liu, H., Su, H., Zhu, J.: Vidarc: Embodied video diffusion model for closed-loop control (Dec 2025). https://doi.org/10.48550/arXiv.2512.17661 
+
+19. Guo, D., Yang, D., Zhang, H., Song, J., Wang, P., Zhu, Q., Xu, R., Zhang, R., Ma, S., Bi, X., et al.: Deepseek-r1: Incentivizing reasoning capability in llms via reinforcement learning. arXiv preprint arXiv:2501.12948 (2025) 20. Guo, Y., Shi, L.X., Chen, J., Finn, C.: Ctrl-world: A controllable generative world model for robot manipulation (Oct 2025). https://doi.org/10.48550/arXiv. 2510.10125 
+
+21. Hu, Y., Guo, Y., Wang, P., Chen, X., Wang, Y.J., Zhang, J., Sreenath, K., Lu, C., Chen, J.: Video prediction policy: A generalist robot policy with predictive visual representations (May 2025). https://doi.org/10.48550/arXiv.2412.14803 
+
+22. Jang, J., Ye, S., Lin, Z., Xiang, J., Bjorck, J., Fang, Y., Hu, F., Huang, S., Kundalia, K., Lin, Y.C., Magne, L., Mandlekar, A., Narayan, A., Tan, Y.L., Wang, G., Wang, J., Wang, Q., Xu, Y., Zeng, X., Zheng, K., Zheng, R., Liu, M.Y., Zettlemoyer, L., Fox, D., Kautz, J., Reed, S., Zhu, Y., Fan, L.: Dreamgen: Unlocking generalization in robot learning through video world models (Jun 2025). https://doi.org/10. 48550/arXiv.2505.12705 
+
+23. Kim, M.J., Gao, Y., Lin, T.Y., Lin, Y.C., Ge, Y., Lam, G., Liang, P., Song, S., Liu, M.Y., Finn, C., Gu, J.: Cosmos policy: Fine-tuning video models for visuomotor control and planning (Jan 2026). https://doi.org/10.48550/arXiv.2601.16163 
+
+24. Kim, M.J., Pertsch, K., Karamcheti, S., Xiao, T., Balakrishna, A., Nair, S., Rafailov, R., Foster, E., Lam, G., Sanketi, P., Vuong, Q., Kollar, T., Burchfiel, B., Tedrake, R., Sadigh, D., Levine, S., Liang, P., Finn, C.: OpenVLA: An open-source vision-language-action model (2024), https://arxiv.org/abs/2406.09246 
+
+25. Levine, S., Finn, C., Darrell, T., Abbeel, P.: End-to-end training of deep visuomotor policies. Journal of Machine Learning Research 17 , 1–40 (2016) 26. Liao, Y., Zhou, P., Huang, S., Yang, D., Chen, S., Jiang, Y., Hu, Y., Cai, J., Liu, S., Luo, J., Chen, L., Yan, S., Yao, M., Ren, G.: Genie envisioner: A unified world foundation platform for robotic manipulation (Oct 2025). https://doi.org/10. 48550/arXiv.2508.05635 
+
+27. Liu, J., Liu, G., Liang, J., Li, Y., Liu, J., Wang, X., Wan, P., Zhang, D., Ouyang, W.: Flow-grpo: Training flow matching models via online rl. arXiv preprint arXiv:2505.05470 (2025) 28. Liu, J., Liu, G., Liang, J., Yuan, Z., Liu, X., Zheng, M., Wu, X., Wang, Q., Qin, W., Xia, M., et al.: Improving video generation with human feedback. arXiv preprint arXiv:2501.13918 (2025) 29. Liu, S., Wu, L., Li, B., Tan, H., Chen, H., Wang, Z., Xu, K., Su, H., Zhu, J.: Rdt-1b: a diffusion foundation model for bimanual manipulation. arXiv preprint arXiv:2410.07864 (2024) 18 R. Wang et al. 30. NVIDIA, Ali, A., Bai, J., Bala, M., Balaji, Y., Blakeman, A., Cai, T., Cao, J., Cao, T., Cha, E., Chao, Y.W., Chattopadhyay, P., Chen, M., Chen, Y., Chen, Y., Cheng, S., Cui, Y., Diamond, J., Ding, Y., Fan, J., Fan, L., Feng, L., Ferroni, F., Fidler, S., Fu, X., Gao, R., Ge, Y., Gu, J., Gupta, A., Gururani, S., Hanafi, I.E., Hassani, A., Hao, Z., Huffman, J., Jang, J., Jannaty, P., Kautz, J., Lam, G., Li, X., Li, Z., Liao, M., Lin, C.H., Lin, T.Y., Lin, Y.C., Ling, H., Liu, M.Y., Liu, X., Lu, Y., Luo, A., Ma, Q., Mao, H., Mo, K., Nah, S., Narang, Y., Panaskar, A., Pavao, L., Pham, T., Ramezanali, M., Reda, F., Reed, S., Ren, X., Shao, H., Shen, Y., Shi, S., Song, S., Stefaniak, B., Sun, S., Tang, S., Tasmeen, S., Tchapmi, L., Tseng, W.C., Varghese, J., Wang, A.Z., Wang, H., Wang, H., Wang, H., Wang, T.C., Wei, F., Xu, J., Yang, D., Yang, X., Ye, H., Ye, S., Zeng, X., Zhang, J., Zhang, Q., Zheng, K., Zhu, A., Zhu, Y.: World simulation with video foundation models for physical ai (Nov 2025). https://doi.org/10.48550/arXiv.2511.00062 
+
+31. NVIDIA, Johan Bjorck andFernando Castañeda, N.C., Da, X., Ding, R., Fan, L.J., Fang, Y., Fox, D., Hu, F., Huang, S., Jang, J., Jiang, Z., Kautz, J., Kundalia, K., Lao, L., Li, Z., Lin, Z., Lin, K., Liu, G., Llontop, E., Magne, L., Mandlekar, A., Narayan, A., Nasiriany, S., Reed, S., Tan, Y.L., Wang, G., Wang, Z., Wang, J., Wang, Q., Xiang, J., Xie, Y., Xu, Y., Xu, Z., Ye, S., Yu, Z., Zhang, A., Zhang, H., Zhao, Y., Zheng, R., Zhu, Y.: GR00T N1: An open foundation model for generalist humanoid robots. In: ArXiv Preprint (March 2025) 32. Ouyang, L., Wu, J., Jiang, X., Almeida, D., Wainwright, C., Mishkin, P., Zhang, C., Agarwal, S., Slama, K., Ray, A., et al.: Training language models to follow instructions with human feedback. Advances in neural information processing sys-tems 35 , 27730–27744 (2022) 33. Pai, J., Achenbach, L., Montesinos, V., Forrai, B., Mees, O., Nava, E.: Mimic-video: Video-action models for generalizable robot control beyond vlas (Dec 2025). 
+
+https://doi.org/10.48550/arXiv.2512.15692 
+
+34. Peebles, W., Xie, S.: Scalable diffusion models with transformers. In: Proceedings of the IEEE/CVF international conference on computer vision. pp. 4195–4205 (2023) 35. Schulman, J., Wolski, F., Dhariwal, P., Radford, A., Klimov, O.: Proximal policy optimization algorithms. arXiv preprint arXiv:1707.06347 (2017) 36. Shao, Z., Wang, P., Zhu, Q., Xu, R., Song, J., Zhang, M., Li, Y.K., Wu, Y., Guo, D.: Deepseekmath: Pushing the limits of mathematical reasoning in open language models (2024), https://arxiv.org/abs/2402.03300 
+
+37. Tan, H., Feng, Y., Mao, X., Huang, S., Liu, G., Hao, Z., Su, H., Zhu, J.: Anypos: Automated task-agnostic actions for bimanual manipulation (Jul 2025). https: //doi.org/10.48550/arXiv.2507.12768 
+
+38. Team, G.R., Abeyruwan, S., Ainslie, J., Alayrac, J.B., Arenas, M.G., Armstrong, T., Balakrishna, A., Baruch, R., Bauza, M., Blokzijl, M., et al.: Gemini robotics: Bringing ai into the physical world. arXiv preprint arXiv:2503.20020 (2025) 39. Team, G.R., Devin, C., Du, Y., Dwibedi, D., Gao, R., Jindal, A., Kipf, T., Kirmani, S., Liu, F., Majumdar, A., Marmon, A., Parada, C., Rubanova, Y., Shah, D., Sindhwani, V., Tan, J., Xia, F., Xiao, T., Yang, S., Yu, W., Zhou, A.: Evaluating gemini robotics policies in a veo world simulator (Dec 2025). https://doi.org/ 10.48550/arXiv.2512.10675 
+
+40. Team, G., Ye, A., Wang, B., Ni, C., Huang, G., Zhao, G., Li, H., Zhu, J., Li, K., Xu, M., Deng, Q., Wang, S., Qin, W., Chen, X., Wang, X., Wang, Y., Cao, Y., Chang, Y., Xu, Y., Ye, Y., Wang, Y., Zhou, Y., Zhang, Z., Dong, Z., Zhu, Z.: Gigaworld-0: World models as data engine to empower embodied ai (Nov 2025). 
+
+https://doi.org/10.48550/arXiv.2511.19861 EVA 19 41. Team, O.M., Ghosh, D., Walke, H., Pertsch, K., Black, K., Mees, O., Dasari, S., Hejna, J., Kreiman, T., Xu, C., Luo, J., Tan, Y.L., Chen, L.Y., Sanketi, P., Vuong, Q., Xiao, T., Sadigh, D., Finn, C., Levine, S.: Octo: An open-source generalist robot policy (2024), https://arxiv.org/abs/2405.12213 
+
+42. Wan, T., Wang, A., Ai, B., Wen, B., Mao, C., Xie, C.W., Chen, D., Yu, F., Zhao, H., Yang, J., Zeng, J., Wang, J., Zhang, J., Zhou, J., Wang, J., Chen, J., Zhu, K., Zhao, K., Yan, K., Huang, L., Feng, M., Zhang, N., Li, P., Wu, P., Chu, R., Feng, R., Zhang, S., Sun, S., Fang, T., Wang, T., Gui, T., Weng, T., Shen, T., Lin, W., Wang, W., Wang, W., Zhou, W., Wang, W., Shen, W., Yu, W., Shi, X., Huang, X., Xu, X., Kou, Y., Lv, Y., Li, Y., Liu, Y., Wang, Y., Zhang, Y., Huang, Y., Li, Y., Wu, Y., Liu, Y., Pan, Y., Zheng, Y., Hong, Y., Shi, Y., Feng, Y., Jiang, Z., Han, Z., Wu, Z.F., Liu, Z.: Wan: Open and advanced large-scale video generative models. arXiv preprint arXiv:2503.20314 (2025) 43. Wang, J., Leonard, M., Daniilidis, K., Jayaraman, D., Hu, E.S.: Evaluating pi0 in the wild: Strengths, problems, and the future of generalist robot policies (2025), 
+
+https://penn-pal-lab.github.io/pi0-Experiment-in-the-Wild 
+
+44. Wang, J., Lu, J., Xu, G., Chen, C., Yang, H., Wang, L., Chen, P., Chen, M., Hu, Z., Wu, L., et al.: Tagrpo: Boosting grpo on image-to-video generation with direct trajectory alignment. arXiv preprint arXiv:2601.05729 (2026) 45. Wu, J., Yin, S., Feng, N., Long, M.: Rlvr-world: Training world models with rein-forcement learning. In: Advances in Neural Information Processing Systems (2025) 46. Xu, H., Ding, J., Xu, J., Wang, R., Chen, J., Mai, J., Fu, Y., Ghanem, B., Xu, F., Elhoseiny, M.: Diffusion-based imaginative coordination for bimanual manipu-lation. In: Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV). pp. 11469–11479 (October 2025) 47. Ye, S., Ge, Y., Zheng, K., Gao, S., Yu, S., Kurian, G., Indupuru, S., Tan, Y.L., Zhu, C., Xiang, J., Malik, A., Lee, K., Liang, W., Ranawaka, N., Gu, J., Xu, Y., Wang, G., Hu, F., Narayan, A., Bjorck, J., Wang, J., Kim, G., Niu, D., Zheng, R., Xie, Y., Wu, J., Wang, Q., Julian, R., Xu, D., Du, Y., Chebotar, Y., Reed, S., Kautz, J., Zhu, Y., Jang, J.: World action models are zero-shot policies 48. Zhao, T.Z., Kumar, V., Levine, S., Finn, C.: Learning fine-grained bimanual ma-nipulation with low-cost hardware. arXiv preprint arXiv:2304.13705 (2023) 49. Zhou, S., Du, Y., Chen, J., Li, Y., Yeung, D.Y., Gan, C.: Robodreamer: Learning compositional world models for robot imagination (Apr 2024). https://doi.org/ 10.48550/arXiv.2404.12377 
+
+50. Zhu, F., Wu, H., Guo, S., Liu, Y., Cheang, C., Kong, T.: Irasim: A fine-grained world model for robot manipulation (Jul 2025). https://doi.org/10.48550/ arXiv.2406.14540 EVA S1 
+
+# Supplementary Material 
+
+# A Detailed Experimental Results 
+
+We provide the full per-task simulation results for all 21 tasks in Table S1. The results show that EVA remains competitive with existing VLA baselines while improving over the unaligned video world model on a broad range of tasks. 
+
+Table S1: Real-robot success rates on 21 tasks. Each entry reports the number of successes out of 20 trials. Task ACT DP RDT π0 EVA 
+
+> (w/o RL)
+
+EVA Click Alarmclock 06/20 12/20 12/20 13/20 20/20 20/20 Click Bell 12/20 11/20 16/20 09/20 18/20 20/20 Handover Block 08/20 02/20 09/20 09/20 00/20 00/20 Handover Mic 17/20 11/20 18/20 20/20 00/20 03/20 Move Pillbottle Pad 00/20 00/20 02/20 04/20 04/20 06/20 Move Stapler Pad 00/20 00/20 00/20 00/20 00/20 01/20 Open Laptop 11/20 10/20 12/20 17/20 06/20 10/20 Place A2B Right 00/20 03/20 00/20 05/20 10/20 11/20 Place Bread Basket 01/20 03/20 02/20 03/20 15/20 15/20 Place Burger Fries 10/20 14/20 10/20 16/20 12/20 12/20 Place Cans Plasticbox 03/20 08/20 01/20 07/20 08/20 09/20 Place Container Plate 14/20 08/20 16/20 18/20 14/20 16/20 Place Dual Shoes 02/20 02/20 01/20 03/20 00/20 01/20 Place Mouse Pad 00/20 00/20 00/20 01/20 04/20 05/20 Place Object Basket 03/20 03/20 07/20 03/20 02/20 02/20 Place Object Stand 00/20 04/20 03/20 07/20 12/20 13/20 Press Stapler 06/20 01/20 08/20 12/20 18/20 20/20 Shake Bottle 15/20 13/20 15/20 19/20 18/20 20/20 Shake Bottle Horizontally 13/20 12/20 17/20 20/20 20/20 20/20 Stamp Seal 00/20 00/20 00/20 01/20 05/20 04/20 Turn Switch 01/20 07/20 07/20 05/20 08/20 13/20 Success Rate 29.05% 29.52% 37.14% 45.71% 46.19% 52.62% 
+
+# B Reward Validity 
+
+To verify that the proposed IDM-based reward provides a meaningful training signal, we conduct two complementary analyses. First, we examine how reward S2 R. Wang et al. (a) Reward vs. visual artifact (b) Reward vs. execution success  
+
+> Fig. S1: Relationship between reward scores and rollout quality. (a) Reward scores grouped by whether the generated rollout contains visible embodiment-related artifacts. (b) Reward scores grouped by downstream execution outcomes in simulation. Results are shown for three representative tasks, with 10 rollouts per group for each task. Each point represents one rollout, and box plots summarize the reward distributions.
+
+scores relate to the visual quality of generated rollouts, particularly the presence of embodiment-related artifacts. Second, we analyze the relationship between reward scores and downstream execution outcomes in simulation. These experi-ments together assess whether the reward captures both visual plausibility and physical executability. 
+
+Reward score vs. visual quality. We first examine whether the proposed reward correlates with the visual quality of generated rollouts. For each of three representative tasks, we sample 10 visually plausible rollouts and 10 rollouts ex-hibiting embodiment-related kinematic artifacts. The grouping is determined by manual inspection according to the visual evaluation rubric described in Ap-pendix ?? . As shown in Figure S1(a), artifact-free rollouts generally receive higher reward scores, whereas rollouts with visible kinematic artifacts tend to obtain lower scores. This result suggests that the reward effectively captures embodiment-related inconsistencies in the generated motion. 
+
+Reward score vs. execution outcome. We next examine whether reward scores correlate with downstream execution outcomes in simulation. For each of three representative tasks, we sample 10 successful and 10 failed rollouts based on simulator execution results. Each generated rollout is decoded into an action sequence using the inverse dynamics model and then executed in the simulator. As shown in Figure S1(b), successful executions generally correspond to higher reward scores than failed ones across tasks, indicating that the proposed reward is positively correlated with downstream executability. 
+
+# C Detailed Training Analysis 
+
+Supervised Fine-Tuning Details. We first fine-tune the video generation model using supervised learning on 8 NVIDIA A800 GPUs with Fully Sharded Data Parallel (FSDP) and mixed-precision training in bf16. EVA S3 (a) Simulation setting (b) Real-world setting   
+
+> Fig. S3: Training reward curves in simulation and real-robot experiments. In both settings, the reward exhibits a generally increasing trend during alignment, indicating that the proposed objective provides a stable optimization signal. (a) Incorrect object interaction
+> (b) U nrealistic link-length
+> (c) Static behavior
+> Fig. S2: Representative reward hack-ing behaviors observed during GRPO training.
+
+Each training sample consists of a 49-frame video clip. For the RoboTwin sim-ulation dataset, the model is trained for approximately 4,500 optimization steps at an input resolution of 640 × 480 . For the real-world dataset collected on the physical robot platform, the model is trained for approximately 2,580 optimiza-tion steps at a resolution of 832 × 480 .The per-device batch size is set to 1 with gradient accumulation of 4 steps. We use the AdamW optimizer with learning rate 
+
+8 × 10 −6, β1 = 0.9, β2 = 0.95 , and weight decay of 0.05. The learning rate fol-lows a constant schedule with 100 warm-up steps. We additionally enable diffusion forcing with random history conditioning during training to improve temporal con-sistency. 
+
+GRPO Training. After supervised fine-tuning, we further align the model us-ing GRPO. We optimize the policy with AdamW using a learning rate of 2 × 10 −4,
+
+β1 = 0 .9, β2 = 0 .95 , and weight decay of 0.05. For each prompt, 8 candidate videos are sampled for policy optimization. The clipping range is set to 0.001 , with advantage clipping at 5.0 and a maximum gradient norm of 1.0. We also apply KL regularization with coefficient β = 0 .004 
+
+during optimization. Only the LoRA parameters (rank 32) are updated, while the backbone remains frozen. In the simulation setting, GRPO is trained for 136 optimization steps with 4 inner policy epochs per iteration, taking approximately S4 R. Wang et al. 
+
+6 days. In the real-world setting, we use 2 inner policy epochs and train for 46 optimization steps, taking approximately 3 days. The corresponding training reward curves are shown in Figure S3. 
+
+Reward Hacking. During the early and middle stages of GRPO train-ing, increases in the IDM-based reward generally correlate with improved kine-matic plausibility and higher execution success rates. However, this correlation may break down with prolonged optimization, where we occasionally observe degenerate high-reward behaviors, as shown in Figure S2. Representative fail-ure modes include incorrect object interactions, unrealistic link-length artifacts, and static behaviors in which the robot remains nearly motionless without com-pleting the task.These behaviors arise because the reward primarily encourages action smoothness and embodiment feasibility, without directly enforcing task completion. In practice, we mitigate this issue through checkpoint selection and early stopping based on validation rollout quality and downstream execution performance. 
+
+# D Ablation Study on the IDM 
+
+As shown in Table S2, we ablate the key design choice in our inverse dynamics model. Specifically, we replace the spatial softmax layer with a simple global average pooling layer to evaluate the importance of explicit spatial modeling. Test accuracy is computed as the fraction of predicted actions whose error with respect to the ground-truth action is within ±0.05 radians for each action di-mension, while test success rate follows the simulator-based evaluation protocol described in the main paper. This modification causes a clear performance drop, reducing the test accuracy from 0.9864 to 0.7738 and the test success rate from 89.52% to 84.29%. These results indicate that explicitly modeling spatial key-points is crucial for precise inverse dynamics prediction.          
+
+> Table S2: Ablation study on the IDM architecture. Test accuracy is defined as the fraction of predicted actions within ±0.05 radians of the ground-truth action. Test success rate follows the simulator execution protocol described in the main paper.
+> Inverse Dynamics Model Test Accuracy Test Success Rate
+> Ours 0.9864 89.52% Ours w/o Spatial Softmax 0.7738 84.29%
+
+EVA S5 
+
+Fig. S4: Real-world tabletop manipulation platform used in our experiments, built with AgileX PiPER robotic arms in a fixed multi-arm configuration. 
+
+Table S3: Key manipulator and gripper specifications of the AgileX PiPER arms used in our real-world experiments. 
+
+Component Specification 
+
+Manipulator type AgileX PiPER Arm DoF 6 DoF per arm Reach 626.75 mm Repeatability ±0.1 mm Rated payload 1.5 kg per arm Joint motion range J1: ±154 ◦, J2: 0◦–195 ◦, J3: −175 ◦–0◦
+
+J4: −106 ◦–106 ◦, J5: −75 ◦–75 ◦, J6: ±100 ◦
+
+Joint max speed J1: 180 ◦/s, J2: 195 ◦/s, J3: 180 ◦/s J4/J5/J6: 225 ◦/s Gripper type Two-finger gripper Gripper opening range 0–70 mm Gripper accuracy ±0.5 mm Rated clamping force 40 N Max clamping force 50 N 
+
+# E Real-World Experimental Setup 
+
+E.1 Robot Platform Setup 
+
+Our real-world experiments are conducted on an AgileX Cobot Magic platform, as shown in Figure S4 and Table S3. We use its dual-arm tabletop configura-tion, where each task may involve either single-arm or dual-arm manipulation depending on the task requirement. S6 R. Wang et al. 
+
+E.2 Task descriptions 
+
+We summarize the real-world evaluation tasks in Table S4. The task set includes both in-distribution tasks and out-of-distribution (OOD) tasks. 
+
+Table S4: Real-world evaluation tasks used in our experiments. 
+
+Task Name Arm Type Task Description 
+
+StackBowl Dual-Arm The robot uses both arms to grasp two bowls from the two sides and stack them onto the target bowl placed at the center of the table. HangCable Single-Arm The robot uses a single arm to grasp a black cable and hang it onto the designated rack. Place2Basket Single-Arm The robot uses a single arm to pick up an object from the tabletop and place it into a nearby basket. Place2Tray Single-Arm The robot uses a single arm to grasp an object from the table and place it onto the tray. FoldTowel Dual-Arm The robot uses both arms to grasp the two bottom corners of a towel and fold it upward. PlaceBlock (OOD) Single-Arm The robot uses a single arm to pick up a block and place it into the bowl with the specified color and position. PourWater (OOD) Single-Arm The robot uses a single arm to grasp a bottle and pour water into a bowl on the table. WipeTray (OOD) Single-Arm The robot uses a single arm to grasp a towel and wipe the white tray on the tabletop. FoldCloth (OOD) Dual-Arm The robot uses both arms to grasp the two bottom corners of a piece of clothing and fold it upward. PlaceToy (OOD) Single-Arm The robot uses a single arm to grasp a soft plush toy and place it into a basket. 
+
+# F Scaling Embodied Data via Zero-Shot Generation 
+
+Data scarcity remains a major bottleneck for robot learning. By bridging the ex-ecutability gap, our aligned world model enables a scalable pipeline for embodied data augmentation. Specifically, we leverage state-of-the-art text-to-image foundation models (e.g., Nano Banana 2) to synthesize diverse zero-shot initial scene observations. Con-ditioned on these generated images, our aligned video world model produces dynamic video trajectories that exhibit plausible embodiment-aware motion. Representative examples are shown in Figure S5. This fully synthetic zero-shot pipeline enables large-scale generation of diverse embodied trajectories without human teleoperation, suggesting a promising direction for mitigating the data bottleneck in embodied AI. EVA S7 Grasp the cup and pour coffee into the basket. 
+
+Use the left arm to grasp the apple and place it into the basket. 
+
+Lift the box lid with both arms. 
+
+Spread strawberries on the bread. 
+
+Press the yellow button with the left arm. 
+
+Place the shoe into the shoebox with the left arm. 
+
+Fig. S5: Zero-shot video generation results of the EVA-finetuned model on out-of-distribution (OOD) tasks. Each row shows a synthesized video sequence and the first frame is the conditioning image.

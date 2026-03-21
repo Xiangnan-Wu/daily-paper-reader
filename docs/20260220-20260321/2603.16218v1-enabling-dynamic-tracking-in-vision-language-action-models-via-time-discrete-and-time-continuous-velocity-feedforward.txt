@@ -1,0 +1,186 @@
+Title: Enabling Dynamic Tracking in Vision-Language-Action Models via Time-Discrete and Time-Continuous Velocity Feedforward
+
+URL Source: https://arxiv.org/pdf/2603.16218v1
+
+Published Time: Wed, 18 Mar 2026 00:55:18 GMT
+
+Number of Pages: 6
+
+Markdown Content:
+# Enabling Dynamic Tracking in Vision-Language-Action Models via Time-Discrete and Time-Continuous Velocity Feedforward 
+
+Johannes Hechtl 1, Philipp Schmitt 1, Georg von Wichert 1, Wolfram Burgard 2
+
+Abstract — While vision-language-action (VLA) models have shown great promise for robot manipulation, their deployment on rigid industrial robots remains challenging due to the inher-ent trade-off between compliance and responsiveness. Standard Behavior Cloning (BC) approaches predict discrete poses at low frequencies, omitting the velocity and acceleration feedforward terms typically used by low-level compliant controllers. This requires to rely on high stiffness for accurate tracking, thereby sacrificing safe contact dynamics. In this paper, we demonstrate the importance of integrating velocity feedforward terms into VLA policies to resolve this trade-off. We propose two methods for extracting velocity targets from VLAs: a time-discrete finite-difference approximation that serves as a highly effective bridge for existing models, and a continuous Cubic B-Spline action space that natively yields C2 continuous trajectories for high-frequency control. Crucially, both approaches are strictly model-agnostic and compatible with any standard action-chunking architecture, requiring modifications only to teleoperation, data processing, and the low-level controller. We fine-tune the π0.5 model and evaluate both of our approaches on a demanding, contact-rich cube-in-hole task. Our results indicate that incorporating the velocity feedforward term via finite differences significantly improves task execution speed, while the continuous B-Spline approach maintains high overall success rates and provides a foundation for smoother higher-order derivatives without compromising compliance. 
+
+I. I NTRODUCTION 
+
+In recent years, Vision-Language-Action (VLA) models have demonstrated significant capabilities in generalist robot manipulation [1]–[5]. This progress has been fueled by the availability of diverse datasets, ranging from large-scale cross-embodiment aggregations [6]–[8] and simulation benchmarks [9], [10], to legacy datasets for rigid manipula-tors [11], [12]. Despite this data diversity, a significant portion of current research utilizes compliant hardware, such as the ViperX arms in the ALOHA setup [13], [14]. These manipulators are lightweight, possess inherently weak actuators, and are safe for contact-rich interaction by design. However, their limited payload (approx. 750g) restricts their utility in industrial settings. Deploying VLAs in industrial environments requires rigid robots with higher payloads and precision, such as the Franka Emika, Kuka LBR, or Universal Robots (UR) series. Performing contact-rich manipulation with these stiff, rigid actuators introduces a risk of damaging the robot or the environment. The standard solution in robotics theory is the implementation of active compliance, specifically impedance 
+
+> 1Siemens Foundational Technologies
+> 2Department of Computer Science & Artificial Intelligence, University of Technology Nuremberg, Germany.
+
+Fig. 1: Comparison of target trajectory representations (also called action chunks) for low-level controllers. Blue dots in-dicate time-discrete policy predictions. (a) Baseline: Standard VLA outputs yield stepwise position references without ve-locity feedforward. (b) Ours-1: Finite-difference approxima-tion assumes linear interpolation between positions, provid-ing piecewise-constant velocities. (c) Ours-2: Our proposed Cubic B-Spline action space generates C2 continuous posi-tion and velocity profiles directly from model predictions. or admittance control [15]. These controllers regulate the dy-namic relationship between external forces and robot motion, typically simulating a mass-spring-damper system. In Behavior Cloning (BC), which forms the basis of VLA models, the fundamental objective is to imitate expert demonstrations. Consequently, good model performance re-lies on two distinct factors: (1) a high-quality teleoperation system that establishes the upper bound of performance and (2) a BC formulation capable of accurately capturing and reproducing the demonstrated dynamics. While compliant controllers are well-established for clas-sical control tasks [16], [17], their integration into BC and VLA architectures presents a theoretical challenge. Standard BC models typically predict discrete end-effector positions (or other representations like pose deltas or joint posi-tions) xd at a fixed action frequency (e.g., 15–60 Hz) [6]. However, a second-order impedance controller requires not just a target position, but rather a full reference trajectory including velocity ˙xd and acceleration ¨xd feedforward terms. The absence of these feedforward terms creates a funda-mental trade-off. Without accurate ˙xd and ¨xd, the controller relies entirely on the stiffness term proportional to the posi-tion error e = xd −x for tracking. Consequently, to minimize tracking error (lag), one must increase stiffness, thereby reducing compliance. Conversely, to maintain compliance, one must accept tracking errors. This limits the robot’s ability to perform tasks that require both high throughput and delicate interaction. Existing implementations of impedance controllers for VLAs [18], [19] predominantly employ zeroth-order control laws or set ˙xd = 0, ¨x = 0. Recent methods such as 
+
+> arXiv:2603.16218v1 [cs.RO] 17 Mar 2026
+
+CompliantVLA-adaptor [20] and FILIC [21] attempt to mit-igate interaction risks by dynamically modulating stiffness gains based on task context or force feedback. However, while these approaches determine when to be compliant, they do not address how to maintain tracking fidelity during com-pliant motion. By relying exclusively on position feedback and omitting feedforward velocity and acceleration terms, these methods still accept an inherent tracking lag. While this latency is often tolerated in research settings since it rarely impacts success rates, it imposes a limit on execution speed that restricts industrial deployment, where cost-effectiveness directly correlates with system throughput. Current software infrastructure typically abstracts away low-level dynamics. For instance, the Deoxys framework for Franka Emika [22] and standard implementations in Polymetis [23] or the Robot Control Stack(RCS) [24] operate primarily as setpoint regulators. To ensure safety within this paradigm, methods like SERL [19] implement reference limiting to saturate velocity during large step changes, pri-oritizing safe operation over dynamic tracking fidelity. Alternative approaches, such as the Adaptive Compliance Policy (ACP) [25], learn to modulate stiffness, effectively training the policy to exploit the controller’s tracking errors to exert force. However, this learned compliance introduces significant complexity and requires a special teleoperation setup. Recent works such as BEAST [26] and FAST [27] have also explored B-spline formulations for VLA action spaces. However, these approaches utilize splines primarily as a compression method and tokenizer for discrete action spaces. In this work, we directly address the tracking-compliance trade-off. We demonstrate that actively providing velocity feedforward terms to the low-level controller can signifi-cantly improve VLA performance. To the best of our knowl-edge, we are the first to integrate an impedance/admittance controller with explicit velocity feedforward into a VLA formulation. Our contributions are as follows: 1) We demonstrate that incorporating a velocity feed-forward term in the low-level controller can allow VLA policies to achieve faster execution times without sacrificing necessary compliance. 2) We propose a discrete velocity approximation method that computes velocity via finite differences between consecutive policy predictions, serving as an effective and easily deployable solution for existing discrete VLA architectures (see Fig. 1). 3) We introduce a continuous Cubic B-Spline Action Space, predicting spline control points to guarantee 
+
+C2 continuous trajectories, thereby allowing analytical evaluation of position and velocity at the native high-frequency control rate. 4) We empirically evaluate the impact of adding velocity feedforward to the robot controller both during teleop-eration and rollouts of learned policies. II. M ETHODOLOGY 
+
+We frame the robot manipulation task as a standard policy learning problem. At time step t, the policy π receives an observation ot (e. g., comprising visual data and the propri-oceptive state qt) and predicts an action at. In contemporary Behavior Cloning (BC) approaches utilizing action chunking, 
+
+at corresponds to a sequence of target poses over a future time horizon at a fixed frequency. To provide the necessary feedforward terms for the low-level compliant controller, we evaluate two distinct, additional representations for the action at: a finite-difference approach that operates on these discrete poses, and our proposed B-Spline method, which parameterizes at as the control points of a continuous-time trajectory. Note: neither of these trajectory representations are by themselves novel, but their application to BC is. 
+
+A. Cartesian Compliance and Feedforward Dynamics 
+
+To enable safe, contact-rich manipulation with rigid in-dustrial robots, we assume active compliance control. In the remainder of this work we will use Cartesian compliance control as the running example (while our methodology applies equally to joint-level compliance as well). Whether implemented as Impedance Control on torque-controlled robots or Admittance Control on position-controlled robots, the desired closed-loop behavior simulates a mass-spring-damper system: 
+
+Λd¨e + Dd ˙e + Kde = Fext (1) where e(t) = xd(t) − x(t) represents the tracking error between the desired reference xd and the actual end-effector position x. Λd, Dd, and Kd denote the positive semi-definite desired inertia, damping, and stiffness matrices, respectively, and Fext represents external forces acting on the robot. In the remainder of this work we will further specify our running example to use an admittance controller, which com-mands the robot’s Cartesian acceleration ¨x by substituting 
+
+¨e = ¨ xd − ¨x into Equation (1) and solving for ¨x:
+
+¨xcmd = ¨ xd − Λ−1 
+
+> d
+
+(Dd ˙e + Kde − Fext ) (2) Standard VLA architectures are designed to output only position targets (i. e., ˙xd = ¨xd = 0). At this point we encourage the reader to pause and review the implications of this for Eq. 1 and Eq. 2: Even for free space motions where there is no interaction with the environment ( Fext = 0 ) it is not possible to have both low tracking errors (low e, requires high gains Kd) and compliance (low gains Kd) at the same time. This motivates us to include the velocity feedforward terms ˙xd both during data collection via teleoperation and as part of the trajectory representation of policies learned from that data. As illustrated in Fig. 1, we define two methods to extract velocity targets from a VLA and compare them against the standard baseline: 1) Position-Only Targets (Baseline): The policy predicts discrete position targets xd, while the velocity feedfor-ward term is strictly set to zero ( ˙xd = 0). As shown in Fig. 1a, this yields stepwise position references, forcing the low-level controller to rely entirely on the stiffness term and positional error for tracking. 2) Time-Discrete Velocity Approximation (Method 1): 
+
+The policy predicts time-discrete positions, and veloc-ity is approximated during inference by calculating the finite difference between consecutive positions: ˙xt ≈
+
+(xt − xt−1)/∆t. As depicted in Fig. 1b, this approach effectively bridges existing position-only VLA outputs with velocity-aware controllers, provided the model is trained on data recorded with the same velocity-aware controller. However, it results in piecewise-constant velocity profiles that can introduce minor discontinuities. 3) Time-Continuous Action Space (Method 2): The actions in the dataset are transformed into Cubic B-Spline control points such that the action space intrin-sically models continuous trajectories. As illustrated in Fig. 1c, the policy predicts analytical curves, allowing smooth position and velocity profiles to be sampled directly at the high control frequency fctrl .
+
+B. Method 2: Cubic B-Spline Action Space 
+
+To provide the necessary smooth, higher-order derivatives for Method 2, we propose an action space based on Cubic B-Splines. Instead of predicting robot positions directly, the VLA model predicts a sequence of control points P =
+
+{P0, . . . , Pn}, which define a time-continuous reference trajectory xd(t).A B-spline curve of degree k is defined by its control points Pi and a knot vector t = {t0, . . . , t n+k+1 }. The position on the curve at any time t ∈ [tk, t n] is given by the linear combination of basis functions: 
+
+xd(t) = 
+
+> n
+
+∑
+
+> i=0
+
+Bi,k (t)Pi, (3) where Bi,k (t) are the B-spline basis functions of degree k.These functions are defined recursively [28]: 
+
+Bi, 0(t) = 
+
+{
+
+1, if ti ≤ t < t i+1 
+
+0, otherwise (4) 
+
+Bi,k (t) = t − ti
+
+ti+k − ti
+
+Bi,k −1(t)+ ti+k+1 − tti+k+1 − ti+1 
+
+Bi+1 ,k −1(t) (5) For our implementation, we use cubic splines ( k = 3 ), which ensure C2 continuity (continuity of position, veloc-ity, and acceleration). This allows the low-level controller to analytically derive the feedforward velocity ˙xd(t) and acceleration ¨xd(t) at any arbitrary time t by differentiating the basis functions. 
+
+˙xd(t) = 
+
+> n
+
+∑
+
+> i=0
+
+˙Bi, 3(t)Pi (6) 
+
+¨xd(t) = 
+
+> n
+
+∑
+
+> i=0
+
+¨Bi, 3(t)Pi (7) During inference at step τ , the VLA predicts a local set of control points Pτ defining the trajectory for the upcoming horizon. The low-level robot controller queries this spline to obtain (xd, ˙xd) at the native fctrl rate. This explicitly decouples the low-frequency action generation rate faction 
+
+from the high-frequency control domain. Camera RGB Image Language Instruction Robot Arm 
+
+Fig. 2: Workflow illustrating Cubic B-Spline inference. The VLA outputs control points, which are continuously sampled by the high-frequency controller. To train the B-Spline model, raw teleoperation data Traw ,recorded at high frequency, must be converted into B-Spline control points. We extract these by solving a Least Squares optimization over the entire recorded trajectory. This offline processing yields a standard behavior cloning dataset 
+
+Dspline = {(ot, Pt)}Nt=1 , allowing the use of off-the-shelf imitation learning algorithms. Furthermore, because cubic B-splines have local support, any point on the curve depends only on four adjacent control points in both directions. III. R ESULTS 
+
+To evaluate the efficacy of integrating explicit velocity feedforward terms into VLA-driven manipulation, we struc-ture our experiments into two main analyses: evaluating the impact on human teleoperation performance, and assessing the resulting policy execution. 
+
+A. Experiment Setup 
+
+We evaluate our methods on a contact-rich cube-in-hole task, as shown in Figures 3 and 4. The environment consists of a plastic fixture with a square opening. The objective is to pick up a cube and insert it into the hole. Because there is only a 1mm margin between the cube and the fixture, the insertion phase requires compliant behavior to avoid both jamming and destroying the fixture. Upon successful insertion, the cube falls onto a cone beneath the fixture, which deflects it to a random resting position within the workspace. This necessitates a large, transfer motion for the subsequent trial. Consequently, high task throughput in this environment requires two control requirements: (1) fast and accurate trajectory tracking during the transfer phase, and (2) highly compliant behavior during the insertion phase. Our teleoperation setup uses two OMY-L100 devices. These teleoperation devices provide desired position val-ues xd at a high frequency (>500Hz) which allows to com-pute the desired velocities ˙xd using low pass filtered finite differences. While incorporating an acceleration feedforward term ¨xd could theoretically further improve tracking fidelity, obtaining reliable acceleration references from a teleopera-tion setup is practically challenging due to noise amplifica-tion during double differentiation. Consequently, to prevent high-frequency noise from destabilizing the controller, our present implementation leverages ˙xd but assumes ¨xd = 0.We use two Universal Robots (UR) as examples for industrially used, rigid robots. The robots are controlled via the ur_rtde [29] library and we implement an active, Cartesian admittance controller as in Eq. 2. To demonstrate the compatibility of our methodology with state-of-the-art architectures, we fine-tune the π0.5 VLA model [5] for the policy evaluations. All models are trained for 40 , 000 steps with a batch size of 32 .Standard inference delays often produce jumps at action chunk boundaries. These discontinuous trajectories become highly problematic when attempting dynamic robot motions. To mitigate this during policy execution, we employ Real Time Chunking (RTC) [30], which leverages the inherent inpainting capabilities of flow-matching policies to enable smooth transitions between action chunks. 
+
+Fig. 3: Experimental setup. Teleoperation is performed using two OMY-L100 devices. 
+
+B. Teleoperation Results 
+
+To evaluate our first hypothesisthat integrating a velocity feedforward term enables faster execution and more ac-curate trackingwe analyzed the speed of the teleoperated demonstrations. A human operator executed the task for 10 -minute intervals under various controller configurations and action frequencies. For this experiment, the priority was fast task execution, and no measures for creating a structured 
+
+Fig. 4: Closeup of the cube-in-hole task. A strict 1mm 
+
+tolerance necessitates compliance. demonstration dataset were taken. Figure 5 illustrates the distribution of task completion times. 5  5    5  5  5    5                    
+
+> 
+> 5
+> 5
+> 5
+> 
+> 5
+> T      T    
+>          
+>   
+>          
+
+Fig. 5: Distribution of episode durations for teleoperation across different controller configurations. We include human performance for comparison. For the baseline (position-only), teleoperation performance remained largely consistent regardless of the reference up-date rate. Even when artificially bottlenecked to a highly delayed 5Hz update rate, the operator adapted to the system lag, and the low-level controller sufficiently smoothed the commanded trajectory to maintain task success. Conversely, the velocity-aware controller proved more re-active. As detailed in Table I, t-tests confirm that the velocity feedforward approach yields significantly lower task comple-tion times compared to the position-only baseline across all evaluated frequencies ( p < 0.001 ). Task completion times for the velocity-aware configurations exhibited less variance, as the operator could execute large transfer motions quickly and accurately without fighting the controller’s inherent tracking lag. However, this increased reactivity meant that the system was more sensitive to extreme delays. Specifically, we ob-Frequency Position (Baseline) Position & Velocity (Method) t-statistic p-value 
+
+5Hz 9.58 ± 3.97 (n = 68 ) 7.64 ± 3.00 (n = 88 ) −3.45 < 0.001 15Hz 8.48 ± 3.04 (n = 83 ) 5.85 ± 2.27 (n = 120 ) −7.02 < 0.001 60Hz 9.31 ± 3.19 (n = 84 ) 5.34 ± 1.41 (n = 122 ) −12 .06 < 0.001 500Hz 8.37 ± 3.49 (n = 76 ) 5.37 ± 1.55 (n = 121 ) −8.20 < 0.001 
+
+TABLE I: Summary statistics and one-tailed t-test results of Task Completion Times (Seconds) for Position-Only and Velocity-Aware Controllers during Teleoperation. The Velocity Aware Controller leads to significantly shorter Task Execution Times for all tested action frequencies. served a noticeable performance drop (an increase in mean completion time) when the action rate was restricted to 5Hz 
+
+compared to higher frequencies. Ultimately, the consistent speed advantage when using a velocity-aware controller establishes a higher upper bound for the data quality provided to the VLA model. 
+
+C. Policy Task Execution Speed 
+
+To analyze the impact of trajectory representation on task execution speed, Figure 6 presents the cumulative success rate over time, and Table II summarizes the corresponding statistical analysis. 2   2    2    
+
+> T  
+> 
+> 2
+> 
+> 
+> 
+> 
+>      
+> "* ""'&  '%%  & ($  
+> "%&"! "!*  %!
+> #!
+> !& $!
+> &%& )&  "&*  "$)$  ""'& )&  "%&"! !* "!&$"$
+
+Fig. 6: Cumulative success rate over task execution time for different configurations The Finite Difference method (Time-Discrete Velocity Ap-proximation) yields the fastest task execution ( M = 6 .05 s) and significantly outperforms the baseline ( M = 7.35 s) with p < 0.001 . Successful trials for this method begin around 4 seconds and plateau near its final success rate by approximately 8 to 10 seconds. The Cubic B-Spline approach, while demonstrating some capability for rapid successful rollouts before the 6-second mark, exhibits higher variance and a slightly higher mean execution time ( 7.45 seconds) compared to the baseline (7.35 seconds). Consequently, it does not yield a statistically significant improvement in execution speed. Despite this slower and less consistent temporal performance, the Spline policy ultimately achieves a high overall success rate of 
+
+79 .20% by the end of the 20 -second cutoff. We attribute this inconsistent temporal performance to the interaction between the spline formulation and Real-Time Chunking (RTC). While RTC mitigates jumps between action chunks, it does not completely eliminate them. For the Spline method, these residual jumps can lead to momentarily large, sampled velocity values, producing rapid, jerky motions in the robot. We hypothesize that these jerky motions introduce an unintended benefit during the insertion phase: if the manipulator fails to perfectly align the cube initially, these rapid motions (wiggling) may help overcome the 1mm 
+
+tolerance and find the hole, thus improving the final success rate. Finally, we demonstrate the necessity of matching the inference controller to the teleoperation setup. We evaluated an ablated policy that was trained on data collected with a velocity-aware controller, but executed during rollout using a position-only controller. As expected, this mismatch severely degrades performance. This configuration yields the slowest mean execution time of 10 .01 seconds—with successes only starting after 7.5 seconds—and achieves the lowest overall success rate among the evaluated models. This ablation high-lights the importance of matching the interpolation strategy during rollouts of policies with the availability of velocity feedforward terms (or lack thereof) during data collection. IV. C ONCLUSION AND FUTURE WORK 
+
+In this work, we addressed the inherent trade-off between compliant interaction and dynamic tracking in VLA-driven robotic manipulation. We demonstrated that integrating ex-plicit velocity feedforward terms into the low-level compli-ance controller enables rigid robots to execute fast transfer motions without sacrificing the compliance necessary for contact-rich tasks. We introduced two distinct approaches for bridging dis-crete VLA predictions with continuous control dynamics: a highly deployable finite-difference approximation, and a continuous Cubic B-Spline action space. Importantly, both methods are entirely model-agnostic. They are fully com-patible with any standard action-chunking VLA, requiring changes strictly in data collection, pre/post-processing, and the low-level controller, without altering the underlying neu-ral network architecture. We evaluated both methods on a demanding cube-in-hole task. The finite-difference approach provides a simple, easily deployable method to significantly improve task execution times over position-only baselines. Future research will focus on integrating full acceleration feedforward ( ¨xd) into the control loop. Given the extreme noise sensitivity of double differentiation, the guaranteed C2
+
+continuity inherently provided by our proposed Cubic B-Method Mean (s) Var. N t-stat p-value ∗ Sig. ( α = 0 .05 )Baseline 7.35 1.99 71 – – –Finite Difference 6.05 1.71 70 −5.70 < 0.001 Yes Cubic B-Spline 7.45 4.75 94 0.32 0.626 No Ablation (Velocity-Feedforward Dataset, Position Only Rollout) 10 .01 6.10 49 7.47 < 0.001 Yes  
+
+> ∗
+
+One-tailed p-value testing for a decrease in execution time compared to the baseline. For the ablation we instead test for an increase in execution time. 
+
+TABLE II: Task Execution Time Statistics and T-Test Results vs. Baseline Spline action space shows promise for enabling stable, high-speed, compliant manipulation. ACKNOWLEDGMENT 
+
+We used Gemini (Google, Gemini 3.1 Pro) to aid literature searches and minor grammar/style edits. All content was reviewed and revised by the authors, and the final manuscript is entirely our own work. REFERENCES [1] A. Brohan, N. Brown, J. Carbajal et al. , “RT-2: Vision-Language-Action Models Transfer Web Knowledge to Robotic Control,” https://arxiv.org/abs/2307.15818, 2023. [2] O. M. Team, D. Ghosh, H. Walke et al. , “Octo: An Open-Source Generalist Robot Policy,” in Proc. of Robotics: Science and Systems (RSS) , 2024. [3] M. J. Kim, K. Pertsch, S. Karamcheti et al. , “Open-VLA: An Open-Source Vision-Language-Action Model,” https://arxiv.org/abs/2406.09246, 2024. [4] NVIDIA, J. Bjorck, F. Castañeda et al. , “GR00T N1: An Open Foundation Model for Generalist Humanoid Robots,” https://arxiv.org/abs/2503.14734, 2025. [5] P. Intelligence, K. Black, N. Brown et al. , “π0.5: A Vision-Language-Action Model with Open-World Generalization,” https://arxiv.org/abs/2504.16054, 2025. [6] A. ONeill, A. Rehman, A. Maddukuri et al. , “Open x-embodiment: Robotic learning datasets and rt-x models: Open x-embodiment collab-oration 0,” in Proc. of the IEEE Int. Conf. on Robotics & Automation (ICRA) , 2024. [7] A. Khazatsky, K. Pertsch, S. Nair et al. , “DROID: A large-scale in-the-wild robot manipulation dataset,” in Proc. of Robotics: Science and Systems (RSS) , 2024. [8] H. R. Walke, K. Black, T. Z. Zhao et al. , “Bridgedata v2: A dataset for robot learning at scale,” in Proc. of the Conf. on Robot Learning (CoRL) , 2023. [9] O. Mees, L. Hermann, E. Rosete-Beas et al. , “CALVIN: A Benchmark for Language-Conditioned Policy Learning for Long-Horizon Robot Manipulation Tasks,” IEEE Robotics and Automation Letters , vol. 7, no. 3, 2019. [10] X. Li, K. Hsu, J. Gu et al. , “Evaluating real-world robot manipulation policies in simulation,” in Proc. of the Conf. on Robot Learning (CoRL) , 2025. [11] D. Kalashnikov, J. Varley, Y. Chebotar et al. , “MT-Opt: Con-tinuous Multi-Task Robotic Reinforcement Learning at Scale,” https://arxiv.org/abs/2104.08212, 2021. [12] S. Dasari, F. Ebert, S. Tian et al. , “RoboNet: Large-Scale Multi-Robot Learning,” in Proc. of Machine Learning Research (PMLR) , 2020. [13] T. Z. Zhao, V. Kumar, S. Levine et al. , “Learning Fine-Grained Bi-manual Manipulation with Low-Cost Hardware,” in Proc. of Robotics: Science and Systems (RSS) , 2023. [14] T. Z. Zhao, J. Tompson, D. Driess et al. , “ALOHA Unleashed: A Simple Recipe for Robot Dexterity,” https://arxiv.org/abs/2410.13126, 2024. [15] N. Hogan, “Impedance control: An approach to manipulation,” in 
+
+American Control Conference , 1984. [16] A. Albu-Schaffer, C. Ott, U. Frese et al. , “Cartesian impedance control of redundant robots: Recent results with the DLR-light-weight-arms,” in Proc. of the IEEE Int. Conf. on Robotics & Automation (ICRA) ,2003. [17] S. Haddadin, S. Parusel, L. Johannsmeier et al. , “The Franka Emika Robot: A Reference Platform for Robotics Research and Education,” 
+
+IEEE Robotics & Automation Magazine , 2022. [18] D. S. J. Pro, O. Hausdörfer, R. Römer et al. , “CRISP – Compliant ROS2 Controllers for Learning-Based Manipulation Policies and Tele-operation,” https://arxiv.org/abs/2509.06819, 2025. [19] J. Luo, Z. Hu, C. Xu et al. , “SERL: A Software Suite for Sample-Efficient Robotic Reinforcement Learning,” in Proc. of the IEEE Int. Conf. on Robotics & Automation (ICRA) , 2024. [20] H. Zhang, W.-H. Huang, Q. Tong et al. , “CompliantVLA-adaptor: VLM-Guided Variable Impedance Action for Safe Contact-Rich Ma-nipulation,” https://arxiv.org/abs/2601.15541, 2026. [21] H. Ge, Y. Jia, Z. Li et al. , “FILIC: Dual-Loop Force-Guided Imitation Learning with Impedance Torque Control for Contact-Rich Manipu-lation Tasks,” https://arxiv.org/abs/2509.17053, 2025. [22] Y. Zhu, A. Joshi, P. Stone et al. , “VIOLA: Imitation Learning for Vision-Based Manipulation with Object Proposal Priors,” in Proc. of Machine Learning Research (PMLR) , 2023. [23] Y. Lin, A. S. Wang, G. Sutanto et al. , “Polymetis,” https://facebookresearch.github.io/fairo/polymetis/, 2021. [24] T. Jülg, P. Krack, S. Bien et al. , “Robot control stack: A lean ecosystem for robot learning at scale,” https://arxiv.org/abs/2509.14932, 2025. [25] Y. Hou, Z. Liu, C. Chi et al. , “Adaptive Compliance Policy: Learning Approximate Compliance for Diffusion Guided Control,” in Proc. of the IEEE Int. Conf. on Robotics & Automation (ICRA) , 2025. [26] H. Zhou, W. Liao, X. Huang et al. , “BEAST: Efficient tokenization of b-splines encoded action sequences for imitation learning,” in 
+
+Advances in Neural Information Processing Systems , 2025. [27] K. Pertsch, K. Stachowicz, B. Ichter et al. , “Fast: Efficient action tokenization for vision-language-action models,” https://arxiv.org/abs/2501.09747, 2025. [28] C. De Boor, A practical guide to splines . Springer New York, 1978, vol. 27. [29] A. P. Lindvig, I. Iturrate, U. Kindler et al. , “Ur_rtde: An Interface for Controlling Universal Robots (UR) using the Real-Time Data Exchange (RTDE),” in IEEE/SICE International Symposium on System Integration (SII) , 2025. [30] K. Black, M. Y. Galliker, and S. Levine, “Real-Time Execution of Action Chunking Flow Policies,” https://arxiv.org/abs/2506.07339, 2025.

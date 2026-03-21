@@ -1,0 +1,380 @@
+Title: Discrete World Models via Regularization
+
+URL Source: https://arxiv.org/pdf/2603.01748v1
+
+Published Time: Tue, 03 Mar 2026 03:23:59 GMT
+
+Number of Pages: 15
+
+Markdown Content:
+# Discrete World Models via Regularization 
+
+Davide Bizzaro 1,2[0009 −0004 −0420 −0453] and Luciano Serafini 2[0000 −0003 −4812 −1031]  
+
+> 1
+
+University of Padua, Padua, Italy 
+
+davide.bizzaro@phd.unipd.it  
+
+> 2
+
+Fonadazione Bruno Kessler, Trento, Italy 
+
+serafini@fbk.eu 
+
+Abstract. World models aim to capture the states and dynamics of an environment in a compact latent space. Moreover, using Boolean state representations is particularly useful for search heuristics and symbolic reasoning and planning. Existing approaches keep latents informative via decoder-based reconstruction, or instead via contrastive or reward signals. In this work, we introduce Discrete World Models via Regu-larization (DWMR): a reconstruction-free and contrastive-free method for unsupervised Boolean world-model learning. In particular, we intro-duce a novel world-modeling loss that couples latent prediction with specialized regularizers. Such regularizers maximize the entropy and in-dependence of the representation bits through variance, correlation, and coskewness penalties, while simultaneously enforcing a locality prior for sparse action changes. To enable effective optimization, we also intro-duce a novel training scheme improving robustness to discrete roll-outs. Experiments on two benchmarks with underlying combinatorial struc-ture show that DWMR learns more accurate representations and tran-sitions than reconstruction-based alternatives. Finally, DWMR can also be paired with an auxiliary reconstruction decoder, and this combination yields additional gains. 
+
+Keywords: Discrete World Models · State Representation Learning ·
+
+Joint-Embedding Predictive Architectures · Regularization 
+
+# 1 Introduction 
+
+World models aim to capture the states and dynamics of an environment in a compact latent space, enabling prediction, planning and downstream control from high-dimensional observations [17, 11]. Within this setting, we specifically target discrete latent states made of bits that collectively form a propositional description of the environment state. Such discrete encodings are particularly appealing for planning and combinatorial domains, since they can mirror the underlying symbolic state space (e.g., board configurations in puzzles), allow exact state re-identification via bitwise equality, reduce model drift, and enable strong search heuristics and faster policy adaptation [1, 18]. Most existing approaches with similar objectives include a generative decoder that reconstructs observations from latent states [11, 2, 1, 14]. This is used to  
+
+> arXiv:2603.01748v1 [cs.LG] 2 Mar 2026 2D. Bizzaro and L. Serafini
+
+provide a reconstruction feedback nudging the latent representation to retain in-formation about the input, and thus prevent latent collapse : the situation where the learned representations are predictable from the previous, yet trivial and non-informative. However, pixel-level reconstruction may focus more on noisy perceptual details than on what is relevant for predicting actions’ effects [17, 8, 7]. Another line of work, particularly within the context of unsupervised learning with augmented views and continuous representations rather than discrete world models, employs alternative strategies to prevent latent collapse [16]: contrastive learning [20, 19], architectural asymmetry [10, 6] and regularization [21, 5]. In this work, we propose Discrete World Models via Regularization (DWMR), employing regularizations specifically tailored to world modeling and to Boolean latent representations. In particular, committing to Boolean states offers a most-informative distribution —independent Bernoulli (0 .5) bits— that provides a principled reference for shaping the latent space. Furthermore, this discreteness enables a natural structural prior, where actions are expected to flip only a sparse subset of bits. This motivates our two guiding research questions: (i) leveraging this natural ideal of factorized bits, can we design a regularization scheme that yields informative, non-collapsed Boolean representations in a world model? and 
+
+(ii) is such a tailored regularization strong enough to dispense with pixel-level decoders or contrastive machinery altogether? 
+
+We consider this problem in fully observable, deterministic environments (up to perceptual noise), with a known discrete action set and no reward function. Our focus is exclusively on learning a good representation and a good transition model in latent space, decoupled from policy learning. To investigate this, we consider a model consisting of an encoder that maps each image to a Boolean latent vector, and a predictor that takes the current latent state and the executed action as input and predicts the next latent state. Concretely, we introduce a Boolean world-modeling loss that couples action-conditioned prediction with regularizers enforcing informative, factorized, and sparsely changing bit codes. Such loss function is designed to simultaneously: 
+
+– minimize the prediction error of the next latent state, 
+
+– maximize (a proxy for) the entropy of each representation bit, 
+
+– maximize (a proxy for) the independence of the representation bits, 
+
+– impose a locality prior on actions’ effects, favoring transitions that flip only a small number of bits. Together, these components yield a collapse-resistant training objective that is explicitly aligned with the structure and goals of Boolean world modeling, en-abling a compact, meaningful latent space without relying on pixel reconstruc-tion, contrastive pairs, or augmented views. 
+
+# 2 Related Works 
+
+Our work lies in the context of world models and state representation learning [17], with a focus on discrete latent spaces. It is related to model-based rein-forcement learning, neurosymbolic planning, and joint-embedding methods. Discrete World Models via Regularization 3
+
+2.1 Discrete World Models 
+
+Model Based Reinforcement Learning (MBRL) seeks to learn a world model to roll-out imagined future states for decision making. Among the most relevant approaches in this area is the Dreamer series [12, 13, 14]. While DreamerV2 
+
+[13] introduced categorical latents akin to our discrete focus, these models rely on generative decoders to reconstruct pixels, which can prioritize visual fidelity over control-relevant dynamics. To address this, reconstruction-free approaches have emerged. Methods like Dreaming [19] and DreamerPro [8] replace pixel loss with contrastive objectives or prototype learning, respectively. Others, such as 
+
+MuDreamer [7] and TD-MPC2 [15], rely heavily on predicting values or rewards to shape the latent space. Unlike these approaches, we avoid the reward-and-policy loop, focusing on unsupervised, goal-independent learning. A related line of work aims at bridging subsymbolic perception with symbolic planning/search in discrete latent spaces. DeepCubeAI [1] combines MBRL with heuristic search on the learned discrete latents; LatPlan [2] induces a proposi-tional action model from unlabeled transitions; VAE-IW [9] uses width-based search on learned discrete representations, but the roll-outs are given by an ex-ternal simulator, not predicted in imagination. We too represent latent states as explicit bit vectors amenable to planning and search. However, our transitions are directly executable in imagination, unlike Latplan and VAE-IW , plus we avoid the generative component and use regularization instead. 
+
+2.2 Joint-Embedding Predictive Architectures (JEPA) 
+
+In contrast to the previous literature, Joint-Embedding Predictive Architec-tures (JEPA) [16] learn representations by predicting the embeddings of future or masked views without rewards and pixel-level decoding. While contrastive methods (e.g., CPC [20]) prevent collapse via negative pairs, non-contrastive approaches like BYOL [10], Barlow Twins [21] and VICReg utilize architectural asymmetry or variance-covariance regularization to maintain information con-tent. Recent works like I-JEPA [3] and V-JEPA [6] extend this to image and video masking; however all these works rely on augmented views and and not on action-condition dynamics. A work focusing on such dynamics is DINO-WM 
+
+[22], which however uses a frozen pre-trained encoder, and does not learn the state representation. Our work adapts JEPA principles to action-conditioned world modeling while learning the encoder end-to-end. Furthermore, instead of contrastive losses and masking data augmentation, we regularize directly for informative, factorized binary codes, with a locality bias on actions effects. This is analogous to the variance and covariance terms in VICReg [5], but extended and explicitly for-mulated for Boolean instead of continuous encodings. 
+
+# 3 Architecture and Training 
+
+DWMR implements an action-conditioned joint-embedding predictive architec-ture with discrete latent space (see Fig. 1). Given two successive observations, 4 D. Bizzaro and L. Serafini 
+
+an encoder enc ϕ maps each observation to a Boolean latent vector, producing a current and a target latent state. A predictor pred ψ then takes the current latent state together with the executed action and outputs a prediction for the next latent state. Training jointly optimizes the parameters ϕ and ψ so that the predicted representation closely matches the target one, while additional regularization encourages the learned Boolean codes to be informative, and to have sparse changes under each action. Indeed, what distinguishes DWMR is the design of a loss function that reliably induces informative discrete latent representations and dynamics, even without the reconstruction feedback from a generative component. 1st step 
+
+> 2nd step
+> Action "Left"
+
+Fig. 1: Overview of the model architecture and of the loss function. Encoders map successive observations into a shared Boolean latent space, and a predictor transforms the current latent state into the next, given the action. We illustrate and evaluate this setup on an 8-puzzle benchmark with MNIST digits, where actions move the blank tile and induce local state changes and new renderings of the digits. The crossed lines denote operations that stop the gradient, and we introduce a training scheme with two-steps updates: initially, the predictor is updated solely based on hard bits b, followed by a joint update of the encoder and predictor using probabilities p. Test-time inference relies only on the pathway involving b. The parameters ϕ′ are an EMA copy of the parameters ϕ.
+
+3.1 Architecture 
+
+The encoder enc ϕ is a neural network with sigmoid outputs, producing vectors of Bernoulli bit-probabilities p ∈ [0 , 1] K and corresponding hard bits b ∈ { 0, 1}KDiscrete World Models via Regularization 5
+
+obtained with a 0.5 threshold. The predictor pred ψ receives the current proba-bilities p concatenated with a one-hot action a and is implemented as another neural network yielding predicted soft values ˆp′ ∈ [0 , 1] K for the next step. The corresponding predicted bits ˆb′ ∈ { 0, 1}K are obtained by thresholding ˆp′ at 0.5,and are used whenever a discrete representation is required. The target bits b′ used during training are obtained from a detached expo-nential moving average copy enc ϕ′ of the encoder applied to the next image 
+
+x′. Concretely, the parameters ϕ′ of the target encoder are updated after each optimizer step as an exponential moving average (EMA) of the online encoder parameters ϕ:
+
+ϕ′ ← τ ϕ ′ + (1 − τ ) ϕ, 
+
+where τ ∈ (0 , 1) is the EMA coefficient. This mechanism is analogous to the method used in BYOL [10], where the slowly updated target network serves to avoid representation collapse. In our case, collapse is prevented instead by the loss function, and the EMA target encoder is used primarily to stabilize training. While BYOL typically employs very slow EMA updates with τ > 0.996 , we use a substantially smaller value (around τ ≈ 0.9), which we found empirically to yield better predictive performance in our world-model setting. 
+
+3.2 Loss Function 
+
+A prediction loss enforcing consistency between predicted and encoded next states is not sufficient by itself to yield a useful world model: the predictor may exploit degenerate solutions that ignore the true dynamics of the environment, and the encoder can learn to generate non-informative codes. To avoid this, we add loss terms that explicitly shape the Boolean latent space: they encour-age informative, non-collapsed codes, reduce redundancy across dimensions, and enforce that each action induces only sparse changes in the representation. Concretely, we propose a loss function which is a weighted sum of (i) a 
+
+prediction loss Lpred between predictor outputs and target bits, (ii) variance ,
+
+correlation and coskewness regularizers Lvar , Lcor and Lcos to avoid representa-tion collapse and maximize information content, and (iii) a locality regularizer 
+
+Lloc to bias actions to flip only a few bits: 
+
+LDWMR := Lpred + λvar Lvar + λcor Lcor + λcos Lcos + λloc Lloc . (1) In what follows we describe each term that composes this loss function. To this end, we first fix some notation. Let N denote the number of samples in a minibatch and K the number of bits in the latent representation. We denote by 
+
+p ∈ [0 , 1] N ×K the matrix of encoder Bernoulli probabilities over the first images in the batch. We then define the batch-normalized probabilities 
+
+˜pmk := pmk − En[pnk ]
+
+σn[pnk ] + ϵ , (2) where ϵ = 10 −6 is a constant added for numerical stability. 6 D. Bizzaro and L. Serafini 
+
+Prediction Loss Lpred . As prediction loss Lpred , we use the binary cross-entropy (BCE) between the predicted probabilities ˆp′ outputted by pred ψ and the (detached) target bits b′ produced by enc ϕ′ over the next image: 
+
+Lpred := BCE (ˆ p′, b ′) (3) 
+
+Variance Regularizer Lvar . To prevent degenerate codes where each bit is constant, we want to encourage per-bit variability . Let vk := Var n[pnk ] be the batch variance for each bit k. The Lvar penalty softly enforces a standard devi-ation per bit of at least γ:
+
+Lvar := 1
+
+K
+
+> K
+
+X
+
+> k=1
+
+max 
+
+
+
+0, γ − √vk + ϵ
+
+
+
+. (4) Here γ is a hyperparameter close to but lower than the Bernoulli (0 .5) ’s standard deviation of 0.5, and ϵ = 10 −6 is added for numerical stability. This hinge form of the loss yields zero cost when the standard deviation is high enough ( √vk + ϵ > γ) and penalizes lower variability otherwise. 
+
+Correlation Regularizer Lcor . To promote independence across bits, we pe-nalize off-diagonal absolute correlation among the encoder outputs. So if C :=  
+
+> 1
+> B−1
+
+˜p⊤ ˜p is the correlation matrix, we minimize its mean absolute off-diagonal value: 
+
+Lcor := 1
+
+K(K − 1) 
+
+X
+
+> i̸=j
+
+|Cij |. (5) Differently from VICReg [5], we found better results using the correlation matrix instead of the covariance matrix, i.e., dividing each dimension k by its standard deviation along the batch σn[pnk ] + ϵ.
+
+Coskewness Regularizer Lcos . While Lcor suppresses pairwise dependen-cies, higher-order co-activations can persist. To discourage such occurrencies, we penalize standardized third-order cross-moments (a.k.a. coskewness) of the bit-probabilities. Thus, we form the third-order moment tensor Mijk = En[˜ pni ˜pnj ˜pnk ]
+
+(using Einstein notation), and restrict to triplets with all indices distinct. The loss is the mean absolute value of these cross-moments: 
+
+Lcos := 1
+
+K(K − 1)( K − 2) 
+
+X 
+
+> i̸=j, j ̸=k, i ̸=k
+
+|Mijk | . (6) 
+
+Lcos complements Lcor by suppressing structured triplet interactions that would otherwise survive pairwise decorrelation. The cubic complexity was perfectly tractable in our setting, but in case one may reduce it by computing the loss only on some randomly sampled triplets (i, j, k ).Discrete World Models via Regularization 7
+
+Locality Regularizer Lloc . In most domains, the underlying dynamics are lo-cal in a propositional state space: a single action typically modifies only a small subset of the state variables (e.g., the position of one tile in a puzzle or the angle of one joint in a robot) while leaving the remainder of the environment state invariant. If the Boolean latent vector is to play the role of such a propositional state, it is natural to bias the model toward transitions that flip only few bits at each time step. This locality bias encourages the model to disentangle indepen-dent factors of variation and discover a representation where actions have local and possibly more interpretable effects. Concretely, let pnk ∈ [0 , 1] be the probability of bit k for sample n produced by the encoder enc ϕ(x) at the current image x, and let b′ 
+
+> nk
+
+∈ { 0, 1} be the corresponding hard bit obtained from the target encoder enc ϕ′ (x′) applied to the next image x′. To quantify how many bits are effectively flipped by one transition, we define a soft Hamming distance between the current probabilities and the next-step target bits for each sample n:
+
+dn := 10.75 K
+
+> K
+
+X
+
+> k=1
+
+pnk − b′ 
+
+> nk
+
+I  pnk − b′ 
+
+> nk
+
+> 0.5 , (7) where I(·) is the indicator function. A dimension contributes only when the difference crosses the 0.5 threshold, meaning the non-zero terms in the sum are strictly within the range (0 .5, 1] . We therefore normalize by 0.75 K (instead of 
+
+K) to account for the average magnitude of these active terms, obtaining a more accurate estimate of the fraction of flipped bits. We then penalize deviations of dn from a desired window [L, U ] of flipped bits per action: 
+
+Lloc := En
+
+h
+
+max  0, |dn − m| − w2i
+
+, m = L + U
+
+2K , w = U − L
+
+2K . (8) For example, if we use L = 1 and U = 6 , the model is nudged to flip (approxi-mately) at least one and at most six bits per move. 
+
+3.3 Training Procedure 
+
+A challenge in learning discrete latent dynamics is the tension between optimiza-tion and representation. On the one hand, we rely on backpropagation, which requires differentiable quantities. On the other hand, our transition model will ultimately operate on discrete Boolean states, and its performance at test time depends on its ability to consume and predict binarized latent codes rather than real-valued continuous vectors. To reconcile these requirements, we use a simple two-step training scheme on each minibatch. Let p be the encoder probabilities, b := I(p ≥ 0.5) the corre-sponding hard bits, and ˆp′ the predictor output targeting b′. The two steps are the following: 8 D. Bizzaro and L. Serafini 
+
+1. Predictor update on discrete inputs. We first detach the encoder and update only the predictor parameters ψ using the prediction loss Lpred . In this step, the predictor is trained with inputs b and targets b′. Thus, the predictor is taking discrete codes as input, which is exactly the regime it will face at test time. 2. Joint continuous update. We then re-enable gradients for the encoder and perform a second, fully differentiable update on the same minibatch, feeding the continuous probabilities p to the predictor and backpropagating through both encoder and predictor under the full objective (prediction plus regularizers). This step nudges the encoder to produce continuous codes that, after binarization, remain easy to model for a predictor already specialized to discrete inputs. Although this procedure doubles the number of optimization steps per mini-batch, notice that the computational overhead remains modest: the heavier model is the encoder and it can be evaluated only once per batch. Moreover, as shown in Section 5.1, the proposed procedure achieves equal or superior ac-curacy than a straight-through estimator or a fully differentiable training with soft values. 
+
+# 4 Experiments 
+
+We evaluate our framework on two combinatorially challenging domains: MNIST 8-puzzle and IceSlider . In both settings, we assess the ability of the models to learn a compact, discrete latent representation that captures the environment’s known symbolic states and dynamics without supervision. Code to reproduce all experiments is available at https://github.com/dbizzaro/DWMR. 
+
+4.1 Benchmarks MNIST 8-puzzle. Each environment state is a configuration of a 3×3 sliding puzzle with tiles {1, . . . , 8} and a blank tile 0. Actions are {up,down,left,right },and move the blank cell; invalid moves (that would push the blank cell outside of the grid) are rejected. States are rendered as single-channel 88 ×88 images by placing MNIST patches on a 3×3 grid with 1-pixel gutters; the digit for each tile is re-sampled at every timestep, while the blank is rendered as a black square (see Fig. 1). Optionally, to test the robustness to perceptual noise, we add i.i.d. Gaussian pixel noise N (0 , 0.5) and clip intensities to [0 , 1] . Train/validation/test splits are generated as long random-walk trajectories from random solvable ini-tial states, with distinct seeds across splits (to test generalization to new tra-jectories and configurations) and disjoint MNIST sources across splits (to test perceptual generalization to unseen digit instances). We use 30 ,000 transitions for training and 6,000 for validation and for test. Discrete World Models via Regularization 9
+
+Fig. 2: Example transition in IceSlider. 
+
+IceSlider. IceSlider is an 8×8 grid puzzle introduced in [4] and adopted as a benchmark for DeepCubeAI [1]. Ob-servations are rendered as 64 ×64 RGB images depicting the 8×8 board, using fixed patches for the agent, the goal cell, the rocks (obstacles), and the ice (free cells). When an action {up,down,left,right } is taken, the agent moves in the chosen direction until it is stopped by either a rock or the boundary of the grid (see Fig. 2). We generate an offline dataset from random interaction episodes consisting of 20 actions, and follow previous work [4, 1] but with a tenth of the repetitions: we collect 40 ,000 overall transitions for training and 10 ,000 for vali-dation and for test. Similarly to the 8-puzzle, we report results both in a clean setting and under Gaussian N (0 , 0.5) pixel noise. 
+
+4.2 Experimental Setup Architectures. For the MNIST 8-puzzle , the encoder enc ϕ is a 5-layer CNN with 3×3 convolutions, GroupNorm and ReLU, and with 2×2 average pooling after the first three layers. The final grid is flattened and passed through a two-layer MLP (hidden size 96 ) to produce K = 64 sigmoid outputs p ∈ [0 , 1] K ,thresholded at 0.5 into bits b ∈ { 0, 1}K . The predictor pred ψ is a three-layer MLP with hidden layer of size 128 , ReLU activation, and sigmoid outputs. For IceSlider , we adopt instead the grid-aligned architecture used in Deep-CubeAI [1]. Concretely, the encoder enc ϕ is made by a convolutional layer with kernel size 4, stride 4, ReLU activation, and 32 channels, followed by another convolutional layer with kernel size 2, stride 2, sigmoid output and 3 channels. The predictor pred ψ concatenates on the channel dimension the 3×8×8 image encodings (indeed, K=192 ) with the one-hot actions, and pass everything to four residual blocks with kernel size 3, batch normalization, and ReLU activations. In both benchmarks, when a decoder dec η is used (as in all baselines but DWMR), we employ a convolutional decoder mirroring the encoder architecture. 
+
+Evaluation Metrics. We evaluate representation quality with supervised lin-ear probes fitted after world-model training: we freeze the encoder and fit a lightweight readout that tries to reconstruct the underlying symbolic grid state. For the MNIST 8-puzzle , the probe is a single affine layer mapping the Boolean latent vector b to 9 independent softmax classifiers (one per board cell), each pre-dicting a value in {0, . . . , 8}. Instead, for IceSLider , we use a single-layer convolu-tional probe with kernel size 1, to predict per-cell classes {ice,rock,agent,goal }
+
+over the 8×8 grid. In both cases, the metric is mean per-cell f1-score : the f1-score for each cell classification, averaged across the 9 (8-puzzle ) or 64 (IceSlider ) cells. The probes are trained using the training split to fit the parameters, and the test split to report final performance. We use cross-entropy loss, train for 
+
+15 epochs with Adam optimizer, and fix the learning rate to 0.01 with a weight 10 D. Bizzaro and L. Serafini 
+
+decay of 0.001 . Given the trained probes, we report the performance metric in two settings: 
+
+– Encoding (Enc.) : the probe is applied directly to the Boolean latent codes at each timestep. 
+
+– Imagination (Im.) : the probe is applied after rolling-out the discrete latent dynamics in imagination for one step, using the predictor network. 
+
+Optimization and tuning. All models are trained with Adam optimizer and batch size N = 256 , for a fixed budget of 40 epochs for MNIST 8-puzzle, and 20 
+
+epochs for IceSlider. For each benchmark, the compared models share the same architecture for the encoder and for the predictor: differences are due only to the presence of the decoder and to the loss terms. For every model family, bench-mark and noise setting, we perform a hyperparameter search using the probe imagination results on the validation set. Final test results are computed using the model instance corresponding to the chosen hyperparameters, averaging the results over 10 runs. In all experiments we fix λpred = 1 , while tuning the co-efficients of the remaining loss terms (i.e., when applicable, λvar , λ cor , λ cos , λ loc ,
+
+λrec and λKL ). We also tune the learning rate, the locality window bounds L and 
+
+U , and the EMA decay coefficient τ of the target encoder. Finally, we also ap-ply exponential scheduling of such hyperparameters, tuning also the scheduling coefficients. 
+
+4.3 Model Comparison 
+
+We compare DWMR to some variants and to discrete autoencoding baselines: 
+
+– AE. This baseline augments the world model with a convolutional decoder 
+
+dec η trained to reconstruct pixels from encoder probabilities p. The training loss is LAE := Lpred + λrec Lrec , with Lrec := MSE  dec η (p), x .
+
+– β-VAE. The (Binary Concrete) β-VAE baseline uses the same decoder ar-chitecture as AE, but its inputs p are formed adding logistic noise to the logits (just before the encoder final sigmoid activation) [2]. In addition to prediction and reconstruction, it also adds a KL penalty to a Bernoulli (0 .5) 
+
+prior, 
+
+LKL := En
+
+1
+
+K
+
+> K
+
+X
+
+> k=1
+
+h
+
+pnk log pnk 
+
+0.5 + (1 − pnk ) log 1 − pnk 
+
+0.5
+
+i
+
+,
+
+which nudges each bit towards the “undecided” value pnk = 0 .5. So the overall loss is Lβ-VAE := Lpred + λrec Lrec + λKL LKL .
+
+– DeepCubeAI. This is a discrete autoencoding world model with the loss function used in DeepCubeAI [1]. In particular, let p′ be the soft encod-ing of next step observation x′, ˆp′ be the output of the predictor, r(·) be a rounding function with a straight-through estimator, and sg( ·) be stop-gradient. Then, encoder, decoder and predictor are trained jointly with 
+
+LDeepCubeAI := Lpred ′ + λrec Lrec ′ , where 
+
+Lrec ′ := 12 MSE(dec η (p), x ) + 12 MSE(dec η (p′), x ′),Discrete World Models via Regularization 11 
+
+and 
+
+Lpred ′ := 12 MSE( r(p′), sg( r(ˆ p′))) + 12 MSE(ˆ p′, sg( r(p′))) .
+
+– DWMR. Our Discrete World Model via Regularization is trained only with the predictive objective and the four regularizers of Eq. (1). 
+
+– DWMR+AE/ β-VAE. In these variants, we keep the full LDWMR loss of Eq. (1) and add a decoder (deterministic or variational) as an auxiliary head. The objectives are therefore LDWMR + λrec Lrec and LDWMR + λrec Lrec +
+
+λKL LKL respectively. 
+
+Results. Table 1 reports per-cell probe f1-scores for reconstructing the board configuration from encoder boolean states ( Enc. columns) and from one-step imagination roll-outs ( Im. columns). Table 1: Mean per-cell f1-scores, for reconstructing the board configurations from encoder states ( Enc. ) and from one-step roll-outs in imagination ( Im. ), using linear probes. We report the mean and standard deviation over 10 different runs, for each model and benchmark. 
+
+Models MNIST 8-puzzle IceSlider Clean Noisy Clean Noisy Enc. Im. Enc. Im. Enc. Im. Enc. Im. AE 41 ±26 36 ±22 50 ±10 44 ±8 96 ±11 83 ±11 83 ±8 84 ±9
+
+β-VAE 74 ±2 61 ±2 70 ±1 58 ±1 93 ±10 62 ±13 70 ±14 58 ±4
+
+DeepcubeAI 79 ±3 77 ±4 74 ±2 73 ±2 92 ±14 85 ±14 81 ±14 80 ±13 
+
+DWMR 91 ±1 84 ±2 90 ±2 80 ±3 99 ±2 95 ±2 81 ±6 85 ±5
+
+DWMR+AE 94 ±2 86 ±3 98 ±1 90 ±3 99 ±2 91 ±10 86 ±6 88 ±6
+
+DWMR+ β-VAE 96 ±5 91 ±4 92 ±2 82 ±1 99 ±2 90 ±4 73 ±12 70 ±9
+
+Across all settings, DWMR achieves strong and stable encoding and roll-out performances, despite being trained without any pixel-level reconstruction signal. In contrast, baselines that rely primarily on generative reconstruction (AE, β-VAE, and DeepCubeAI) consistently underperform. Among these, Deep-CubeAI improves over AE and β-VAE, but still falls short of DWMR. Overall, the results support the conclusion that the proposed Boolean-specific regular-izers are sufficient to learn a non-collapsed state space and transition function, even outperforming decoder-only alternatives. Finally, augmenting DWMR with an auxiliary decoder (as in DWMR+AE) can further improve performance, sug-gesting that reconstruction can provide complementary benefits once the latent space is already well-shaped by the regularization. 12 D. Bizzaro and L. Serafini 
+
+# 5 Ablations 
+
+In this section, we ablate key training and objective components, restricting the analysis to the MNIST 8-puzzle benchmark, and reporting per-cell accuracy (rather than per-cell f1-score, which was motivated by IceSlider class imbalance). 
+
+5.1 Comparison of Training Variants 
+
+To study the trade-off between discrete and differentiable optimization in the prediction loss, we considered three training variants that differ only in how the predictor receives its input and how gradients are propagated through the encoder. Contextually, we also validate the use of simple exponential schedules for the hyperparameters. With them, at the end of each epoch, the learning rates, the EMA coefficient τ , and the loss weights are each multiplied by a different fixed factor in [0 .9, 1.1] selected during hyperparameter search. The three different training regimes are the following: (i) a fully differentiable scheme where the predictor always sees soft probabilities, (ii) a straight-through scheme where the predictor sees hard bits but gradients flow as if probabilities had been used, and (iii) the proposed two-steps combination, where we first update the predictor on hard bits and then update encoder and predictor jointly with a straight-through estimator. Table 2: Mean per-cell accuracies, for reconstructing the board configurations from encoder states and from one-step roll-outs in imagination, using linear probes. We report the mean and standard deviation over 10 different runs on the MNIST 8-puzzle benchmark.                                                       
+
+> Model Scheduling Clean Noisy Encoding Imagination Encoding Imagination Fully differentiable yes 95 ±280 ±292 ±274 ±2
+> no 93 ±576 ±385 ±19 75 ±16
+> Straight-through yes 96 ±185 ±188 ±15 81 ±13
+> no 96 ±480 ±286 ±477 ±4
+> Two steps yes 93 ±686 ±595 ±283 ±3
+> no 92 ±484 ±491 ±381 ±2
+
+Empirically, the two-steps scheme is competitive or slightly better than the others in terms of encoding and roll-out accuracy, in particular under Gaussian noise. Scheduling the main hyperparameters further improves robustness: across all three variants, the scheduled runs are at least as good as their fixed counter-parts and often yield better results. Thus, we used the two-steps training scheme with scheduled hyperparameters as our default configuration. Discrete World Models via Regularization 13 
+
+5.2 Ablation on Model Parts 
+
+Table 3 reports the results of an ablation study where we start from the best hyperparameters of our reconstruction-free DWMR model, and remove individ-ual terms from the objective (or, in No EMA , let the parameters ϕ′ be equal to 
+
+ϕ, instead of being an exponential moving average of ϕ). Table 3: Ablation study starting from the DWMR hyperparameters. We report the mean and standard deviation over 10 different runs on the MNIST 8-puzzle 
+
+benchmark of the mean per-cell accuracies.                                                         
+
+> Model Clean Noisy Enc. Im. Enc. Im. DWMR 93 ±686 ±595 ±283 ±3
+> No Lvar 12 ±012 ±011 ±111 ±1
+> No Lcor 42 ±839 ±639 ±435 ±3
+> No Lcos 56 ±13 53 ±11 67 ±14 60 ±11
+> No Lloc 89 ±15 82 ±14 38 ±24 33 ±23
+> No EMA 87 ±15 81 ±13 93 ±279 ±4
+
+This ablation study confirms that each component of the proposed loss func-tion plays a distinct role in shaping the latent space: 
+
+– Prevention of latent collapse. The variance regularizer Lvar is the most critical component: its removal leads to a complete collapse of the latent space, with accuracy dropping to random guessing levels across all settings. This confirms that without explicitly enforcing variability, the Boolean code degenerates into a constant, non-informative state. 
+
+– Bit independence. The correlation regularizer Lcor and in lesser terms the coskewness regularizer Lcos are essential for a good representation. Removing any of them significantly degrades performance, indicating that penalizing pairwise and higher-order dependencies is necessary to force the bits to cap-ture distinct factors of variation. 
+
+– Robustness. The effect of the locality regularizer Lloc appears to depend on the chosen hyperparameters: in the clean setting, dropping Lloc degraded the performance of only one out of ten runs, while in the noisy setting the degradation was much more pronounced. Similarly, also the use of EMA on the target encoder proves important for robustness. 
+
+# 6 Limitations and Future Directions 
+
+While our results are encouraging, important challenges remain that open up several natural avenues for future work. First, our experiments do not address 
+
+partial observability , for which it may be necessary to incorporate some memory 14 D. Bizzaro and L. Serafini 
+
+(e.g., with a recurrent architecture). More explicit treatment of stochastic envi-ronments and/or continuous actions are also important for broader applicability. In general, evaluating on more domains , with different dynamics, would help clar-ify the scope and robustness of the approach. Second, a natural direction is to integrate our model with either MBRL policy learning or with planning/heuristic search to test the performance on concrete goal-driven tasks . Finally, given the locality prior, it would be interesting to study the interpretability of the learned transition functions , and whether locality yields more modular, human-readable update rules. 
+
+# 7 Conclusions 
+
+In this work, we introduced a novel framework for learning world models with discrete Boolean latent states, possibly removing the reliance on generative pixel-level reconstruction. Central to our approach is the design of a specialized regu-larization objective that explicitly shapes the latent space: we go beyond simple variance/covariance constraints by introducing coskewness regularization to en-force higher-order bit independence, and a locality regularizer that imposes a structural prior for sparse, action-induced state changes. Furthermore, we pro-posed a novel training scheme with two-step updates ensuring that the predictor remains robust to the binary inputs it encounters at test time, while using back-propagation for training. Our experiments on two benchmarks requiring strong generalization to novel board configurations demonstrate that this regularization approach yields superior state representations compared to autoencoding base-lines, and ablations indicate that each design choice contributes to the final rep-resentation quality. Overall, this confirms that our tailored Boolean regularizers successfully drive the world models to capture the underlying symbolic structure of the environments. Finally, while DWMR removes the need for pixel-level re-construction, it does not preclude it: indeed, pairing DWMR with an auxiliary reconstruction decoder yield additional gains. 
+
+# References 
+
+[1] Forest Agostinelli and Misagh Soltani. “Learning discrete world models for heuristic search”. In: (2024). [2] Masataro Asai et al. “Classical planning in deep latent space”. In: Journal of Artificial Intelligence Research 74 (2022), pp. 1599–1686. [3] Mahmoud Assran et al. “Self-supervised learning from images with a joint-embedding predictive architecture”. In: Proceedings of the IEEE/CVF Con-ference on Computer Vision and Pattern Recognition . 2023. [4] Marco Bagatella et al. “Planning from pixels in environments with com-binatorially hard search spaces”. In: Advances in Neural Information Pro-cessing Systems 34 (2021), pp. 24707–24718. [5] Adrien Bardes, Jean Ponce, and Yann LeCun. “VICReg: Variance-Invariance-Covariance Regularization For Self-Supervised Learning”. In: ICLR . 2022. Discrete World Models via Regularization 15 
+
+[6] Adrien Bardes et al. “Revisiting Feature Prediction for Learning Visual Representations from Video”. In: arXiv:2404.08471 (2024). [7] Maxime Burchi and Radu Timofte. “MuDreamer: Learning Predictive World Models without Reconstruction”. In: arXiv preprint arXiv:2405.15083 (2024). [8] Fei Deng, Ingook Jang, and Sungjin Ahn. “Dreamerpro: Reconstruction-free model-based reinforcement learning with prototypical representations”. In: International conference on machine learning . 2022. [9] Andrea Dittadi, Frederik K Drachmann, and Thomas Bolander. “Planning from pixels in atari with learned symbolic representations”. In: Proceedings of the AAAI Conference on Artificial Intelligence . 2021. [10] Jean-Bastien Grill et al. “Bootstrap your own latent-a new approach to self-supervised learning”. In: Advances in neural information processing systems 33 (2020), pp. 21271–21284. [11] David Ha and Jürgen Schmidhuber. “World models”. In: arXiv preprint arXiv:1803.10122 (2018). [12] Danijar Hafner et al. “Dream to control: Learning behaviors by latent imagination”. In: arXiv preprint arXiv:1912.01603 (2019). [13] Danijar Hafner et al. “Mastering atari with discrete world models”. In: 
+
+arXiv preprint arXiv:2010.02193 (2020). [14] Danijar Hafner et al. “Mastering diverse control tasks through world mod-els”. In: Nature (2025). [15] Nicklas Hansen, Hao Su, and Xiaolong Wang. TD-MPC2: Scalable, Robust World Models for Continuous Control . 2024. [16] Yann LeCun. “A Path Towards Autonomous Machine Intelligence”. In: 
+
+arXiv preprint arXiv:2201.05966 (2022). [17] Timothée Lesort et al. “State representation learning for control: An overview”. In: Neural Networks 108 (2018), pp. 379–392. [18] Edan Meyer, Adam White, and Marlos C Machado. “Harnessing discrete representations for continual reinforcement learning”. In: arXiv preprint arXiv:2312.01203 (2023). [19] Masashi Okada and Tadahiro Taniguchi. “Dreaming: Model-based rein-forcement learning by latent imagination without reconstruction”. In: 2021 ieee international conference on robotics and automation (icra) . IEEE. 2021, pp. 4209–4215. [20] Aaron van den Oord, Yazhe Li, and Oriol Vinyals. “Representation learning with contrastive predictive coding”. In: arXiv preprint arXiv:1807.03748 
+
+(2018). [21] Jure Zbontar et al. “Barlow twins: Self-supervised learning via redundancy reduction”. In: International conference on machine learning . 2021. [22] Gaoyue Zhou et al. “DINO-WM: World Models on Pre-trained Visual Features enable Zero-shot Planning”. In: arXiv preprint arXiv:2411.04983 
+
+(2024).

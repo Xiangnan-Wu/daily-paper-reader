@@ -1,0 +1,739 @@
+Title: Planning in 8 Tokens: A Compact Discrete Tokenizer for Latent World Model
+
+URL Source: https://arxiv.org/pdf/2603.05438v1
+
+Published Time: Fri, 06 Mar 2026 02:28:01 GMT
+
+Number of Pages: 22
+
+Markdown Content:
+# Planning in 8 Tokens: A Compact Discrete Tokenizer for Latent World Model 
+
+# Dongwon Kim 1 Gawon Seo 2 Jinsung Lee 2 Minsu Cho 2,3 Suha Kwak 21KAIST 2POSTECH 3RLWRLD 
+
+> https://kdwonn.github.io/CompACT
+
+# Abstract 
+
+World models provide a powerful framework for simulating environment dynamics conditioned on actions or instruc-tions, enabling downstream tasks such as action planning or policy learning. Recent approaches leverage world models as learned simulators, but its application to decision-time planning remains computationally prohibitive for real-time control. A key bottleneck lies in latent representations: con-ventional tokenizers encode each observation into hundreds of tokens, making planning both slow and resource-intensive. To address this, we propose CompACT, a discrete tokenizer that compresses each observation into as few as 8 tokens, drastically reducing computational cost while preserving essential information for planning. An action-conditioned world model that occupies CompACT tokenizer achieves competitive planning performance with orders-of-magnitude faster planning, offering a practical step toward real-world deployment of world models. 
+
+# 1. Introduction 
+
+Humans navigate the world not through pixel-perfect recall of their surroundings, but rather through compact mental representations that capture only the information necessary for decision-making [ 21 , 26 ]. This internal model—an im-precise but efficient abstraction of reality—reduces the com-plexity of sensory input into a representation optimized for action and planning. In the context of artificial intelligence and reinforcement learning (RL), this concept manifests as the world model [ 26 ], a neural network that captures environ-ment dynamics to enable planning [ 3 , 30 , 49 , 81 ] and policy learning [1, 27–29, 73]. World models have emerged as a promising solution to the sample inefficiency of RL. Traditional model-free RL methods require millions of interactions with the environ-ment to learn effective policies, making them impractical for real-world applications where data collection is expensive or risky. By learning to predict future states, world models en-able agents to simulate experiences internally, reducing the need for real environment interactions. Furthermore, these models themselves can be used for planning without addi-tional learning of policy [ 3 , 81 ] through model-predictive control (MPC) [14, 71]. Recent advances in world modeling have been driven by the rapid progress in generative models, particularly in image and video generation [ 7 , 18 , 57 ]. These models can generate photorealistic images or videos conditioned on language instructions [ 17 , 73 ] or actions [ 1, 3, 73 , 81 , 82 ], suggesting an implicit understanding of world’s underlying dynamics. However, there exists a critical gap between these gener-ative approaches and their application to planning. These models are designed for photorealistic image generation, requiring them to capture extensive perceptual detail such as textures, lighting, and shadows. This necessitates en-coding single images into hundreds of latent tokens, which sharply increases computational cost. Since most world mod-els in the literature adopt attention-based architectures [ 55 ], this burden grows quadratically, making planning especially expensive. As a result, current world models remain imprac-tical for real-world control: for example, the state-of-the-art navigation world models (NWM) [ 3 ] require up to 3 minutes of computation per episode for planning, 1 making them un-suitable for applications demanding real-time responsiveness. This motivates us to explore an alternative design philoso-phy: what if we prioritize extreme compression over perfect reconstruction? Rather than seeking the conventional path of increasing token count for higher fidelity representations, we hypothesize that aggressive compression might actually be beneficial—forcing the world model to learn more abstract, action-relevant representations rather than preserving every perceptual detail. To test this hypothesis, we push compres-sion to its extreme limit and investigate whether such radical reduction can still support effective planning. We propose CompACT, a compact tokenizer that encodes each image as few as 8 tokens—approximately 128 bits per image (8 tokens of 16 bits each). This represents an ex-treme compression ratio compared to existing approaches. For instance, the SD-VAE tokenizer [ 57 ] used in NWM [ 3]
+
+> 1Measured using a single RTX 6000 ADA GPU.
+
+1
+
+> arXiv:2603.05438v1 [cs.CV] 5 Mar 2026
+
+requires 784 tokens to represent the same image. Beyond the reduction in token count, our tokenizer further distin-guishes itself by employing a discrete latent space, enabling much faster future-state prediction: each token is unmasked only once [ 7], rather than being processed through hundreds of iterative denoising steps typically required in diffusion models utilizing continuous latent space [ 34 ]. By training world models in this compact latent space, we can achieve order-of-magnitude reductions in rollout latency. Compressing each image to just 128 bits creates an irre-ducible information bottleneck—the question is not whether to lose information, but which information to preserve. Plan-ning requires low-frequency features such as high-level se-mantics and spatial relationships, rather than high-frequency perceptual details like textures and lighting. Our approach separates these two aspects: only planning-critical semantics are preserved in compact tokens, while perceptual details are synthesized when pixel-level outputs are needed during decoding. The key design choice enabling such selective preserva-tion of semantic information is our use of a frozen pretrained vision encoder [ 61 ] as the foundation of our tokenizer. Con-ventional tokenizers train encoders end-to-end for recon-struction, prioritizing perceptual fidelity. In contrast, we leverage the rich semantic representations already captured by vision foundation models. Our compact latent tokens act as learnable queries that attend to these frozen repre-sentations via a cross-attention-based resampling module. Crucially, because vision foundation models already abstract away low-level reconstruction details—focusing instead on semantic understanding—our resampling process can only distill planning-critical semantic information. This design inherently ensures the tokenizer preserves object-level se-mantics and spatial relationships over photorealistic details. Complementing this semantic encoding strategy, our sec-ond key contribution is a generative decoding approach: rather than attempting direct pixel reconstruction from 16 or 8 tokens, our decoder learns to unmask a latent represen-tation capturing perceptual details from a pretrained target tokenizer that uses hundreds of tokens per image (specifi-cally, the VQGAN tokenizer from MaskGIT [ 7]), using our compact tokens as conditioning. While our compact latent tokens capture only high-level semantic features, the gener-ative decoding process synthesizes fine-grained details that are consistent with these semantics. This formulation trans-forms an intractable decompression problem into a tractable conditional generation task. To validate the effectiveness of the proposed approach, we train action-conditioned world models on the latent space of CompACT for both navigation and robot manipulation tasks. Such action-conditioned world models have a unique strength in that they can serve as general-purpose planners via MPC, but the prohibitive computational burden required for rollouts has remained as a bottleneck. On navigation plan-ning in RECON [ 60 ], an action-conditioned world model trained with CompACT achieves comparable accuracy to one using 784 continuous tokens while delivering approximately 40× speedup in planning latency. Furthermore, our 8-token model outperforms previous tokenizer with 64 tokens, vali-dating that carefully designed extreme compression can yield both computational efficiency and superior planning perfor-mance. To further validate the efficacy of compact latent tokens learned by CompACT, we conduct action-conditioned video prediction experiments on RoboNet [ 13 ]. On RoboNet, CompACT latent tokens enable accurate action regression comparable to previous tokenizers using 16× more tokens, and maintain strong action consistency in generated videos, confirming that the learned representations preserve action-relevant information critical for accurate planning. 
+
+# 2. Related Work 
+
+2.1. Image tokenization 
+
+Image tokenization has played a crucial role in visual gener-ation by alleviating the difficulty of directly modeling distri-butions in high-dimensional space [18, 42, 48, 57, 67, 75]. Conventional image tokenization approaches relies on 2D patch-grid latent representations, which fixes the number of tokens according to the input resolution and prevents further token compaction. To overcome this, recent works have explored 1D tokenization [ 2, 39 , 51 , 77 ], which does not ex-plicitly preserve spatial structure. Specifically, FlexTok [ 2]allows flexible token lengths (1–256) where later tokens cap-ture progressively finer details. However, these tokenizers are designed for photorealistic generation and prioritize high-frequency details and high-fidelity reconstruction, which are considered irrelevant to the decision making and planning. Recent tokenizers that leverage pretrained vision founda-tion models as encoders [ 24 , 79 ], share architectural simi-larities with the proposed approach. However, their use of foundation model features is motivated by improving the tractability of downstream generative modeling, rather than achieving extreme compression as in CompACT. Several recent world models [ 28 , 29 , 49 , 50 , 59 , 72 ] relate to the proposed approach through their use of discrete latent representations. Most related to ours, [ 50 , 72 ] reduce per-frame token count by conditioning on previous frames, but this limits applicability to long-horizon planning or scenar-ios with significant viewpoint changes. CompACT instead achieves compact tokenization unconditionally, by learning to retain only planning-critical information. 
+
+2.2. Masked generative model 
+
+Masked image generative models [ 7, 8, 20 , 22 , 43 , 44 , 70 ]leverage bidirectional attention mechanisms to reconstruct masked tokens during generation. Unlike traditional au-2𝑧 !"#
+
+𝑧 ! unmasked 
+
+> Encoder
+
+t-th obs. 
+
+> Encoder
+
+input image 
+
+> Decoder
+
+goal image final prediction 
+
+> Encoder
+> Decoder
+
+input image recon. 
+
+(a) Tokenizer training (b) Latent world model training 
+
+(c) Decision -time planning with latent world model 
+
+> Optimized
+> 𝑑 (⋅,⋅)
+
+masked 𝑧  
+
+> 𝑎 $"#𝑎 !
+> 𝑎 !"#
+> 𝑧 $"#𝑧 $𝑧 !𝑧 %
+> 𝑎 %
+
+Figure 1. Overview of the proposed latent world model formulation (Sec. 3.1). (a) An image tokenizer is first trained with a reconstruction objective to map an input image into compact latent tokens z. (Fig. 2 and Sec. 3.2). (b) Using the learned tokenizer, latent world model 
+
+fϕ(zt, at) is trained to model the conditional distribution of the future state pϕ(zt+1 |zt, at), where we adopt masked generative modeling (Sec. 3.3). (c) At test time, the learned latent world model is used for decision-time planning : An optimization procedure (e.g., MPC with CEM) searches over actions a0: H−1 to minimize the distance between the predicted final state and a goal image. 
+
+toregressive models [ 10 , 64 ] predicting tokens one-by-one, these architectures [ 76 , 80 ] can sample multiple tokens within a single step, thereby reducing the number of steps needed for full image generation. Notably, MaskGIT [ 7] and MAR [ 44 ] have demonstrated that such designs enable both rapid and high-quality image synthesis. In this work, we focus on the tokenization stage and adopt the widely used non-autoregressive sampling approach from MaskGIT [ 7]for generating token sequences. 
+
+2.3. Planning via World Models 
+
+World models [ 26 ] serve as internal representations that encode environmental dynamics, enabling agents to mentally simulate future states before acting. By predicting future observations from current states and actions, these models facilitate planning across diverse domains including robotics [47 , 73 ], autonomous driving [ 23 , 35 , 78 ], gaming [ 1, 5, 66 ], and navigation [3, 41, 53, 74]. Existing approaches can be broadly categorized into two paradigms based on their planning mechanisms. One line of approaches employs decision-time planning with world models through test-time optimization, where methods like TDMPC2 [ 30 ], DINO-WM [ 81 ], and NWM [ 3] iteratively refine action sequences toward specified goals using action-conditioned world model. Another line of approaches adopts hierarchical planning through subgoal generation, where sparse intermediate visual states are first generated to bridge current observations to goals, followed by Inverse Dynamics Models to extract executable actions. UniPi [ 16 ] exemplifies this strategy through conditional video generation guided by textual goals, and AVDC [ 40 ] uses language-conditioned prediction with optical flow for action estimation. These existing approaches face significant computational challenges in real-time settings, especially with large models like diffusion-based video generation models [ 5, 16 , 35 , 73 ]. In this work, we aim to build a world model within the ex-tremely compact latent space, enabling more efficient plan-ning and control. To validate the generality of our approach, we evaluate it across both paradigms: goal-conditioned vi-sual navigation, corresponding to decision-time planning with world models, and action-conditioned video predic-tion, corresponding to hierarchical planning through subgoal generation. 
+
+# 3. Method 
+
+3.1. Latent generative model as world model 
+
+In this section, we first describe how a world model can be formulated as a latent generative model. The over-all formulation is depicted in Fig. 1. We consider the standard world model setting where the objective is to predict future observations given current state and action. Formally, we denote observations (e.g., video frames) as 
+
+O = [o0, o1, . . . , oT ] ∈ RT ×H×W ×3 and actions as 
+
+A = [ a0, a1, . . . , aT ] ∈ RT ×3.2 The world model fθ :  
+
+> 2In navigation settings, actions are 3-dimensional, representing changes in x-axis, y-axis, and yaw. The formulation generalizes to different action dimensions (e.g., 5-dimensional actions of a robot arm).
+
+3RH×W ×3 × R3 → P (RH×W ×3) can be formulated as: 
+
+fθ : ( ot, at) 7 → pθ (ot+1 |ot, at). (1) For simplicity, we omit the temporal context window in our notation; in practice, the model conditions on a history of τ
+
+observations and actions. Because real-world dynamics are inherently uncertain and only partially observable, a world model should pro-duce a stochastic distribution over future states rather than a deterministic prediction. Such a stochastic formulation of the world model can be naturally implemented using generative modeling, where the generator is conditioned on past observations ot and action at. Direct genera-tive modeling in pixel space is computationally prohibitive due to the high dimensionality of visual observations. In-stead, the world model fθ can be formulated to operate on low-dimensional latent tokens z ∈ RN ×D [ 3 ]. These latent tokens are obtained via an image tokenizer com-prising an encoder E : RH×W ×3 → RN ×D and decoder 
+
+D : RN ×D → RH×W ×3, trained with a reconstruction ob-jective: Lrecon = || o − D (E(o)) || 22 (Fig. 1(a)). Extending Eq. (1), a latent world model fϕ : RN ×D ×R3 → P (RN ×D )
+
+can be described as 
+
+fϕ : ( zt, at) 7 → pϕ(zt+1 |zt, at), (2) where zt = E(ot) . Here, the token count N directly de-termines computational complexity: for attention-based ar-chitectures [ 55 ] commonly used in generative models, cost scales quadratically with N . By keeping N small, the latent world model formulation alleviates this quadratic bottleneck and enables efficient decision-time planning. Once the latent world model fθ is trained, we can use it to find a sequence of actions {at} that drives the transition from the initial observation o0 to the goal observation ogoal , as illustrated in Fig. 1(c). We first compute z0 = E(o0), and ini-tialize a candidate action sequence a = [ a0, a1, . . . , aH−1].Then, we obtain a sequence of latent tokens {zt} by rolling out the trained world model to predict future states over the planning horizon H:
+
+zt+1 ∼ fϕ(zt, at), t ∈ { 0, · · · , H − 1}. (3) After the rollout reaches the planning horizon (i.e., zH is sampled), the candidate action sequence a is evaluated using a cost function that measures the distance between the final predicted observation and the goal: C(a) = d( ˆ oH , ogoal ),where ˆoH = D(zH ), ˆogoal = D(zgoal ), and d(·, ·) is a dis-tance measure (e.g., LPIPS [ 37 ]). 3 The optimal action se-quence is then obtained via solving a∗ = arg min a C(a),where the optimization can be performed using sampling-based methods [12, 14, 71] or gradient descent.           
+
+> 3We can also define the cost function as d(zH,zgoal )in the latent space, which enables the faster planning since we can skip the decoding (Tab. 5). DINOv3
+> Compact latent
+> tokens ( 𝑁 ≤16 )
+> FSQ
+> Target latent
+> tokens ( 𝑁 !≫𝑁 )
+> Unmasked latent
+> tokens ( 𝑁 !≫𝑁 )
+
+## 𝑧 
+
+> Latent
+> Resampler
+> ℰ!
+> (VQGAN)
+> 𝒟 !
+> (VQGAN)
+
+𝒟 !"#$%!&   
+
+> (MM -DiT)
+> =MASK token
+
+ℰ!"#$%!& 
+
+Figure 2. A tokenizer architecture detail. During training, only the latent resampler and Dcompact are updated. Eψ produces masked target tokens (training only), while Dψ is used only during infer-ence for pixel level reconstruction. 
+
+3.2. CompACT tokenizer 
+
+The computation bottleneck in world model planning stems from the latent token count N : conventional tokenizers typi-cally encode images with hundreds of tokens, which slows down their sampling during autoregressive rollout. We in-troduce CompACT, a compact tokenizer Dcompact ◦ E compact 
+
+that encodes each image into just 16 or 8 discrete tokens and avoids iterative denoising by using a discrete latent space (Fig. 2). Despite this extreme compression, CompACT still preserves the sufficient information for planning (Sec. 4). 
+
+3.2.1. Semantic encoding via frozen features 
+
+The key design principle of our tokenizer is to preserve only planning-critical semantic information while discarding reconstruction-oriented high-frequency features. To achieve this, we build our encoder Ecompact around a frozen pretrained vision encoder—specifically, DINOv3 [ 61 ]—which already abstracts away low-level visual details in favor of seman-tic understanding. The encoder Ecompact : RH×W ×3 →{1, . . . , K }N maps an input image o into a sequence of 
+
+N (N ≤ 16) discrete tokens z, each selected from a vo-cabulary of size K. The encoder architecture consists of three components: (1) a frozen DINOv3 model that extracts semantic patch representations, (2) a latent resampler with learnable query tokens, and (3) a finite scalar quantization layer [48]. Specifically, the input image is patchified and encoded by the frozen DINOv3 model to obtain semantic represen-tations. The initial latent tokens z0 ∈ RN ×D then act as learnable queries in a transformer decoder-based latent re-sampler [ 68 ]. In each decoder block, these latent tokens attend to the DINOv3 output patch tokens via cross-attention layers, effectively distilling high-level semantic cues from the pretrained representations. Because the vision founda-4tion model has already abstracted away textures, lighting, and other low-level details, the cross-attention mechanism can selectively focus on semantic information—object iden-tities, spatial layouts, and scene structure—that remains in the frozen features. The output of the latent resampler is then discretized using finite scalar quantization, yielding discrete latent tokens z ∈ 1, . . . , K N . While such extreme compression inevitably discards fine-grained visual details, we hypothesize that these details are largely irrelevant for planning tasks, where object-level semantics and spatial re-lationships dominate decision-making. 
+
+3.2.2. Generative decoding 
+
+Direct pixel reconstruction from N ≤ 16 tokens is an ill-posed problem—the information bottleneck prevents the deterministic recovery of perceptual details, since diverse pixel-space manifestations can arise from identical semantic features. To address this, we propose a generative decoding strategy that introduces an intermediate representation. Our decoder Dcompact : {1, . . . , K }N → { 1, . . . , K ψ }Nψ learns to generate latent tokens from a pretrained tokenizer Dψ ◦ E ψ
+
+[7 ], using our compact tokens z as a condition. We refer to this pretrained tokenizer as the target tokenizer because its tokens serve as intermediate targets that bridge our semantic representation to pixel space. Specifically, we employ the VQGAN from MaskGIT [ 7], which encodes images into hundreds of tokens ( Nψ ≫ N , typically Nψ = 196 for 
+
+224 × 224 images) capturing perceptual details omitted in our compact tokens. This transforms the intractable decom-pression problem into a conditional generation task. Specifically, we first convert an image o into target to-kens zψ = Eψ (o) ∈ { 1, . . . K ψ }Nψ using the pretrained tokenizer encoder, where Nψ ≫ N (typically Nψ = 196 
+
+for 224 × 224 images). We then employ masked generative modeling [ 7 , 76 ] to learn the mapping from z to zψ , which offers significantly faster sampling than autoregressive mod-els [ 4, 63 ]. During training, a random subset of the target tokens zψ is masked, and the decoder learns to recover them using the compact tokens z and the remaining unmasked to-kens. The tokenizer training objective is defined to minimize the negative log-likelihood of the masked tokens zψ :
+
+Ltok = − E
+
+> zψ
+
+ log p(zψ |z, M (zψ )) , (4) where M (·) represents the random masking. CompACT is trained solely with the unmasking objective in latent space without pixel-level reconstruction, where the weights of the target tokenizers are not updated. During inference, Dcompact 
+
+begins with a fully masked sequence and iteratively unmasks them following the sampling scheme based on its prediction confidence [ 7]. The compact tokens z provide high-level semantic guidance throughout this process, while the gener-ative model synthesizes plausible visual details consistent with these semantics. The final reconstruction is obtained through the target decoder: ˆo = ( Dψ ◦D compact ◦E compact )( o).In a nutshell, our CompACT tokenizer achieves extreme compression by preserving only high-level semantics in 
+
+N (N ≤ 16) discrete tokens, then using these as condi-tioning for a generative decoder that synthesizes plausible high-frequency details. This design aligns with our core hypothesis that effective planning requires not photorealis-tic world models, but compact representations of decision-critical information. 
+
+3.3. World model in CompACT latent space 
+
+With our CompACT tokenizer defined, we can now train the world model formulated in Eq. (2) directly in the N -token discrete latent space ( N ≤ 16 ), as shown in Fig. 1(b). Given a dataset of observations and action sequences, we first encode all observations into compact latent tokens using CompACT tokenizer: zt = Ecompact (ot). Similar to gener-ative decoding, we use the masked generative modeling to train the world model fϕ. The training objective is given by 
+
+Lworld = − E
+
+> zt,a t,z t+1
+
+ log p(zt+1 |zt, at, M (zt+1 )) . (5) The key advantage of this formulation is computational ef-ficiency during planning. During model-predictive control, it can now perform rollouts using only N (N ≤ 16) tokens per timestep, enabling planning latency that was previously intractable with hundred-length tokens. Since the specific choice of world model architecture is orthogonal to our tokenizer design, any model capable of modeling discrete sequence distributions can be employed. We explore two frameworks for learning the conditional distribution p(zt+1 |zt, at). For navigation tasks, we fol-low an autoregressive framework following NWM [ 3]: at each step, the model predicts zt+1 conditioned on a fixed-length history window of latents {zt−τ , . . . , zt} and actions 
+
+{at−τ , . . . , at}, implemented using a DiT-based architec-ture [ 55 ]. To improve action conditioning, we randomly mask latent tokens in the history window during training. For robotic manipulation on RoboNet [ 13 ], we employ a block-causal transformer that models multiple future frames simul-taneously, predicting {zt+1 , . . . , zt+K } in parallel while maintaining causal dependencies between frames. Both training schemes can be understood as discrete vari-ants of the diffusion forcing [ 9 ]: the navigation model learns to condition on partially masked context, while the parallel generation naturally implements diffusion forcing as frames at different unmasking stages provide varying levels of noisy conditioning. This robust training improves planning accu-racy without additional cost (ablation in Table 5; see the supplement for implementation details). 54. Experiment 
+
+4.1. Experimental Settings 
+
+We evaluate CompACT across two key aspects: (1) tok-enization quality through reconstruction metrics, and (2) 
+
+planning effectiveness through action-conditioned world models in navigation and manipulation tasks. This dual evaluation validates our hypothesis that extreme compres-sion preserves planning-critical information while enabling efficient decision-time planning. 
+
+Task conductive. We evaluate CompACT on the following tasks: (1) Image reconstruction: Reconstructing original im-ages from compressed latent tokens. (2) Goal-conditioned vi-sual navigation: Given a context image and a navigation goal image, planning optimal paths by predicting future observa-tions conditioned on actions. (3) Action-conditioned video prediction: Generating future video frames conditioned on current visual input and actions. 
+
+Dataset. We train CompACT on ImageNet-1K [ 15 ]. World models are trained on three navigation datasets following NWM [ 3 ]: RECON [ 60 ], SCAND [ 38 ], and HuRoN [ 33 ]. For manipulation, we use RoboNet [ 13 ], which contains diverse robot interaction data across multiple environments. 
+
+Tokenizer baselines. We compare CompACT against two baseline tokenizers: (1) SD-VAE [ 57 ]: A continuous latent space tokenizer requiring 784 tokens per image ( 28 × 28 
+
+spatial grid), representing the conventional approach used in state-of-the-art world models like NWM [ 3]. This establishes the computational cost we aim to reduce. (2) FlexTok [ 2 ]: A recent discrete tokenizer supporting flexible token lengths (1-256 tokens). We evaluate it at 16 and 64 tokens to directly compare against CompACT’s compression levels. 
+
+Evaluation. We employ task-appropriate metrics: • Reconstruction quality : reconstruction FID (rFID) [ 54 ]and Inception Score (IS) [58] on ImageNet validation set. • Planning accuracy : Absolute Trajectory Error (ATE) and Relative Pose Error (RPE) for navigation tasks, measuring how closely planned trajectories match ground truth. • Action-relevancy : Inverse Dynamics Model (IDM) perfor-mance using L1 error and coefficient of determination on predicted end-effector positions, validating that compact tokens preserve action-critical information. • Action-conditioned video prediction : Action Prediction Error (APE), measured as the L1 error between the condi-tioning action and the action predicted by IDM from gen-erated frames. This evaluates whether generated videos accurately reflect the dynamics induced by the actions. • Computational efficiency : Planning latency during model-predictive control. 
+
+Implementation details. We use DINOv3-B [ 61 ] for pre-trained vision encoder in Ecompact . For the generative decoder, we use VQGAN from MaskGIT [ 7] as the target tokenizer 
+
+Dψ ◦ E ψ . For detailed hyperparameters for training and 
+
+Table 1. Reconstruction performance of CompACT on Ima-geNet validation split. Metrics are computed using open-sourced checkpoints. rFID is measured using clean-fid [ 54 ]. †: Measured using 16 tokens.                                   
+
+> Model Type #tok rFID ↓IS ↑
+> SD-VAE [57] cont. 1024 0.64 223.8 MaskGIT-VQGAN [7] disc. 256 1.83 186.7 TA-TiTok-VQ [39] disc. 32 3.95 219.6 TA-TiTok-KL [39] cont. 32 1.93 222.0 FlexTok [2] disc. 1-256 5.60 †114.9 CompACT disc. 16 2.40 209.0 CompACT disc. 83.21 207.5
+
+Table 2. Ablation on CompACT tokenizer. rFID is measured on ImageNet [15] validation split using clean-fid [54].                   
+
+> Configuration rFID ↓#tok
+> Target tokenizer ( Dψ◦ E ψ) [7] 1.83 256 DINOv3-B (frozen) + latent resampler 2.40 16
+> Dcompact w/o generative decoding 28.80 16
+> Ecompact
+> ViT-B (trained from scratch) + [REG] 7.28 16 DINOv3-B (finetuned) + [REG] 4.51 16 DINOv3-B (finetuned) + latent resampler 5.22 16 (a)
+> ViT -B
+> FSQ
+> 𝑧
+> DINOv3 -B
+> FSQ
+> 𝑧
+> DINOv3 -B
+> FSQ
+> 𝑧
+> Latent
+> Resampler
+> (b) (c )
+
+Figure 3. CompACT encoder Ecompact architecture variation. (a) ViT (scratch)+ [ REG ]: Initial latent tokens are concatenated to the input patch tokens. This design follows previous transformer-based image tokenizers [ 2, 75 , 77 ]. (b) DINOv3 [ 61 ] + [ REG ]: Similar to (a), but encoder is initialized with Dinov3. (c) DINOv3 [ 61 ] + latent resampler: latent resampler and Dinov3 initialized encoder. Dino and ViT are updated during training in these variants. 
+
+model architecture, we refer readers to the supplement. 
+
+4.2. Tokenizer evaluation and ablations 
+
+Reconstruction performance. Table 1 presents the recon-struction quality of each tokenizer measured by rFID and IS. MaskGIT-VQGAN [ 7], which is used as a target tok-enizer Dψ ◦ E ψ in CompACT, serves as a baseline for re-construction fidelity since CompACT relies on Dψ for final pixel reconstruction. The results demonstrate that Com-pACT can attain reconstruction performance comparable to recent state-of-the-art tokenizers while achieving extreme compression rate. Interestingly, CompACT outperforms MaskGIT-VQGAN [ 7 ] in IS, suggesting that our semantic encoder better preserves perceptually-relevant features that may be overlooked by VQGAN’s pixel-focused reconstruc-tion objective. 
+
+Ablation of encoder design choices. We report ablation studies on our final CompACT tokenizer design choices in 6RECO NRoboNet  ImageNet Figure 4. Attention visualization for compact latent token in latent resampler. Brighter the color, higher the attention score. 
+
+Table 2. We compare three encoder architecture variants illustrated in Fig. 3. The results demonstrate that leveraging frozen features from the semantic encoder is a key design choice enabling extremely compact tokenization while main-taining strong reconstruction quality. Notably, full finetuning of DINOv3-B results in significantly worse rFID of 5.22. We conjecture that finetuning the vision foundation model shifts its representations toward reconstruction-oriented features, causing the compact latent tokens to lose the high-level se-mantic information that is crucial for our generative decoding approach. Without rich semantic conditioning, the genera-tive decoder cannot synthesize plausible fine-grained details, leading to degraded reconstruction quality. 
+
+Ablation of generative decoding. Table 2 also shows the ablation studies for the generative decoding. To check the effectiveness of the generative decoding, we replaced the 
+
+Dcompact with the single-step feedforward decoder, which leads to the severe degradation in reconstruction quality. This results highlights the Dcompact ’s crucial role in synthesizing fine-grained features, as compact latent token only preserves high-level semantic features. 
+
+4.3. Characterizing CompACT latent tokens 
+
+CompACT tokens capture modular scene elements. Fig. 4 visualizes the attention maps from the latent resampler across ImageNet, RECON, and RoboNet. We observe that each compact latent token attends to coherent, semantically mean-ingful regions within the image, effectively capturing mod-ular object-level elements. This compositional structure emerges naturally from frozen DINO features used for latent resampling, as they already encode object-centric representa-tions. Specifically, in ImageNet, tokens attend to distinct ob-jects (animals); in RECON, they focus on structural elements like buildings; in RoboNet, they isolate the end-effector and manipulation targets. Rather than distributing information uniformly across tokens, CompACT learns to allocate each token to semantically coherent scene components without explicit supervision. 
+
+Modular latents benefit planning. We now validate whether this modular structure translates to improved plan-
+
+Table 3. Performance of Inverse Dynamics Model (IDM) trained with different tokenizers on RoboNet [ 13 ]. L1 error and R2 are measured between ground truth and predicted end effector position.             
+
+> Tokenizer #tok L1 err ↓R2↑
+> Target tokenizer ( Dψ◦ E ψ) [7] 256 0.093 0.684 CompACT 16 0.091 0.716
+
+Table 4. Planning performance of NWM on RECON bench-mark with different tokenizers. Latency (sec) represents single trajectory optimization time using a single RTX 6000 ADA GPU.                                          
+
+> Tokenizer #tok RECON SCAND Latency ↓
+> ATE ↓RPE ↓ATE ↓RPE ↓
+> SD-VAE [57] 784 1.262 0.354 1.065 0.291 178.78 FlexTok [2] 64 1.484 0.400 1.578 0.378 16.68 FlexTok [2] 16 1.625 0.446 1.503 0.362 14.48 CompACT 16 1.330 0.390 1.358 0.336 5.78 CompACT 81.373 0.401 1.391 0.346 4.83 Obs. Goal Best Worst 1 Worst 2
+
+Figure 5. Qualitative results of planning with the proposed Com-pACT. Best and Worst 1&2 denote the final rollouts corresponding to the simulated trajectories with the minimum and maximum cost, respectively. 
+
+ning performance. Since planning requires understanding how actions induce state transitions, we use an Inverse Dy-namics Model (IDM) as a proxy to evaluate whether our compact tokens preserve dynamics-relevant information: if we can train an IDM that accurately predicts actions from consecutive frames on latent representations, it indicates that the latents capture the essential state changes for con-trol tasks. For details of IDM implementation, please refer to the supplementary material. As shown in Table 3, the IDM trained on CompACT latents achieves superior perfor-mance compared to MaskGIT-VQGAN despite using 16× fewer tokens. For this experiment, we finetune CompACT (pretrained on ImageNet) on RoboNet to adapt the repre-sentations to the manipulation domain. This performance gap reveals a fundamental difference in token allocation: CompACT’s modular tokens naturally capture dynamic ob-jects—the end-effector and manipulation targets—whose state transitions encode action information. By allocating tokens to semantically coherent objects rather than fixed spatial regions, our compact representation better captures the state changes induced by actions, benefiting downstream planning tasks. 
+
+4.4. Planning in CompACT latent space 
+
+Planning performance. Table 4 presents planning re-sults for goal-conditioned visual navigation on the RECON 7Table 5. Effect of design choices in terms of planning accuracy on RECON. (Left ): Effect of the history masking in the world model fθ (Sec. 3.3). ( Middle ): Comparison between the different cost function (Sec. 3.1). (Right ): Effect of the freezing vision encoder during tokenizer training (Sec 3.2.1).           
+
+> Hist. mask ATE
+> ✓1.330 1.480
+> Cost ATE Latency
+> Pixel 1.330 5.78sec Latent 1.379 2.15sec
+> Frozen ATE
+> ✓1.330 1.472
+
+dataset. Our CompACT achieves approximately 40× reduc-tion in planning latency while maintaining comparable plan-ning accuracy to the SD-VAE baseline that uses 784 tokens. Notably, NWM trained with CompACT (using only 16 or 8 tokens) outperforms the FlexTok-based model at both 16 and 64 token configurations. This performance advantage stems from our encoder’s design: Ecompact leverages frozen seman-tic features from pretrained vision foundation models for latent token resampling, ensuring that semantically meaning-ful features—spatial relationships, object configurations, and scene structure—are prioritized over reconstruction-oriented details like textures or lighting (Fig. 4). This semantic priori-tization enables the world model to focus on action-relevant state transitions, as further validated by our inverse dynamics modeling results (Tab. 3). 
+
+Qualitative examples. Fig. 5 presents qualitative planning results with CompACT. While fine-grained visual details such as textures and shadows are synthesized rather than reconstructed, the rollouts accurately preserve planning-critical information needed for effective goal-reaching: spa-tial layout and object positions. 
+
+In-depth analysis on the effect of history masking, tok-enizer, and cost function. Table 5 analyzes three key design choices that contribute to our method’s effectiveness. ( Left )
+
+History masking : Results demonstrate that incorporating his-tory masking during world model training improves planning accuracy, validating that masking encourages robust tempo-ral dependency learning. ( Middle ) Cost function : We com-pare planning accuracy when the cost is computed in pixel space (LPIPS) versus latent space (L1 distance between z). While LPIPS achieves marginally better planning accuracy, computing distances in latent token space offers substantial computational benefits—achieving nearly 80× speedup in planning time compared to SD-VAE-based planning (Tab. 4). (Right ) Frozen encoder : Similar to the reconstruction quality degradation in Tab. 2, updating the vision encoder during tokenizer training leads to degraded planning performance as well. Fine-tuning the vision foundation model shifts its representations toward reconstruction objectives, causing compact tokens to lose high-level semantic information es-sential for planning. 
+
+Action conditioned video prediction. To further validate that CompACT’s modular latent representation preserves action-relevant information, we evaluate action-conditioned                
+
+> Table 6. Action-conditioned video prediction results on RoboNet [ 13 ]. Action prediction error is measured using IDM reported in Tab 3. Latency is measure for when generating next 14 frames on a single RTX 6000 ADA GPU.
+> Model #tok APE Latency (sec)
+> Target tokenizer ( Dψ◦ E ψ) [7] 256 0.3383 3.826 CompACT 16 0.1122 0.740 GT CompACT
+> 𝑡𝑖𝑚𝑒
+> Target tokenizer
+> Figure 6. Qualitative results of action-conditioned video gen-eration. Red and green boxes indicate incorrect and correct end-effector positions, respectively.
+
+video generation on RoboNet [ 13 ]. Table 6 shows that Com-pACT achieves 3× lower action prediction error (APE) com-pared to the 256-token baseline, while providing 5.2× faster generation. APE measures how accurately an IDM (trained as in Tab. 3) can recover the conditioning action from gener-ated video frames—a metric that directly evaluates whether the world model captures action-driven dynamics. The sub-stantial improvement in APE validates our hypothesis that CompACT’s modular tokens, which naturally attend to dy-namic objects like end-effector and manipulation targets (Fig. 4), are inherently better suited for modeling action-conditioned state transitions. Qualitative results (Fig. 6) fur-ther support this: videos generated from CompACT latents maintain consistent action-driven end-effector movements, while the target tokenizer fails to preserve these dynamics. 
+
+# 5. Conclusion 
+
+In this work, we present CompACT, a compact tokenizer that achieves extreme compression by representing images with only 16 or 8 discrete tokens while preserving planning-critical information. The key insight enabling this compres-sion is our use of frozen vision foundation models as the encoder backbone: by leveraging pretrained semantic rep-resentations, our tokenizer naturally prioritizes high-level spatial and semantic features over reconstruction-oriented details. We demonstrate that world models trained in this compact latent space outperform baselines requiring larger token counts while achieving a 40× speedup in planning, validating our hypothesis that effective planning requires se-mantic abstraction rather than photorealistic reconstruction. 8References 
+
+[1] Eloi Alonso, Adam Jelley, Vincent Micheli, Anssi Kanervisto, Amos J Storkey, Tim Pearce, and Fran c¸ ois Fleuret. Diffusion for world modeling: Visual details matter in atari. In Proc. Neural Information Processing Systems (NeurIPS) , pages 58757–58791, 2024. 1, 3 [2] Roman Bachmann, Jesse Allardice, David Mizrahi, Enrico Fini, O ˘guzhan Fatih Kar, Elmira Amirloo, Alaaeldin El-Nouby, Amir Zamir, and Afshin Dehghan. Flextok: Resam-pling images into 1d token sequences of flexible length. In 
+
+Proc. International Conference on Machine Learning (ICML) ,2025. 2, 6, 7, 16 [3] Amir Bar, Gaoyue Zhou, Danny Tran, Trevor Darrell, and Yann LeCun. Navigation world models. In Proc. IEEE Con-ference on Computer Vision and Pattern Recognition (CVPR) ,pages 15791–15801, 2025. 1, 3, 4, 5, 6, 15, 16, 17, 18 [4] Tom B. Brown, Benjamin Mann, Nick Ryder, Melanie Sub-biah, Jared Kaplan, Prafulla Dhariwal, Arvind Neelakantan, Pranav Shyam, Girish Sastry, Amanda Askell, et al. Language models are few-shot learners. Proc. Neural Information Pro-cessing Systems (NeurIPS) , 2020. 5 [5] Jake Bruce, Michael D Dennis, Ashley Edwards, Jack Parker-Holder, Yuge Shi, Edward Hughes, Matthew Lai, Aditi Mavalankar, Richie Steigerwald, Chris Apps, et al. Genie: Generative interactive environments. In Proc. International Conference on Machine Learning (ICML) , 2024. 3 [6] Nicolas Carion, Francisco Massa, Gabriel Synnaeve, Nicolas Usunier, Alexander Kirillov, and Sergey Zagoruyko. End-to-end object detection with transformers. In Proc. European Conference on Computer Vision (ECCV) , pages 213–229. Springer, 2020. 14 [7] Huiwen Chang, Han Zhang, Lu Jiang, Ce Liu, and William T Freeman. Maskgit: Masked generative image transformer. In Proc. IEEE Conference on Computer Vision and Pattern Recognition (CVPR) , 2022. 1, 2, 3, 5, 6, 7, 8, 14, 15, 17, 18 [8] Huiwen Chang, Han Zhang, Jarred Barber, AJ Maschinot, Jos ´e Lezama, Lu Jiang, Ming-Hsuan Yang, Kevin Murphy, William T Freeman, Michael Rubinstein, et al. Muse: Text-to-image generation via masked generative transformers. In 
+
+Proc. International Conference on Machine Learning (ICML) ,2023. 2 [9] Boyuan Chen, Diego Mart ´ı Mons ´o, Yilun Du, Max Sim-chowitz, Russ Tedrake, and Vincent Sitzmann. Diffusion forcing: Next-token prediction meets full-sequence diffusion. In Proc. Neural Information Processing Systems (NeurIPS) ,pages 24081–24125, 2024. 5, 16, 18 [10] Mark Chen, Alec Radford, Rewon Child, Jeffrey Wu, Heewoo Jun, David Luan, and Ilya Sutskever. Generative pretraining from pixels. In Proc. International Conference on Machine Learning (ICML) , 2020. 3 [11] Cheng Chi, Siyuan Feng, Yilun Du, Zhenjia Xu, Eric Cousineau, Benjamin Burchfiel, and Shuran Song. Diffu-sion policy: Visuomotor policy learning via action diffusion. In Proceedings of Robotics: Science and Systems (RSS) , 2023. 15, 16 [12] Kurtland Chua, Roberto Calandra, Rowan McAllister, and Sergey Levine. Deep reinforcement learning in a handful of trials using probabilistic dynamics models. In Proc. Neural Information Processing Systems (NeurIPS) , 2018. 4, 18 [13] Sudeep Dasari, Frederik Ebert, Stephen Tian, Suraj Nair, Bernadette Bucher, Karl Schmeckpeper, Siddharth Singh, Sergey Levine, and Chelsea Finn. Robonet: Large-scale multi-robot learning. Annual Conference on Robot Learning (CoRL) , 2019. 2, 5, 6, 7, 8, 13, 14, 15, 16, 17, 18 [14] Pieter-Tjerk De Boer, Dirk P Kroese, Shie Mannor, and Reuven Y Rubinstein. A tutorial on the cross-entropy method. 
+
+Annals of operations research , 134(1):19–67, 2005. 1, 4, 18 [15] Jia Deng, Wei Dong, Richard Socher, Li-Jia Li, Kai Li, and Li Fei-Fei. Imagenet: A large-scale hierarchical image database. In Proc. IEEE Conference on Computer Vision and Pattern Recognition (CVPR) , 2009. 6, 15 [16] Yilun Du, Sherry Yang, Bo Dai, Hanjun Dai, Ofir Nachum, Josh Tenenbaum, Dale Schuurmans, and Pieter Abbeel. Learn-ing universal policies via text-guided video generation. In 
+
+Proc. Neural Information Processing Systems (NeurIPS) ,pages 9156–9172, 2023. 3 [17] Yilun Du, Mengjiao Yang, Pete Florence, Fei Xia, Ayzaan Wahid, Brian Ichter, Pierre Sermanet, Tianhe Yu, Pieter Abbeel, Joshua B Tenenbaum, et al. Video language planning. In Proc. International Conference on Learning Representa-tions (ICLR) , 2024. 1 [18] Patrick Esser, Robin Rombach, and Bjorn Ommer. Taming transformers for high-resolution image synthesis. In Proc. IEEE Conference on Computer Vision and Pattern Recogni-tion (CVPR) , pages 12873–12883, 2021. 1, 2 [19] Patrick Esser, Sumith Kulal, Andreas Blattmann, Rahim En-tezari, Jonas M ¨uller, Harry Saini, Yam Levi, Dominik Lorenz, Axel Sauer, Frederic Boesel, et al. Scaling rectified flow transformers for high-resolution image synthesis. In Proc. In-ternational Conference on Machine Learning (ICML) , 2024. 15 [20] Lijie Fan, Tianhong Li, Siyang Qin, Yuanzhen Li, Chen Sun, Michael Rubinstein, Deqing Sun, Kaiming He, and Yonglong Tian. Fluid: Scaling autoregressive text-to-image genera-tive models with continuous tokens. In Proc. International Conference on Learning Representations (ICLR) , 2025. 2 [21] Jay W Forrester. Counterintuitive behavior of social systems. 
+
+Theory and decision , 2(2):109–140, 1971. 1 [22] Shanghua Gao, Pan Zhou, Ming-Ming Cheng, and Shuicheng Yan. Mdtv2: Masked diffusion transformer is a strong image synthesizer. arXiv preprint arXiv:2303.14389 , 2023. 2 [23] Shenyuan Gao, Jiazhi Yang, Li Chen, Kashyap Chitta, Yihang Qiu, Andreas Geiger, Jun Zhang, and Hongyang Li. Vista: A generalizable driving world model with high fidelity and versatile controllability. Advances in Neural Information Processing Systems , 37:91560–91596, 2024. 3 [24] Yuan Gao, Chen Chen, Tianrong Chen, and Jiatao Gu. One layer is enough: Adapting pretrained visual encoders for image generation. arXiv preprint arXiv:2512.07829 , 2025. 2 [25] Kristen Grauman, Andrew Westbury, Eugene Byrne, Zachary Chavis, Antonino Furnari, Rohit Girdhar, Jackson Hamburger, Hao Jiang, Miao Liu, Xingyu Liu, et al. Ego4d: Around the world in 3,000 hours of egocentric video. In Proc. IEEE Con-ference on Computer Vision and Pattern Recognition (CVPR) ,pages 18995–19012, 2022. 17 
+
+9[26] David Ha and J ¨urgen Schmidhuber. World models. arXiv preprint arXiv:1803.10122 , 2(3), 2018. 1, 3 [27] Danijar Hafner, Timothy Lillicrap, Jimmy Ba, and Moham-mad Norouzi. Dream to control: Learning behaviors by latent imagination. In Proc. International Conference on Learning Representations (ICLR) , 2020. 1 [28] Danijar Hafner, Timothy Lillicrap, Mohammad Norouzi, and Jimmy Ba. Mastering atari with discrete world models. In 
+
+Proc. International Conference on Learning Representations (ICLR) , 2021. 2 [29] Danijar Hafner, Jurgis Pasukonis, Jimmy Ba, and Timothy Lillicrap. Mastering diverse domains through world models. 
+
+Nature , pages 1–7, 2025. 1, 2 [30] Nicklas Hansen, Hao Su, and Xiaolong Wang. Td-mpc2: Scalable, robust world models for continuous control. arXiv preprint arXiv:2310.16828 , 2023. 1, 3 [31] Kaiming He, Xinlei Chen, Saining Xie, Yanghao Li, Piotr Doll ´ar, and Ross Girshick. Masked autoencoders are scalable vision learners. In Proc. IEEE Conference on Computer Vision and Pattern Recognition (CVPR) , pages 16000–16009, 2022. 13 [32] D Hendrycks. Gaussian error linear units (gelus). arXiv preprint arXiv:1606.08415 , 2016. 16 [33] Noriaki Hirose, Dhruv Shah, Ajay Sridhar, and Sergey Levine. Sacson: Scalable autonomous control for social navigation. 
+
+IEEE Robotics and Automation Letters , 9(1):49–56, 2023. 6, 17 [34] Jonathan Ho, Ajay Jain, and Pieter Abbeel. Denoising dif-fusion probabilistic models. In Proc. Neural Information Processing Systems (NeurIPS) , pages 6840–6851, 2020. 2, 15, 16 [35] Anthony Hu, Lloyd Russell, Hudson Yeo, Zak Murez, George Fedoseev, Alex Kendall, Jamie Shotton, and Gianluca Cor-rado. Gaia-1: A generative world model for autonomous driving. arXiv preprint arXiv:2309.17080 , 2023. 3 [36] Andrew Jaegle, Felix Gimeno, Andy Brock, Oriol Vinyals, Andrew Zisserman, and Joao Carreira. Perceiver: General perception with iterative attention. In Proc. International Conference on Machine Learning (ICML) , pages 4651–4664, 2021. 14 [37] Justin Johnson, Alexandre Alahi, and Li Fei-Fei. Perceptual losses for real-time style transfer and super-resolution. In 
+
+Proc. European Conference on Computer Vision (ECCV) ,2016. 4, 18 [38] Haresh Karnan, Anirudh Nair, Xuesu Xiao, Garrett War-nell, S ¨oren Pirk, Alexander Toshev, Justin Hart, Joydeep Biswas, and Peter Stone. Socially compliant navigation dataset (scand): A large-scale dataset of demonstrations for social navigation. IEEE Robotics and Automation Letters , 7 (4):11807–11814, 2022. 6, 17 [39] Dongwon Kim, Ju He, Qihang Yu, Chenglin Yang, Xiaohui Shen, Suha Kwak, and Liang-Chieh Chen. Democratizing text-to-image masked generative models with compact text-aware one-dimensional tokens. In Proc. IEEE International Conference on Computer Vision (ICCV) , 2025. 2, 6, 13 [40] Po-Chen Ko, Jiayuan Mao, Yilun Du, Shao-Hua Sun, and Joshua B Tenenbaum. Learning to act from actionless videos through dense correspondences. In Proc. International Con-ference on Learning Representations (ICLR) , 2024. 3 [41] Jing Yu Koh, Honglak Lee, Yinfei Yang, Jason Baldridge, and Peter Anderson. Pathdreamer: A world model for indoor navi-gation. In Proc. IEEE International Conference on Computer Vision (ICCV) , pages 14738–14748, 2021. 3 [42] Doyup Lee, Chiheon Kim, Saehoon Kim, Minsu Cho, and Wook-Shin Han. Autoregressive image generation using resid-ual quantization. In Proc. IEEE Conference on Computer Vision and Pattern Recognition (CVPR) , pages 11523–11532, 2022. 2 [43] Tianhong Li, Huiwen Chang, Shlok Mishra, Han Zhang, Dina Katabi, and Dilip Krishnan. Mage: Masked generative en-coder to unify representation learning and image synthesis. In Proc. IEEE Conference on Computer Vision and Pattern Recognition (CVPR) , 2023. 2 [44] Tianhong Li, Yonglong Tian, He Li, Mingyang Deng, and Kaiming He. Autoregressive image generation without vector quantization. Proc. Neural Information Processing Systems (NeurIPS) , 2024. 2, 3 [45] Ilya Loshchilov and Frank Hutter. Decoupled weight decay regularization. In Proc. International Conference on Learning Representations (ICLR) , 2019. 15, 16, 17, 18 [46] Ajay Mandlekar, Danfei Xu, Josiah Wong, Soroush Nasiriany, Chen Wang, Rohun Kulkarni, Li Fei-Fei, Silvio Savarese, Yuke Zhu, and Roberto Mart ´ın-Mart ´ın. What matters in learn-ing from offline human demonstrations for robot manipula-tion. In Proc. Annual Conference on Robot Learning (CoRL) ,2021. 13, 14 [47] Russell Mendonca, Shikhar Bahl, and Deepak Pathak. Struc-tured world models from human videos. In Robotics: Science and Systems (RSS) , 2023. 3 [48] Fabian Mentzer, David Minnen, Eirikur Agustsson, and Michael Tschannen. Finite scalar quantization: Vq-vae made simple. In Proc. International Conference on Learning Rep-resentations (ICLR) , 2024. 2, 4, 15, 18 [49] Vincent Micheli, Eloi Alonso, and Fran c¸ ois Fleuret. Trans-formers are sample-efficient world models. In Proc. Interna-tional Conference on Learning Representations (ICLR) , 2023. 1, 2 [50] Vincent Micheli, Eloi Alonso, and Fran c¸ ois Fleuret. Efficient world models with context-aware tokenization. In Proc. In-ternational Conference on Machine Learning (ICML) , 2024. 2[51] Keita Miwa, Kento Sasaki, Hidehisa Arai, Tsubasa Taka-hashi, and Yu Yamaguchi. One-d-piece: Image tokenizer meets quality-controllable compression. arXiv preprint arXiv:2501.10064 , 2025. 2 [52] Alexander Quinn Nichol and Prafulla Dhariwal. Improved de-noising diffusion probabilistic models. In Proc. International Conference on Machine Learning (ICML) , pages 8162–8171, 2021. 16 [53] Dujun Nie, Xianda Guo, Yiqun Duan, Ruijun Zhang, and Long Chen. Wmnav: Integrating vision-language models into world models for object goal navigation. In Proc. IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS) , 2025. 3 
+
+10 [54] Gaurav Parmar, Richard Zhang, and Jun-Yan Zhu. On aliased resizing and surprising subtleties in gan evaluation. In Proc. IEEE Conference on Computer Vision and Pattern Recogni-tion (CVPR) , pages 11410–11420, 2022. 6 [55] William Peebles and Saining Xie. Scalable diffusion models with transformers. In Proc. IEEE International Conference on Computer Vision (ICCV) , 2023. 1, 4, 5, 15, 16 [56] Ethan Perez, Florian Strub, Harm De Vries, Vincent Du-moulin, and Aaron Courville. Film: Visual reasoning with a general conditioning layer. In Proc. AAAI Conference on Artificial Intelligence (AAAI) , 2018. 16 [57] Robin Rombach, Andreas Blattmann, Dominik Lorenz, Patrick Esser, and Bj ¨orn Ommer. High-resolution image synthesis with latent diffusion models. In Proc. Neural Infor-mation Processing Systems (NeurIPS) , pages 10684–10695, 2022. 1, 2, 6, 7 [58] Tim Salimans, Ian Goodfellow, Wojciech Zaremba, Vicki Cheung, Alec Radford, and Xi Chen. Improved techniques for training gans. Proc. Neural Information Processing Systems (NeurIPS) , 2016. 6 [59] Aidan Scannell, Mohammadreza Nakhaei, Kalle Kujanp ¨a ¨a, Yi Zhao, Kevin Sebastian Luck, Arno Solin, and Joni Pajarinen. Discrete codebook world models for continuous control. In 
+
+Proc. International Conference on Learning Representations (ICLR) , 2025. 2 [60] Dhruv Shah, Benjamin Eysenbach, Nicholas Rhinehart, and Sergey Levine. Rapid exploration for open-world navigation with latent goal models. In Annual Conference on Robot Learning (CoRL) , 2021. 2, 6, 17, 20 [61] Oriane Sim ´eoni, Huy V Vo, Maximilian Seitzer, Federico Baldassarre, Maxime Oquab, Cijo Jose, Vasil Khalidov, Marc Szafraniec, Seungeun Yi, Micha ¨el Ramamonjisoa, et al. Di-nov3. arXiv preprint arXiv:2508.10104 , 2025. 2, 4, 6, 13, 14 [62] J ¨urgen Sturm, Wolfram Burgard, and Daniel Cremers. Eval-uating egomotion and structure-from-motion approaches us-ing the tum rgb-d benchmark. In Proc. of the Workshop on Color-Depth Camera Fusion in Robotics at the IEEE/RJS In-ternational Conference on Intelligent Robot Systems (IROS) ,page 6, 2012. 17 [63] Peize Sun, Yi Jiang, Shoufa Chen, Shilong Zhang, Bingyue Peng, Ping Luo, and Zehuan Yuan. Autoregressive model beats diffusion: Llama for scalable image generation. arXiv preprint arXiv:2406.06525 , 2024. 5 [64] Haotian Tang, Yecheng Wu, Shang Yang, Enze Xie, Junsong Chen, Junyu Chen, Zhuoyang Zhang, Han Cai, Yao Lu, and Song Han. Hart: Efficient visual generation with hybrid autoregressive transformer. In Proc. International Conference on Learning Representations (ICLR) , 2025. 3 [65] Michael Tschannen, Alexey Gritsenko, Xiao Wang, Muham-mad Ferjad Naeem, Ibrahim Alabdulmohsin, Nikhil Parthasarathy, Talfan Evans, Lucas Beyer, Ye Xia, Basil Mustafa, Olivier H ´enaff, Jeremiah Harmsen, Andreas Steiner, and Xiaohua Zhai. Siglip 2: Multilingual vision-language encoders with improved semantic understanding, localization, and dense features. arXiv preprint arXiv:2502.14786 , 2025. 14 [66] Dani Valevski, Yaniv Leviathan, Moab Arar, and Shlomi Fruchter. Diffusion models are real-time game engines. In 
+
+Proc. International Conference on Learning Representations (ICLR) , 2025. 3 [67] Aaron Van Den Oord, Oriol Vinyals, et al. Neural discrete representation learning. Advances in neural information pro-cessing systems , 30, 2017. 2 [68] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszko-reit, Llion Jones, Aidan N Gomez, Ł ukasz Kaiser, and Illia Polosukhin. Attention is all you need. Proc. Neural Informa-tion Processing Systems (NeurIPS) , 2017. 4 [69] Wenshan Wang, Delong Zhu, Xiangwei Wang, Yaoyu Hu, Yuheng Qiu, Chen Wang, Yafei Hu, Ashish Kapoor, and Sebastian Scherer. Tartanair: A dataset to push the limits of visual slam. In IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS) , pages 4909–4916. IEEE, 2020. 17 [70] Mark Weber, Lijun Yu, Qihang Yu, Xueqing Deng, Xiao-hui Shen, Daniel Cremers, and Liang-Chieh Chen. Maskbit: Embedding-free image generation via bit tokens. In Transac-tions on Machine Learning Research (TMLR) , 2024. 2 [71] Grady Williams, Paul Drews, Brian Goldfain, James M Rehg, and Evangelos A Theodorou. Aggressive driving with model predictive path integral control. In 2016 IEEE international conference on robotics and automation (ICRA) , pages 1433– 1440. IEEE, 2016. 1, 4 [72] Jialong Wu, Shaofeng Yin, Ningya Feng, Xu He, Dong Li, Jianye Hao, and Mingsheng Long. ivideogpt: Interactive videogpts are scalable world models. In Proc. Neural Infor-mation Processing Systems (NeurIPS) , 2024. 2 [73] Mengjiao Yang, Yilun Du, Kamyar Ghasemipour, Jonathan Tompson, Dale Schuurmans, and Pieter Abbeel. Learning interactive real-world simulators. In Proc. International Con-ference on Learning Representations (ICLR) , page 6, 2024. 1, 3 [74] Xuan Yao, Junyu Gao, and Changsheng Xu. Navmorph: A self-evolving world model for vision-and-language navigation in continuous environments. In Proc. IEEE International Conference on Computer Vision (ICCV) , 2025. 3 [75] Jiahui Yu, Xin Li, Jing Yu Koh, Han Zhang, Ruoming Pang, James Qin, Alexander Ku, Yuanzhong Xu, Jason Baldridge, and Yonghui Wu. Vector-quantized image modeling with im-proved vqgan. In Proc. International Conference on Learning Representations (ICLR) , 2022. 2, 6 [76] Lijun Yu, Jos ´e Lezama, Nitesh B Gundavarapu, Luca Versari, Kihyuk Sohn, David Minnen, Yong Cheng, Vighnesh Birod-kar, Agrim Gupta, Xiuye Gu, et al. Language model beats diffusion–tokenizer is key to visual generation. In Proc. In-ternational Conference on Learning Representations (ICLR) ,2024. 3, 5 [77] Qihang Yu, Mark Weber, Xueqing Deng, Xiaohui Shen, Daniel Cremers, and Liang-Chieh Chen. An image is worth 32 tokens for reconstruction and generation. In Proc. Neural Information Processing Systems (NeurIPS) , pages 128940– 128966, 2024. 2, 6, 13 [78] Guosheng Zhao, Xiaofeng Wang, Zheng Zhu, Xinze Chen, Guan Huang, Xiaoyi Bao, and Xingang Wang. Drivedreamer-
+
+11 2: Llm-enhanced world models for diverse driving video gen-eration. In Proc. AAAI Conference on Artificial Intelligence (AAAI) , pages 10412–10420, 2025. 3 [79] Boyang Zheng, Nanye Ma, Shengbang Tong, and Saining Xie. Diffusion transformers with representation autoencoders. In 
+
+Proc. International Conference on Learning Representations (ICLR) , 2026. 2 [80] Chuanxia Zheng, Tung-Long Vuong, Jianfei Cai, and Dinh Phung. Movq: Modulating quantized vectors for high-fidelity image generation. In Proc. Neural Information Processing Systems (NeurIPS) , pages 23412–23425, 2022. 3 [81] Gaoyue Zhou, Hengkai Pan, Yann LeCun, and Lerrel Pinto. Dino-wm: World models on pre-trained visual features enable zero-shot planning. In Proc. International Conference on Machine Learning (ICML) , 2025. 1, 3 [82] Fangqi Zhu, Hongtao Wu, Song Guo, Yuxiao Liu, Chilam Cheang, and Tao Kong. Irasim: Learning interactive real-robot action simulators. In Proc. IEEE International Confer-ence on Computer Vision (ICCV) , 2025. 1 
+
+12 Planning in 8 Tokens: A Compact Discrete Tokenizer for Latent World Model 
+
+# Supplementary Material 
+
+This supplementary material provides detailed implementa-tion specifics and additional experimental results for Com-pACT. We organize the content as follows: • Sec. A provides theoretical framework for the planning sufficiency of compact tokens. • Sec. B presents cross-backbone ablation for CompACT. • Sec. C provides a planning latency breakdown. • Sec. D evaluates closed-loop robot arm manipulation on Robomimic [46]. • Sec. E describes the complete CompACT tokenizer archi-tecture, training procedure, and hyperparameters. • Sec. F details the Inverse Dynamics Model (IDM) used for action prediction experiments on RoboNet [13]. • Sec. G presents the world model architectures for both navigation (autoregressive with fixed history window) and manipulation tasks (block-causal parallel prediction). • Sec. H explains the Cross-Entropy Method used for navi-gation planning. • Sec. I provides additional qualitative results including re-construction examples, attention visualizations, and plan-ning rollouts. • Sec. J provides comparison between tokenizers in terms of planning efficiency. • Sec. K presents that with compact latent tokens we can scale up the world model while remaining efficient. 
+
+# A. Planning sufficiency of compact tokens 
+
+How many bits must a latent representation z carry so that planning in latent space is equivalent to planning in ob-servation space? We formalize this question using mutual information and derive a tight lower bound on the entropy of any planning-sufficient representation z. Let o denote an ob-servation, a∗ denote the optimal action (or action sequence), and z = E(o) denote the latent representation. 
+
+Definition 1 (Planning sufficiency) . A latent representation 
+
+z = E(o) is planning-sufficient if, for a optimal planning algorithm π, planning in latent space yields the same optimal action as planning in observation space: π(z) = π(o). This requires that z retains all action-relevant information from 
+
+o, i.e., 
+
+I(z; a∗) = I(o; a∗). (6) 
+
+Proposition 1 (Minimum description length for planning) .
+
+If the optimal planning algorithm π is deterministic, i.e., 
+
+H(a∗ | o) = 0 , then a planning-sufficient representation z
+
+(Def. 1) exists with minimum entropy 
+
+min   
+
+> z:plan-suff.
+
+H(z) = I(o; a∗) = H(a∗) ≪ H(o), (7) 
+
+established by necessity (no planning-sufficient z can have lower entropy) and achievability (a z attaining this bound exists). Proof. 
+
+(a) (Necessity) By the definition of mutual information, 
+
+I(z; a∗) = H(z) − H(z | a∗) ≤ H(z). Combining this with the planning-sufficiency condition I(z; a∗) = 
+
+I(o; a∗) (Eq. 6) yields H(z) ≥ I(o; a∗).
+
+(b) (Achievability) When H(a∗ | o) = 0 , define the deterministic encoder E(o) := π∗(o) = a∗. Then 
+
+I(z; a∗) = H(a∗) = I(o; a∗), so z is planning-sufficient, and H(z) = H(a∗) = I(o; a∗), achieving the bound. 
+
+Remark. The deterministic assumption H(a∗ | o) = 0 
+
+refers to the existence of a unique optimal action for each observation, not to the planning procedure itself. In practice, CompACT uses the Cross-Entropy Method (CEM), which employs stochastic sampling to search for this optimum; the stochasticity is in the optimizer, not in the underlying observation-to-action mapping. 
+
+Connection to CompACT. In robotic manipulation and navigation, action spaces are low-dimensional (e.g., 3–5 DOF), so H(a∗) ≪ H(o). Proposition 1 implies that a planning-sufficient tokenizer need not preserve the full observation entropy as in conventional autoencoder; the information-theoretic floor is at most H(a∗) bits. Com-pACT encodes each frame into 8–16 discrete tokens using FSQ with levels [8 , 8, 8, 5, 5, 5] , yielding ≈ 216 codes per token ( ≈ 16 bits/token), for a total of 128–256 bits per frame. Considering that previous work leveraged ≈300–400 bits to encode the whole image [ 39 , 77 ] and H(a∗) ≪ H(o), this is expected to far exceed the action-entropy bound, providing a comfortable margin for planning sufficiency. Empirically, Tab. 3 confirms this: an inverse dynamics model trained on CompACT tokens (16 tokens, R2 = 0 .716 ) outperforms one trained on the baseline tokenizer using 16 × more to-kens (256 tokens, R2 = 0 .684 ), indicating that the compact representation retains and even enhances the action-relevant information. 
+
+# B. Cross-backbone ablation for CompACT 
+
+The main paper presents CompACT with DINOv3 [ 61 ] as the frozen encoder backbone. To verify that our approach does not depend on properties specific to DINOv3, we replace it with two architecturally distinct vision foundation models (VFMs)—MAE [ 31 ], trained via masked image modeling, 13 Table 7. Cross-backbone ablation of CompACT. Reconstruction performance of CompACT with 16 tokens on ImageNet validation split across different backbone choices. 
+
+Backbone SigLIP-2 MAE DINOv3 rFID ↓ 2.09 3.43 2.40 10 1 10 0 10 1 10 2 
+
+> Latency (s)
+> CompACT
+> SD-VAE
+> 3.87s
+> 1.34s
+> 0.65s
+> 177.05s
+> Decoding Rollout
+
+Figure 7. Planning latency breakdown. Comparison of rollout and decoding latency between SD-VAE and CompACT on a single RTX 6000 ADA GPU. Note the log scale on the x-axis. 
+
+and SigLIP-2 [ 65 ], trained via vision-language pretraining— while keeping all other components unchanged. As shown in Tab. 7, all three backbones yield competitive rFID, with SigLIP-2 even surpassing DINOv3. This result confirms that CompACT is not tied to any particular backbone’s latent space; rather, it leverages the high-level semantic structure shared across strong VFMs—the planning-relevant informa-tion our tokenizer is designed to preserve. 
+
+# C. Planning latency breakdown 
+
+Fig. 7 two major components of the planning latency for a single trajectory optimization into two components: world model rollout (forward passes through the world model) and 
+
+decoding (converting latent tokens back to images for cost evaluation). The rollout cost dominates SD-VAE’s total plan-ning time (177.05s out of 177.70s), as the world model must process 784 tokens per frame across 1,920 forward passes during MPC. CompACT reduces this bottleneck by 99.2% (177.05s → 1.34s) by operating on only 16 discrete tokens per frame. While our generative decoder is ∼6× slower than SD-VAE’s single-step decoder (3.87s vs. 0.65s), decoding accounts for only a small fraction of the total planning bud-get and is invoked far fewer times than rollout (240 vs. 1,920 calls). Furthermore, when using latent-space cost functions (Tab. 5 in the main paper), decoding is bypassed entirely, yielding even greater speedups. 
+
+# D. Closed-loop robot arm manipulation 
+
+To evaluate CompACT beyond open-loop video prediction, we conduct a preliminary closed-loop manipulation experi-ment on the Lift task from RoboMimic [ 46 ]. We adopt a hier-archical formulation: the world model plans in CompACT’s latent space, and the IDM decodes inter-frame actions for execution. For detailed implementation, we refer to Sec. G.2 
+
+Table 8. Closed-loop manipulation on RoboMimic Lift.           
+
+> Tokenizer SR ↑Steps ↓
+> Target tokenizer ( Dψ◦ E ψ) [7] 56% 66.8 CompACT (ours) 56% 55.1
+
+Table 9. Training hyperparameters for CompACT. 
+
+hparams CompACT optimizer AdamW 
+
+β1 0.9 
+
+β2 0.999 weight decay 0.01 lr 0.0001 lr scheduling cosine lr warmup steps 10K batch size (ImageNet) 512 training steps (ImageNet) 500K training steps (RoboNet finetuning [13]) 256 training steps (RoboNet finetuning [13]) 100K Table 10. Model architecture hyperparameters for CompACT. 
+
+hparams Latent resampler Dcompact 
+
+depth 5 16 dim 768 1024 MLP dim 3072 4096 heads 8 8
+
+and Sec. F, respectively. As shown in Tab. 8, CompACT (16 tokens) matches the target tokenizer (256 tokens) in success rate while requiring 17% fewer action steps, suggesting that semantic-level latent plans yield more direct paths to the goal. This result provides preliminary evidence that planning-sufficient compression extends to contact-rich manipulation tasks. We note this is a minimal setup; incorporating real-time observations and pro-prioception into the IDM could further improve performance, which we leave for future work. 
+
+# E. Details of CompACT tokenizer 
+
+Tab. 9 and Tab. 10 summarize the training and model archi-tecture hyperparameters of CompACT, respectively. 
+
+Tokenizer architecture. We use frozen DINOv3-B [ 61 ] in the encoder Ecompact . In DINOv3-B, we re-initialized the last layer normalization’s affine parameters (weight and bias to 1 and 0, respectively). We found that using pretrained affine parameters as-is results in codebook collapse during training, since the output of Ecompact has specific statistics when using pretrained layernorm affine parameters. For the latent re-sampler, we use the 5 transformer decoder blocks similar to DETR [ 6] and Perceiver [ 36 ]. Number of learnable queries determines the number of latent tokens used in CompACT. 14 Figure 8. Dcompact architecture. The proposed Dcompact is based on MM-DiT [ 19 ], a DiT [ 55 ] variant designed for multimodal input processing. The architecture consists of two parallel processing streams: one for compact latent tokens z and another for target latent tokens zψ , which are fused through self attention over the concatenated token sequence. For the overall depiction of Com-pACT, we refer to Fig. 2 in the main paper. 
+
+We use the Finite Scalar Quantization [ 48 ] (FSQ) for dis-cretizing the output of latent resampler. Levels per channel are set to [8 , 8, 8, 5, 5, 5] , which is the recommended level configuration to construct approximately 216 size codebook. For decoder Dcompact , we use the MM-DiT [ 19 ], which takes compact latent as a condition. Fig. 8 depicts the details archi-tecture of the decoder Dcompact , which is shown in simplified form in Fig. 2 in the main paper. Dcompact is trained from the scratch. Proposed CompACT comprises 775M parameters in total, including Ecompact , Dcompact , and Dψ .
+
+Masked generative modeling. As noted in Sec. 3.2.2 of the main paper, Dcompact is formulated as a masked generative model. During training, we randomly sample the mask ra-tio from (0 , 1] following the cosine masking schedule [ 7]. During inference, we decode target latent tokens zψ by pro-gressively unmasking them from a fully masked sequence, using compact latent tokens z as conditioning. In each it-eration, a fraction of predictions with high confidence is accepted, while remaining tokens are re-masked. We follow the same cosine masking schedule during inference. 
+
+Dataset. CompACT tokenizer is trained on ImageNet-1K [ 15 ], on 224 × 224 (for fair comparison in navigation experiment following NWM [ 3]) and 256 × 256 resolution. For the augmentation, we used random crop and random 
+
+Figure 9. Inverse Dynamics Model (IDM) architecture. Consec-utive frames are tokenized and processed through a transformer-based frame encoder, which produces a single conditioning vector via average pooling. This vector conditions an action denoiser implemented as a diffusion policy [ 11 ], which predicts the action taken between the two frames. Table 11. Model architecture hyperparameters for IDM.             
+
+> hparams Frame encoder depth 4dim 512 MLP dim 2048 heads 8#params 13.5M
+> hparams Action denoiser # linear 4hidden dim 512 diffusion DDPM [34] timesteps 1000 #params 3.6M
+
+horizontal flip. We additionally finetune the tokenizer for the experiment with RoboNet [ 13 ] since robot data has a significant domain gap compared to the ImageNet data. For RoboNet finetuning we used center cropped 256 × 256 reso-lution images. 
+
+Training and inference. For ImageNet [ 15 ] pretraining, CompACT is trained for 500K steps with batch size of 512. We use the AdamW [ 45 ] with 1e − 4 learning rate. β1 and 
+
+β2 are set to 0.9 and 0.999 , respectively. During inference, sampling step in Dcompact is set to 16. 
+
+# F. Details of inverse dynamics model (IDM) 
+
+Fig. 9 and Tab. 11 present the model architecture and hyper-parameters of IDM, respectively. 
+
+Architecture. The Inverse Dynamics Model (IDM) used for RoboNet experiments consists of two modules: a frame encoder and an action denoiser. Given latent tokens from two consecutive frames, the frame encoder first processes the concatenated token sequence through a 4-layer transformer encoder. The target tokenizer [ 7] requires processing 512 tokens, while CompACT requires only 32 tokens—a 16 ×
+
+reduction in sequence length. The frame encoder output is average-pooled into a single vector, which serves as the 15 Table 12. Model architecture hyperparameters for world model.             
+
+> hparams navigation manipulation depth 12 16 dim 768 1024 MLP dim 3072 4096 heads 12 16 # params 243M 270M
+
+conditioning signal for the action denoiser. The action de-noiser is a multi-layer perceptron (MLP) with 4 linear layers (hidden dimension 512), SiLU activation [ 32 ], and FiLM conditioning [ 56 ] between each layer. The denoiser takes a noisy 5-dimensional action and predicts the applied noise. Following diffusion policy [ 11 ], we use DDPM [ 34 ] with a squared cosine schedule [52]. 
+
+Dataset. IDM is trained on RoboNet [ 13 ]. Frame pairs are randomly sampled at each iteration. Frames are pre-encoded using tokenizer (CompACT or target tokenizer) with 256 ×
+
+256 resolution center-cropped images. 250 episodes are used for test. 
+
+Training and inference. IDM is trained for 100K steps with batch size of 128. We use the AdamW [ 45 ] with 1e − 4
+
+learning rate. β1 and β2 are set to 0.9 and 0.999 , respec-tively. During inference, we use 1000 diffusion timesteps for sampling. 
+
+Evaluation. We evaluate IDM performance using two met-rics computed on predicted end-effector positions. First, we measure L1 error between the predicted and ground truth end-effector positions. Second, we compute the coefficient of determination (R 2), which measures how well the model explains the variance in end-effector movements. R 2 ranges from 0 to 1, where higher values indicate better prediction. For instance, R 2 = 0 .9 means that model can explain 90% of the variance in end-effector movements. 
+
+# G. World model details 
+
+G.1. Navigation: autoregressive with fixed history window 
+
+For navigation tasks, we adopt an autoregressive formulation where the world model predicts the next latent state zt+1 
+
+conditioned on a fixed-length history window of past states 
+
+{zt−τ , . . . , z t} and the action at. This design follows the Navigation World Models (NWM) [ 3] framework but oper-ates in our compact discrete latent space with N ≤ 16 tokens per timestep. Fig. 10 and Tab. 12 present the model archi-tecture and hyperparameters of world model for navigation, respectively. 
+
+Architecture. Fig. 10 illustrates the architecture. We em-ploy a DiT-based [ 55 ] architecture with multiple transformer blocks, where each block consists of adaptive layer normal-ization (AdaLN), multi-head self-attention, cross-attention, and feed-forward networks (FFN). The action at is first     
+
+> Figure 10. World model fϕarchitecture for navigation. For navi-gation tasks, the world model is formulated as an action-conditioned generative model that autoregressively generates the next frame. The model follows the CDiT architecture proposed in NWM [ 3], where actions are conditioned via adaptive layer normalization and history frames are conditioned via cross-attention.
+
+encoded through an MLP and used to modulate the trans-former blocks via AdaLN, similar to how DiT conditions on class labels. The model takes as input the masked future to-kens M (zt+1 ) and attends to the history window M (zt−τ :t)
+
+through cross-attention layers, where M (·) denotes the mask-ing operation. The history tokens serve as keys and values (K, V), while the future tokens act as queries (Q). We use 
+
+τ = 4 for the history window length and N = 12 for the DiT blocks. For SD-VAE experiments, we follow the exact architecture from NWM [ 3] (CDiT-B). For discrete tokeniz-ers (FlexTok [ 2 ] and CompACT), we use the same config-uration with two adaptations to handle discrete tokens: (1) embedding and classification layers instead of continuous projections, and (2) masked generative modeling instead of diffusion-based generation. 
+
+History masking. Following the principles of diffusion forcing [ 9], we randomly mask tokens in the history window during training. This encourages the model to learn robust temporal dependencies and improves action conditioning. During each training iteration, we randomly mask tokens in each historical frame. At inference time, we use the slightly masked (20%) history for stable rollouts. Ablation results in Table 5 of the main paper demonstrate that history masking improves planning accuracy. 16 Figure 11. World model fϕ architecture for manipulation. For manipulation tasks, the world model is formulated as a block-causal transformer that enables parallel prediction of multiple future frames conditioned on historical timesteps. Action tokens are used to condition the prediction head (AdaLN + linear layer) that unmasks latent tokens at each future timestep. 
+
+Dataset. The navigation world model is trained on three datasets: RECON [ 60 ], SCAND [ 38 ], and HuRoN [ 33 ]. For HuRoN, we use the publicly available low-resolution version. All datasets contain first-person navigation trajectories with corresponding actions (changes in x-axis, y-axis, and yaw). Frames are center-cropped and resized to 224 × 224 resolu-tion. We follow the same train/test splits as NWM [ 3]. We exclude Tartan [ 69 ] and Ego4D [ 25 ], which were used in the original NWM [ 3], for the following reasons: Tartan consists predominantly of forward-only actions, and Ego4D, while providing large-scale data, is computationally expensive to process. We found that we can fairly reproduce navigation planning performance without them. 
+
+Reproducing NWM [ 3 ]. The SD-VAE row in Table 4 of the main paper can be considered as our reproduction of NWM [ 3]. The original NWM reports ATE of 1.13 and RPE of 0.35 on RECON, while our reproduction achieves ATE of 1.262 and RPE of 0.354. Despite several differences—using a smaller model (CDiT-B instead of CDiT-XL used in the original NWM), low-resolution data for HuRoN, and ex-cluded datasets (Tartan and Ego4D)—we fairly reproduce the navigation planning performance. 
+
+Training and inference. The navigation world model is trained for 200K steps with a batch size of 128. We use AdamW optimizer [ 45 ] with a learning rate of 1 × 10 −4.We set β1 = 0 .9 and β2 = 0 .999 , with weight decay of 
+
+1 × 10 −2. For the masked generative modeling objective, we randomly sample the mask ratio from (0 , 1] following the cosine masking schedule [ 7]. During inference, we used 8 and 4 sampling steps for 16 and 8 latent tokens, respectively. 
+
+Evaluation. We evaluate navigation planning performance using two standard trajectory metrics: Absolute Trajectory Error (ATE) and Relative Pose Error (RPE) [ 62 ]. First, ATE measures the RMSE between predicted and ground truth transformations from the initial frame across the entire tra-jectory between corresponding timesteps. Second, RPE mea-sures the error in relative transformations between consec-utive timesteps. Lower values indicate better planning per-formance for both metrics. For details of model-predictive control framework used for navigation planning, we refer Sec. H. 
+
+G.2. Manipulation: block-causal parallel predic-tion 
+
+For robotic manipulation tasks on RoboNet [ 13 ], we adopt a block-causal transformer architecture that predicts mul-tiple future frames {zt+1 , . . . , z t+K } in parallel, condi-tioned on the initial observation zt and action sequence 
+
+{at, . . . , a t+K−1}. This parallel formulation is more suit-able for video generation tasks where we need to produce extended action-conditioned rollouts efficiently. Fig. 11 and Tab. 12 present the model architecture and hyperparameters of world model for manipulation, respectively. 
+
+Architecture. Figure 11 illustrates the block-causal architec-ture. Unlike the autoregressive model, all future frames are processed simultaneously within a single transformer. The input sequence is constructed by interleaving observations and actions: [zt−τ :t, a t, M (zt+1 ), . . . , a t+H−1, M (zt+H )] ,where M (·) denotes masked tokens. The key component is the block-causal attention mask (shown on the right of Fig-ure 11): tokens at timestep t + i can attend to all tokens up to and including zt+i and at+i−1, but cannot attend to future observations or actions. This preserves causal structure while enabling parallel prediction. Each action is encoded through a linear layer. The output token corresponding to each ac-tion is then used to condition a prediction head (AdaLN + Linear layer), which produces the unmasked tokens for the subsequent frame. During training, we set the predic-tion horizon to H = 14 (predicting the next 14 frames in parallel). However, the model can generalize to arbitrary horizon lengths since we use causal masking. We provide the first two frames of each episode as context for the model to condition on ( τ = 2 ). 
+
+Baseline configuration. For fair comparison, experiments using the target tokenizer (MaskGIT-VQGAN [ 7]) employ the same block-causal architecture. The only difference 17 is the sequence length: the target tokenizer processes 256 tokens per frame, while CompACT processes only 16 tokens per frame, resulting in significantly faster generation (Tab. 6 in the main paper). 
+
+Diffusion forcing interpretation. This architecture natu-rally implements causal, discrete extension of diffusion forc-ing [ 9 ]: during training, masked tokens at different timesteps provide varying levels of noisy conditioning to future frames. A frame with fewer masked tokens acts as a cleaner condi-tioning signal, while heavily masked frames force the model to rely more on learned dynamics and action conditioning. This training scheme improves the model’s ability to gener-ate consistent action-conditioned video sequences. 
+
+Dataset. The manipulation world model is trained on RoboNet [ 13 ], similar to IDM experiment. Frames are pre-encoded using robonet finetuned CompACT with 256 ×
+
+256 resolution center-cropped images. For the target tok-enizer [ 7 ] baseline, we use it as-is without RoboNet finetun-ing, which is fair since finetuned CompACT also keeps the frozen target tokenizer. 250 episodes are used for test. 
+
+Training and inference. The manipulation world model is trained for 100K steps with a batch size of 128. We use AdamW optimizer [ 45 ] with a learning rate of 1 × 10 −4.We set β1 = 0 .9 and β2 = 0 .999 , with weight decay of 
+
+1 × 10 −2. For the masked generative modeling objective, we randomly sample the mask ratio from (0 , 1] following the cosine masking schedule [ 7 ]. We used 100 sampling steps to generate future 14 frames. 
+
+# H. Planning with cross-entropy method 
+
+As described in Sec. 3.1 and Sec. 3.3, we use a trained world model to standalone-plan goal-conditioned navigation trajectories by optimizing distance between final prediction and the goal. Here, we provide additional details about the optimization using the Cross-Entropy Method (CEM) [ 12 ,14] and the hyperparameters used. 
+
+Cross-Entropy Method. For CEM planning, we strictly follow the protocol of NWM [ 3] for fair comparison. Algo. 1 presents the complete CEM procedure. Specifically, trajec-tory is assumed to be a straight line and only its endpoint is optimized, represented by three variables: a single transla-tion u and yaw rotation ϕ. This is converted into an action sequence by evenly distributing the translation across H
+
+timesteps and applying the rotation only at the final step. Each action step corresponds to a fixed time interval of 0.25 seconds. 
+
+Hyperparameters. We set the population size to 80 since increasing over it does not lead to substantial gain in plan-ning accuracy. For other hyperparameters, we follow the configuration of NWM: 2 seconds planning ( H = 8 ), single iteration ( I = 1 ), top-K selection with K = 5 , and M = 3 
+
+repetitive stochastic rollouts per candidate action. 
+
+Distance metric d(·, ·). The distance between predicted and  
+
+> Figure 12. Qualitative results of reconstruction with CompACT.
+
+goal observations can be measured in either pixel space or latent space. For pixel-space evaluation, we decode latent tokens to images using Dψ ◦D compact and compute the LPIPS distance [ 37 ]. Alternatively, we can compute distances di-rectly in the discrete latent space, which offers significant computational speedup by avoiding the decoding step (Tab. 5 (middle ) in the main paper). This latent-space distance com-putation is enabled by the properties of Finite Scalar Quanti-zation (FSQ) [ 48 ], which we use for discretization. Unlike traditional vector quantization that uses arbitrary codebook indices, FSQ assigns each latent vector to a discrete code based on level-based radix representation, preserving the continuous geometric structure in the discrete space. Specif-ically, each dimension of the latent is quantized to one of 
+
+L equally-spaced levels, allowing us to map discrete token indices back to their level-based radix representation. Given two discrete latent tokens zi, z j ∈ { 1, . . . , K }, we compute their distance as: 
+
+d(zi, z j ) = ∥FSQ −1(zi) − FSQ −1(zj )∥1, (8) where FSQ −1(·) maps the discrete index to its corresponding level-based radix representation. This distance in the dis-crete latent space provides a meaningful measure of seman-tic similarity while enabling faster planning with marginal degradation compared to pixel-space metrics. 
+
+# I. More qualitative results 
+
+Fig. 12 shows reconstruction examples across ImageNet, RE-CON, and RoboNet. While CompACT discards fine-grained textures and lighting details due to extreme compression, it preserves semantic content and spatial structure essential for planning tasks. Fig. 13 visualizes attention patterns in the latent resampler, demonstrating that each compact token attends to semantically coherent regions. Fig. 15 presents ex-ample planning results with CompACT. While fine-grained details such as textures and shadows are synthesized rather than reconstructed, the rollouts accurately preserve planning-critical information: spatial layout, object positions, and scene structure necessary for effective goal-reaching. Fig. 16 presents additional examples of action-conditioned video generation on RoboNet. Videos generated from CompACT latents maintain more consistent action-driven end-effector movements throughout the rollout compared to the ones generated with target tokenizer latents, validating that the 18 Algorithm 1 Cross-Entropy Method for Navigation Planning 
+
+Require: Initial frame o0, goal frame ogoal , planning horizon H, World model fϕ, tokenizer Dcompact ◦ E compact 
+
+Require: CEM params: population size N , top samples to be selected K, iterations I, samples per candidate M 
+
+> 1:
+
+// Initialize action distribution  
+
+> 2:
+
+μ ← (μx, μ y , μ ϕ) 
+
+> 3:
+
+Σ ← diag (σ2
+
+> x
+
+, σ 2 
+
+> y
+
+, σ 2
+
+> ϕ
+
+) 
+
+> 4:
+
+Encode observations: z0 ← E compact (o0), zgoal ← E compact (ogoal ) 
+
+> 5:
+
+for i = 1 to I do  
+
+> 6:
+
+A ← { (uj , ϕ j )}Nj=1 where (uj , ϕ j ) ∼ N (μ, Σ) // Sample candidate actions  
+
+> 7:
+
+for each candidate (uj , ϕ j ) ∈ A do  
+
+> 8:
+
+// Evaluate via stochastic rollouts  
+
+> 9:
+
+for m = 1 to M do  
+
+> 10:
+
+z(m) 
+
+> t
+
+← z0 
+
+> 11:
+
+a(j) ← ToActionSeq (uj , ϕ j , H ) 
+
+> 12:
+
+for t = 0 to H − 1 do  
+
+> 13:
+
+z(m) 
+
+> t+1
+
+∼ fϕ(z(m) 
+
+> t
+
+, a (j) 
+
+> t
+
+) // World model rollout  
+
+> 14:
+
+end for  
+
+> 15:
+
+ˆo(m) 
+
+> H
+
+← D ψ ◦ D compact (z(m) 
+
+> H
+
+) 
+
+> 16:
+
+ˆogoal ← D ψ ◦ D compact (zgoal ) 
+
+> 17:
+
+cm ← d(ˆ o(m) 
+
+> H
+
+, ˆogoal ) or cm ← d(z(m) 
+
+> H
+
+, z goal )// LPIPS between reconstruction or L1 distance between latent  
+
+> 18:
+
+end for  
+
+> 19:
+
+Cj ← 1
+
+> M
+
+PMm=1 cm 
+
+> 20:
+
+end for  
+
+> 21:
+
+˜A ← top-K from A with lowest costs {Cj } // Select top-K candidates  
+
+> 22:
+
+// Update distribution parameters  
+
+> 23:
+
+μ ← 1
+
+> K
+
+P 
+
+> (u,ϕ )∈˜A
+
+(u, ϕ ) 
+
+> 24:
+
+Σ ← 1
+
+> K
+
+P 
+
+> (u,ϕ )∈˜A
+
+(( u, ϕ ) − μ)(( u, ϕ ) − μ)⊤ 
+
+> 25:
+
+end for  
+
+> 26:
+
+return Action with minimum cost from ˜A
+
+modular latent tokens effectively capture dynamics-relevant information for manipulation tasks. 
+
+# J. Planning efficiency analysis 
+
+Fig. 14 visualizes the trade-off between planning accuracy (ATE), planning latency, and model size across different tok-enizers on RECON. Bubble size represents the peak VRAM usage during planning. CompACT variants achieve superior efficiency: CompACT delivers up to 80× speedup over SD-VAE while maintaining comparable accuracy. In contrast, FlexTok variants suffer significant accuracy loss and large VRAM requirements despite similar token counts, validating that our tokenizer design is critical for enabling efficient real-time planning. 
+
+# K. Scaling up with fewer tokens 
+
+The compact latent representation of CompACT enables scaling world models to larger capacities while maintain-ing practical planning latency. We train a 750M-parameter variant of our world model for navigation by increasing the depth to 24 layers and hidden dimension to 1024. This scaled model achieves improved planning accuracy with ATE of 1.305 and RPE of 0.370 on RECON—outperforming our base 16-token model (ATE=1.330, RPE=0.390). Planning latency is 24.7 seconds per trajectory, still 7 × faster than the SD-VAE baseline (178.78 seconds). 19 Figure 13. Attention visualization for compact latent tokens in latent resampler. Brighter the color, higher the attention score. 
+
+Figure 14. Plot for ATE, planning latency, and memory peak usage on RECON [ 60 ]. Latency and memory usage is mesaured for single trajectory optimization, using a single RTX 6000 ADA GPU. 
+
+20 Figure 15. Additional qualitative results of navigation planning with the proposed CompACT. Among candidates, worst two action sequences and best action sequences are presented together. 
+
+21 Figure 16. Additional qualitative results of action-conditioned video generation. Red and green boxes indicate incorrect and correct end-effector positions, respectively. 
+
+22

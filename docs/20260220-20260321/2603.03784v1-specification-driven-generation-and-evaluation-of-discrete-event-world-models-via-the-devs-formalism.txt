@@ -1,0 +1,1336 @@
+Title: Specification-Driven Generation and Evaluation of Discrete-Event World Models via the DEVS Formalism
+
+URL Source: https://arxiv.org/pdf/2603.03784v1
+
+Published Time: Thu, 05 Mar 2026 01:41:45 GMT
+
+Number of Pages: 34
+
+Markdown Content:
+# SPECIFICATION -D RIVEN GENERATION AND EVALUATION OF 
+
+# DISCRETE -E VENT WORLD MODELS VIA THE DEVS F ORMALISM 
+
+Zheyu Chen † Zhuohuan Li ‡ Chuanhao Li ‡∗ †Zhili College, Tsinghua University 
+
+> ‡
+
+Department of Industrial Engineering, Tsinghua University 
+
+{chenzhey22,lizhuohu23}@mails.tsinghua.edu.cn, chuanhao-li@tsinghua.edu.cn 
+
+# ABSTRACT 
+
+World models are essential for planning and evaluation in agentic systems, yet existing approaches lie at two extremes: hand-engineered simulators that offer consistency and reproducibility but are costly to adapt, and implicit neural models that are flexible but difficult to constrain, verify, and debug over long horizons. We seek a principled middle ground that combines the reliability of explicit simulators with the flexibility of learned models, allowing world models to be adapted during online execution. By targeting a broad class of environments whose dynamics are governed by the ordering, timing, and causality of discrete events, such as queueing and service operations, embodied task planning, and message-mediated multi-agent coordination, we advocate explicit, executable discrete-event world models synthesized directly from natural-language specifications. Our approach adopts the DEVS formalism and introduces a staged LLM-based generation pipeline that separates structural inference of component interactions from component-level event and timing logic. To evaluate generated models without a unique ground truth, simulators emit structured event traces that are validated against specification-derived temporal and semantic constraints, enabling reproducible verification and localized diagnostics. Together, these contributions produce world models that are consistent over long-horizon rollouts, verifiable from observable behavior, and efficient to synthesize on demand during online execution. 
+
+# 1 Introduction 
+
+As large language models (LLMs) are increasingly deployed as general-purpose agents, world models , i.e., models that support hypothetical rollouts of environment dynamics under candidate actions, have emerged as a central research focus. They are attractive for two reasons. First, agentic reinforcement learning increasingly relies on experience-driven scaling, which demands larger, more diverse, and more challenging environments; world models can help by generating simulated experience to improve learning efficiency [ 1, 2 ]. Second, LLM-based agents are expected to operate over extended time horizons, increasing the importance of long-horizon planning; world models enable agents to simulate and evaluate the consequences of candidate actions prior to execution, which reduces reliance on risky and costly online exploration [3, 4]. A growing body of work has explored world models across domains [ 5, 6 ], yet most existing approaches fall toward one of two ends of a spectrum. At one end are hand-engineered simulators that explicitly encode environment dynamics and support controlled experimentation [ 6 ]. Such simulators are typically reproducible and debuggable, but require substantial human effort and are often difficult or costly to adapt to new environments, particularly in online settings. At the other end are implicit approaches that prompt or train models to predict future states or observations conditioned on past events [ 3, 7]. While these methods offer greater flexibility and can be adapted online through prompting, they are often unreliable when used as long-horizon simulators: implicit dynamics are difficult to constrain or verify, small errors compound across multi-step rollouts, and assumptions about timing and causality remain latent, complicating failure diagnosis and targeted correction. As a result, a practically useful middle ground remains underdeveloped, namely, 
+
+> ∗
+
+Corresponding Author 
+
+> arXiv:2603.03784v1 [cs.AI] 4 Mar 2026
+
+Generation and Evaluation of Discrete-Event World Models via the DEVS Formalism world models that are (i) consistent during long-horizon rollouts, (ii) reproducible and verifiable from observable behavior, and (iii) easy to modify or synthesize on demand during online execution. In this paper, we argue that such a middle ground is attainable for an important class of environments whose dynamics are governed primarily by the ordering, timing, and causality of discrete interactions . Examples include network protocols and distributed systems, queueing and service operations, manufacturing and supply-chain workflows, embodied task planning [ 8], business process automation [ 9], and multi-agent coordination mediated by messages or events [ 10 ]. In these domains, environment evolution is naturally characterized as a sequence of timed discrete events, such as arrivals, departures, messages, failures, each inducing a state transition at a simulated time. This motivates discrete-event world models , which capture environment dynamics as state transitions induced by discrete events and scheduled time advances, and explicitly surface event traces. They enforce structured state evolution and help maintain consistency over long-horizon rollouts, avoiding the unbounded drift common in implicit simulators. Treating event traces as first-class objects also makes timing and causality explicit, enabling reproducibility and verification from observable behavior, as well as fine-grained reasoning about alternative action sequences and long-horizon effects. Finally, by encoding dynamics through explicit events and state transition rules, discrete-event world models support online synthesis and on-demand adaptation. To make this perspective operational, we formalize discrete-event world models as executable simulators synthesized directly from natural-language specifications provided by users or LLM agents, enabling construction and adaptation on demand. We introduce an LLM-based code-generation pipeline that translates a description of an environment composed of interacting components into an executable simulator that (i) exposes a standardized command-line interface for agent interventions and (ii) emits a structured event trace of the environment’s evolution, enabling reproducible execution and downstream analysis based on observable behavior. This paradigm raises two key challenges. First, realistic environments can be structurally complex, comprising multiple interacting components with nontrivial timing and communication semantics. Directly synthesizing a monolithic simu-lator requires an LLM to infer system structure, interaction protocols, and component-level dynamics simultaneously; failures in any one part can invalidate the entire simulator. Second, natural-language specifications rarely determine a unique ground-truth implementation, so evaluation via code-level equivalence or stepwise prediction accuracy is ill-posed. Instead, evaluation should be specification-driven , asking whether executed behavior satisfies temporal and semantic constraints implied by the specification. To address the first challenge, we adopt the Discrete Event System Specification (DEVS) formalism [ 11 , 12 ] as the representation for world models. DEVS decomposes systems into interacting atomic and coupled components with explicit state, transition, and timing semantics. Leveraging this modularity, we introduce a staged generation pipeline in which the LLM first synthesizes the component hierarchy and interaction graph, and subsequently implements component-level behavioral logic. This decomposition enables parallel generation of atomic components, making rapid, on-demand synthesis feasible during online execution. Moreover, separating structural synthesis from component behavior improves efficiency and stability by isolating structural decisions from behavioral logic, reducing cross-component coupling, and increasing robustness to local generation errors. To address the second challenge, we introduce a trace-based, specification-driven evaluation framework. Generated simulators are required to emit event traces conforming to a standardized schema that records event time, entity, type, and payload. Under controlled test scenarios, these traces are validated against rule sets encoding temporal relationships and semantic invariants derived from the specification, such as precedence and response constraints, timing bounds, and conservation or safety properties. When a violation occurs, the framework produces localized diagnostics identifying the violated constraint and the responsible entities and state variables, enabling systematic verification without reliance on a reference implementation. Together, these design choices establish a specification-driven framework for generating, executing, and evaluating discrete-event world models from natural language. By combining DEVS-based modular synthesis with trace-level evaluation, our approach provides a scalable discrete-event foundation for long-horizon reasoning, producing executable artifacts with explicit interfaces and actionable diagnostic feedback to support systematic, iterative refinement. Beyond purely rule-based event and temporal dynamics, the proposed framework lays the foundation for generating hybrid discrete-event systems from natural-language specifications, including systems in which LLMs are embedded within DEVS components as event-generating or decision-making entities. This enables the synthesis of coordinated multi-agent systems for task solving, as well as LLM-driven simulations, such as social or organization simulations, specified and instantiated entirely through natural language. 2Generation and Evaluation of Discrete-Event World Models via the DEVS Formalism 
+
+# 2 Related Works 
+
+2.1 World Models: Explicit and Implicit Approaches 
+
+World models have long served as predictive mechanisms to support planning and reinforcement learning, enabling agents to reason about the consequences of actions before execution and to generate simulated experience for improved learning efficiency [ 1 ]. Broadly, existing work on world modeling can be categorized into two complementary approaches: explicit world models , in which environment dynamics are manually implemented inside executable simulators, and implicit world models , in which dynamics are captured by learned models, often neural networks. Several works construct world models as human-designed, executable simulators with well-defined state representations and transition dynamics. For example, [ 13 ] utilize a robotic simulator as a world model and demonstrate that interaction with such a model can enhance the performance of language models on downstream tasks. Similarly, [ 6 ] present 
+
+Web World Models , a carefully web-based simulator that captures the structure and dynamics of web environments to support controlled agent interaction and evaluation. These approaches emphasize executability, reproducibility, and precise control over environment dynamics. In parallel, recent work has explored whether environment dynamics can be modeled implicitly by large neural networks, particularly LLMs. In this paradigm, the world model is not represented as a standalone simulator; instead, environment dynamics are encoded in the model’s parameters and accessed through prediction during inference. LLMs are prompted or trained to predict future observations or outcomes conditioned on past events, and these predictions are used to guide action selection or planning [ 3, 4]. This approach has been applied across a range of domains, including web environments [ 4, 6 , 14 ], video games and real-world video data [ 5], and robotic tasks involving visual, force, or other sensory feedback [15]. These two lines of work reflect different trade-offs in how world dynamics are represented and accessed. Explicit world models provide executable, transparent representations of environment dynamics but typically require substantial manual effort to design and adapt, while implicit neural world models offer greater flexibility and scalability by leveraging learned representations, at the cost of reduced explicitness and multi-turn consistency. 
+
+2.2 Symbolic and Programmatic World Model Generation 
+
+A closely related line of work focuses on generating structured representations of environment dynamics from natural language, with the goal of improving interpretability and enabling rule-based or formal verification. In the context of symbolic world or domain models, several approaches translate natural-language descriptions into executable planning representations such as PDDL, using plan execution behavior or task outcomes as evaluation signals [ 16 , 17 , 18 ]. Complementary efforts reduce reliance on expert supervision by incorporating environment interaction to iteratively refine generated planning domains [19]. Beyond planning-oriented representations, related work has explored generating system-level models from natural-language requirements in software and systems engineering. In particular, several studies synthesize SysML artifacts, such as structural diagrams or behavioral models, and evaluate them using consistency checks, requirement coverage, or simulation-based criteria [ 20 , 21 , 22 ]. These approaches emphasize requirements traceability, design validation, and alignment with established engineering workflows, but typically focus on static structure or high-level behavioral descriptions rather than executable environment dynamics. Our work aligns with these efforts in seeking explicit, programmatic representations of environment dynamics from natural language, but differs in its choice of modeling formalism and evaluation focus. Compared to PDDL-based planning models, which emphasize symbolic state transitions and goal satisfaction in discrete steps, DEVS provides an execution-oriented semantics centered on discrete events, explicit time, and concurrent interactions, making it well suited for domains such as queues, workflows, distributed systems, and message-driven multi-agent settings. Relative to SysML-based approaches, which primarily support high-level system specification and design reasoning, DEVS offers precise simulation semantics and inherent executability, producing structured event traces that enable black-box, trace-based evaluation under controlled scenarios. Together, these properties position DEVS as a natural foundation for synthesizing and evaluating discrete-event world models from natural-language descriptions. 
+
+2.3 LLM-Based Code Generation and Long-Horizon Development 
+
+Recent research has extensively explored the capabilities of large language models and code agents for natural language driven software implementation, fixing issues in existing code repositories, and generating multi-file projects. Evaluations typically focus on unit-test-based functional correctness, issue-fixing success rates, or repository-level benchmarks. Examples include unit-test-driven functional correctness evaluation [ 23 ], repository-repair benchmarks based on real GitHub issues [24], and repository-level multi-file evaluation settings [25, 26]. 3Generation and Evaluation of Discrete-Event World Models via the DEVS Formalism The problem addressed in this paper likewise involves long-horizon code development: coordinating across multiple steps and files, and leveraging execution and tool feedback to iteratively advance the implementation. Existing work often summarizes complex processes with automatable, reproducible outcome metrics (e.g., test pass/fail or task completion rate) and evaluates systems on multi-step interactive software-engineering tasks or repository-level feature-implementation settings [27, 26, 28]. Our evaluation objectives differ fundamentally from these approaches. We require not only executable code but also conformance to a time-sensitive event-semantics specification, defined via standard-input interventions and a unified JSONL event format. Accordingly, our evaluation is closer to conformance testing, where correctness is judged by whether observable input/output behavior satisfies the specification, rather than by generic unit tests [ 29 ]. It also aligns with the runtime-verification perspective of checking specifications against execution traces [30]. 
+
+2.4 Verification, Validation, and Conformance for Discrete-Event Models 
+
+Verification and validation (V&V) of discrete-event models and DEVS models have a long research history, including static consistency checks, simulation-based verification, and formal analysis of model composition. These approaches provide systematic tools for detecting specification violations. For instance, structural consistency verification can validate the structural definitions of coupled models prior to simulation [ 31 ]; behavioral-level verification is often instantiated as simulation-driven unit tests or semantic-consistency tests [ 32 , 33 ]; and work that integrates DEVS with model checking and applies mixed V&V in hierarchical/multi-resolution compositional modeling illustrates a path that combines formal analysis with compositional verification [34, 35]. In line with this tradition, execution trajectories can serve as a direct basis for systematic evaluation: given input drivers and observation schemes, the runtime traces of the system under test can be compared against specified properties to determine whether the expected behavior is satisfied. This perspective is commonly framed as runtime verification (RV) in the broader software and systems verification literature, where specifications are checked online or offline against event/state sequences [ 30 ]. In discrete-event simulation, similar trace-based checking can be achieved by explicitly modeling properties and performing on-demand checks during simulation [36]. This paper similarly adopts trace-based system evaluation, but under a distinct context: the DEVS models are automat-ically synthesized by LLM-driven generators, resulting in highly diverse implementation forms. Consequently, the evaluation framework must center on interfaces and observable behaviors to accommodate diverse implementations, and provide actionable localization signals when specification violations are detected. Furthermore, evaluation should target property/behavioral conformance rather than relying on code-level equivalence to a single reference implementation. These requirements naturally connect to black-box testing frameworks and their diagnostic capabilities for failing cases [37 ]. They also echo metamorphic testing, which mitigates the oracle problem via metamorphic relations when reliable test oracles are unavailable [38]. 
+
+# 3 Discrete-Event World Models and DEVS 
+
+In this section, we formalize discrete-event world models considered in this paper and introduce the DEVS formalism as the operational representation. Our goal is to precisely characterize (i) the notion of a discrete-event world, (ii) the input–output interface exposed by an executable world model, and (iii) its realization using DEVS, thereby establishing a rigorous foundation for the generation and evaluation methods developed in subsequent sections. 
+
+3.1 Problem Setup 
+
+We study the problem of constructing discrete-event world models from natural language descriptions . Such descriptions specify the entities involved in an environment, the types of discrete events that may occur, and temporal or causal relationships among events. In our framework, an discrete-event world model is realized as a simulator that instantiates a concrete interpretation of the described environment and serves as a predictive substrate for downstream tasks such as planning and evaluation. Figure 1 illustrates this through a warehouse robot fleet restocking task. The natural-language specification (top center) describes entities such as robots, chargers, and inventory, along with event types including order arrivals, task assignments, robot movements, charging events, and inventory updates. This description implicitly defines a world whose evolution is governed by discrete events rather than continuous dynamics. 
+
+Discrete-event world. We define a discrete-event world as one in which the state changes only at isolated event times; between events, the state remains constant. In the warehouse example, the world state includes, for instance, the contents of the order queue, the locations and battery levels of robots, and inventory levels. State changes occur only when events such as an order arrival, a robot completing a task, or a charging operation finishing take place. Formally, 4Generation and Evaluation of Discrete-Event World Models via the DEVS Formalism 
+
+Figure 1: Illustrative example of the generation and execution of a discrete-event world model for a warehouse robot fleet restocking task. To facilitate planning, a natural-language environment specification is translated into a world model, which exposes a standardized execution interface for interventions (e.g., fleet size, dispatching rule, charger count) and emits a structured event trace and performance metrics (e.g., KPIs). In this paper, we propose to operationalize such a world model as a DEVS model composed of interacting atomic and coupled components, each representing an entity with local state, event-handling logic, and timing semantics. Interactions among entities are realized through event messages routed via component ports, while event timing is governed by component-specific time-advance and transition functions. This enables systematic what-if analysis and comparative evaluation of alternative operational policies. a discrete-event world is represented as W = ( E, S, Ω, P, δ ), where E is a finite set of entities, e.g., order queues, robots, chargers, inventory, S = Q 
+
+> e∈E
+
+Se is the global state space with Se the local state space of entity e, Ω is the event alphabet specifying event types , e.g., order arrival, task assignment, charge complete, and P is the payload space capturing event-specific data, e.g., order IDs, robot identifiers, SKUs. The space of event instances is U := Ω × P , so that an individual event instance u = ( ℓ, p ) ∈ U corresponds, for example, to a specific order arrival or a particular robot completing a task. The transition relation δ : S × U × R≥0 → S 
+
+specifies the effect of applying an event instance and time advancement to the world state. This captures autonomous temporal processes, e.g., a robot completing a movement after a travel time, and interactions among entities, e.g., a dispatcher assigning a task to a robot. 
+
+Executable world models as simulators. In our framework, an executable discrete-event world model is realized as an simulator , denoted as M. It instantiates a concrete interpretation of the world W, operationalizes its event dynamics, and serves as a predictive substrate for downstream tasks as depicted on the left side of Figure 1. The simulator is treated as a black-box executable with a fixed input–output interface. External interventions are drawn from a set A and provided as configuration arguments 
+
+I = ( a1, a 2, . . . , a m), ak ∈ A ,
+
+which parameterize execution at launch. In the warehouse example, these interventions include the number of robots, the choice of dispatching policy, the number of chargers, and the simulation horizon. Some tasks additionally provide an optional input stream J specifying exogenous inputs delivered during execution. We treat the overall external input to the simulator as the pair (I, J ). Executing M(I, J ) produces observable behavior in the form of an event trace 
+
+T = ( r1, r 2, . . . ) with each trace record r ∈ T being a time-stamped output annotated with the emitting entity, 
+
+r = ( t, e, ℓ, p ) ∈ R≥0 × E × Ω × P .
+
+For example, this could correspond to an order arrival or a robot completing a charging operation at time t.5Generation and Evaluation of Discrete-Event World Models via the DEVS Formalism 
+
+Figure 2: Generation pipeline of the discrete-event world model for warehouse robot fleet restocking. 
+
+3.2 DEVS as an Operational Representation 
+
+In this paper, we adopt Parallel DEVS as our representation formalism for M [12 ]. Figure 1 (right) illustrates how the warehouse world is realized as a DEVS model. DEVS models W as a hierarchical composition of atomic models , which encapsulate local state and event-handling logic, and coupled models , which define how atomic or coupled models are composed and how events are routed among them. For example, robots, chargers, order queues, and inventory are each modeled as atomic models with well-defined timing and transition semantics. Interactions among entities, such as a dispatcher assigning tasks to robots or robots requesting charging, are realized through event passing in coupled models. Formally, for each entity e ∈ E , we define an atomic model 
+
+Me =  Xe, Y e, Se, δ e
+
+> int
+
+, δ e
+
+> ext
+
+, δ e
+
+> con
+
+, λ e, t ea
+
+,
+
+where Xe, Y e ⊆ Ω are the admissible input and output event alphabets, Se is the local state space, δe 
+
+> int
+
+: Se → S e is the internal transition function, δe 
+
+> ext
+
+: Se × R≥0 × B (Xe) → S e is the external transition function, with the real-valued argument denoting elapsed simulation time since last transition, δe 
+
+> con
+
+: Se × B (Xe) → S e is the confluent transition function used when external input arrives exactly at an internal transition time, λe : Se → B (Ye) is the output function, and tea : Se → R≥0 ∪ {∞} is the time-advance function. Here B(·) denotes bags (multisets) of messages. Operationally, an atomic model remains in state s ∈ S e for tea(s) units of simulated time; at that time it emits outputs via λe and performs an internal transition via δe
+
+> int
+
+. If input arrives before the scheduled internal transition, the model applies δe 
+
+> ext
+
+using the elapsed time. If input arrives exactly at the internal transition time, δe 
+
+> con
+
+resolves the conflict. Coupled models compose these atomic models and define how events are routed among them, yielding a hierarchical representation whose root corresponds to M.Formally, for any coupled model Mc we write 
+
+Mc =  Xc, Y c, Dc, {M d}d∈D c , EIC c, EOC c, IC c
+
+,
+
+where Xc, Y c ∈ Ω are the admissible input and output event alphabets, Dc is an index set of subcomponents and each 
+
+Md is either atomic or coupled (recursively). The coupling specifications EIC c, EOC c, and IC c route bags of events from the external models into c, from subcomponents of C to the external models, and among subcomponents of Mc,respectively. External inputs (I, J ) to the simulator are injected through the root coupled model. 
+
+# 4 A DEVS-Based Model Generation Pipeline 
+
+Building on the DEVS formalization introduced in Section 3, we present a structured pipeline for generating a discrete-event simulator M from natural-language environment specifications. The pipeline is designed specifically around the modular semantics of DEVS, using explicit component interfaces and coupling rules to guide synthesis. The key idea is to exploit DEVS modularity to decompose model generation into a collection of well-scoped, contract-driven sub-tasks assigned to specialized LLM agents. Each component is generated against a fixed interface contract defined by a rigorous JSON schema (see App. A), which is established during an initial structural synthesis stage. These interfaces serve as contracts that constrain subsequent component-level generation, allowing each atomic model to be synthesized independently using only local context, while remaining globally consistent with the system architecture. 6Generation and Evaluation of Discrete-Event World Models via the DEVS Formalism This DEVS-specific decomposition decouples the complexity of code generation from the scale of the environment: increasing the number of components does not increase the contextual burden of generating any single component. As a result, the pipeline supports scalable, reliable synthesis of complex discrete-event models directly from natural language. Figure 2 illustrates the overall procedure using the warehouse robot fleet restocking example. 
+
+4.1 Overview of the Generation Pipeline 
+
+The generation pipeline takes as input (i) a natural-language environment specification S describing entities, events, and timing or causal constraints, and (ii) a contract C that fixes the external interface (I, J ) and trace schema T . (See App. D.1 for the complete textual specification and contract used in a real data example ABP). The output is a simulator 
+
+M implementing a DEVS model, with a trace logger that emits JSONL records conforming to T .Algorithm 1 formalizes the pipeline consisting of two stages: (1) Structural synthesis Infer the model hierarchy, port schemas, and interaction graph from S and C, and summarize them as a structured PlanTree . Detailed see Alg. 2. (2) Behavioral synthesis Implement atomic models with explicit state-transition and timing behavior based on the 
+
+PlanTree , and compose them into a hierarchical coupled model with an execution interface and trace logger. Detail see Alg. 3. Although executed sequentially, they are not rigidly isolated: structural synthesis fixes interfaces and coupling patterns, providing architectural blueprint that constrains and enables concurrent behavioral synthesis of individual components. 
+
+Algorithm 1 Spec-driven DEVS Generation Pipeline  
+
+> 1:
+
+Input: environment spec S, interface contract IC  
+
+> 2:
+
+Output: simulator M (DEVS coupled model)  
+
+> 3:
+
+P lanT ree ← PLAN (S, IC ) // See Alg. 2  
+
+> 4:
+
+M ← CONSTRUCT (P lanT ree ) // See Alg. 3 
+
+4.2 Structural Synthesis Stage 
+
+This stage determines the architectural scaffold of the simulator, i.e., which components exist, how they are composed, and how they exchange events. Each component corresponds to a conceptual entity in the environment (e.g., robots, stations, queues, chargers), and interactions correspond to discrete events exchanged through explicit ports. Structural synthesis yields a single architectural artifact comprising (i) a component hierarchy with assigned model types (atomic or coupled), (ii) per-component input/output port schemas and behavioral logic specifications, and (iii) an interaction graph specifying routed event types. This artifact is represented as a typed tree, PlanTree , augmented with explicit coupling edges. Figure 2 visualizes the artifact produced by this stage for the warehouse robot fleet restocking example. We also provide a visual representation of the generated PlanTree for the example ABP in App. D.2, which details the decomposed hierarchy and interface schemas. 
+
+Prompting and Validation. Structural synthesis is carried out by three specialized LLM agents utilizing the prompts defined in App. B.1: (i) A Classifier determines whether a component should be atomic or coupled based on functional complexity; (ii) A Splitter decomposes coupled models into child components and defines their interaction graph (the coupling); (iii) A Formulator translates atomic requirements into strict ModelSpecification JSON objects (see App. A), separating logic description from interface definition. Instead of rigidly enforcing every interface detail top-down, this stage focuses on establishing the system topology. While it proposes an initial interface schema to guide generation, the final interface contract is resolved dynamically during the implementation phase. 
+
+4.3 Behavioral Synthesis Stage 
+
+Following the structural planning, the framework constructs the simulator through a bottom-up, parallelized process. This stage encompasses both the synthesis of atomic behavioral logic and the adaptive assembly of coupled models. 
+
+Parallel Synthesis of Atomic Models. Each atomic model maintains explicit internal state and defines how that state evolves under (i) incoming messages, (ii) internally scheduled events, and (iii) elapsed time. Timing behavior, such as processing delays, periodic actions, timeouts, or stochastic service times, is encoded directly in the time-advance function and the internal transition logic. Component synthesis is performed independently by the Model Creator agent (App B). The agent is conditioned on the ModelSpecification from the structural stage and a set of injected Global Engineering Standards(App. B) 7Generation and Evaluation of Discrete-Event World Models via the DEVS Formalism 
+
+Algorithm 2 Recursive Planning  
+
+> 1:
+
+Input: environment spec S, interface contract IC  
+
+> 2:
+
+Output: Model Full Plan  
+
+> 3:
+
+Function PLAN (S, IC ) 
+
+> 4:
+
+Rroot ← Extract top-level requirements from S and IC  
+
+> 5:
+
+return RECURSIVE PLAN (Rroot , ∅) 
+
+> 6:
+
+EndFunction  
+
+> 7:
+
+Function RECURSIVE PLAN (R, C ) 
+
+> 8:
+
+// inputs are Model Requirement R, context C  
+
+> 9:
+
+if R is simple enough for Atomic then  
+
+> 10:
+
+return {R} 
+
+> 11:
+
+end if  
+
+> 12:
+
+repeat  
+
+> 13:
+
+Decompose R into sub-tasks Children  
+
+> 14:
+
+T ree ← ∅  
+
+> 15:
+
+for all child ∈ Children do  
+
+> 16:
+
+SubT ree ← RECURSIVE PLAN (child, C ∪ R) 
+
+> 17:
+
+T ree ← T ree ∪ SubT ree  
+
+> 18:
+
+end for  
+
+> 19:
+
+until T ree ̸ = ∅ 
+
+> 20:
+
+return T ree ∪ { R} 
+
+> 21:
+
+EndFunction 
+
+that enforce type safety and library constraints. The resulting artifacts include per-component state definitions, event handlers, and timing rules. This bottom-up approach limits the scope of each generation task and promotes interface consistency. Its independence also allows us to maximize parallelization, significantly reducing generation time for large-scale environments. We provide a visualization of the generated model in App. D.3. 
+
+Adaptive Coupling via Interface Summarization. To address potential semantic drifts where the generated code of a component might slightly deviate from the initial structural plan, we introduce an adaptive assembly step. Once a set of sibling components is implemented, a Summarizer agent analyzes their source code to extract the “ground-truth” interfaces (see App. B). The generation of their parent coupled model is then conditioned on these summaries rather than the original plan. This ensures that the coupling logic (i.e., how components are wired together) adapts to the actual implementation of the sub-components, preventing integration failures caused by minor interface mismatches. This recursive process continues upward until the root coupled model is synthesized. 
+
+Executable Simulator Interface. Once components are synthesized, they are assembled into a DEVS simulator that implements the execution contract in Section 3. The assembled simulator parses configuration arguments I (and optional input stream J ), initializes component parameters and state, and emits a structured JSONL event trace during execution. The root coupled model exposes a minimal external interface: inputs correspond to exogenous events and outputs correspond to trace records. This design enables black-box execution and trace-based evaluation independent of internal implementation choices. 
+
+Algorithm 3 Bottom-Up Construction  
+
+> 1:
+
+Input: Model Full Plan R 
+
+> 2:
+
+Output: Model Full Code  
+
+> 3:
+
+Function CONSTRUCT (P lan ) 
+
+> 4:
+
+Code ← ∅  
+
+> 5:
+
+for all child ∈ P lan.children do  
+
+> 6:
+
+Code ← Code ∪ CONSTRUCT (child ) 
+
+> 7:
+
+end for  
+
+> 8:
+
+Code ← Code ∪ { generate code using P lan, Code } 
+
+> 9:
+
+return Code  
+
+> 10:
+
+EndFunction 
+
+8Generation and Evaluation of Discrete-Event World Models via the DEVS Formalism Concretely, I parameterizes the simulator at launch (e.g., rates, capacities, horizons), while J is parsed by an input adapter into exogenous events that are injected at the root input port during execution. When no input stream is provided, 
+
+J is empty and the simulator evolves solely from its initialized state and internal scheduling. 
+
+# 5 Trace-Based Evaluation of World Models 
+
+To rigorously assess whether a simulator M generated by Algorithm 1 conforms to a natural-language specification S,we introduce an evaluation benchmark grounded in trace-based conformance . Unlike conventional code generation benchmarks that assess correctness via functional input–output equivalence, our setting requires validating simulated execution trajectories . Specifically, evaluation focuses on whether emitted event traces satisfy temporal, causal, and semantic constraints implied by specification. 
+
+5.1 Trace-Based Evaluation Criteria 
+
+We evaluate generated world models using criteria defined over their emitted event traces. Rather than comparing code directly, our evaluation checks whether the observable behavior of M conforms to constraints implied by the natural-language specification S. This also serves as the basis for our dataset construction and evaluation procedure. 
+
+Operational success. We first require that a generated simulator M is usable as a software artifact. (1) Executable :The simulator must compile and run successfully inside a standard Docker environment. (2) Observable : The simulator must adhere to the I/O contract and event trace schema specified in C, emitting event traces in the prescribed JSONL format (timestamp, entity, event type) to enable automated parsing and analysis. 
+
+Behavioral conformance. For simulators M that satisfy the operational criteria, we evaluate behavioral correctness by checking trace-level constraints derived from the specification S. We manually implement these constraints based on the semantics of each task. They operate at two levels: • Component-level : Constraints on the internal evolution of individual components, such as whether state transitions and timing behavior are consistent with the specification, e.g., correct waiting-time computation in a queue. • System-level : Constraints on causal and temporal relationships across interacting components. These detect common failure modes in LLM-generated simulators, including events occurring between components that are not coupled and effects appearing before their causes. 
+
+5.2 Dataset Construction and Composition 
+
+We construct a curated dataset designed to probe specific world modeling capabilities. Our construction methodology prioritizes the authenticity of the simulation logic and the diversity of the modeling challenges. To avoid the pitfalls of synthetic or trivial toy problems, we employ a reverse-engineering strategy. We select high-quality, open-source DEVS models, e.g., network protocols, industrial supply chains, and extract their core dynamics. These are rewritten into natural language specifications, while the original code is instrumented to harvest ground-truth event traces, ensuring every behavioral rule in our verification oracle is grounded in a working, realistic system. 
+
+Data assets. Each benchmark scenario is a self-contained evaluation package containing: • Specification: Natural language description of entities, state logic, and interaction rules of the environment. • I/O contract: Strict definitions for intervention arguments and the output event schema. • Test suite: A set of standard inputs ( I) designed to stress-test specific causal dependencies. • Verification oracle: Executable checkers implementing the behavioral criteria in Section 5.1, validating traces against domain-specific constraints, e.g., verifying that packet latency obeys physical link properties. 
+
+Input granularity and quality. The natural-language specifications are standardized to function as functional requirements . They are designed to be (1) implementation-agnostic , i.e., they describe what the system does without prescribing how it should be implemented, avoiding references to DEVS constructs, port names, or code structure; (2) behaviorally precise , i.e., while abstracting away implementation details, they provide unambiguous information about timing logic and causal relationships, minimizing the need for the model to invent domain rules. 
+
+Dataset composition. We design a canonical set of scenarios that span orthogonal dimensions of difficulty. As summarized in Table 1, the benchmark is stratified along two axes. First, in terms of domain semantics , the scenarios 9Generation and Evaluation of Discrete-Event World Models via the DEVS Formalism cover three broad classes: service operations, network protocols, and physical dynamics. Second, in terms of dynamic features , they capture a range of discrete-event behaviors, including stochastic queuing, schedule-driven delays, continuous dynamics via ODE approximations, and complex nested state machines. More details about these scenarios and their specifications are provided in App. C. Table 1: Benchmark scenarios summary. The dataset covers diverse domains and dynamic characteristics, ranging from continuous approximations (ODE) to complex nested state machines. 
+
+Scenario Domain Key Dynamics Scale 
+
+1. IOBS Banking Pipeline w/ Routing M2. OTrain Transport Schedule-driven M3. SEIRD Bio-Math Continuous (ODE) S4. FileTransfer Network Dual-Loop FSM L5. ABP Network Stop-and-Wait S6. StratAirlift Logistics Active Reneging L7. Barbershop Service Blocking & Signals S
+
+5.3 Metrics and Experimental Protocol 
+
+To assess the quality of a simulator M generated for a given benchmark scenario, we define a Test Suite D =
+
+{d1, d 2, . . . , d m} consisting of m distinct data points with varying difficulty levels, e.g., from smoke tests to heavy-load scenarios. Each data points corresponds to one specific choice of (I, J ) defined in Section 3. For each generated simulator, we calculate two aggregated scores based on its performance across this test suite. 
+
+Operational success score (OSS). This measures the robustness and executability coverage of the simulator. For each data point di ∈ D , we define a validity indicator vi:
+
+vi = I(ExitCode = 0) · I(NoTimeout ) · I(ValidLog ) (1) The simulator achieves a validity score of 1 only if it executes without crashing and adheres to the I/O contract for that specific input. We use SOSS = 1
+
+> m
+
+Pmi=1 vi to denote the success rate across the entire test suite D, which penalizes brittle models that may function on simple inputs but crash under complex loads. 
+
+Behavioral conformance score (BCS). For data points di on which the simulator executes successfully ( vi = 1 ), we assess its simulation fidelity . To ensure balanced assessment, we employ a Macro-Average strategy that weights component logic and system consistency equally. Let Rcomp be the set of component-level rules and Rsys be the set of system-level rules introduced in Section 5.1. Note that for stochastic scenarios, Rsys inherently includes statistical distribution checks to verify probabilistic dynamics. The conformance score ci for a data point di is defined as: 
+
+ci = 12 vi
+
+P 
+
+> r∈R comp
+
+I(r(Ti)) 
+
+|R comp |
+
+| {z }
+
+> Local Logic
+
++
+
+P 
+
+> r∈R sys
+
+I(r(Ti)) 
+
+|R sys |
+
+| {z }
+
+> Global Consistency
+
+ (2) where Ti = M(di) is the event trace generated by the simulator M with input di. We use SBCS = 1
+
+> m
+
+Pmi=1 ci to denote the average conformance over the test suite D.
+
+# 6 Experiments 
+
+In this section, we evaluate the proposed generation pipeline described in Algorithm 1, henceforth referred to as DEVS-Gen, against state-of-the-art LLM-based software engineering agents. Our experiments are designed to answer three key questions: (i) Effectiveness: Can DEVS-Gen synthesize correct and executable world models across diverse domains? (ii) Efficiency: How does the cost (time and tokens) of DEVS-Gen compare to iterative agentic baselines? (iii) Scalability: Does the modular design of DEVS enable efficient parallel synthesis for larger systems? 10 Generation and Evaluation of Discrete-Event World Models via the DEVS Formalism 
+
+6.1 Experimental Setup 
+
+We conduct experiments using the 7 scenarios listed in Table 1, which vary in scale, dynamic characteristics (e.g., ODE-based vs. logic-based), and interaction complexity. We compare DEVS-Gen against two widely used open-source software engineering agents, OpenHands [ 39 ] and 
+
+SWE-Agent [27 ]. To isolate the impact of structured generation from iterative debugging, we evaluate two variants of each baseline, including (i) Standard (Iterative) : Default configurations of OpenHands with Terminal, FileEditor, and TaskTracker tools and SWE-Agent using a Python 3.11 environment with Simpy and xdevs.py . These agents may execute code, inspect logs, and self-correct. (ii) Lite (Non-Iterative) : OpenHands-Lite and SWE-Agent-Lite , which are restricted in interaction turns and lack execution tools. This setting approximates a single-pass generation regime comparable to DEVS-Gen, enabling a controlled comparison between structured generation and iterative debugging. All methods are evaluated across various LLM backbones. The Large model sets include GPT-5.2, Gemini-3-Pro, GLM-4.7, and Claude-3.5-Sonnet, while the Small model sets include Llama-4-17B, GLM-4.7-Flash, Gemini-3-Flash, and Qwen3-Coder-30B. We report SOSS and SBCS as defined in Section 5.3. Efficiency is measured using wall-clock time (seconds) and token consumption. Runs that exceed a strict timeout are assigned zero scores, a time cost of 10 4,and a token cost of 10 7.Table 2: Main Results on Effectiveness. We report the SOSS and SBCS scores averaged over all 7 scenarios. DEVS-Gen achieves scores that are comparable to the full iterative agents while operating without execution feedback. Gray rows indicate average scores over different models.                                                                                                                
+
+> BCS (Behavioral) OSS (Operational) Model Family DEVS OpenH OpenH-L SWE SWE-L DEVS OpenH OpenH-L SWE SWE-L
+> Large Models
+> GPT-5.2 5.39 5.57 5.07 5.61 6.74 0.86 0.96 0.93 0.89 0.00 Gemini 3 Pro 5.37 5.58 5.77 5.59 4.69 0.80 0.90 0.76 0.81 0.82 Claude 3.5 Sonnet 5.26 5.83 5.65 7.00 7.00 0.83 0.91 0.84 0.00 0.00 GLM-4.7 5.38 5.71 5.57 6.46 4.63 0.87 0.86 0.48 0.61 0.44
+> Average 5.35 5.67 5.51 6.17 5.77 0.84 0.91 0.75 0.58 0.31
+> Small Models
+> Gemini 3 Flash 5.17 6.36 6.31 5.42 4.25 0.95 0.91 0.71 0.71 0.79 Qwen3-Coder-30b 5.13 5.78 5.68 6.28 5.51 0.58 0.72 0.58 0.71 0.33 Llama-4-17b 4.80 6.38 5.97 5.95 5.49 0.11 0.13 0.21 0.21 0.13 GLM-4.7-Flash 5.66 6.46 5.62 6.88 5.05 0.48 0.41 0.33 0.13 0.18
+> Average 5.19 6.25 5.90 6.13 5.08 0.53 0.55 0.46 0.44 0.36
+
+6.2 Results on Effectiveness 
+
+The operational success score SOSS and behavioral conformance score SBCS across all models and frameworks are reported in Table 2 (averaged over 3 independent runs). Despite lacking the ability to execute code and self-correct, DEVS-Gen achieves competitive SOSS and SBCS scores compared to the fully agentic baselines. For instance, with GPT-5.2, DEVS-Gen achieves an SOSS of 0.86, closely trailing the iterative OpenHands (0.96) and outperforming SWE-Agent (0.89). This suggests that the structured decomposition provided by the DEVS formalism effectively acts as a “correct-by-construction" guide, reducing the reliance on trial-and-error loops. The importance of this structure becomes evident when comparing DEVS-Gen to the Lite baselines. When constrained to a comparable non-iterative compute budget, baseline performance degrades substantially. For example, under GLM-4.7, OpenHands-Lite’s SOSS drops to 0.48 and SWE-Agent-Lite drops to 0.44, whereas DEVS-Gen maintains 0.87. This indicates that baseline agents rely heavily on the verify-fix loop to resolve errors, whereas DEVS-Gen’s contract-based generation yields functional code in one pass. On smaller models (e.g., GLM-4.7-Flash, Gemini 3 Flash), DEVS-Gen demonstrates superior stability. While SWE-Agent frequently fails to produce executable code ( SOSS 0.13 for GLM-4.7-Flash), DEVS-Gen achieves an SOSS of 0.48. This resilience is attributed to the modular generation pipeline, which breaks the complex simulation task into smaller, locally scoped sub-problems that are manageable for weaker models. 11 Generation and Evaluation of Discrete-Event World Models via the DEVS Formalism 
+
+6.3 Results on Efficiency Efficiency. A critical advantage of DEVS-Gen over baseline agents is its predictable resource consumption. While agentic frameworks, e.g., SWE-Agent, rely on potentially unbounded debugging loops, incurring high latency and token costs when the model struggles, DEVS-Gen follows a structured, forward-pass synthesis process. Table 3 compares the average wall-clock time and token consumption (measured in log 10 tokens) across the two model sets. As shown in Table 3, DEVS-Gen achieves a substantial reduction in token costs. On large models, it reduces consumption by approximately 0.8 orders of magnitude compared to SWE-Agent (equivalent to a ∼ 6× reduction in raw tokens). This gap widens on small models, where DEVS-Gen uses over 10 × fewer tokens than OpenHands ( log 10 5.19 vs 6.25). This efficiency stems from our architecture: instead of paying for the entire context history of a prolonged debugging session, DEVS-Gen only consumes tokens for the structural plan and local component generation. The time advantage is equally pronounced, particularly for smaller models. Weak models (e.g., Llama-4-17b) often cause standard agents to enter stagnation loops, running until timeout caps are reached (averaging > 5000 s). In contrast, DEVS-Gen fails fast or succeeds linearly, keeping the average runtime around 1575s. Even on capable large models, DEVS-Gen remains competitive with the highly optimized OpenHands runtime while maintaining superior token economy. Table 3: Efficiency Comparison. We report the average Wall-Clock Time (seconds) and Token Consumption ( log 10 
+
+scale) per task. DEVS-Gen reduces token usage by an order of magnitude compared to iterative baselines, particularly on smaller models where agents prone to "doom loops" of failed debugging. 
+
+Model Family Framework Time (s) Tokens ( log 10 )Large Models 
+
+OpenHands 701.6 5.67 SWE-Agent 4020.1 6.17 
+
+DEVS-Gen (Ours) 753.3 5.35 Small Models 
+
+OpenHands 5364.9 6.25 SWE-Agent 5028.4 6.13 
+
+DEVS-Gen (Ours) 1575.1 5.19 6.4 Results on Scalability 
+
+A key architectural advantage of DEVS-Gen is its ability to decouple the synthesis process, which permits the parallel execution of structural planning and atomic model implementation. Predicated on the standard modeling practice where a coupled model aggregates at least two subcomponents, the depth of the system hierarchy grows logarithmically with the total number of components N . Consequently, the theoretical synthesis latency is governed by the critical path of this hierarchy rather than the sequential accumulation of all tasks. This structural property reduces the time complexity from linear O(N ) (characteristic of serial approaches), to logarithmic O(log N ).To validate this, we conducted an ablation study using GPT-5.2 on the DEVS-Gen framework, comparing the wall-clock time of Serial execution versus Parallel execution. As shown in Figure 3, we analyze the speed-up across the two phases: • Planning Phase: Theoretically, the recursive planning algorithm allows independent branches of the system hierarchy to be decomposed concurrently. However, as observed in Figure 3, the empirical speedup is modest. This is primarily due to the scale of our current benchmark scenarios: the system hierarchies are relatively shallow, meaning the overhead of network requests and thread management outweighs the benefits of parallelizing the lightweight component classification tasks. We expect this speedup to become significant only in much larger, deeply nested systems. • Generation Phase: The acceleration is substantial, achieving a ∼ 4.7× speedup. Since atomic models (leaf nodes) encapsulate the bulk of the complex logic (state transitions and logic implementation), their generation is the computational bottleneck. Our framework successfully isolates these tasks, allowing them to be synthesized simultaneously. This result proves the scalability of DEVS-Gen. While standard agentic loops face super-linear growth in time and context costs as system complexity increases, our modular approach ensures that the synthesis time grows logarithmically, making it feasible for large-scale world modeling. 12 Generation and Evaluation of Discrete-Event World Models via the DEVS Formalism 
+
+Figure 3: Ablation study on synthesis latency (using GPT-5.2). The chart compares the wall-clock time required for the Planning and Generation phases under serial and parallel execution modes. While the acceleration in the Planning phase is limited by the current benchmark scale, the Generation phase achieves a 4.7× speedup, validating the scalability of the approach. 
+
+# References 
+
+[1] David Ha and Jürgen Schmidhuber. Recurrent world models facilitate policy evolution. Advances in neural information processing systems , 31, 2018. [2] Ignat Georgiev, Varun Giridhar, Nicklas Hansen, and Animesh Garg. Pwm: Policy learning with multi-task world models. In The Thirteenth International Conference on Learning Representations , 2025. [3] Shibo Hao, Yi Gu, Haodi Ma, Joshua Hong, Zhen Wang, Daisy Wang, and Zhiting Hu. Reasoning with language model is planning with world model. In Proceedings of the 2023 Conference on Empirical Methods in Natural Language Processing , pages 8154–8173, 2023. [4] Yu Gu, Kai Zhang, Yuting Ning, Boyuan Zheng, Boyu Gou, Tianci Xue, Cheng Chang, Sanjari Srivastava, Yanan Xie, Peng Qi, et al. Is your llm secretly a world model of the internet? model-based planning for web agents. 
+
+arXiv preprint arXiv:2411.06559 , 2024. [5] Philip J. Ball, Jakob Bauer, Frank Belletti, Bethanie Brownfield, Ariel Ephrat, Shlomi Fruchter, Agrim Gupta, Kristian Holsheimer, Aleksander Holynski, Jiri Hron, Christos Kaplanis, Marjorie Limont, Matt McGill, Yanko Oliveira, Jack Parker-Holder, Frank Perbet, Guy Scully, Jeremy Shar, Stephen Spencer, Omer Tov, Ruben Villegas, Emma Wang, Jessica Yung, Cip Baetu, Jordi Berbel, David Bridson, Jake Bruce, Gavin Buttimore, Sarah Chakera, Bilva Chandra, Paul Collins, Alex Cullum, Bogdan Damoc, Vibha Dasagi, Maxime Gazeau, Charles Gbadamosi, Woohyun Han, Ed Hirst, Ashyana Kachra, Lucie Kerley, Kristian Kjems, Eva Knoepfel, Vika Koriakin, Jessica Lo, Cong Lu, Zeb Mehring, Alex Moufarek, Henna Nandwani, Valeria Oliveira, Fabio Pardo, Jane Park, Andrew Pierson, Ben Poole, Helen Ran, Tim Salimans, Manuel Sanchez, Igor Saprykin, Amy Shen, Sailesh Sidhwani, Duncan Smith, Joe Stanton, Hamish Tomlinson, Dimple Vijaykumar, Luyu Wang, Piers Wingfield, Nat Wong, Keyang Xu, Christopher Yew, Nick Young, Vadim Zubov, Douglas Eck, Dumitru Erhan, Koray Kavukcuoglu, Demis Hassabis, Zoubin Gharamani, Raia Hadsell, Aäron van den Oord, Inbar Mosseri, Adrian Bolton, Satinder Singh, and Tim Rocktäschel. Genie 3: A new frontier for world models. 2025. [6] Jichen Feng, Yifan Zhang, Chenggong Zhang, Yifu Lu, Shilong Liu, and Mengdi Wang. Web world models. arXiv preprint arXiv:2512.23676 , 2025. [7] Yixia Li, Hongru Wang, Jiahao Qiu, Zhenfei Yin, Dongdong Zhang, Cheng Qian, Zeping Li, Pony Ma, Guanhua Chen, Heng Ji, et al. From word to world: Can large language models be implicit text-based world models? arXiv preprint arXiv:2512.18832 , 2025. [8] Mohit Shridhar, Xingdi Yuan, Marc-Alexandre Côté, Yonatan Bisk, Adam Trischler, and Matthew Hausknecht. Alfworld: Aligning text and embodied environments for interactive learning. arXiv preprint arXiv:2010.03768 ,2020. 13 Generation and Evaluation of Discrete-Event World Models via the DEVS Formalism [9] Humam Kourani, Alessandro Berti, Daniel Schuster, and Wil M. P. van der Aalst. Evaluating large language models on business process modeling: Framework, benchmark, and self-improvement analysis. Software and Systems Modeling , pages 1–36, 2025. [10] Atanu Barai, Stephan Eidenbenz, and Nandakishore Santhi. Scalable, symbiotic, ai and non-ai agent based parallel discrete event simulations. arXiv preprint arXiv:2505.23846 , 2025. [11] Bernard P Zeigler, Herbert Praehofer, and Tag Gon Kim. Theory of modeling and simulation . Academic press, 2000. [12] José L. Risco-Martín, Saurabh Mittal, Kevin Henares, Román Cardenas, and Patricia Arroba. xDEVS: A toolkit for interoperable modeling and simulation of formal discrete event systems. Software: Practice and Experience ,53(3):748–789, March 2023. [13] Jiannan Xiang, Tianhua Tao, Yi Gu, Tianmin Shu, Zirui Wang, Zichao Yang, and Zhiting Hu. Language models meet world models: Embodied experiences enhance language models. Advances in neural information processing systems , 36:75392–75412, 2023. [14] Hyungjoo Chae, Namyoung Kim, Kai Tzu-iunn Ong, Minju Gwak, Gwanwoo Song, Jihoon Kim, Sunghwan Kim, Dongha Lee, and Jinyoung Yeo. Web agents with world models: Learning and leveraging environment dynamics in web navigation. In The Thirteenth International Conference on Learning Representations (ICLR 2025) , 2025. [15] Philipp Wu, Alejandro Escontrela, Danijar Hafner, Pieter Abbeel, and Ken Goldberg. Daydreamer: World models for physical robot learning. In Conference on robot learning , pages 2226–2240. PMLR, 2023. [16] Mengkang Hu, Tianxing Chen, Yude Zou, Yuheng Lei, Qiguang Chen, Ming Li, Yao Mu, Hongyuan Zhang, Wenqi Shao, and Ping Luo. Text2world: Benchmarking large language models for symbolic world model generation, 2025. [17] Renhao Zhang, Yilin Miao, and George Konidaris. Open-domain planning representations from texts. In 
+
+Proceedings of the Natural Language Reasoning and Structured Explanations Workshop (NLRSE) . Association for Computational Linguistics, 2024. [18] James Oswald, Kavitha Srinivas, Harsha Kokel, Junkyu Lee, Michael Katz, and Shirin Sohrabi. Large language models as planning domain generators. In Proceedings of the Thirty-Fourth International Conference on Automated Planning and Scheduling , pages 423–431, 2024. arXiv:2405.06650. [19] Sadegh Mahdavi, Raquel Aoki, Keyi Tang, and Yanshuai Cao. Leveraging environment interaction for automated pddl translation and planning with large language models. In Advances in Neural Information Processing Systems (NeurIPS 2024) , 2024. [20] Dongming Jin, Zhi Jin, Linyu Li, Zheng Fang, Jia Li, and Xiaohong Chen. A system model generation benchmark from natural language requirements, 2025. [21] J. Chen, B. Hu, W. Diao, and Y. Huang. Automatic generation of sysml requirement models based on free-text requirements. In Proceedings of the 2022 6th International Conference on Electronic Information Technology and Computer Engineering (EITCE 2022) , pages 242–248, 2022. [22] Han Zhou et al. Generating sysml behavior models via large language models. In Proceedings of the 16th Asia-Pacific Symposium on Internetware (Internetware 2025) , 2025. [23] Mark Chen, Jerry Tworek, Heewoo Jun, Qiming Yuan, Henrique Ponde de Oliveira Pinto, Jared Kaplan, Harri Edwards, Yuri Burda, Nicholas Joseph, Greg Brockman, Alex Ray, Raul Puri, Gretchen Krueger, Michael Petrov, Heidy Khlaaf, Girish Sastry, Pamela Mishkin, Brooke Chan, Scott Gray, Nick Ryder, Mikhail Pavlov, Alethea Power, Lukasz Kaiser, Mohammad Bavarian, Clemens Winter, Philippe Tillet, Felipe Petroski Such, Dave Cummings, Matthias Plappert, Fotios Chantzis, Elizabeth Barnes, Ariel Herbert-Voss, William Hebgen Guss, Alex Nichol, Alex Paino, Nikolas Tezak, Jie Tang, Igor Babuschkin, Suchir Balaji, Shantanu Jain, William Saunders, Christopher Hesse, Andrew N. Carr, Jan Leike, Josh Achiam, Vedant Misra, Evan Morikawa, Alec Radford, Matthew Knight, Miles Brundage, Mira Murati, Katie Mayer, Peter Welinder, Bob McGrew, Dario Amodei, Sam McCandlish, Ilya Sutskever, and Wojciech Zaremba. Evaluating large language models trained on code, 2021. [24] Carlos E. Jimenez, John Yang, Alexander Wettig, Kilian Lieret, Shunyu Yao, Kexin Pei, Ofir Press, and Karthik Narasimhan. SWE-bench: Can language models resolve real-world GitHub issues? In The Twelfth International Conference on Learning Representations (ICLR 2024) , 2024. [25] Tianyang Liu, Canwen Xu, and Julian McAuley. Repobench: Benchmarking repository-level code auto-completion systems. In The Twelfth International Conference on Learning Representations (ICLR 2024) , 2024. arXiv:2306.03091. 14 Generation and Evaluation of Discrete-Event World Models via the DEVS Formalism [26] Jingzhe Ding, Shengda Long, Changxin Pu, Huan Zhou, Hongwan Gao, Xiang Gao, Chao He, Yue Hou, Fei Hu, Zhaojian Li, Weiran Shi, Zaiyuan Wang, Daoguang Zan, Chenchen Zhang, Xiaoxu Zhang, Qizhi Chen, Xianfu Cheng, Bo Deng, Qingshui Gu, Kai Hua, Juntao Lin, Pai Liu, Mingchen Li, Xuanguang Pan, Zifan Peng, Yujia Qin, Yong Shan, Zhewen Tan, Weihao Xie, Zihan Wang, Yishuo Yuan, Jiayu Zhang, Enduo Zhao, Yunfei Zhao, He Zhu, Liya Zhu, Chenyang Zou, Ming Ding, Jianpeng Jiao, Jiaheng Liu, Minghao Liu, Qian Liu, Chongyang Tao, Jian Yang, Tong Yang, Zhaoxiang Zhang, Xinjie Chen, Wenhao Huang, and Ge Zhang. Nl2repo-bench: Towards long-horizon repository generation evaluation of coding agents, 2025. [27] John Yang, Carlos E. Jimenez, Alexander Wettig, Kilian Lieret, Shunyu Yao, Karthik Narasimhan, and Ofir Press. Swe-agent: Agent-computer interfaces enable automated software engineering, 2024. [28] Wei Li, Xin Zhang, Zhongxin Guo, Shaoguang Mao, Wen Luo, Guangyue Peng, Yangyu Huang, Houfeng Wang, and Scarlett Li. Fea-bench: A benchmark for evaluating repository-level code generation for feature implementation, 2025. [29] Jan Tretmans. Model based testing with labelled transition systems. In Formal Methods and Testing , volume 4949 of Lecture Notes in Computer Science , pages 1–38. Springer, 2008. [30] Martin Leucker and Christian Schallhart. A brief account of runtime verification. Journal of Logic and Algebraic Programming , 78(5):293–303, 2009. [31] Gyeongmin Lee. An automated verification framework for devs-coupled models using devs-python. Processes ,13(5):1327, 2025. [32] Ignacio Henares, David Ruiz-Martínez, and Eduardo Fernández-Medina. A unit testing platform to verify devs models. In Proceedings of the 2020 Winter Simulation Conference (WSC) , pages 2707–2718. IEEE, 2020. [33] Jianhua Li and Hessam S. Sarjoughian. A testing framework for devs formalism implementations. In Proceedings of the 2011 Winter Simulation Conference (WSC) , pages 2735–2746. IEEE, 2011. [34] Bernard P. Zeigler, James J. Nutaro, and Changhwan Seo. Combining devs and model checking: Concepts and tools for integrating simulation and analysis. International Journal of Simulation and Process Modelling ,12(1):2–15, 2017. [35] Mohammad Gholami, James J. Nutaro, and Hessam S. Sarjoughian. Constrained-devs: A formalism for constrain-ing discrete event system specifications. In Proceedings of the 2017 Winter Simulation Conference (WSC) , pages 1523–1534. IEEE, 2017. [36] Ricardo da Silva, Alexandre de Melo, and Rogério de Lemos. On-the-fly verification of discrete event simulations by means of simulation purposes. In Proceedings of the 2011 Symposium on Theory of Modeling & Simulation – DEVS Integrative M&S Symposium , pages 73–80. Society for Modeling & Simulation International, 2011. [37] Michael J. McLaughlin and Hessam S. Sarjoughian. Devs-scripting: A black-box test frame for devs models. In 
+
+Proceedings of the 2020 Winter Simulation Conference (WSC) , pages 2666–2677. IEEE, 2020. [38] Tsong Yueh Chen, S. C. Cheung, and S. M. Yiu. Metamorphic testing: A new approach for generating next test cases. Technical Report HKUST-CS98-01 , 1998. [39] Xingyao Wang, Simon Rosenberg, Juan Michelini, Calvin Smith, Hoang Tran, Engel Nyst, Rohit Malhotra, Xuhui Zhou, Valerie Chen, Robert Brennan, and Graham Neubig. The openhands software agent sdk: A composable and extensible foundation for production agents, 2025. 15 Generation and Evaluation of Discrete-Event World Models via the DEVS Formalism 
+
+# A Structured Intermediate Representations 
+
+The ModelSpecification class serves as the central definition for any DEVS component. It strictly separates the functional logic from the logging requirements and enforces precise typing for input and output ports via PortEntity 
+
+and ProtocolSpec . 
+
+> 1
+
+class TypedEntity ( BaseModel ) :  
+
+> 2
+
+" " "  
+
+> 3
+
+Defines a specific argument , input port , or output port .  
+
+> 4
+
+" " "  
+
+> 5
+
+name : str = Field (... , description = " Variable or port name . should be a valid Python identifier . " )  
+
+> 6
+
+type : str = Field (  
+
+> 7
+
+... ,  
+
+> 8
+
+description = " Python type hint ( e . g . , ’ int ’, ’ str ’, ’ List [ int ] ’ , ’ Dict [ str , float ] ’) . Keep structures simple . "  
+
+> 9
+
+) 
+
+> 10
+
+structure : str = Field (  
+
+> 11
+
+... ,  
+
+> 12
+
+description = " Structure of the data . CRITICAL : If ’ type ’ is a complex structure ( like dict or list ) , " 
+
+> 13
+
+" you MUST detail the expected format , keys , and value constraints here . "  
+
+> 14
+
+) 
+
+> 15 16
+
+class PortEntity ( TypedEntity ) :  
+
+> 17
+
+" " "  
+
+> 18
+
+Defines a specific argument , input port , or output port .  
+
+> 19
+
+" " "  
+
+> 20
+
+protocol : ProtocolSpec = Field (  
+
+> 21
+
+... ,  
+
+> 22
+
+description = " The protocol for this port . Including initiation and data exchange . "  
+
+> 23
+
+) 
+
+> 24 25
+
+class LogEntity ( BaseModel ) :  
+
+> 26
+
+key : str = Field (... , description = " the name of the key " )  
+
+> 27
+
+value : str = Field (... , description = " the type , structure , and description of value " )  
+
+> 28 29
+
+class LogEntry ( BaseModel ) :  
+
+> 30
+
+dict_content : list [ LogEntity ] = Field (... , description = " The key - value pairs of the log " )  
+
+> 31
+
+extra_info : str = Field (... , description = " The additional infomation , including unspecified content , log timing , etc . " )  
+
+> 32 33
+
+class LogContent ( BaseModel ) :  
+
+> 34
+
+detailed : list [ LogEntry ] = Field (... , description = " The log entries with structure specifically stated " )  
+
+> 35
+
+general : str = Field (... , description = " Logging requirements that are not detailed specified " )  
+
+> 36 37
+
+class ModelSpecification ( BaseModel ) :  
+
+> 38
+
+" " "  
+
+> 39
+
+Detailed functional specification and Interface definition .  
+
+> 40
+
+Used by both Atomic and Coupled models to define their EXTERNAL behavior and ports .  
+
+> 41
+
+" " "  
+
+> 42
+
+function : str = Field (... , description = " The Responsibility & Workflow & Logic , as well as user specified details . " )  
+
+> 43
+
+logging : LogContent = Field (... , description = " logging requirements . e . g . What specific data should be logged for debugging / analysis . " )  
+
+> 44 45
+
+model_init_args : list [ TypedEntity ] = Field (  
+
+> 46
+
+default_factory = list , 
+
+16 Generation and Evaluation of Discrete-Event World Models via the DEVS Formalism  
+
+> 47
+
+description = " Parameters required to initialize the model class ( e . g . , initial_count , processing_time ) . "  
+
+> 48
+
+) 
+
+> 49
+
+input_ports : list [ PortEntity ] = Field (  
+
+> 50
+
+default_factory = list ,  
+
+> 51
+
+description = " Data inputs received by this model . "  
+
+> 52
+
+) 
+
+> 53
+
+output_ports : list [ PortEntity ] = Field (  
+
+> 54
+
+default_factory = list ,  
+
+> 55
+
+description = " Data outputs sent by this model . "  
+
+> 56
+
+)
+
+Listing 1: Pydantic definitions for Model Specification and Interfaces 
+
+# B Agent Prompt Templates 
+
+This section presents the core prompt templates used in our generation pipeline. Each prompt is designed using a "Role-Task-Constraint" structure, injecting the structured context data defined in Appendix A. 
+
+B.1 Architectural Planning Agents 
+
+The Model Spec Formulator is responsible for translating vague natural language requirements into the strict 
+
+ModelSpecification schema. It is explicitly instructed to separate core logic from external control artifacts. 
+
+Formulator Prompt Template 
+
+## [ Role \& Objective ] You are a ** DEVS Logic Architect **. Your task is to analyze the requirements and produce a strict specification for the core model ‘{ name } ‘. ** Your Goal **: 1. ** Separate Concerns **: Isolate the * Core Logic * ( Model ) from the * External Controller *. - The External Controller is responsible for stdin reading , external event injecting , arguments parsing , simulation control , and writing list [ dict ] logs in logger to stdout / stderr as JSONL . - The Core Model is responsible for the internal logic , state , and writing logs to logger . 2. ** Extract Logic **: You are not writing code , but you MUST extract the specific algorithmic rules ( model structure , math , probabilities , delays ) into the ‘ function ‘ field . 3. ** Extract Logging **: If any logging / event_output is required , describe what to log in the ‘ logging ‘ field . - You can add new logging events , but do not change the existing ones . - Unless specified , the output should be completed by the core model . ## [ Input Data ] ** Target Model Name **: ‘{ name } ‘ ** Raw Requirements **: { req } ** System Context ( Environment ) **: { context_str } ** Reviewer Feedback **: { feedback } ## [ Field Filling Guidelines ( CRITICAL ) ] You MUST follow these strict rules when populating the JSON fields : 
+
+17 Generation and Evaluation of Discrete-Event World Models via the DEVS Formalism 
+
+### ‘ core_model . function ‘ ( The Logic Source of Truth ) * ** Rule **: You ** MUST COPY \& TRANSLATE ** specific business rules from the Raw Requirements into bullet points . * State : " Maintain a balance variable ." * Math : " Update : balance = balance - amount ." * Probability : " Logic : 50% chance to pass , 50% to fail ." * Timing : " Delay : Processing takes exactly 10.0 seconds ." * Anything else . * ** Ambiguity **: If requirements conflict , choose the most specific one . ### ‘ core_model . logging ‘: * If the raw requirements specify the output , it should be implemented through logging . Describe them in the ‘ logging ‘ field . Do not create external output ports for writing ‘ stdout ‘. - Special : If the output format ( key , event , etc . ) is specified , you must clearly state them , because the output checker will directly parse the logs . - Special : If you are expected to output something at the end of the simulation , you can say it should log at the ‘ exit ‘ method . ### ‘ core_model . input_ports ‘ / ‘ output_ports ‘ -> ‘ structure ‘ * ** Rule **: If ‘ type ‘ is ‘ dict ‘ or ‘ list ‘ , the ‘ structure ‘ field ** CANNOT be vague **. * ** Format **: Use Python - like pseudo - code to define keys and types . * * Rejectable *: ‘ structure =" User object " ‘ * * Acceptable *: ‘ structure ="{{ ’ id ’: int , ’ amount ’: float , ’ valid ’: bool }}" ‘ ### ‘ core_model . input_ports ‘ / ‘ output_ports ‘ -> ‘ protocol ‘ * ** ‘ initial_state ‘**: Usually " None " for standard event ports . If it ’ s acredit - based system , specify initial credits . * ** ‘ initial_signal ‘**: Usually " None ". Only specify if the model MUST send amessage at t =0. ### ‘ controller_info ‘ ( The External Logic Container ) * ** Rule **: Put ** ALL ** implementation details related to the Simulation Engine or OS here . * ** Content **: * " Reading from sys . stdin and parsing lines ( If any ) ." * " Inject the input data into the core model ( if any ) . "* " Parse the arguments and control the simulation to run for a specific simulation time ." * " Parsing command line arguments ( argparse ) ." * " Writing logs from logger to stdout / stderr ." * The random seed setting is recommended to be set here . * ** Reason **: Keeping this out of ‘ core_model ‘ prevents the checker from rejecting your design for " Engine Violation ". ## [ Design Constraints ] - ** Time Unit **: You must specify the time unit in the ‘ function ‘ field ( e . g . , "1 unit = 1 second " or "1 unit is 10 millisecond ") . - ** Logging **: The model uses an internal logger for output . Do NOT create output ports for logs . 
+
+The Coupled Splitter decomposes a high-level model into its immediate children. It includes specific instructions to prevent "Gold Plating" (over-design) and to detect potential cold-start deadlocks in feedback loops. 
+
+Coupled Splitter Prompt Template 
+
+## [ Task ] You are a DEVS System Architect . The model ‘{ name } ‘ has been identified as a** COUPLED ** model . Your task is to decompose it into its ** DIRECT ** children ( Sub - models ) . 
+
+18 Generation and Evaluation of Discrete-Event World Models via the DEVS Formalism 
+
+** Utils Provided to DEVS Models **: - Logger : we implemented a customized logger to collect log messages in astandard way . - get_current_time : we implemented a function to get the current simulation time . ## [ Architecture Strategy ] Before generating fields , adhere to these structural rules : - ** Hierarchical Granularity **: Decompose only to the ** immediate next level ** , and seperate to several meaningful children . Do NOT jump to bottom - level atomic components if an intermediate grouping makes sense . e . g . Hospital -> Departments -> Doctors . - You should always decompose a coupled model into ** at least ** two children . - Multiplicity \& Instantiation : - Rule : The children_plan list defines CLASSES ( Types ) , not instances . You must define a Class EXACTLY ONCE , even if it is used multiple times . - Instance Names : The coupling_specification determines the Instance Names . - Scenario A ( Loops ) : If you need 5 Servers , define ONE child Server . In coupling , say " Instantiate 5 Servers as server_0 to server_4 ". - Scenario B ( Discrete Roles ) : If you need a " Forward Channel " and a" Backward Channel " with identical logic , define ONE child Channel . In coupling , say " Instantiate Channel as fwd_ch and bwd_ch ". - Wiring : Always use Instance Names ( e . g . , server_0 , fwd_ch ) in your wiring descriptions , NOT the Class Name . - ** Child or Sibling **: Identify if a sub - model should be another one ’ s child or a sibling . If A mainly interacts with the components of B , then A should be B ’ s child , do not make A a sibling of B . - Provide a clear class name for each child ( a valid Python identifier ) . - Pass - through Principle : You are a structural architect , not a behavior designer . Your job is to move the existing logic requirements from the Parent to the correct Children , not to create new logic . ## [ Field Generation Guidelines ] You must generate a ‘ children_plan ‘ where each child contains the following specific fields . Follow these constraints strictly : ### 1. function ( Logic Delegation \& Fidelity ) Defines the responsibility boundaries based strictly on the Parent Spec . - Scope Assignment : Identify which part of the [ Parent Model Specification ] ’ s logic is delegated to this child . - Intelligent Strict Fidelity ( Copy Rule ) : You must copy most of the Parent Spec ’ s constraints ( e . g . " Service time = Exp (5) ") , especially the calculation , coupling , units . Meanwhile , you should adapt implementation details if they are logically incomplete . - You are only allowed to enrich the flow between childs , and make sure the external interface are exactly the same . - ** Example **: If the Spec implies tracking a specific ‘ customer_id ‘ for logging , but defines all ports as simple strings : - The ** Internal Port ** between ‘ Child_A ‘ and ‘ Child_B ‘ SHOULD be upgraded to a ‘ dict ‘ ( e . g . , ‘{{ ’ signal ’: ’ next ’ , ’id ’: 123}} ‘) . - The ** External Output Port ** ( if the signal leaves the system ) MUST remain a ‘str ‘ ( implying ‘ Child_B ‘ must strip the metadata before sending to the parent ’ s output ) . - No Over - Design ( Stop Rule ) : If the [ Parent Model Specification ] is vague about a detail ( e . g . , it just says " Process the request " without specifying how ) , DO NOT invent a mechanism ( e . g . , do NOT write " Process using FIFO queue " if FIFO wasn ’ t mentioned ) . Leave undefined details for the next level of decomposition . - Black Box View : Describe the input - to - output behavior . Do not mention internal sub - components ( grand - children ) or how they are wired inside this child unless it is explicitly mentioned in the Parent Spec . 
+
+19 Generation and Evaluation of Discrete-Event World Models via the DEVS Formalism 
+
+### 2. logging - ** Inheritance **: extract the logging information from [ Parent Model Specification ] and assign every entry to one or more specific child responsible for that entry . Strictly keep the logging format ( including field names , event names , and entity names ) consistent with the Parent Spec . - Describe the logging format in the field ‘ logging ‘ of every child seperatedly , especially the standardized fields and values . Must keep the same format as the Parent Spec ( You must specify the field names , etc . in the logging field of the child , because it could not see the parent ’ s logging field ) . - If the parent ’ s logging state the key names of the logging , you must copy the (1) key names , (2) event names , (3) value format , (4) etc . , into the corresponding child ’ s logging field . ### 3. input_ports / output_ports * Defines the interface . Includes Port Encapsulation and Data Schema .* - ** Encapsulation **: Explicitly declare ALL ports . Even if the child is aCoupled model , it needs physical ports to act as a gateway for its internal logic . - ** Coupling Logic **: all the ports found in [ Parent Model Specification ] must be assigned to one or more specific child responsible for that task . And the internal coupling logic should also be clear . - Definition : Describe the wiring using Instance Names . - Every parent input_port should be connected to one or more child input_ports . - Every parent output_port should be connected with one or more child output_ports . - ** Multiplicity Handling **: If connecting to a Multiplicity Child ( e . g . 5Servers ) , usage of Index Placeholders ( e . g . , ‘ server_ {{ i }} ‘) in the coupling description is encouraged to denote the pattern . - ** Completness **: The couplings between the children should be complete for their own internal logic . - ** Multiplicity **: If multiple identical ports exist for one child ( e . g . , Router has 5 ports connecting to 5 Servers ) , define the port ** ONCE ** , and state their instance names clearly using placeholders ( e . g . , name : " packet_ {{ i }} _out ") - ‘ structure ‘: Follow the Data Type Strictness . - ‘ protocol ‘: how the child interacts with its neighbors ( Parent / Siblings ) . This aggregates the Context , Protocol , and Handshake logic . And you should make sure the target port do exists . - ** Context Awareness **: Explicitly name the partner ( instance name ) , and the target port in interactions . And you MUST explicitly check the partner ’ s role to prevent mismatches . e . g . " Receives processed frame from [ Sibling - Decoder : prossed_frame ] or raw data from [ Parent : raw_data ]." ( Discribe the partner from the child ’ s perspective ) - For EIC and EOC , just extract the ports from the [ Parent Model Specification ] and assign them to the specific child responsible for that port . - For IC : ensure its I / O ports and External Protocol match perfectly with its ** siblings ** ( the other children you are creating ) , and explain the following : - ** Initial State **: Describe port state at T =0 ( e . g . , " empty " , " waiting " , " has initial token ") . - ** Initial Signals **: If port sends signals at startup , describe them ( e . g . , " Sends 5 ’ ready ’ signals to [ Sibling - Manager : task_in ] at T =0") . - ** Flow Description **: Briefly explain data / signal flow and any constraints . ### 4. model_init_args * Defines the configuration parameters .* - ** Inheritance **: Map the numerical / logical parameters found in [ Parent Model Specification ] to these arguments ( e . g . , pass ‘ queue_capacity =100 ‘ if the parent spec says so ) . 
+
+20 Generation and Evaluation of Discrete-Event World Models via the DEVS Formalism 
+
+- Follow the Data Type Strictness . - Ensure it include a field ‘ name : str ‘ , which is the unique name of the model instance . ### Data Type Strictness 1. ** Type Descriptions **: - This is the requirements for the ‘ model_init_args ‘ , ‘ input_ports ‘ , and ‘ output_ports ‘. - Only int , float , bool , str , dict , list are allowed . 2. ** Complex Type Schema **: - For any input or output port that uses a ’ dict ’ or ’ list ’ type , you MUST explicitly describe the structure in the structure field . This includes listing all keys , their types , and a brief structure for each key . - ** No Gold Plating **: strictly adhere to the data fields specified in the [ Parent Model Specification ] and [ System Context ]. ** DO NOT ** add optional fields ( like ‘ currency ‘ , ‘ timestamp ‘ , ‘ trace_id ‘) unless they are explicitly mentioned . Keep the data schema minimal and functional . - * Exception *: If the parent model specification does not specify the data structure , you should implement it . - Example : type =" dict " , structure =" Job info containing keys : ’id ’ ( int ) : the job id , ’ arrival_time ’ ( float ) : the arrival time of the job , and ’ priority ’ ( int ) : the priority of the job , 0 for top , bigger implies lower priotiry ." ### Prevent Cold - Start Deadlocks ** Check for Circular Dependencies **: If there ’ s a closed loop ( e . g . (1) Manager send job to Worker after receiving finished job from Worker , (2) AâĘŠBâĘŠCâĘŠA , (3) Queue -> Router -> Processor ) , you should prevent the cold - start deadlock . Here are some example ways : - ** Requirement **: For any loop / waiting , ensure it can break the deadlock . Clearly explain the initialization logic in the ‘ protocol ‘ field . - ** Examples **: 1. ** Active Trigger **: " In a closed feedback loop ( AâĘŤB ) , configure Model A to send an initial ’ start ’ signal to Model B at T =0 to kick off the cycle ." 2. ** Pre - loaded Credit **: " Initialize the Manager with ‘ credits =N ‘ , allowing it to dispatch N tasks immediately without waiting for the first ’ worker_free ’ signals ." 3. ** Early Registration **: " Configure Workers to send a ’ register ’ event to the Router at T =0 , ensuring the Router has valid destinations populated before the first packet arrives ." - ** Supreme Court Rule **: If [ Parent Model Specification ] implies a connection that creates a cold - start deadlock ( unless explicitly desired ) , you MUST fix it by ensuring proper initialization . { feedback } ## [ System Context ] This section describes the ** EXISTING ** environment around ‘{ name } ‘. Use this to understand ** WHO ** connects to ‘{ name } ‘ ’ s ports and ** WHAT ** kind of data flows there . { context_str } ## [ Parent Model Specification ] ( This is the model ‘{ name } ‘ you are splitting now ) { spec } 
+
+The Model Classifier determines whether a given component should be implemented as an Atomic model or further decomposed into a Coupled model. 21 Generation and Evaluation of Discrete-Event World Models via the DEVS Formalism 
+
+Classifier Prompt Template 
+
+## [ Task ] You are a DEVS Systems Architect . Analyze the requirements for model ‘{ name } ‘ and determine if it must be ** Atomic ** or ** Coupled **. ** Utils Provided to DEVS Models **: - Logger : we implemented a customized logger to collect log messages in astandard way . - get_current_time : we implemented a function to get the current simulation time . ## [ Requirements ] { req } ## [ System Context ] This section describes the ** EXISTING ** environment around ‘{ name } ‘. { context_str } ## [ Criteria ] - You should only consider the function described to decide if the model is atomic or coupled . You should not consider the complexity of logging and error handler requirements . - The requirement does not state all the sub - model details , so it is allowed to add unmentioned components if necessary . - ** Atomic Model Criteria ( Must meet ALL to be Atomic ) :** - ** Indivisibility :** The logic represents a single , basic action , and could not be divided ( e . g . , Generator , Queue , Router , Delay ) . - ** Single Responsibility :** It manages ONE simple state lifecycle . ( e . g . Idle -> Active -> ( Other ) -> Done ) - ** No Internal Flow :** It does not describe a pipeline of distinct steps . - ** Simple Logic :** The state transition logic requires a small set of variables to track progress . - ** Coupled Model Criteria ( If ANY are true , it MUST be Coupled ) :** - ** Internal Workflow :** The requirement describes a process with multiple distinct stages ( e . g . , a " Server " that has an internal " buffer " AND a" processing unit ") . - ** Component Composition :** The description implies the existence of multiple meaningful sub - components . - ** Complex Logic :** If the state transition logic requires a massive set of variables to track progress . - ** God Object :** If the model handles input , processing , AND storage logic simultaneously . - ** Not Sure :** If you are not sure about the model type , you can choose this option and provide your reasoning . - * Special *: Please distinguish between ‘A complex model containing multiple departments ‘ and ‘A department coordinator ‘. The former is coupled , the latter is atomic ( if the router logic is not complex ) . Distinguish them based on the ports : coordinator must itself have ports to interact with siblings it coordinates . ## [ Instruction ] - If you choose ** Coupled ** , you MUST list the possible ‘ submodels ‘ you identified in the JSON output . - If you choose ** Atomic ** , ‘ submodels ‘ should be empty . 
+
+B.2 Implementation Agent 
+
+The Model Creator synthesizes the actual executable Python code. To ensure high-quality generation, we inject a set of global engineering standards alongside model-specific instructions (Atomic vs. Coupled). 22 Generation and Evaluation of Discrete-Event World Models via the DEVS Formalism The main prompt template is: 
+
+Main Code Generation Prompt Template 
+
+## [ Task ] Construct a complete Python file containing a **{ model_type } DEVS model ** named ‘{ name } ‘ using ‘ xdevs . py ‘. { global_standards } { model _spec ific_ instr uctio ns } { feedback } ## [ Context Info ] ** Sub - Models ( for Coupled definitions ) **: { sub_models } ** System Context **: ( The environment around this model ) ( You must especially guarantee the JSONL output requirements are met .) { context_str } ## [ Utils ] { util_desc } ## [ Class Definitions ] { definitions } ## [ Specification ] The ports , logic , logging dict keys , and parameters of the model should strictly follow the specification ( including their types , functions ) , only two can be added / modified : in __init__ args , ‘ name : str ‘ , and ‘ parent : Coupled | None ‘: { spec } ## [ Reference Example ] Refer to this example for coding style and imports : { example } ## [ Output ] Return the Python code enclosed in < python_code > tags . Do not use markdown backticks . Example : Think step by step , decompose the requirements and state machine . Finally the enclosed code . < python_code > class MyModel ( Atomic ) : ... </ python_code > 
+
+Global Engineering Standards (Injected into Main Prompt) 
+
+## [ Global Standards ] Adhere to the following engineering standards for all model types : ### 1. Imports \& Dependencies - ** Whitelist **: Restrict imports to the following packages : ‘ numpy ‘ , ‘ math ‘ , ‘ random ‘ , ‘ time ‘ , ‘ pandas ‘ , ‘ xdevs ‘ ( and ‘ xdevs . models ‘) . 
+
+23 Generation and Evaluation of Discrete-Event World Models via the DEVS Formalism 
+
+- ** Project Utils **: Import necessary utilities ( e . g . , ‘ get_sim_logger ‘ , ‘ get_current_time ‘) from ‘ devs_project . devs_utils . xxx ‘. Refer to [ Utils ] for detailed import statements . - Other submodels in the project can be imported as needed . ### 2. Data Protocol \& Typing - You are only allowed to use the following Atomic Primitives and Composite Types in ports and arguments . - ** Atomic Primitives **: Only ‘int ‘ , ‘ float ‘ , ‘str ‘ , ‘ bool ‘ instances for all base values . - ** Composite Types **: Only ‘ dict ‘ and ‘ list ‘. - ** Consistency **: Ensure that all ports and arguments are the same as those stated in the [ Specification ]. - ** Recursive Schema Definition **: - Recursively define the structure of all composite arguments ( in ‘ __init__ ‘) and port data types ( in Docstrings ) . - Continue the definition until all fields resolve to Atomic Primitives . - ** Dictionaries **: Explicitly list every Key name , the Type of its Value , and the explanation of it . - ** Lists **: Explicitly state the Type of elements contained in the list . - Special : only the ‘ parent ‘ argument of the ‘ __init__ ‘ method can be of type ‘ Coupled | None ‘. ### 3. Type Docstring Schema - ** Structure **: Follow this hierarchy for describing types in Class and Method docstrings : - Root : ‘ name ( type ) : Description ‘ - Dict Keys : Indent 2 -4 spaces , ‘ key_name ( type ) : Description ‘ - List Items : Indent 2 -4 spaces , ‘- ( type ) : Description ‘ - * Exception *: For Logging , you can refer to the structure described in the ports section , as they are often the same . - ** Example **: ‘‘‘ python \"\"\" ... - in_packet ( dict ) : Network packet . header ( dict ) : Protocol header . src_ip ( str ) : Source IP . payload ( str ) : Data content . - batch_updates ( list [ dict ]) : Updates . - ( dict ) : Single update . node_id ( int ) : Target ID . \"\"\" ‘‘‘ ### 4. Coding Conventions - ** Explicit Configuration **: Define all configuration parameters explicitly in ‘ __init__ ‘. Omit ‘* args ‘ and ‘** kwargs ‘. - ** Logging **: Log all key events using ‘ self . logger . info ({{" key ": " value "}} , log_type =...) ‘. The main msg must be a dict . They must have the exact precise structure and keys as the context ( especially the system goal ) and the Model Specification . You should explain the structure of the data in the docstring . However , you only need to list the logging happen in this model , those in submodels are strictly forbiddened . - ** Parameter Storage **: Store internal hardcoded parameters ( not passed via ‘ __init__ ‘) in a ‘ self . param ‘ dictionary . 
+
+Atomic Model Instructions (Injected into Main Prompt) 
+
+### [ Atomic Model Specifics ] 
+
+24 Generation and Evaluation of Discrete-Event World Models via the DEVS Formalism 
+
+0. Must import : ‘ from xdevs . models import Atomic , Coupled , Port ‘. Atomic for inherit , Coupled for __init__ arg type . 1. ** Inheritance **: Inherit from ‘ Atomic ‘. 2. ** Docstring **: The class MUST include a standard class docstring strictly following this format : ‘‘‘ python class { name }( Atomic ) : \"\"\" Function : - ... General function - ... Every state : how it transfer , and what to output after the state is over . Logging in this model : - ... - ... Input Ports : - port_name ( type ) : description structure : ... protocol : initialize : ... ; process : ... Output Ports : - port_name ( type ) : description structure : ... protocol : initialize : ... ; process : ... \"\"\" ‘‘‘ 3. ** Constructor ( ‘ __init__ ‘) **: - Signature : ‘ def __init__ ( self , name : str , parent : Coupled | None , < explicit_config_args >) ‘ - Docstring : should have a docstring describing the arguments , including the detailed type and description . using the following format : ‘‘‘ python \"\"\" Args : name ( str ) : The unique name of the model . parent ( Coupled | None ) : the parent model . If None , the model is aroot model . arg_name1 ( type ) : description \"\"\" ‘‘‘ - Steps : 1. Call ‘ super () . __init__ ( name ) ‘. 2. Assign ‘ self . parent = parent ‘. 3. Initialize logger : ‘ self . logger = get_sim_logger ( self ) ‘. 4. Register Ports : Use ‘ self . add_in_port ( Port ( type , " name ") ) ‘ and ‘ self . add_out_port ( Port ( type , " name ") ) ‘. 5. Initialize State : Set member variables and call ‘ self . hold_in ( phase , time ) ‘. 6. Log creation : ‘ self . logger . info ({{ keys : values , ...}} , log_type =...) ‘ 4. ** Core Behaviors **: - Implement ‘ initialize ( self ) ‘: Set initial state . Set phase / sigma using ‘ self . hold_in ( phase , time ) ‘. Log initialization . - It can not send any output . If you need to send a initial signal ( e . g . report you are ready ) , you can use ‘ self . hold_in ( phase , time ) ‘ to schedule the event , prepare the payload , and send it in ‘ lambdaf ‘. - If any port has ‘ initial_signal ‘ to emit immediately or after aduration , the ‘ initialize ‘ method ** MUST ** schedule an output event using ‘ self . hold_in (" SOME_STATE " , duration ) ‘. - Implement ‘ lambdaf ( self ) ‘: Only do the output , any other operations should be done in the following ‘ deltint ‘: - Send output via ‘ self . output [" port "]. add ( payload ) ‘. - DO NOT change the state , sigma , kpi_counter , etc . Leave that to the following ‘ deltint ‘. 
+
+25 Generation and Evaluation of Discrete-Event World Models via the DEVS Formalism 
+
+- Implement ‘ deltint ( self ) ‘: Only do the following : - Get the old internal state : ‘ self . phase ‘. Get total time ( from last state change to expected next state change , which is just the sigma set last time ) : ‘ self . ta () ‘. - Handle internal timeouts . And update the internal queue /kpi_counter / etc . accordingly . ( Because deltint is called right after lambdaf , which means the output of the old state is already sent ) . - Prepare the payload of the output of the next phase . Make sure the prepared payload is the one used in ‘ lambdaf ‘ of the new phase . - Always schedule next internal event in the end : ‘ self . hold_in ( phase , sigma ) ‘. If not interrupted , the model will emit the output prepared after sigma time units . - Log events ( if needed ) . - Implement ‘ deltext ( self , e ) ‘: Only do the following : - Handle external events ( ‘ self . input [" port "]. values ‘) . - Get internal state : ‘ self . phase ‘. Get total time ( from last state change to expected next state change , which is just the sigma set last time ) : ‘ self . ta () ‘. - Prepare the payload of the next lambdaf . Make sure the prepared payload variable is the one used in ‘ lambdaf ‘. - Always schedule next internal event in the end : ‘ self . hold_in ( phase , sigma ) ‘. - Log events ( if needed ) . - Implement ‘ exit ( self ) ‘: Cleanup and final stats logging . - ** Event Handling Logic **: - ** Execution Sequence ( CRITICAL ) **: ‘ lambdaf ‘ will send outputs before ‘ deltint ‘ schedules the next internal event . Thus , the payload sent in ‘ lambdaf ‘ should be prepared in the previous ‘ deltint ‘ , ‘ deltext ‘ , or ‘ initialize ‘. - ** Confluent Events ( ‘ deltcon ‘) **: By default , internal events ( ‘ deltint ‘) take precedence over external events when they occur simultaneously . Explicitly override the ‘ deltcon ( self ) ‘ method ONLY IF you need to change this logic ( e . g . , to process external events first ) . - ** Initialization **: Realize the ports . protocol ’ s initialize descriptions : - initial_signal : If a signal or information should be sent at initialization ( i . e . protocol . initial_signal ) , you can use ‘ self . hold_in (" INIT " , 0) ‘ to schedule the event and send it in ‘ lambdaf ‘. This is the only way to send a signal at initialization . - initial_state : modify the logic and initial values to make sure it is realized . 5. ** logging requirements **: make sure all the events required are logged . And the keys and structures of the logs must match the Specification exactly . 
+
+Coupled Model Instructions (Injected into Main Prompt) 
+
+### [ Coupled Model Specifics ] 0. Must import : ‘ from xdevs . models import Atomic , Coupled , Port ‘ 1. ** Inheritance **: Inherit from ‘ xdevs . models . Coupled ‘. 2. ** Docstring **: The class MUST include a standard class docstring strictly following this format : ‘‘‘ python class { name }( Coupled ) : \"\"\" Function : - ... - ... - Sub - models : - sub_model_class_name : name = sub_model_instance_name . Brief description . Logging in this model : 
+
+26 Generation and Evaluation of Discrete-Event World Models via the DEVS Formalism 
+
+- ... - ... Input Ports : - port_name ( type ) : description structure : ... protocol : initialize : ... ; process : ... Output Ports : - port_name ( type ) : description structure : ... protocol : initialize : ... ; process : ... \"\"\" ‘‘‘ 3. ** Container Logic **: Treat this class as a pure structure container . Implement ONLY ‘ __init__ ‘. 4. ** Sub - models Imports **: Use relative imports for sub - models ( e . g . , ‘ from . folder . file import SubModelName ‘) . 5. ** Constructor ( ‘ __init__ ‘) **: - Signature : ‘ def __init__ ( self , name : str , parent : Coupled | None , < explicit_config_args >) ‘ - Docstring : should have a docstring describing the arguments , including the detailed type and description . using the following format : ‘‘‘ python \"\"\" Args : name ( str ) : The unique name of the model . parent ( Coupled | None ) : the parent model . If None , the model is aroot model . arg_name1 ( type ) : description \"\"\" ‘‘‘ - Steps : 1. Call ‘ super () . __init__ ( name ) ‘. 2. Assign ‘ self . parent = parent ‘. 3. Initialize logger : ‘ self . logger = get_sim_logger ( self ) ‘. 4. Register Ports : Use ‘ self . add_in_port (...) ‘ and ‘ self . add_out_port (...) ‘. 5. Instantiate Components : Create sub - model instances and register them via ‘ self . add_component ( instance ) ‘. 6. Define Couplings : Use ‘ self . add_coupling ( src , dst ) ‘ for : - ** EIC **: ‘ self . input [" port_name "] ‘ -> ‘ sub . input [" port_name "] ‘ - ** IC **: ‘ sub_a . output [" port_name "] ‘ -> ‘ sub_b . input [" port_name "] ‘ - ** EOC **: ‘ sub . output [" port_name "] ‘ -> ‘ self . output [" port_name "] ‘ 7. Log creation : ‘ self . logger . info (...) ‘ - Note : For steps 5 -6 , you should refer to Sub - Models to get the right init args names and port names . These information can be used as acorrection and supplement to the coupling logic ( in case some names are inconsistent ) . 
+
+B.3 Interface Adaptation Agent 
+
+The Model Summarizer implements the bottom-up adaptation mechanism. It analyzes the generated code to extract the "Ground Truth" interface, which is then used to guide the generation of the parent coupled model. 
+
+Summarizer Prompt Template 
+
+## [ Task ] Analyze the provided Python code for a DEVS model . Extract the model ’ s metadata into a strict structure based on the schema below . ## [ Rules ] 
+
+27 Generation and Evaluation of Discrete-Event World Models via the DEVS Formalism                                                                                                                                                                   
+
+> -** model_init_args **: You must extract all the arguements from the ‘ __init__ ‘ method ( except ‘ self ‘) . You should make sure that the usage of all args are clear ( especially for the str , dict types , and possible options ) . -** logging **: Look for the docstring and logging usage to fill ‘ logging ‘. You must clearly state the ‘ log_type ‘ and the structure of main msg . -You only need to extract the logger used in this model . The logging inside sub - models are not needed , as they are handled by their own models . -If it is described in the docstring , just copy the releted part in docstring , you can add more details if needed . ( e . g . to keep the name of data clear , or other needs . )-** ports **: Refer to the docstring for port definitions . -** function **: Look for the main logic of the model . For communication protocols , find how it starts , send , receive , and ends ( if any ) . -For coupled models , you must copy the submodels described in the docstring , especially the relation between the class name and the instance name . { feedback } ## [ Sub - Models Info ] { sub_models } ## [ Code ] ‘‘‘ python { code } ‘‘‘
+
+# C Benchmark Scenario Specifications 
+
+This appendix provides detailed specifications for the 7 benchmark scenarios used in the experiments. For each scenario, we describe the system objective, the constituent entities, and the governing dynamics. We abopted this originally from https://github.com/SimulationEverywhere/Cadmium-Simulation-Environment, a widely acknowledged repository consisting various simulation tasks designed and implemented by human experts. 
+
+C.1 Online Banking System (IOBS) Domain: Service Operations Dynamics Type: Pipeline with Probabilistic Routing • Overview: This scenario models a linear transaction processing pipeline for an online banking system. It simulate the sequential validation of user requests through multiple security and processing layers. • Entities: The system consists of a chain of five modules: Account Access Manager, Account Number Verifier, Password Verifier, Bill Payment Manager, and Transaction Process Manager. • Dynamics: The system operates as a single-direction pipeline. A request enters at given time and passes through each stage with a fixed processing delay (10s). 
+
+– Probabilistic Branching: At the ANV and PV stages, requests have a 50 % probability of failing verification. Failed requests are terminated immediately (dropped from the pipeline), while valid requests proceed. 
+
+– State Updates: The final TPM stage maintains a persistent state (account balance) that is updated only upon the successful completion of the entire pipeline chain. 
+
+C.2 O-Train Light Rail (OTrain) Domain: Transportation Dynamics Type: Schedule-driven with Serial Delays • Overview: This scenario simulates a light rail transit system with a single train shuttling bi-directionally between 5 stations (Bayview to Greenboro). It models the interaction between the train schedule and stochastic passenger arrival. 28 Generation and Evaluation of Discrete-Event World Models via the DEVS Formalism • Entities: Train (mobile resource), Stations (fixed nodes), and Passengers (transient entities). • Dynamics: – Schedule-Driven Movement: The train adheres to a strict timetable, moving between stations with fixed travel intervals. 
+
+– Serial Serialization: Unlike simple fluid queues, boarding and alighting are modeled as serial processes. Each passenger takes 0.025s to board or alight, creating a delay that is linearly proportional to the number of passengers. 
+
+– Stochastic Generation: Passengers are generated at stations using a randomized interval (Normal distribution), with specific origin-destination constraints. 
+
+C.3 Epidemic Compartmental Model (SEIRD) Domain: Biological Systems Dynamics Type: Continuous (ODE) • Overview: This scenario implements a classic SEIRD (Susceptible-Exposed-Infective-Recovered-Deceased) model to simulate disease spread within a closed population. • Entities: The population is treated as an aggregate divided into five compartments (S, E, I, R, D). • Dynamics: Unlike other event-driven scenarios, this model approximates continuous system dynamics using numerical integration (Forward Euler method). 
+
+– State Evolution: State updates occur at fixed time steps ( days). The transitions between compartments are governed by differential equations based on parameters such as transmission rate (), incubation period, and mortality rate. 
+
+– Conservation: The model must strictly enforce population conservation at every time step despite floating-point operations. 
+
+C.4 Offline File Transfer (OfflineFileTransfer) Domain: Network Systems Dynamics Type: Dual-Loop FSM with Interrupts • Overview: This scenario simulates a "Dropbox-like" synchronization system where a file upload process and a download process are decoupled by an intermediate server buffer. • Entities: Sender , Server (acting as a buffer), Receiver , and four reliable Subnets (channels). • Dynamics: The system features two asynchronous loops: 
+
+– Dual-Loop Coupling: The Upload Loop (Sender Server) and Download Loop (Server Receiver) operate independently but are coupled via the Server’s storage queue. Both loops utilize the Alternating Bit Protocol (ABP) for reliability. 
+
+– External Interrupts: The simulation is driven by a command stream. The request command acts as an external interrupt (or valve) that can dynamically pause or resume the download loop, requiring the system to handle state persistence during interruptions. 
+
+C.5 C.5. Alternating Bit Protocol (ABP) Domain: Network Protocols Dynamics Type: Stop-and-Wait with Deterministic Noise • Overview: A standard implementation of the Alternating Bit Protocol (ABP) to achieve reliable data transmis-sion over an unreliable channel. • Entities: Sender , Receiver , and two Subnets (Forward and Backward channels). • Dynamics: – State Machine: The Sender implements a "Stop-and-Wait" FSM. It sends a packet and blocks until a valid ACK (with the matching bit) is received or a timeout occurs. 
+
+– Deterministic Noise: Packet loss is not random but governed by a Linear Congruential Generator (LCG) inside the subnets. This ensures the simulation is strictly reproducible: packet fate (drop vs. pass) is pre-determined by the seed, testing the model’s ability to implement precise algorithmic logic. 29 Generation and Evaluation of Discrete-Event World Models via the DEVS Formalism 
+
+C.6 C.6. Strategic Airlift Operations (StrategicAirlift) Domain: Logistics Dynamics Type: Active Reneging & Resource Cycling • Overview: A complex logistics simulation managing the transport of cargo pallets via a fleet of aircraft. • Entities: Facility (Source), Loading Queue , Fleet Coordinator , multiple Aircraft , and Destination .• Dynamics: – Active Reneging: Pallets in the queue have a finite lifespan. The queue must actively monitor expiration times and autonomously discard (renege) items that stay too long, even without external events. 
+
+– Resource Scheduling: Aircraft follow a multi-stage state cycl. The Coordinator must match available cargo with idle aircraft, handling resource contention. 
+
+C.7 C.7. Barbershop (Barbershop) Domain: Service Queueing Dynamics Type: Blocking & Handshake Signaling • Overview: A classic queuing simulation of a barbershop with a reception area and a two-stage service process (Inspection and Cutting). • Entities: Reception Desk , Inspection Station , and Cutting Station .• Dynamics: – Finite Blocking: The reception queue has a hard capacity (limit 8). Arrivals when the queue is full are strictly rejected (Blocking). 
+
+– Inter-module Signaling: The two service stages (Inspection and Cutting) operate sequentially. The Inspection module must wait for a "done" signal from the Cutting module (Handshake) before it can release the current customer and accept a new one from Reception. 
+
+# D Case Study Artifacts 
+
+To illustrate the pipeline’s transformations, we present the concrete artifacts generated for the ABP example. 
+
+D.1 Input Specifications  
+
+> 1
+
+### Scenario : Reliable Data Transfer with Deterministic Noise Interference  
+
+> 2
+
+1. System Objective : Design a communication system consisting of a Sender , aReceiver , and two uni - directional transmission channels ( Subnets ) . The goal is to transmit a sequence of packets reliably using an Alternating Bit Protocol (ABP ) despite deterministic packet loss in the channels .  
+
+> 34
+
+2. Entity Behaviors :  
+
+> 5
+
+The Sender :  
+
+> 6
+
+- Accepts a single control input at the start of simulation : the total number of packets to send .  
+
+> 7
+
+- Before sending each packet , the Sender must undergo a preparation delay (default 10 ms , configurable via -- sender_delay ) .  
+
+> 8
+
+- The Receiver must maintain a buffer with capacity 1. During the busy period , it must buffer the only received packet , and process the packet immediately after the busy processing delay . When multiple packets arrive , only the first one is stored .  
+
+> 9
+
+- Sends packets sequentially through Subnet1 . Each packet contains a sequence number (1 , 2 , ...) and a control bit ( alternating between 0 and 1) . The first bit is 0.  
+
+> 10
+
+- After sending a packet , it starts a timer ( default 20 ms , configurable via --timeout ) .  
+
+> 11
+
+- Stop - and - Wait Logic : It must not send the next packet until it receives acorrect Acknowledgment ( ACK ) for the current one .  
+
+> 12
+
+- Retransmission : If the timer expires before a valid ACK is received , the Sender retransmits the same packet and restarts the timer .  
+
+> 13
+
+- Validation : An ACK is valid only if its bit matches the control bit of the current packet . 
+
+30 Generation and Evaluation of Discrete-Event World Models via the DEVS Formalism  
+
+> 14
+
+- After sending the specified total number of packets , the Sender stops automatically .  
+
+> 15 16
+
+The Receiver :  
+
+> 17
+
+- Upon receiving a packet , it undergoes a processing delay ( default 10 ms , configurable via -- receiver_delay ) before processing .  
+
+> 18
+
+- The Receiver must maintain a buffer with capacity 1. During the busy period , it must buffer the only received packet , and process the packet immediately after the busy processing delay . When multiple packets arrive , only the first one is stored .  
+
+> 19
+
+- After the processing delay , it extracts the control bit and immediately sends back an ACK packet containing that same bit through Subnet2 .  
+
+> 20 21
+
+The Subnets ( Channels ) :  
+
+> 22
+
+- There are two independent channels : Subnet1 ( Sender -> Receiver ) and Subnet2 ( Receiver -> Sender ) .  
+
+> 23
+
+- Latency : Every packet takes exactly 3 ms ( configurable via -- channel_delay ) to traverse .  
+
+> 24
+
+- Deterministic Noise & Loss Model : Each subnet independently simulates interference using a deterministic formula .  
+
+> 25
+
+- Each Subnet maintains an internal " noise level " value x , initialized to exactly the seed value ( provided via -- seed ) .  
+
+> 26
+
+- Packet Fate Determination : When a packet arrives at a subnet , calculate a new noise level : x_new = (17 * x_old + 11) mod 100.  
+
+> 27
+
+- If x_new < 10 , the interference is too high , and the packet is dropped (vanishes ) . Otherwise , it is transmitted normally after the channel delay .  
+
+> 28
+
+- After determination , update the noise level for the next packet : x_old =x_new .  
+
+> 29
+
+- Timing : The noise calculation and fate determination happen immediately when the packet arrives at the subnet .  
+
+> 30 31
+
+3. Scenario Constraints :  
+
+> 32
+
+- Time Unit Mapping : 1.0 simulation time unit = 1 Millisecond ( ms ) .  
+
+> 33
+
+- System starts at time 0.0 with all components initialized to idle states . 
+
+Listing 2: Natural Language Specification (S)  
+
+> 1
+
+1. Command Line Arguments :  
+
+> 2
+
+The script must accept the following named arguments :  
+
+> 3
+
+* ‘-- total_packets ‘ ( int ) : The total number of packets the Sender intends to send in one session triggered by a START_BATCH command .  
+
+> 4
+
+* ‘-- seed ‘ ( int ) : The initialization seed for the noise generator of both sides (the ‘x ‘ value in the LCG formula ) . Default : 42.  
+
+> 5
+
+* ‘-- timeout ‘ ( int ) : Sender ’ s timeout duration in ms . Default : 20.  
+
+> 6
+
+* ‘-- sender_delay ‘ ( int ) : Sender preparation delay in ms . Default : 10.  
+
+> 7
+
+* ‘-- receiver_delay ‘ ( int ) : Receiver processing delay in ms . Default : 10.  
+
+> 8
+
+* ‘-- channel_delay ‘ ( int ) : Subnet transmission delay in ms . Default : 3.  
+
+> 9
+
+* ‘-- simulate_time ‘ ( int ) : The total simulation time to run in ms . Default : 1000.  
+
+> 10 11
+
+2. stdin Format :  
+
+> 12
+
+* No stdin input is required for this simulation . The system uses command line arguments for configuration .  
+
+> 13 14
+
+3. ** Standard Output ( stdout ) **:  
+
+> 15
+
+* Format : JSONL , one independent JSON object per line  
+
+> 16
+
+* Each record MUST follow the format : ‘{" time ": < float > , " entity ": <str > , " event ": <str > , " payload ": < dict >} ‘  
+
+> 17
+
+* ** Event Types and Formats **:  
+
+> 18
+
+Sender Events :  
+
+> 19
+
+- event : ‘ delay_start ‘ ( Sender starts preparation delay )  
+
+> 20
+
+- time : Sender ’ s current time  
+
+> 21
+
+- entity : ‘" sender " ‘  
+
+> 22
+
+- payload : ‘{" type ": " preparation " , " duration ": < float >} ‘  
+
+> 23
+
+- Trigger : When Sender starts preparing a packet 
+
+> 24
+
+31 Generation and Evaluation of Discrete-Event World Models via the DEVS Formalism  
+
+> 25
+
+- event : ‘ packet_sent ‘ ( Packet sent )  
+
+> 26
+
+- time : Sender ’ s current time  
+
+> 27
+
+- entity : ‘" sender " ‘  
+
+> 28
+
+- payload : ‘{" seq_num ": <int > , " bit ": <0|1 > , " is_retry ": < bool >} ‘  
+
+> 29
+
+- Trigger : When Sender completes preparation delay and hands packet to subnet  
+
+> 30 31
+
+- event : ‘ ack_received ‘ ( ACK received )  
+
+> 32
+
+- time : Sender ’ s current time  
+
+> 33
+
+- entity : ‘" sender " ‘  
+
+> 34
+
+- payload : ‘{" ack_bit ": <0|1 > , " is_valid ": < bool >} ‘  
+
+> 35
+
+- Trigger : When Sender receives an ACK  
+
+> 36 37
+
+Receiver Events :  
+
+> 38
+
+- event : ‘ delay_start ‘ ( Receiver starts processing delay )  
+
+> 39
+
+- time : Receiver ’ s current time  
+
+> 40
+
+- entity : ‘" receiver " ‘  
+
+> 41
+
+- payload : ‘{" type ": " processing " , " duration ": < float >} ‘  
+
+> 42
+
+- Trigger : When Receiver starts processing a received packet  
+
+> 43 44
+
+- event : ‘ packet_received ‘ ( Packet successfully received )  
+
+> 45
+
+- time : Receiver ’ s current time  
+
+> 46
+
+- entity : ‘" receiver " ‘  
+
+> 47
+
+- payload : ‘{" seq_num ": <int > , " bit ": <0|1 >} ‘  
+
+> 48
+
+- Trigger : When Receiver completes processing delay and successfully receives packet  
+
+> 49 50
+
+Subnet Events :  
+
+> 51
+
+- event : ‘ packet_get ‘ ( Packet fate determined )  
+
+> 52
+
+- time : Subnet ’ s current time  
+
+> 53
+
+- entity : ‘" subnet " ‘  
+
+> 54
+
+- payload : ‘{" behavior ": <" drop "|" pass " > , " channel ": <" forward "|" backward " > , "noise_value ": <int >} ‘  
+
+> 55
+
+- Trigger : When packet arrives at subnet , before transmission delay starts  
+
+> 56
+
+- Note : " forward " for Sender - > Receiver channel , " backward " for Receiver - > Sender channel 
+
+Listing 3: Interface Contract (C) 
+
+D.2 Structured PlanTree 
+
+Figure 4 illustrates the hierarchical decomposition extracted from the PlanTree JSON. Listing 4 provides a condensed view of the ABP_Sender node, highlighting the typing and protocol definitions enforced by the JSON schema.  
+
+> 1
+
+{ 
+
+> 2
+
+" class_name " : " ABP_Sender " ,  
+
+> 3
+
+" plan_phase " : { 
+
+> 4
+
+" type " : " coupled " ,  
+
+> 5
+
+" model_info " : { 
+
+> 6
+
+" specification " : { 
+
+> 7
+
+// Functional logic extracted from natural language  
+
+> 8
+
+" function " : " Implements Sender role ... [ Details Omitted ] ... " ,  
+
+> 910
+
+// Strict Interface Definitions  
+
+> 11
+
+" model_init_args " : [ 
+
+> 12
+
+{ " name " : " total_packets " , " type " : " int " , " structure " : " ... " } ,  
+
+> 13
+
+{ " name " : " timeout " , " type " : " float " , " structure " : " ... " }  
+
+> 14
+
+] ,  
+
+> 15 16
+
+// Explicit Port Definitions with Protocol  
+
+> 17
+
+" input_ports " : [ 
+
+> 18
+
+{ 
+
+> 19
+
+" name " : " in_start " ,  
+
+> 20
+
+" type " : " dict " ,  
+
+> 21
+
+" structure " : " { ’ total_packets ’: int } " ,  
+
+> 22
+
+" protocol " : {
+
+32 Generation and Evaluation of Discrete-Event World Models via the DEVS Formalism  
+
+> 23
+
+" description " : " Optional start command ... " ,  
+
+> 24
+
+" initial_signal " : " If total_packets >0 , auto - start at t =0... "  
+
+> 25
+
+} 
+
+> 26
+
+} ,  
+
+> 27
+
+{ 
+
+> 28
+
+" name " : " in_ack " ,  
+
+> 29
+
+" type " : " dict " ,  
+
+> 30
+
+" structure " : " { ’ ack_bit ’: int } # ack_bit in {0 ,1} "  
+
+> 31
+
+} 
+
+> 32
+
+] ,  
+
+> 33
+
+" output_ports " : [ 
+
+> 34
+
+{ 
+
+> 35
+
+" name " : " out_data_to_forward " ,  
+
+> 36
+
+" type " : " dict " ,  
+
+> 37
+
+" structure " : " { ’ seq_num ’: int , ’bit ’: int } "  
+
+> 38
+
+} 
+
+> 39
+
+] 
+
+> 40
+
+} ,  
+
+> 41
+
+// Architectural Decomposition  
+
+> 42
+
+" coupling_specification " : " Instantiate children : ABP_SenderController , DelayScheduler , TimeoutTimer ... " ,  
+
+> 43
+
+} 
+
+> 44
+
+} ,  
+
+> 45
+
+// Recursive definition of children  
+
+> 46
+
+" children_plan " : [ 
+
+> 47
+
+{ " class_name " : " ABP_SenderController " , ... } ,  
+
+> 48
+
+{ " class_name " : " DelayScheduler " , ... } ,  
+
+> 49
+
+{ " class_name " : " TimeoutTimer " , ... } 
+
+> 50
+
+] 
+
+> 51
+
+}
+
+Listing 4: Fragment of the PlanTree focusing on the ABP_Sender Interface Contract 
+
+Figure 4: Visualized PlanTree hierarchy for the ABP Model. The root model recursively decomposes into sub-models until atomic primitives are reached. 
+
+D.3 Generated Code Structure 
+
+Figure 5 depicts the coupling graph extracted from the final generated Python code. 33 Generation and Evaluation of Discrete-Event World Models via the DEVS Formalism 
+
+Figure 5: The final connection of the ABP DEVS model. 
+
+# E Qualitative Analysis: Failure Modes 
+
+To better understand the reliability boundaries of different approaches, we manually inspected the failure cases across the benchmark. We observe that DEVS-Gen and iterative agents exhibit fundamentally different failure signatures. 
+
+Failures in DEVS-Gen: Semantic Misalignment. Since DEVS-Gen follows a strict "correct-by-construction" structural template, it rarely suffers from the chaotic syntax errors or hallucinatory loops common in standard agents. Instead, its failures are typically local and semantic, stemming from limitations in the underlying LLM’s grasp of formal DEVS semantics. • Transition Logic inversion: A recurrent error pattern involves the misinterpretation of the DEVS simulation cycle, specifically the ordering of the output function λ and the internal transition δint . In the standard DEVS protocol, a model must emit output based on its current state before transitioning to the next state. However, weaker models occasionally attempt to compute output values during the phase of the previous cycle, leading to state-output desynchronization. • Protocol Deviations: In complex scenarios, the model may implement a conceptually correct state machine that misses a specific edge case in the specification, resulting in trace validation failures despite the simulator being structurally sound and executable. 
+
+Failures in Iterative Agents: Divergence and Stagnation. In contrast, the failures of baseline agents (SWE-Agent, OpenHands) are often global and operational. • Debugging Loops: When faced with implementation errors, these agents frequently enter "doom loops" where they repeatedly run the code, encounter an error, and attempt superficial fixes (e.g., adding print statements or changing variable names) without resolving the root cause. This explains the high token consumption and timeout rates observed in Table 2. • Silent Failures: A common failure mode for "Lite" baselines is the generation of code that runs without crashing but produces empty or nonsensical event traces due to a lack of understanding of the global event loop driver. This comparison highlights that while DEVS-Gen is not immune to logic errors, its modularity constrains failures to the component level, making them easier to diagnose and fix compared to the entangled monolithic failures of iterative agents. 34

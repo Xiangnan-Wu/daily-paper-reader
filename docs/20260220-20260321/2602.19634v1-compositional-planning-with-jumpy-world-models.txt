@@ -1,0 +1,2804 @@
+Title: Compositional Planning with Jumpy World Models
+
+URL Source: https://arxiv.org/pdf/2602.19634v1
+
+Published Time: Tue, 24 Feb 2026 02:59:14 GMT
+
+Number of Pages: 38
+
+Markdown Content:
+# Compositional Planning with Jumpy World Models 
+
+> Jesse Farebrother 2,3,∗
+
+, Matteo Pirotta 1, Andrea Tirinzoni 1, Marc G. Bellemare 2,3,†, Alessandro Lazaric 1,
+
+> Ahmed Touati 11
+
+FAIR at Meta, 2Mila – Québec AI Institute, 3McGill University 
+
+> ∗
+
+Work done at Meta , †CIFAR AI Chair 
+
+The ability to plan with temporal abstractions is central to intelligent decision-making. Rather than reasoning over primitive actions, we study agents that compose pre-trained policies as temporally extended actions, enabling solutions to complex tasks that no constituent alone can solve. Such compositional planning remains elusive as compounding errors in long-horizon predictions make it challenging to estimate the visitation distribution induced by sequencing policies. Motivated by the geometric policy composition framework introduced in Thakoor et al. (2022), we address these challenges by learning predictive models of multi-step dynamics — so-called jumpy world models —that capture state occupancies induced by pre-trained policies across multiple timescales in an off-policy manner. Building on Temporal Difference Flows (Farebrother et al., 2025), we enhance these models with a novel consistency objective that aligns predictions across timescales, improving long-horizon predictive accuracy. We further demonstrate how to combine these generative predictions to estimate the value of executing arbitrary sequences of policies over varying timescales. Empirically, we find that compositional planning with jumpy world models significantly improves zero-shot performance across a wide range of base policies on challenging manipulation and navigation tasks, yielding, on average, a 200% relative improvement over planning with primitive actions on long-horizon tasks. 
+
+## 1 Introduction 
+
+In recent years, the success of large-scale foundation models in domains such as computer vision (e.g., Radford et al., 2021; Ravi et al., 2025; Assran et al., 2025) and natural language processing (e.g., Meta, 2024; OpenAI, 2024; Google DeepMind, 2025) has inspired a similar shift in Reinforcement Learning (RL). Foundation policies pre-trained on diverse unlabeled data or via unsupervised objectives can now generalize to a wide range of downstream tasks, without additional training or explicit planning. This has led to remarkable progress in areas like humanoid control (e.g., Peng et al., 2021, 2022; Tessler et al., 2023, 2024; Tirinzoni et al., 2025; Alegre et al., 2025) and real-world robotics (e.g., Brohan et al., 2023b,a; Luo et al., 2024; Ghosh et al., 2024; Black et al., 2024, 2025; Physical Intelligence et al., 2025; NVIDIA, 2025; Li et al., 2026). Despite these advances, a key limitation persists: while foundation policies can handle many tasks out of the box, they often fall short when faced with complex, long-horizon problems that require reasoning over extended sequences of decisions. In such cases, the planning horizon of a single policy is insufficient, and agents must compose policies to achieve their goals (Schmidhuber, 1991; Singh, 1992; Dayan and Hinton, 1992; Kaelbling, 1993b,a; Parr and Russell, 1997; Dietterich, 1998; Sutton et al., 1999; Precup, 2000). Hierarchical RL (Barto and Mahadevan, 2003; Klissarov et al., 2025), including the options framework (Sutton et al., 1999; Precup, 2000), aims to achieve compositionality by training task-specific high-level policies to leverage manual (e.g., Nachum et al., 2018; Barreto et al., 2019; Carvalho et al., 2023; Park et al., 2023, 2025b) or automatic (e.g., Bacon et al., 2017; Machado et al., 2017, 2018, 2023; Bagaria et al., 2021; Sutton et al., 2023) task decompositions. In this paper, we take a fundamentally different approach: instead of learning task-specific hierarchies, we develop a framework for direct compositional planning over parameterized policies, requiring no task-specific training. By learning “jumpy” multi-step dynamics models – also known as “jumpy world models” (Murphy, 2024) – we enable flexible composition of existing policies at planning time, transforming how agents tackle novel tasks through intelligent recombination of existing behavior. 1
+
+> arXiv:2602.19634v1 [cs.LG] 23 Feb 2026
+
+To operationalize this idea, we propose learning a policy and horizon conditioned jumpy world model that captures the distribution of future states for all parameterized policies over a continuum of geometrically decaying time horizons (Janner et al., 2020; Thakoor et al., 2022). To make this possible, we first generalize the recent Temporal Difference Flow (Farebrother et al., 2025) framework using a novel consistency objective that enforces coherence between predictions at different timescales, consistently improving long-horizon predictions. Additionally, we develop a novel estimator of the value of executing an arbitrary sequence of policies, each with its own variable timescale. With these two pieces in place, we demonstrate how to plan over a wide range of parameterized policies, allowing us to flexibly compose behaviors to solve complex, long-horizon tasks without the need for further environment interaction or fine-tuning. Empirically, across multiple classes of base policies evaluated on a suite of OGBench navigation and manipulation tasks (Park et al., 2025a), behavior-level planning consistently improves over zero-shot performance, often by a large margin. Finally, our approach outperforms state-of-the-art hierarchical baselines as well as alternative planning methods; in particular, planning with jumpy world models achieves a 200% relative improvement over action-level planning with a one-step world model on long-horizon tasks. These results demonstrate that planning with jumpy world models offers a powerful complement that is particularly effective for long-horizon decision-making. 
+
+## 2 Preliminaries 
+
+We model the environment as a reward-free discounted Markov Decision Process (MDP) defined as the 4-tuple 
+
+M = (S, A, P, γ ). Here, S and A represent the state and action spaces, respectively; P : S × A → P(S)
+
+characterizes the distribution over next states; and γ ∈ [0 , 1) is the discount factor. At each step k, the agent follows a policy π : S → P(A), generating a trajectory of state-action pairs (Sk, A k)k≥0 where Ak ∼ π( · | Sk)
+
+and Sk ∼ P ( · | Sk−1, A k−1). When unambiguous, we use S′ as the immediate next state of S, and S+ for a successor state at some future step k > 0. We use Pr ( · | S0 = s, A 0 = a, π ) and E[ · | S0 = s, A 0 = a, π ] to denote the probability and expectation over sequences induced by starting from (s, a ) and following π thereafter.  
+
+> Successor Measure
+
+For a policy π and an initial state-action pair (s, a ), the (normalized) successor mea-sure (Dayan, 1993; Blier et al., 2021), denoted by mπγ ( · | s, a ), is a probability measure over the state space S.For any subset X ⊆ S, it represents the cumulative discounted probability of visiting a state in X, with each visit discounted geometrically by its time of arrival. Formally, this is defined as: 
+
+mπγ ( X | s, a ) = (1 − γ)
+
+> ∞
+
+X
+
+> k=0
+
+γk Pr( Sk+1 ∈ X | S0 = s, A 0 = a, π ) .
+
+The normalization factor 1 − γ ensures mπγ is a probability distribution. This admits an intuitive interpretation: rather than viewing γ as a discount factor, one may equivalently consider an auxiliary process with a geometrically distributed lifetime – halting at each step with probability 1 − γ (Derman, 1970). Under this view, mπγ (X | s, a ) equivalently characterizes the probability that the state visited at the halting time lies in X.This yields a convenient reparameterization of the action-value function as: 
+
+Qπγ (s, a ) = E
+
+h ∞X
+
+> k=0
+
+γkr(Sk+1 ) | S0 = s, A 0 = a, π 
+
+i
+
+≡ (1 − γ)−1ES+∼mπγ (·| s,a )
+
+r(S+) , (1) expressing value as the expected reward at the geometrically distributed halting time scaled by the average lifetime (1 −γ)−1. Note that this equivalence is purely mathematical 1; the underlying MDP remains unchanged.  
+
+> Geometric Horizon Model
+
+A Geometric Horizon Model (GHM; Janner et al., 2020; Thakoor et al., 2022) instantiates a jumpy world model as a generative model of the successor measure. It can be learned off-policy via temporal-difference learning, exploiting the fact that mπγ is a fixed point of the Bellman equation: 
+
+mπγ ( · | s, a ) = (1 − γ)P ( · | s, a ) + γES′∼P (·| s,a ), A ′∼π(·| S′)
+
+mπγ ( · | S′, A ′) . (2) Due to the Bellman equation’s reliance on bootstrapping, the choice of generative model is critical for maintaining stability. Farebrother et al. (2025) demonstrate that prior approaches suffer from systemic bias 
+
+> 1This preserves expected cumulants and occupancy measures, but not trajectory-level statistics (Bellemare et al., 2023)
+
+2at long horizons due to these bootstrapped predictions. To address this, Farebrother et al. (2025) propose the use of flow-matching techniques (Lipman et al., 2023; Albergo and Vanden-Eijnden, 2023), which construct probability paths that evolve smoothly from a source distribution to the desired target distribution. By designing these paths to exploit structure in the temporal difference target distribution, they show that bootstrapping bias can be controlled, enabling more accurate long-horizon predictions. In this framework, the GHM models a d-dimensional continuous state space 2 as an ordinary differential equation (ODE) parameterized by a time-dependent vector field vt : Rd × S × A → Rd. Sampling from the GHM begins by drawing initial noise X0 ∈ Rd from a prior distribution p0 ∈ P(Rd) and subsequently following the flow ψt : Rd × S × A → Rd, defined by the following Initial Value Problem (IVP) for t ∈ [0 , 1] :
+
+
+
+ddt ψt(X0 | s, a ) = vt
+
+ ψt(X0 | s, a ) | s, a 
+
+ψ0(X0 | s, a ) = X0
+
+⇐⇒ ψt(X0 | s, a ) = X0 +
+
+Z t
+
+> 0
+
+vτ
+
+ ψτ (X0 | s, a ) | s, a  dτ. 
+
+We can solve this IVP using standard numerical integration techniques (Butcher, 2016). In doing so, we obtain an ODE-induced probability path defined as the pushforward pt := ψt( · | S, A )♯p0(·), i.e., the distribution of ψt(X0 | S, A ) where X0 ∼ p0(·). To ensure that p1 coincides with the successor measure mπγ , Farebrother et al. (2025) propose to learn the parameterized vector field vt(· · · ; θ) by minimizing the td-flow loss: 
+
+ℓtd-flow (θ; ¯θ) = (1 − γ) E t∼U ([0 ,1]) , (S,A,S ′)∼D 
+
+> X0∼p0(·), X t=(1 −t)X0+tS ′
+
+
+
+vt(Xt | S, A ; θ) − (S′ − X0) 2
+
++ γ Et∼U ([0 ,1]) , (S,A,S ′)∼D , A ′∼π(·| S′)
+
+> Xt∼ψt(·| S′,A ′; ¯θ)♯p0(·)
+
+
+
+vt(Xt | S, A ; θ) − vt(Xt | S′, A ′; ¯θ) 2
+
+,
+
+(3) over transitions sampled from the dataset D with non-trainable target parameters ¯θ (Mnih et al., 2015). Recall that the Bellman equation (2) defines the successor measure as a mixture distribution with weights 
+
+1 − γ and γ. The td-flow objective reflects this: the first term is a conditional flow-matching loss (Lipman et al., 2023) targeting the one-step transition kernel P ( · | S, A ), while the second is a marginal flow-matching term targeting the bootstrapped successor measure mπγ ( · | S′, A ′). Farebrother et al. (2025) show that jointly optimizing these components with the mixture weighting recovers the successor measure at convergence. 
+
+## 3 Planning via Geometric Policy Composition 
+
+In the sequel, we consider an agent equipped with a repertoire of pretrained policies {πz }z∈Z indexed by z (e.g., a state for goal-conditioned policies or, more generally, a latent variable parameterizing diverse behaviors). Our objective is to learn a predictive model of the policies’ behaviors that enables planning for arbitrary downstream tasks, without requiring further online interaction with the environment or additional fine-tuning. To this end, we first formalize how GHM predictions compose to evaluate plans that stochastically switch among a subset of policies, showing how the successor measures of constituent policies combine to yield the successor measure of the composite policy. We then address the challenge of learning accurate GHMs across timescales by introducing a consistency objective that enforces coherence across horizons, improving long-horizon predictions. Finally, with these tools we detail our complete compositional planning procedure. 
+
+3.1 Evaluating Geometric Switching Policies 
+
+A natural way to chain policies is through geometric switching : for each policy πzi in a sequence, execution continues with probability 1 − αi ∈ [0 , 1] , or switches to the subsequent policy πzi+1 with probability αi. Such a policy can be written as: ν := πz1
+
+> α1
+
+−→ πz2 · · · αn−1
+
+−−−→ πzn . By definition, the final policy πzn is absorbing, meaning the agent commits to it for the remainder of the episode, so its switching probability is αn = 0 .These non-Markovian policies are called Geometric Switching Policies (GSPs; Thakoor et al., 2022). The term “geometric” captures that each policy πzi is followed for a geometrically distributed duration Ti ∼ Geom (αi).    
+
+> 2While we assume a continuous state space S⊆Rdfor ease of exposition, this flow-matching approach readily extends to non-Euclidean and discrete spaces (e.g., Huang et al., 2022; Chen and Lipman, 2024; Gat et al., 2024; Kapusniak et al., 2024).
+
+3To analyze these policies, we must understand how this switching mechanism interacts with the MDP’s global 
+
+discount factor, γ. Recall that γ can be interpreted as the probability the episode continues to the next step, while 1 − γ gives the probability of halting. When following policy πzk within a GSP, there are two reasons it might stop executing that policy: (1) the episode halts, with probability 1 − γ; or (2) the policy switches to 
+
+πzk+1 , with probability αk. Thus, continuing to follow πzk for one more step requires that neither event occur, which happens with probability βk := γ (1 − αk). This quantity acts as an effective discount factor for the duration spent executing πzk . Note that βn = γ, since the final policy is absorbing. We can now characterize the successor measure of a GSP. Note that the agent might reach a successor state s+
+
+through multiple paths: arriving while still executing πz1 , or switching to πz2 and reaching s+ from there, and so on. Each path contributes to the overall successor measure and must be weighted appropriately. 
+
+Definition 1. Let ν := πz1
+
+> α1
+
+−→ πz2 · · · αn−1
+
+−−−→ πzn be a geometric switching policy with global discount factor γ ∈ (0 , 1) and effective discount factors βk := γ(1 − αk) for k ∈ JnK. The weight of the k-th policy is 
+
+wk := 1 − γ
+
+1 − βkk−1Y
+
+> i=1
+
+γ − βi
+
+1 − βi
+
+,
+
+where an empty product equals 1 (hence w1 = 1−γ 
+
+> 1−β1
+
+). 
+
+These weights capture the relative contribution of each policy phase to the successor measure of the GSP. Intuitively, wk reflects the probability that the agent (i) survives the first k − 1 policy phases without the episode halting, and (ii) reaches states under policy πzk rather than having already switched to a later policy. With these weights, we now define the successor measure of the composite GSP in the following result. 
+
+Theorem 1. Let ν := πz1
+
+> α1
+
+−→ πz2 · · · αn−1
+
+−−−→ πzn be a geometric switching policy with global discount factor γ ∈ (0 , 1) , effective discount factors {βk}nk=1 , and weights {wk}nk=1 from Definition 1. For any state-action pair (s, a ), the successor measure of ν decomposes as: 
+
+mνγ (d s+ | s, a ) = 
+
+> n
+
+X
+
+> k=1
+
+wk
+
+Z
+
+> s1,...,s k−1
+> a1,...,a k−1
+
+mπz1 
+
+> β1
+
+(d s1 | s, a )πz2 (d a1 | s1) · · · mπzk 
+
+> βk
+
+(d s+ | sk−1, a k−1) .
+
+This theorem decomposes the successor measure of a GSP as a mixture distribution with n components. The 
+
+k-th component, weighted by wk, captures the state distribution under policy πzk , having passed through all intermediate states visited under πz1 , . . . , π zk−1
+
+> 3
+
+. Practically, such a decomposition yields a natural strategy for estimating action-value function similar to (1) : sample a state from each component, evaluate its reward, and form a weighted sum using the weights wk. Rather than sampling from each component independently, we can leverage their overlapping sequential structure to draw samples much more efficiently. We achieve this through composition: starting from (s, a ), we sample S+ 
+
+> 1
+
+∼ mπz1 
+
+> β1
+
+( · | s, a ), then use S+ 
+
+> 1
+
+to sample S+ 
+
+> 2
+
+∼ mπz2 
+
+> β2
+
+( · | S+ 
+
+> 1
+
+, A + 
+
+> 1
+
+) where A+ 
+
+> 1
+
+∼ πz2 ( · | S+ 
+
+> 1
+
+), and so on. As the following lemma formalizes, the weighted sum P 
+
+> k
+
+wk r(S+ 
+
+> k
+
+) yields an unbiased estimator of Qνγ .
+
+Lemma 1. Let ν := πz1
+
+> α1
+
+−→ πz2 · · · αn−1
+
+−−−→ πzn be a geometric switching policy with global discount factor γ ∈ (0 , 1) , effective discount factors {βk}nk=1 , and weights {wk}nk=1 from Definition 1. For any reward function r : S → R and state-action pair (s, a ), set (S+0 , A +0 ) = ( s, a ) and for k = 1 , . . . , n sample 
+
+S+ 
+
+> k
+
+∼ mπzk 
+
+> βk
+
+( · | S+
+
+> k−1
+
+, A +
+
+> k−1
+
+) and A+ 
+
+> k
+
+∼ πzk+1 ( · | S+ 
+
+> k
+
+). Then the single-sample monte-carlo estimator 
+
+bQνγ := (1 − γ)−1
+
+> n
+
+X
+
+> k=1
+
+wk r(S+ 
+
+> k
+
+) ,
+
+is an unbiased estimate of Qνγ (s, a ), i.e., E bQνγ
+
+ = Qνγ (s, a ) where the expectation is over the joint distribution of (S+1 , A +1 , . . . , S + 
+
+> n
+
+) induced by the sampling procedure above.        
+
+> 3Each component can be seen as an application of the Chapman–Kolmogorov equation (Chapman, 1928; Kolmogoroff, 1931), retaining kernel composition via marginalization but replacing single-step dynamics P(· | s, a )with jumpy dynamics via mπβ(· | s, a ).
+
+4This lemma generalizes several previous results: it extends Thakoor et al. (2022, Theorem 3.2), which assumed fixed switching probabilities, i.e., αk = α, ∀ k ∈ Jn − 1K, and further generalizes results in Janner et al. (2020), that additionally impose a fixed policy throughout, i.e., πzk = π, ∀ k ∈ JnK. By allowing both policies and switching probabilities to vary, this result enables the evaluation of a wider class of switching policies and brings us closer to the options framework (Sutton, 1995; Sutton et al., 1999; Precup, 2000). 
+
+3.2 Learning Geometric Horizon Models Across Multiple Timescales 
+
+A core requirement of our planning framework is the ability to predict the behavior of many policies over multiple timescales, enabling us to calculate the expected return of candidate geometric switching policies. A natural extension of the td-flow objective (3) conditions the vector field v on both the policy encoding 
+
+z and discount factor γ, yielding a single unified model across policies and horizons. However, generalizing across many horizons is challenging: variance increases with horizon length, reducing per-horizon accuracy and destabilizing training (Petrik and Scherrer, 2008). To address this challenge, we propose a generalization of td-flow that enforces consistency across horizons. Rather than learning each horizon independently, we exploit a Bellman-like relationship between the successor measure at two discount factors β ≤ γ to bootstrap longer-horizon predictions from shorter-horizon ones: 
+
+mπ 
+
+> γ
+
+( · | s, a ) = (1 − γ) P ( · | s, a ) + γ 1 − γ
+
+1 − β ES′∼P (·| s,a ),A ′∼π(·| S′)
+
+ mπ 
+
+> β
+
+( · | S′, A ′)  (4) 
+
++ γ γ − β
+
+1 − β E S′∼P (·| s,a ),A ′∼π(·| S′) 
+
+> S+∼mπ
+> β(·| S′,A ′),A +∼π(·| S+)
+
+ mπ 
+
+> γ
+
+( · | S+, A +)  .
+
+This follows directly from Theorem 1 by considering the switching policy ν := π α1=1 
+
+−−−→ π α2=1 −β/γ
+
+−−−−−−→ π and noting that mπγ(1 −α1) = mπ 
+
+> 0
+
+= P . Building on this result, we extend the derivation of td-flow from Farebrother et al. (2025) to the new Bellman equation in (4) (full derivation in Appendix C.1), arriving at what we call the Temporal Difference Horizon Consistency ( td-hc ) loss: 
+
+ℓtd-hc (θ; ¯θ, β, γ) = (1 − γ)E t∼U ([0 ,1]) , (S,A,S ′)∼D 
+
+> X0∼p0(·), X t=(1 −t)X0+tS ′
+
+
+
+vt(Xt | S, A, γ; θ) − (S′ − X0) 2
+
+(5) 
+
++ γ 1 − γ
+
+1 − β Et∼U ([0 ,1]) , (S,A,S ′)∼D ,A ′∼π(·| S′)
+
+> Xt∼ψt(·| S′,A ′,β;¯θ)♯p0(·)
+
+
+
+vt(Xt | S, A, γ; θ) − vt(Xt | S′, A ′, β; ¯θ) 2
+
++ γ γ − β
+
+1 − β E t∼U ([0 ,1]) , (S,A,S ′)∼D ,A ′∼π(·| S′)
+
+> S+∼ψ1(·| S′,A ′,β;¯θ)♯p0(·), A +∼π(·| S+)
+> Xt∼ψt(·| S+,A +,γ;¯θ)♯p0(·)
+
+
+
+vt(Xt | S, A, γ; θ) − vt(Xt | S+, A +, γ; ¯θ) 2
+
+.
+
+When γ = β, the third term vanishes, and we recover the original td-flow loss. In practice, we sample γ
+
+uniformly from [γmin , γ max ] and β uniformly from [γmin , γ], but only apply horizon consistency (i.e., β̸ = γ)to a small proportion of each mini-batch. This is motivated by the fact that the consistency term requires sampling from the model’s own predictions at horizon β and using these samples as conditioning for the longer horizon γ, meaning errors in the model’s current predictions can compound and introduce bias. Restricting the consistency term to a small fraction of the batch, we gain the benefits of horizon alignment while ensuring the majority of updates come from td-flow . This design follows standard practice for consistency-like generative modeling (e.g., Frans et al., 2025; Geng et al., 2025; Boffi et al., 2025; Ai et al., 2026). 
+
+3.3 Compositional Planning 
+
+With the machinery for training policy-conditioned GHMs across multiple timescales now in place, we can turn to the central question: how to use them to solve downstream tasks? Given a reward function r : S → R, our goal is to find a sequence of policies that maximizes expected return. Since the learned GHMs already capture the full complexity of how policies evolve in the environment, evaluating Qνγ from Lemma 1 requires only specifying the policy embeddings z1, . . . , z n, hence planning reduces to the following optimization problem: 
+
+max 
+
+> a1,z 1,...,z n
+
+Qπz1
+
+> α1
+
+−→πz2 ··· αn−1
+
+−−−→πzn  
+
+> γ
+
+(s, a 1) . (6) 5The switching probabilities {αi} control how long each policy executes before transitioning to the next, and are treated as hyperparameters. Once the optimal sequence (a∗
+
+> 1
+
+, z ∗ 
+
+> 1
+
+, . . . , z ∗
+
+> n
+
+) is identified, we execute the first action a∗ 
+
+> 1
+
+followed by the policy πz∗ 
+
+> 1
+
+, replanning at future states as needed. Notably, this planning objective unifies several existing approaches as special cases. By varying the switching probabilities {αi}, one can interpolate between action-level control and planning over policies by: 
+
+• Setting α1 = · · · = αn = 1 , which reduces to optimizing over sequences of primitive actions, equivalent to Model-Predictive Control with horizon n.
+
+• Setting α1 = 1 and α2 = · · · = αn = 0 , yielding Generalized Policy Improvement (GPI ; Barreto et al., 2017). 
+
+• Setting α1 = · · · = αn−1 = α for some fixed α ∈ (0 , 1) , which recovers Geometric Generalized Policy Improvement (GGPI ; Thakoor et al., 2022). We refer to our approach – which allows distinct switching probabilities α1, . . . , α n−1 ∈ (0 , 1) – as CompPlan .Likewise, we refer to action-level planning as ActionPlan . Crucially, the same pretrained GHMs power all of these methods. By conditioning on policies and a continuum of timescales, our framework spans one-step world models ( α = 1 ) through long-horizon policy composition ( αi ∈ (0 , 1) ), unifying previously disparate paradigms.  
+
+> Optimization via random shooting.
+
+The maximization in (6) is tractable when policies are indexed by a finite set, but becomes challenging for large or continuous Z. In this paper, we focus on goal-conditioned policies where Z = S and z ∈ S represents a subgoal. Here, the key difficulty lies in proposing good candidate subgoals without searching over the entire state space. Our solution is to use the GHMs themselves as a proposal distribution. Given a goal g ∈ S, we generate waypoints from z0 := s by composing mπg 
+
+> βi
+
+over horizons {βi} as: 
+
+ai ∼ πg ( · | zi), zi+1 ∼ mπg 
+
+> βi+1
+
+( · | zi, a i), for i = 0 , . . . , n − 1 .
+
+This produces a sequence of subgoals (z1, . . . , z n) that naturally guides progress towards the final objective. Alternatively, we can sample from an unconditional GHM that predicts plausible successor states under the data distribution (i.e., the behavior policy). To enable this, we stochastically mask the policy encoding as 
+
+z = ∅ during training, bootstrapping with the dataset action at the next state in (3) when masked. With a proposal distribution, planning reduces to random shooting (Matyáš, 1965): we (1) sample m candidate sequences {(z(i) 
+
+> 1
+
+, . . . , z (i) 
+
+> n
+
+)}mi=1 from the proposal distribution; (2) evaluate Qν(i) 
+
+> γ
+
+(s, a (i) 
+
+> 1
+
+) for each candidate switching policy ν(i) := πz(i)
+
+> 1
+> α1
+
+−→ πz(i) 
+
+> 2
+
+· · · αn−1
+
+−−−→ πz(i)
+
+> n
+
+using Lemma 1 where a(i) 
+
+> 1
+
+∼ πz(i) 
+
+> 1
+
+( · | s); and (3) select the sequence (a∗
+
+> 1
+
+, z ∗ 
+
+> 1
+
+, . . . , z ∗
+
+> n
+
+) with the highest value Qν∗ 
+
+> γ
+
+(s, a ∗
+
+> 1
+
+). The full method is summarized in Algorithm 2. 
+
+## 4 Experiments 
+
+Our empirical evaluation tests the core hypothesis of this work: that learning a jumpy world model over a diverse collection of parameterized policies enables effective and efficient compositional planning. We begin by describing the experimental setting and the training procedure for the base policies. We subsequently compare the performance of these policies against that of compositional planning over them. Additionally, we benchmark 
+
+CompPlan against other test-time planning approaches and hierarchical methods. Finally, we examine the effect of the proposed consistency loss on both model accuracy and planning performance. Additional ablations on the replanning frequency, planning objective, and proposal distribution are provided in Appendix D. 
+
+4.1 Experimental Setup  
+
+> Benchmark and Dataset
+
+All experiments are conducted using the OGBench benchmark (Park et al., 2025a), which provides challenging long-horizon robotic manipulation and locomotion tasks structured as offline goal-conditioned reinforcement learning problems. We focus on ant navigation tasks across different maze topologies ( medium , large , and giant ) as well as multi-cube robotic arm manipulation. For both policy and GHM training, we use the standard navigate and play offline datasets for antmaze and cube , respectively.  
+
+> Base Policies
+
+The effectiveness of compositional planning depends on the quality and characteristics of the underlying policies. We train five distinct policy types, each exhibiting different tradeoffs between GHM 6learning and planning performance: 1) Goal-Conditioned TD3 (GC-TD3; Pirotta et al., 2024); 2) Goal-Conditioned 1-Step RL (GC-1S); 3) Contrastive RL (CRL; Eysenbach et al., 2022); 4) Goal-Conditioned Behavior Cloning (GC-BC; Lynch et al., 2019; Ghosh et al., 2021); and 5) Hierarchical Flow Behavior Cloning (HFBC; Park et al., 2025b). Additional details are provided in Appendix F.1. 
+
+4.2 How Do Policies Affect Compositional Planning? 
+
+For each policy family, we train a GHM in an off-policy manner using the td-hc loss described in § 3.2. GHMs are trained for 3M gradient steps using the Adam optimizer (Kingma and Ba, 2015) with a batch size of 256. The model architecture follows a U-Net-style design, similar to Farebrother et al. (2025). Both the timestep t
+
+and the discount factor γ are embedded by first applying a sinusoidal embedding to increase dimensionality, followed by a two-layer MLP with mish activations (Misra, 2019). For the discount embedding, we further concatenate the vector [γ, 1 − γ, − log (1 − γ)] , where − log (1 − γ) corresponds to the logarithm of the effective horizon; we find this improves the model’s sensitivity to the discount factor. Other conditioning information, such as the state-action pair and policy embedding z, is processed through an additional MLP and added to both the time and discount embeddings. The network incorporates conditioning information via FiLM modulation (Perez et al., 2018). When training each GHM, we apply the horizon-consistency objective (5) (i.e., β̸ = γ) to 25% of each mini-batch in antmaze and 12 .5% in cube . We also train the unconditional model (i.e., z = ∅) for 10% of each mini-batch; these two proportions do not overlap. During evaluation, we tailor the proposal distribution to each domain based on their distinct characteristics. In antmaze , states are separated by large temporal distances and physical barriers, so an unconditional proposal would waste most samples on irrelevant regions of the state space; we therefore sample 256 subgoal sequences from the goal-conditioned GHM. In cube , tasks consist of short pick-and-place sequences with many viable paths, making the unconditional GHM a natural fit; we sample 1024 sequences to cover the broader proposal. Ablations of these choices are provided in Appendix D.5. We begin by comparing the zero-shot performance of the base policies against our compositional planning approach. Table 1 details these results (averaged over three seeds), showing that compositional planning consistently improves upon the zero-shot policies. This demonstrates the effectiveness of our method in selecting policy sequences that exceed the performance of the best individual policy. While improvements are evident across all domains, the gains are particularly pronounced in complex, long-horizon tasks such as 
+
+antmaze-giant and cube-{3,4} , where success rates can rise from 10% to 90% in the most extreme cases. Among the evaluated policy classes, HFBC emerges as the most consistent zero-shot performer. CompPlan 
+
+further improves HFBC, notably in antmaze-giant and cube-4 . CRL, in contrast, is effective in antmaze but underperforms in cube . We hypothesize this stems from the inductive bias in CRL’s representation learning, which approximates the goal-conditioned value function as Q(s, a, g ) ≈ ϕ(s, a )⊤ψ(g). This factorization effectively captures the ant’s spatial position – yielding robust navigation in antmaze – but fails to encode complex object-related features, resulting in weaker cube policies. Notably, incorporating planning not only improves upon CRL’s strong baseline in antmaze , but also achieves non-trivial success rates in cube ,demonstrating that our approach can extract utility from base policies otherwise limited by their inductive bias.  
+
+> Table 1
+
+Success rate ( ↑) of base policies πg (Zero Shot) and compositional planning with GHMs ( CompPlan ; ours) averaged over tasks. We report the mean and standard deviation over 3 seeds. We highlight relative increases and decreases in performance w.r.t. the base policies. Additionally, we bold the best performance for each domain.                                                                                                                        
+
+> Domain CRL GC-1S GC-BC GC-TD3 HFBC Zero Shot CompPlan Zero Shot CompPlan Zero Shot CompPlan Zero Shot CompPlan Zero Shot CompPlan
+> antmaze-medium 0.88 0.97 (0.02) 0.56 0.87 (0.05) 0.49 0.85 (0.08) 0.65 0.65 (0.03) 0.94 0.94 (0.01)
+> antmaze-large 0.84 0.90 (0.00) 0.21 0.61 (0.04) 0.18 0.73 (0.02) 0.23 0.48 (0.05) 0.78 0.92 (0.02)
+> antmaze-giant 0.16 0.29 (0.03) 0.00 0.02 (0.00) 0.00 0.03 (0.01) 0.00 0.01 (0.01) 0.42 0.79 (0.04)
+> cube-1 0.28 0.86 (0.02) 0.37 0.66 (0.02) 0.90 0.99 (0.01) 0.58 0.91 (0.01) 0.80 0.97 (0.01)
+> cube-2 0.02 0.50 (0.03) 0.10 0.57 (0.09) 0.15 0.97 (0.01) 0.12 0.82 (0.01) 0.76 0.77 (0.02)
+> cube-3 0.01 0.73 (0.02) 0.01 0.67 (0.02) 0.09 0.92 (0.01) 0.12 0.83 (0.04) 0.64 0.83 (0.03)
+> cube-4 0.00 0.39 (0.04) 0.01 0.60 (0.02) 0.00 0.76 (0.03) 0.00 0.57 (0.03) 0.24 0.67 (0.03)
+
+7Interestingly, the other policies exhibit the opposite trend. When evaluated zero-shot, they show weak performance in medium to long-horizon tasks – antmaze-medium , antmaze-large , and cube tasks all prove challenging, with cube success rates falling below 10 −15% . However, these policies prove remarkably effective when integrated into our compositional planning framework, with success rates climbing above 70% 
+
+in many tasks. Taken together, these results suggest that zero-shot metrics tell us little about how well a policy will compose; its utility may only become clear when orchestrated with other policies. 
+
+4.3 How Does Compositional Planning Compare to Other Planning and Hierarchical Approaches? 
+
+Our results in § 4.2 demonstrate that compositional planning unlocks capabilities beyond what any single policy achieves alone. We now situate our approach among existing planning and hierarchical methods, revealing that 
+
+CompPlan ’s advantages stem from its unique combination of temporal abstraction and flexible composition. Recall from § 3.3 that different choices of switching probabilities recover existing methods as special cases. This observation suggests a natural ablation: comparing CompPlan against these special cases can disentangle the contribution of its key components. At one extreme lies Generalized Policy Improvement (GPI; Barreto et al., 2017) which sets α1 = 1 and commits to a single policy for the remainder of the episode. GPI leverages our GHMs to estimate each policy’s value, selecting the best in-class policy at each timestep according to: 
+
+max   
+
+> z,A ∼πz(·| s)
+
+Qπz 
+
+> γ
+
+(s, a ) = (1 − γ)−1ES∼mπz γ (·| s,a ) [ r(S) ] .
+
+GPI thus serves as a test of whether composing policies offers an advantage over merely selecting among them. At the other extreme, we compare against action-level planning ( ActionPlan ), which sets α1 = · · · = αn = 1 
+
+and operates at the granularity of individual actions rather than policies. To fairly isolate the effect of temporal abstraction, we train a dedicated one-step world model ˜p(·| s, a ) using the same flow-matching framework, network architecture, and training procedure as our GHMs – differing only in the removal of policy and discount conditioning. Given this model, we optimize the following objective: 
+
+arg max 
+
+> A1,...,A n
+> n
+
+X
+
+> k=1
+
+γkr(Sk+1 ) ,
+
+where Sk+1 ∼ ˜p( · | Sk, A k) and Ak ∼ πg ( · | Sk). This comparison directly tests whether planning over sequences of policies – enabled by jumpy predictions – confers an advantage over action-level planning. Figure 1 reveals a clear pattern: on long-horizon tasks, CompPlan substantially outperforms both alternatives, achieving an 89% relative improvement over GPI and a 201% gain over ActionPlan (averaged across policies and long-horizon domains). These gains indicate that neither policy selection alone nor action-level planning captures the full benefit of our compositional framework. Rather, the combination of planning over sequences of policies at multiple timescales unlocks strong long-horizon capabilities.  
+
+> Table 2
+
+Success rate ( ↑) of hierarchical baselines and com-positional planning with HFBC policies ( CompPlan ; ours). For each domain, we highlight the best performance.                                                      
+
+> Domain HIQL SHARSA HFBC CompPlan
+> antmaze-medium 0.96 (0.01) 0.91 (0.03) 0.94 0.94 (0.01)
+> antmaze-large 0.91 (0.02) 0.88 (0.03) 0.78 0.92 (0.02)
+> antmaze-giant 0.65 (0.05) 0.56 (0.07) 0.42 0.79 (0.04)
+> cube-1 0.15 (0.03) 0.70 (0.03) 0.84 0.97 (0.01)
+> cube-2 0.06 (0.02) 0.60 (0.07) 0.70 0.77 (0.02)
+> cube-3 0.03 (0.01) 0.50 (0.09) 0.54 0.83 (0.03)
+> cube-4 0.00 (0.00) 0.09 (0.04) 0.34 0.67 (0.03)
+
+Furthermore, we compare against methods that learn hierarchical structure during training: HIQL (Park et al., 2023) and SHARSA (Park et al., 2025b), the current state-of-the-art on OGBench. These ap-proaches train high-level policies to select subgoals or skills, whereas CompPlan performs composi-tion at test time using pre-trained GHMs. Table 2 presents this comparison where CompPlan em-ploys HFBC base policies similar to SHARSA. Our approach consistently outperforms both hierarchi-cal methods, with the largest margins on the most challenging tasks. In cube-4 , CompPlan achieves 
+
+67% success compared to 9% for SHARSA and 0% 
+
+for HIQL – demonstrating that test-time composi-tion can surpass learned hierarchies when tasks demand flexible, long-horizon reasoning. Notably, CompPlan 
+
+requires no task-specific training, suggesting a promising alternative to task-specific hierarchical methods. 8CRL GC-1S GC-BC GC-TD3 HFBC                  
+
+> -0.2
+> 0.0
+> +0.2
+> +0.4
+> +0.6
+> Percent Point Change in Success  antmaze-large
+> +6% +3% +3%
+> +40%
+> +4%
+> -2%
+> +55%
+> +49%
+> +16%
+> +25%
+> +5% +3%
+> +14%
+> +10% +11%
+> CRL GC-1S GC-BC GC-TD3 HFBC
+> antmaze-giant
+> +13%
+> -2%
+> -9%
+> +2% +3%
+> +1% +1% +1%
+> +37%
+> +20%
+> +31%
+> antmaze
+> CRL GC-1S GC-BC GC-TD3 HFBC
+> -0.3
+> 0.0
+> +0.3
+> +0.6
+> +0.9
+> Percent Point Change in Success  cube-3
+> +72%
+> +82%
+> +60% +66%
+> +37%
+> +58%
+> +83% +81%
+> +19%
+> +71%
+> +49% +51%
+> +19%
+> -25%
+> -5%
+> CRL GC-1S GC-BC GC-TD3 HFBC
+> cube-4
+> +39%
+> +22%
+> +27%
+> +59%
+> +32%
+> +18%
+> +76%
+> +65%
+> +3%
+> +57%
+> +47%
+> +27%
+> +43%
+> -16%
+> +11%
+> cube
+> ActionPlan GPI CompPlan
+
+Figure 1 Percentage point change ( ↑) over zero-shot policies. We compare: action-level planning ( ActionPlan ) with a world model; generalized policy improvement (GPI) and compositional planning ( CompPlan ; ours) with GHMs. 
+
+4.4 How Does Horizon Consistency Affect GHM Learning? 
+
+Having established that compositional planning yields strong empirical gains, we now turn inward to examine one of our methodological contributions: the horizon consistency objective from § 3.2. We investigate its impact through two complementary lenses – generative fidelity and downstream planning – revealing that consistency plays distinct roles at different stages of the pipeline. 
+
+Table 3 Accuracy (EMD; ↓) of GHMs trained with our horizon consistency loss ( td-hc ) and without ( td-flow ) for discount factor γ = 0 .995 . We highlight the best performing method.   
+
+> Domain CRL GC-1S td-flow (
+
+✗) td-hc ( ✓) td-flow ( ✗) td-hc ( ✓)
+
+antmaze-medium 4.41 (0.05) 4.22 (0.06) 4.40 (0.02) 4.22 (0.03) 
+
+antmaze-large 5.24 (0.07) 4.81 (0.03) 5.12 (0.18) 4.67 (0.04) 
+
+antmaze-giant 6.77 (0.49) 5.74 (0.06) 7.29 (0.69) 5.25 (0.08) 
+
+cube-1 1.60 (0.02) 1.57 (0.03) 1.43 (0.00) 1.33 (0.03) 
+
+cube-2 2.36 (0.03) 2.23 (0.02) 1.86 (0.04) 1.71 (0.01) 
+
+cube-3 2.15 (0.02) 2.10 (0.02) 1.80 (0.04) 1.71 (0.03) 
+
+cube-4 2.41 (0.03) 2.34 (0.01) 2.13 (0.03) 2.05 (0.03) 
+
+We begin by asking whether enforcing consistency across timescales produces more accurate GHM predictions. To isolate this effect, we train two GHMs – one using td-flow and the other using td-hc – keeping all else fixed. We obtain ground-truth samples by executing 64 policy rollouts from 256 
+
+randomly selected (state, goal) pairs and resampling 
+
+2048 visited states according to t ∼ Geom (1 − γ).We then draw an equal number of samples from each GHM and compute the Earth Mover’s Distance (EMD; Rubner et al., 2000) between the two sets. As Table 3 demonstrates, consistency systematically improves accuracy at long horizons. The effect is particularly striking in antmaze , where the maze structure imposes hard constraints on reachability. For example, employing td-hc with GC-1S policies in 
+
+antmaze-giant results in a 28% reduction in EMD. Qualitatively, Figure 9 shows that td-hc on antmaze-giant leads to fewer samples erroneously traversing walls, a failure mode that compounds over long horizons. Given these accuracy improvements, one might expect correspondingly large gains in planning. Surprisingly, Table 9 tells a different story: planning success rates are nearly identical with and without consistency, averaging only a 5% relative improvement. These findings are not contradictory but rather illuminate when consistency matters most. Our planning procedure evaluates candidate sequences using effective horizons {βi}
+
+in the range of 50 − 100 steps (i.e., βi ∈ [0 .98 , 0.99] ), not the 200+ step horizons where consistency provides its 9largest accuracy gains. At these moderate timescales, the base td-flow objective already learns sufficiently accurate models to rank policies correctly. The consistency objective thus provides a margin of safety for long-horizon predictions without being strictly necessary for the planning horizons we employ in OGBench. This suggests that practitioners facing longer-horizon tasks would benefit most from the consistency loss herein. 
+
+## 5 Discussion 
+
+This work reframes pre-trained policies not as isolated controllers but as composable primitives – building blocks to be sequenced. Jumpy world models provide the mechanism: by predicting successor states for many policies across a continuum of horizons, they enable planning over behavior rather than primitive actions. Empirically, compositional planning consistently outperforms individual policies, hierarchical methods, and action-level planning, with striking gains at long horizons. Looking ahead, we see many promising directions: learning state-dependent switching probabilities, jointly learning policies and predictive models, employing more sample-efficient model-predictive control methods, and exploring jumpy world models in learned latent spaces. 
+
+## Acknowledgements 
+
+The authors thank Harley Wiltzer, Arnav Jain, Pierluca D’oro, Nate Rahn, Michael Rabbat, Yann Ollivier, Marlos C. Machado, Michael Bowling, Adam White, and Doina Precup for useful discussions that helped improve this work. MGB is supported by the Canada CIFAR AI Chair program and NSERC. Finally, this work was made possible by the Python community, particularly NumPy (Harris et al., 2020), Matplotlib (Hunter, 2007), Seaborn (Waskom, 2021), Einops (Rogozhnikov, 2022), and Mujoco (Todorov et al., 2012). 
+
+## References 
+
+Siddhant Agarwal, Harshit Sikchi, Peter Stone, and Amy Zhang. Proto successor measure: Representing the behavior space of an RL agent. In International Conference on Machine Learning (ICML) , 2025. Xinyue Ai, Yutong He, Albert Gu, Ruslan Salakhutdinov, J. Zico Kolter, Nicholas M. Boffi, and Max Simchowitz. Joint distillation for fast likelihood evaluation and sampling in flow-based models. In International Conference on Learning Representations (ICLR) , 2026. Anurag Ajay, Yilun Du, Abhi Gupta, Joshua B. Tenenbaum, Tommi S. Jaakkola, and Pulkit Agrawal. Is conditional generative modeling all you need for decision making? In International Conference on Learning Representations (ICLR) , 2023. Michael S. Albergo and Eric Vanden-Eijnden. Building normalizing flows with stochastic interpolants. In International Conference on Learning Representations, (ICLR) , 2023. Lucas N. Alegre, Agon Serifi, Ruben Grandia, David Müller, Espen Knoop, and Moritz Bächer. Amor: Adaptive character control through multi-objective reinforcement learning. In Conference on Computer Graphics and Interactive Techniques (SIGGRAPH) , 2025. Marcin Andrychowicz, Dwight Crow, Alex Ray, Jonas Schneider, Rachel Fong, Peter Welinder, Bob McGrew, Josh Tobin, Pieter Abbeel, and Wojciech Zaremba. Hindsight experience replay. In Neural Information Processing Systems (NeurIPS) , 2017. Mido Assran, Adrien Bardes, David Fan, Quentin Garrido, Russell Howes, Mojtaba Komeili, Matthew J. Muckley, Ammar Rizvi, Claire Roberts, Koustuv Sinha, Artem Zholus, Sergio Arnaud, Abha Gejji, Ada Martin, Francois Robert Hogan, Daniel Dugas, Piotr Bojanowski, Vasil Khalidov, Patrick Labatut, Francisco Massa, Marc Szafraniec, Kapil Krishnakumar, Yong Li, Xiaodong Ma, Sarath Chandar, Franziska Meier, Yann LeCun, Michael Rabbat, and Nicolas Ballas. V-JEPA 2: Self-supervised video models enable understanding, prediction and planning. CoRR ,abs/2506.09985, 2025. Pierre-Luc Bacon, Jean Harb, and Doina Precup. The option-critic architecture. In AAAI Conference on Artificial Intelligence , 2017. Akhil Bagaria, Jason K. Senthil, and George Konidaris. Skill discovery for exploration and planning using deep skill graphs. In International Conference on Machine Learning (ICML) , 2021. 
+
+10 Marco Bagatella, Matteo Pirotta, Ahmed Touati, Alessandro Lazaric, and Andrea Tirinzoni. TD-JEPA: Latent-predictive representations for zero-shot reinforcement learning. In International Conference on Learning Representa-tions (ICLR) , 2026. André Barreto, Will Dabney, Rémi Munos, Jonathan J. Hunt, Tom Schaul, David Silver, and Hado van Hasselt. Successor features for transfer in reinforcement learning. In Neural Information Processing Systems (NeurIPS) , 2017. André Barreto, Diana Borsa, Shaobo Hou, Gheorghe Comanici, Eser Aygün, Philippe Hamel, Daniel Toyama, Jonathan Hunt, Shibl Mourad, David Silver, and Doina Precup. The option keyboard: Combining skills in reinforcement learning. In Neural Information Processing Systems (NeurIPS) , 2019. Andrew G. Barto and Sridhar Mahadevan. Recent advances in hierarchical reinforcement learning. Discrete event dynamic systems , 13(4):341–379, 2003. Marc G. Bellemare, Will Dabney, and Rémi Munos. A distributional perspective on reinforcement learning. In 
+
+International Conference on Machine Learning (ICML) , 2017. Marc G. Bellemare, Will Dabney, and Mark Rowland. Distributional Reinforcement Learning . MIT Press, 2023. Kevin Black, Noah Brown, Danny Driess, Adnan Esmail, Michael Equi, Chelsea Finn, Niccolo Fusai, Lachy Groom, Karol Hausman, Brian Ichter, Szymon Jakubczak, Tim Jones, Liyiming Ke, Sergey Levine, Adrian Li-Bell, Mohith Mothukuri, Suraj Nair, Karl Pertsch, Lucy Xiaoyang Shi, James Tanner, Quan Vuong, Anna Walling, Haohuan Wang, and Ury Zhilinsky. π0: A vision-language-action flow model for general robot control. CoRR , abs/2410.24164, 2024. Kevin Black, Noah Brown, James Darpinian, Karan Dhabalia, Danny Driess, Adnan Esmail, Michael Robert Equi, Chelsea Finn, Niccolo Fusai, Manuel Y. Galliker, Dibya Ghosh, Lachy Groom, Karol Hausman, brian ichter, Szymon Jakubczak, Tim Jones, Liyiming Ke, Devin LeBlanc, Sergey Levine, Adrian Li-Bell, Mohith Mothukuri, Suraj Nair, Karl Pertsch, Allen Z. Ren, Lucy Xiaoyang Shi, Laura Smith, Jost Tobias Springenberg, Kyle Stachowicz, James Tanner, Quan Vuong, Homer Walke, Anna Walling, Haohuan Wang, Lili Yu, and Ury Zhilinsky. π0.5: a vision-language-action model with open-world generalization. In Conference on Robot Learning (CORL) , 2025. Léonard Blier. Some Principled Methods for Deep Reinforcement Learning . PhD thesis, Université Paris-Saclay, 2022. Léonard Blier, Corentin Tallec, and Yann Ollivier. Learning successor states and goal-dependent values: A mathematical viewpoint. CoRR , abs/2101.07123, 2021. Nicholas M. Boffi, Michael S. Albergo, and Eric Vanden-Eijnden. How to build a consistency model: Learning flow maps via self-distillation. In Neural Information Processing Systems (NeurIPS) , 2025. Diana Borsa, André Barreto, John Quan, Daniel J. Mankowitz, Hado van Hasselt, Rémi Munos, David Silver, and Tom Schaul. Universal successor features approximators. In International Conference on Learning Representations (ICLR) , 2019. Anthony Brohan, Noah Brown, Justice Carbajal, Yevgen Chebotar, Xi Chen, Krzysztof Choromanski, Tianli Ding, Danny Driess, Avinava Dubey, Chelsea Finn, Pete Florence, Chuyuan Fu, Montse Gonzalez Arenas, Keerthana Gopalakrishnan, Kehang Han, Karol Hausman, Alexander Herzog, Jasmine Hsu, Brian Ichter, Alex Irpan, Nikhil J. Joshi, Ryan Julian, Dmitry Kalashnikov, Yuheng Kuang, Isabel Leal, Lisa Lee, Tsang-Wei Edward Lee, Sergey Levine, Yao Lu, Henryk Michalewski, Igor Mordatch, Karl Pertsch, Kanishka Rao, Krista Reymann, Michael S. Ryoo, Grecia Salazar, Pannag Sanketi, Pierre Sermanet, Jaspiar Singh, Anikait Singh, Radu Soricut, Huong T. Tran, Vincent Vanhoucke, Quan Vuong, Ayzaan Wahid, Stefan Welker, Paul Wohlhart, Jialin Wu, Fei Xia, Ted Xiao, Peng Xu, Sichun Xu, Tianhe Yu, and Brianna Zitkovich. RT-2: vision-language-action models transfer web knowledge to robotic control. In Conference on Robot Learning (CoRL) , 2023a. Anthony Brohan, Noah Brown, Justice Carbajal, Yevgen Chebotar, Joseph Dabis, Chelsea Finn, Keerthana Gopalakr-ishnan, Karol Hausman, Alexander Herzog, Jasmine Hsu, Julian Ibarz, Brian Ichter, Alex Irpan, Tomas Jackson, Sally Jesmonth, Nikhil J. Joshi, Ryan Julian, Dmitry Kalashnikov, Yuheng Kuang, Isabel Leal, Kuang-Huei Lee, Sergey Levine, Yao Lu, Utsav Malla, Deeksha Manjunath, Igor Mordatch, Ofir Nachum, Carolina Parada, Jodilyn Peralta, Emily Perez, Karl Pertsch, Jornell Quiambao, Kanishka Rao, Michael S. Ryoo, Grecia Salazar, Pannag R. Sanketi, Kevin Sayed, Jaspiar Singh, Sumedh Sontakke, Austin Stone, Clayton Tan, Huong T. Tran, Vincent Vanhoucke, Steve Vega, Quan Vuong, Fei Xia, Ted Xiao, Peng Xu, Sichun Xu, Tianhe Yu, and Brianna Zitkovich. RT-1: robotics transformer for real-world control at scale. In Robotics: Science and Systems , 2023b. John C. Butcher. Numerical methods for ordinary differential equations . John Wiley & Sons, 2016. 
+
+11 Wilka Carvalho, Andre Saraiva, Angelos Filos, Andrew K. Lampinen, Loic Matthey, Richard L. Lewis, Honglak Lee, Satinder Singh, Danilo Jimenez Rezende, and Daniel Zoran. Combining behaviors with the successor features keyboard. In Neural Information Processing Systems (NeurIPS) , 2023. Edoardo Cetin, Ahmed Touati, and Yann Ollivier. Finer behavioral foundation models via auto-regressive features and advantage weighting. In Reinforcement Learning Conference (RLC) , 2025. Elliot Chane-Sane, Cordelia Schmid, and Ivan Laptev. Goal-conditioned reinforcement learning with imagined subgoals. In International Conference on Machine Learning (ICML) , 2021. Sydney Chapman. On the brownian displacements and thermal diffusion of grains suspended in a non-uniform fluid. 
+
+Proceedings of the Royal Society of London , 119(781):34–54, 05 1928. Chang Chen, Hany Hamed, Doojin Baek, Taegu Kang, Yoshua Bengio, and Sungjin Ahn. Extendable long-horizon planning via hierarchical multiscale diffusion. CoRR , abs/2503.20102, 2025. Ricky T. Q. Chen and Yaron Lipman. Flow matching on general geometries. In International Conference on Learning Representations (ICLR) , 2024. Will Dabney, Mark Rowland, Marc G. Bellemare, and Rémi Munos. Distributional reinforcement learning with quantile regression. In AAAI Conference on Artificial Intelligence , 2018. Peter Dayan. Improving generalization for temporal difference learning: The successor representation. Neural Computation , 1993. Peter Dayan and Geoffrey E. Hinton. Feudal reinforcement learning. In Neural Information Processing Systems (NeurIPS) , 1992. Cyrus Derman. Finite State Markovian Decision Processes . Academic Press, 1970. Thomas G. Dietterich. The MAXQ method for hierarchical reinforcement learning. In International Conference on Machine Learning (ICML) , 1998. Benjamin Eysenbach, Ruslan Salakhutdinov, and Sergey Levine. Search on the replay buffer: Bridging planning and reinforcement learning. In Neural Information Processing Systems (NeurIPS) , 2019. Benjamin Eysenbach, Tianjun Zhang, Sergey Levine, and Ruslan Salakhutdinov. Contrastive learning as goal-conditioned reinforcement learning. In Neural Information Processing Systems (NeurIPS) , 2022. Kuan Fang, Patrick Yin, Ashvin Nair, and Sergey Levine. Planning to practice: Efficient online fine-tuning by composing goals in latent space. In International Conference on Intelligent Robots and Systems (IROS) , 2022. Jesse Farebrother, Matteo Pirotta, Andrea Tirinzoni, Rémi Munos, Alessandro Lazaric, and Ahmed Touati. Temporal difference flows. In International Conference on Machine Learning (ICML) , 2025. Kevin Frans, Seohong Park, Pieter Abbeel, and Sergey Levine. Unsupervised zero-shot reinforcement learning via functional reward encodings. In International Conference on Machine Learning (ICML) , 2024. Kevin Frans, Danijar Hafner, Sergey Levine, and Pieter Abbeel. One step diffusion via shortcut models. In International Conference on Learning Representations (ICLR) , 2025. Dror Freirich, Tzahi Shimkin, Ron Meir, and Aviv Tamar. Distributional multivariate policy evaluation and exploration with the Bellman GAN. In International Conference on Machine Learning (ICML) , 2019. Scott Fujimoto and Shixiang Shane Gu. A minimalist approach to offline reinforcement learning. In Neural Information Processing Systems (NeurIPS) , 2021. Scott Fujimoto, Herke van Hoof, and David Meger. Addressing function approximation error in actor-critic methods. In International Conference on Machine Learning (ICML) , 2018. Itai Gat, Tal Remez, Neta Shaul, Felix Kreuk, Ricky T. Q. Chen, Gabriel Synnaeve, Yossi Adi, and Yaron Lipman. Discrete flow matching. In Neural Information Processing Systems (NeurIPS) , 2024. Zhengyang Geng, Mingyang Deng, Xingjian Bai, J Zico Kolter, and Kaiming He. Mean flows for one-step generative modeling. In Neural Information Processing Systems (NeurIPS) , 2025. Dibya Ghosh, Abhishek Gupta, Ashwin Reddy, Justin Fu, Coline Manon Devin, Benjamin Eysenbach, and Sergey Levine. Learning to reach goals via iterated supervised learning. In International Conference on Learning Representations (ICLR) , 2021. 
+
+12 Dibya Ghosh, Homer Rich Walke, Karl Pertsch, Kevin Black, Oier Mees, Sudeep Dasari, Joey Hejna, Tobias Kreiman, Charles Xu, Jianlan Luo, You Liang Tan, Lawrence Yunliang Chen, Quan Vuong, Ted Xiao, Pannag R. Sanketi, Dorsa Sadigh, Chelsea Finn, and Sergey Levine. Octo: An open-source generalist robot policy. In Robotics: Science and Systems , 2024. Michael Gimelfarb, Andre Barreto, Scott Sanner, and Chi-Guhn Lee. Risk-aware transfer in reinforcement learning using successor features. In Neural Information Processing Systems (NeurIPS) , 2021. Google DeepMind. Gemini 2.5: Pushing the frontier with advanced reasoning, multimodality, long context, and next generation agentic capabilities. CoRR , abs/2507.06261, 2025. Nico Gürtler and Georg Martius. Long-horizon planning with predictable skills. In Reinforcement Learning Conference (RLC) , 2025. Nico Gürtler, Dieter Büchler, and Georg Martius. Hierarchical reinforcement learning with timed subgoals. In Neural Information Processing Systems (NeurIPS) , 2021. Danijar Hafner, Kuang-Huei Lee, Ian Fischer, and Pieter Abbeel. Deep hierarchical planning from pixels. Neural Information Processing Systems (NeurIPS) , 2022. Charles R. Harris, Millman K. Jarrod, Stéfan J. van der Walt, Ralf Gommers, Pauli Virtanen, David Cournapeau, Eric Wieser, Julian Taylor, Sebastian Berg, Nathaniel J. Smith, Robert Kern, Matti Picus, Stephan Hoyer, Marten H. van Kerkwijk, Matthew Brett, Allan Haldane, Jaime Fernández del Río, Mark Wiebe, Pearu Peterson, Pierre Gérard-Marchant, Kevin Sheppard, Tyler Reddy, Warren Weckesser, Hameer Abbasi, Christoph Gohlke, and Travis E. Oliphant. Array programming with numpy. Nature , 585(7825):357–362, 2020. Jonathan Ho, Ajay Jain, and Pieter Abbeel. Denoising diffusion probabilistic models. In Neural Information Processing Systems (NeurIPS) , 2020. Chin-Wei Huang, Milad Aghajohari, Joey Bose, Prakash Panangaden, and Aaron C. Courville. Riemannian diffusion models. In Neural Information Processing Systems (NeurIPS) , 2022. John D. Hunter. Matplotlib: A 2d graphics environment. Computing in Science & Engineering , 9(3):90–95, 2007. Michael Janner, Igor Mordatch, and Sergey Levine. Gamma-models: Generative temporal difference learning for infinite-horizon prediction. In Neural Information Processing Systems (NeurIPS) , 2020. Michael Janner, Yilun Du, Joshua B. Tenenbaum, and Sergey Levine. Planning with diffusion for flexible behavior synthesis. In International Conference on Machine Learning (ICML) , 2022. Yuu Jinnai, David Abel, David Hershkowitz, Michael Littman, and George Konidaris. Finding options that minimize planning time. In International Conference on Machine Learning (ICML) , 2019. Leslie Kaelbling. Hierarchical learning in stochastic domains: Preliminary results. In International Conference on Machine Learning (ICML) , 1993a. Leslie Kaelbling. Learning to achieve goals. In International Joint Conference on Artificial Intelligence (IJCAI) , 1993b. Kacper Kapusniak, Peter Potaptchik, Teodora Reu, Leo Zhang, Alexander Tong, Michael M. Bronstein, Joey Bose, and Francesco Di Giovanni. Metric flow matching for smooth interpolations on the data manifold. In Neural Information Processing Systems (NeurIPS) , 2024. Diederik P. Kingma and Jimmy Ba. Adam: A method for stochastic optimization. In International Conference on Learning Representations (ICLR) , 2015. Martin Klissarov, Akhil Bagaria, Ziyan Luo, George Konidaris, Doina Precup, and Marlos C. Machado. Discovering temporal structure: An overview of hierarchical reinforcement learning. CoRR , abs/2506.14045, 2025. Andrei Kolmogoroff. Über die analytischen methoden in der wahrscheinlichkeitsrechnung. Mathematische Annalen ,104(1):415–458, 1931. Tejas D. Kulkarni, Karthik Narasimhan, Ardavan Saeedi, and Josh Tenenbaum. Hierarchical deep reinforcement learning: Integrating temporal abstraction and intrinsic motivation. In Neural Information Processing Systems (NeurIPS) , 2016. Chieh-Hsin Lai, Yang Song, Dongjun Kim, Yuki Mitsufuji, and Stefano Ermon. The principles of diffusion models. 
+
+CoRR , abs/2510.21890, 2025. 
+
+13 Kyowoon Lee and Jaesik Choi. State-covering trajectory stitching for diffusion planners. In Neural Information Processing Systems (NeurIPS) , 2025. Sergey Levine, Aviral Kumar, George Tucker, and Justin Fu. Offline reinforcement learning: Tutorial, review, and perspectives on open problems. CoRR , abs/2005.01643, 2020. Andrew Levy, Robert Platt, and Kate Saenko. Hierarchical reinforcement learning with hindsight. In International Conference on Learning Representations (ICLR) , 2019. Yitang Li, Zhengyi Luo, Tonghe Zhang, Cunxi Dai, Anssi Kanervisto, Andrea Tirinzoni, Haoyang Weng, Kris Kitani, Mateusz Guzek, Ahmed Touati, Alessandro Lazaric, Matteo Pirotta, and Guanya Shi. BFM-zero: A promptable behavioral foundation model for humanoid control using unsupervised reinforcement learning. In International Conference on Learning Representations (ICLR) , 2026. Yaron Lipman, Ricky T. Q. Chen, Heli Ben-Hamu, Maximilian Nickel, and Matthew Le. Flow matching for generative modeling. In International Conference on Learning Representations (ICLR) , 2023. Chunlok Lo, Kevin Roice, Parham Mohammad Panahi, Scott M. Jordan, Adam White, Gabor Mihucz, Farzane Aminmansour, and Martha White. Goal-space planning with subgoal models. Journal of Machine Learning Research (JMLR) , 25(330):1–57, 2024. Yunhao Luo, Utkarsh A. Mishra, Yilun Du, and Danfei Xu. Generative trajectory stitching through diffusion composition. In Neural Information Processing Systems (NeurIPS) , 2025. Zhengyi Luo, Jinkun Cao, Josh Merel, Alexander Winkler, Jing Huang, Kris M. Kitani, and Weipeng Xu. Universal humanoid motion representations for physics-based control. In International Conference on Learning Representations (ICLR) , 2024. Corey Lynch, Mohi Khansari, Ted Xiao, Vikash Kumar, Jonathan Tompson, Sergey Levine, and Pierre Sermanet. Learning latent plans from play. In Conference on Robot Learning (CoRL) , 2019. Marlos C. Machado, Marc G. Bellemare, and Michael H. Bowling. A laplacian framework for option discovery in reinforcement learning. In International Conference on Machine Learning (ICML) , 2017. Marlos C. Machado, Clemens Rosenbaum, Xiaoxiao Guo, Miao Liu, Gerald Tesauro, and Murray Campbell. Eigenoption discovery through the deep successor representation. In International Conference on Learning Representations (ICLR) , 2018. Marlos C. Machado, André Barreto, Doina Precup, and Michael Bowling. Temporal abstraction in reinforcement learning with the successor representation. Journal of Machine Learning Research (JMLR) , 24:80:1–80:69, 2023. Josef Matyáš. Random optimization. Automation and Remote control , 26(2):246–253, 1965. Meta. The llama 3 herd of models. CoRR , abs/2407.21783, 2024. Utkarsh A. Mishra, Shangjie Xue, Yongxin Chen, and Danfei Xu. Generative skill chaining: Long-horizon skill planning with diffusion models. In Conference on Robot Learning (CoRL) , 2023. Diganta Misra. Mish: A self regularized non-monotonic neural activation function. CoRR , abs/1908.08681, 2019. Volodymyr Mnih, Koray Kavukcuoglu, David Silver, Andrei A. Rusu, Joel Veness, Marc G. Bellemare, Alex Graves, Martin Riedmiller, Andreas K. Fidjeland, Georg Ostrovski, Stig Petersen, Charles Beattie, Amir Sadik, Ioannis Antonoglou, Helen King, Dharshan Kumaran, Daan Wierstra, Shane Legg, and Demis Hassabis. Human-level control through deep reinforcement learning. Nature , 518(7540):529–533, 2015. Kevin Murphy. Reinforcement learning: An overview. CoRR , abs/2412.05265, 2024. Ofir Nachum, Shixiang Shane Gu, Honglak Lee, and Sergey Levine. Data-efficient hierarchical reinforcement learning. In Neural Information Processing Systems (NeurIPS) , 2018. Suraj Nair and Chelsea Finn. Hierarchical foresight: Self-supervised learning of long-horizon tasks via visual subgoal generation. In International Conference on Learning Representations (ICLR) , 2020. Soroush Nasiriany, Vitchyr Pong, Steven Lin, and Sergey Levine. Planning with goal-conditioned policies. In Neural Information Processing Systems (NeurIPS) , 2019. NVIDIA. GR00T N1: an open foundation model for generalist humanoid robots. CoRR , abs/2503.14734, 2025. OpenAI. OpenAI o1 system card. CoRR , abs/2412.16720, 2024. 
+
+14 Seohong Park, Dibya Ghosh, Benjamin Eysenbach, and Sergey Levine. Hiql: Offline goal-conditioned rl with latent states as actions. In Neural Information Processing Systems (NeurIPS) , 2023. Seohong Park, Tobias Kreiman, and Sergey Levine. Foundation policies with hilbert representations. In International Conference on Machine Learning (ICML) , 2024. Seohong Park, Kevin Frans, Benjamin Eysenbach, and Sergey Levine. Ogbench: Benchmarking offline goal-conditioned RL. In International Conference on Learning Representations (ICLR) , 2025a. Seohong Park, Kevin Frans, Deepinder Mann, Benjamin Eysenbach, Aviral Kumar, and Sergey Levine. Horizon reduction makes RL scalable. In Neural Information Processing Systems (NeurIPS) , 2025b. Seohong Park, Qiyang Li, and Sergey Levine. Flow q-learning. In International Conference on Machine Learning (ICML) , 2025c. Ronald Parr and Stuart Russell. Reinforcement learning with hierarchies of machines. In Neural Information Processing Systems (NeurIPS) , 1997. Xue Bin Peng, Ze Ma, Pieter Abbeel, Sergey Levine, and Angjoo Kanazawa. AMP: adversarial motion priors for stylized physics-based character control. ACM Transactions on Graphics , 40(4):144:1–144:20, 2021. Xue Bin Peng, Yunrong Guo, Lina Halper, Sergey Levine, and Sanja Fidler. ASE: large-scale reusable adversarial skill embeddings for physically simulated characters. ACM Transactions on Graphics , 41(4):94:1–94:17, 2022. Ethan Perez, Florian Strub, Harm de Vries, Vincent Dumoulin, and Aaron C. Courville. Film: Visual reasoning with a general conditioning layer. In AAAI Conference on Artificial Intelligence , 2018. Marek Petrik and Bruno Scherrer. Biasing approximate dynamic programming with a lower discount factor. In Neural Information Processing Systems (NeurIPS) , 2008. Physical Intelligence, Ali Amin, Raichelle Aniceto, Ashwin Balakrishna, Kevin Black, Ken Conley, Grace Connors, James Darpinian, Karan Dhabalia, Jared DiCarlo, Danny Driess, Michael Equi, Adnan Esmail, Yunhao Fang, Chelsea Finn, Catherine Glossop, Thomas Godden, Ivan Goryachev, Lachy Groom, Hunter Hancock, Karol Hausman, Gashon Hussein, Brian Ichter, Szymon Jakubczak, Rowan Jen, Tim Jones, Ben Katz, Liyiming Ke, Chandra Kuchi, Marinda Lamb, Devin LeBlanc, Sergey Levine, Adrian Li-Bell, Yao Lu, Vishnu Mano, Mohith Mothukuri, Suraj Nair, Karl Pertsch, Allen Z. Ren, Charvi Sharma, Lucy Xiaoyang Shi, Laura Smith, Jost Tobias Springenberg, Kyle Stachowicz, Will Stoeckle, Alex Swerdlow, James Tanner, Marcel Torne, Quan Vuong, Anna Walling, Haohuan Wang, Blake Williams, Sukwon Yoo, Lili Yu, Ury Zhilinsky, and Zhiyuan Zhou. π∗
+
+> 0.6
+
+: a VLA that learns from experience. CoRR , abs/2511.14759, 2025. Matteo Pirotta, Andrea Tirinzoni, Ahmed Touati, Alessandro Lazaric, and Yann Ollivier. Fast imitation via behavior foundation models. In International Conference on Learning Representations (ICLR) , 2024. Doina Precup. Temporal abstraction in reinforcement learning . PhD thesis, University of Massachusetts Amherst, 2000. Doina Precup and Richard S. Sutton. Multi-time models for temporally abstract planning. In Neural Information Processing Systems (NeurIPS) , 1997. Doina Precup, Richard S. Sutton, and Satinder Singh. Planning with closed-loop macro actions. In AAAI Fall Symposium on Model-directed Autonomous Systems , 1997. Doina Precup, Richard S. Sutton, and Satinder Singh. Theoretical results on reinforcement learning with temporally abstract options. In European conference on machine learning , 1998. Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, Gretchen Krueger, and Ilya Sutskever. Learning transferable visual models from natural language supervision. In International Conference on Machine Learning (ICML) , 2021. Nikhila Ravi, Valentin Gabeur, Yuan-Ting Hu, Ronghang Hu, Chaitanya Ryali, Tengyu Ma, Haitham Khedr, Roman Rädle, Chloé Rolland, Laura Gustafson, Eric Mintun, Junting Pan, Kalyan Vasudev Alwala, Nicolas Carion, Chao-Yuan Wu, Ross B. Girshick, Piotr Dollár, and Christoph Feichtenhofer. SAM 2: Segment anything in images and videos. In International Conference on Learning Representations (ICLR) , 2025. Rafael Rodriguez-Sanchez and George Konidaris. Learning abstract world model for value-preserving planning with options. In Reinforcement Learning Conference (RLC) , 2024. Alex Rogozhnikov. Einops: Clear and reliable tensor manipulations with einstein-like notation. In International Conference on Learning Representations (ICLR) , 2022. 
+
+15 Olaf Ronneberger, Philipp Fischer, and Thomas Brox. U-net: Convolutional networks for biomedical image segmentation. In Medical Image Computing and Computer-Assisted Intervention (MICCAI) , volume 9351, pages 234–241, 2015. Yossi Rubner, Carlo Tomasi, and Leonidas J. Guibas. The earth mover’s distance as a metric for image retrieval. 
+
+International Journal of Computer Vision , 40(2):99–121, 2000. Tom Schaul, Daniel Horgan, Karol Gregor, and David Silver. Universal value function approximators. In International Conference on Machine Learning (ICML) , 2015. Jürgen Schmidhuber. Learning to generate sub-goals for action sequences. In Artificial neural networks , pages 967–972, 1991. Liam Schramm and Abdeslam Boularias. Bellman diffusion models. CoRR , abs/2407.12163, 2024. Lucy Xiaoyang Shi, Joseph J Lim, and Youngwoon Lee. Skill-based model-based reinforcement learning. In Conference on Robot Learning (CoRL) , 2022. Harshit Sikchi, Siddhant Agarwal, Pranaya Jajoo, Samyak Parajuli, Caleb Chuck, Max Rudolph, Peter Stone, Amy Zhang, and Scott Niekum. RLZero: Direct policy inference from language without in-domain supervision. In Neural Information Processing Systems (NeurIPS) , 2025a. Harshit Sikchi, Andrea Tirinzoni, Ahmed Touati, Yingchen Xu, Anssi Kanervisto, Scott Niekum, Amy Zhang, Alessandro Lazaric, and Matteo Pirotta. Fast adaptation with behavioral foundation models. In Reinforcement Learning Conference (RLC) , 2025b. David Silver and Kamil Ciosek. Compositional planning using optimal option models. In International Conference on Machine Learning (ICML) , 2012. Satinder Singh. Transfer of learning by composing solutions of elemental sequential tasks. Machine Learning , 8:323–339, 1992. Jascha Sohl-Dickstein, Eric Weiss, Niru Maheswaranathan, and Surya Ganguli. Deep unsupervised learning using nonequilibrium thermodynamics. In International Conference on Machine Learning (ICML) , 2015. Yang Song, Jascha Sohl-Dickstein, Diederik P. Kingma, Abhishek Kumar, Stefano Ermon, and Ben Poole. Score-based generative modeling through stochastic differential equations. In International Conference on Learning Representations (ICLR) , 2021. Richard S. Sutton. TD models: Modeling the world at a mixture of time scales. In International Conference on Machine Learning (ICML) , 1995. Richard S. Sutton, Doina Precup, and Satinder Singh. Between mdps and semi-mdps: A framework for temporal abstraction in reinforcement learning. Artificial intelligence , 112(1-2):181–211, 1999. Richard S. Sutton, Marlos C. Machado, G. Zacharias Holland, David Szepesvari, Finbarr Timbers, Brian Tanner, and Adam White. Reward-respecting subtasks for model-based reinforcement learning. Artificial Intelligence , 324: 104001, 2023. Chen Tessler, Yoni Kasten, Yunrong Guo, Shie Mannor, Gal Chechik, and Xue Bin Peng. CALM: conditional adversarial latent models for directable virtual characters. In ACM SIGGRAPH , 2023. Chen Tessler, Yunrong Guo, Ofir Nabati, Gal Chechik, and Xue Bin Peng. Maskedmimic: Unified physics-based character control through masked motion inpainting. ACM Transactions on Graphics , 43(6):209:1–209:21, 2024. Shantanu Thakoor, Mark Rowland, Diana Borsa, Will Dabney, Rémi Munos, and André Barreto. Generalised policy improvement with geometric policy composition. In International Conference on Machine Learning (ICML) , 2022. Andrea Tirinzoni, Ahmed Touati, Jesse Farebrother, Mateusz Guzek, Anssi Kanervisto, Yingchen Xu, Alessandro Lazaric, and Matteo Pirotta. Zero-shot whole-body humanoid control via behavioral foundation models. In 
+
+International Conference on Learning Representations (ICLR) , 2025. Emanuel Todorov, Tom Erez, and Yuval Tassa. Mujoco: A physics engine for model-based control. In International Conference on Intelligent Robots and Systems (IROS) , 2012. Manan Tomar, Philippe Hansen-Estruch, Philip Bachman, Alex Lamb, John Langford, Matthew E Taylor, and Sergey Levine. Video occupancy models. CoRR , abs/2407.09533, 2024. Ahmed Touati and Yann Ollivier. Learning one representation to optimize all rewards. In Neural Information Processing Systems (NeurIPS) , 2021. 
+
+16 Ahmed Touati, Jérémy Rapin, and Yann Ollivier. Does zero-shot reinforcement learning exist? In International Conference on Learning Representations (ICLR) , 2023. Aäron van den Oord, Yazhe Li, and Oriol Vinyals. Representation learning with contrastive predictive coding. CoRR ,abs/1807.03748, 2018. Alexander Sasha Vezhnevets, Simon Osindero, Tom Schaul, Nicolas Heess, Max Jaderberg, David Silver, and Koray Kavukcuoglu. Feudal networks for hierarchical reinforcement learning. In International Conference on Machine Learning (ICML) , 2017. Pascal Vincent. A connection between score matching and denoising autoencoders. Neural Computation , 23(7): 1661–1674, 2011. Michael L. Waskom. Seaborn: Statistical data visualization. Journal of Open Source Software , 6(60):3021, 2021. Harley Wiltzer, Jesse Farebrother, Arthur Gretton, and Mark Rowland. Foundations of multivariate distributional reinforcement learning. In Neural Information Processing Systems (NeurIPS) , 2024a. Harley Wiltzer, Jesse Farebrother, Arthur Gretton, Yunhao Tang, André Barreto, Will Dabney, Marc G. Bellemare, and Mark Rowland. A distributional analogue to the successor representation. In International Conference on Machine Learning (ICML) , 2024b. Runzhe Wu, Masatosh Uehara, and Wen Sun. Distributional offline policy evaluation with predictive error guarantees. In International Conference on Machine Learning (ICML) , 2023. Kevin Xie, Homanga Bharadhwaj, Danijar Hafner, Animesh Garg, and Florian Shkurti. Latent skill planning for exploration and transfer. In International Conference on Learning Representations (ICLR) , 2021. Jaesik Yoon, Hyeonseo Cho, Doojin Baek, Yoshua Bengio, and Sungjin Ahn. Monte carlo tree diffusion for system 2 planning. In International Conference on Machine Learning (ICML) , 2025a. Jaesik Yoon, Hyeonseo Cho, Yoshua Bengio, and Sungjin Ahn. Fast monte carlo tree diffusion: 100 × speedup via parallel and sparse planning. In Neural Information Processing Systems (NeurIPS) , 2025b. Jingwei Zhang, Jost Tobias Springenberg, Arunkumar Byravan, Leonard Hasenclever, Abbas Abdolmaleki, Dushyant Rao, Nicolas Heess, and Martin A. Riedmiller. Leveraging jumpy models for planning and fast learning in robotic domains. CoRR , abs/2302.12617, 2023. Pushi Zhang, Xiaoyu Chen, Li Zhao, Wei Xiong, Tao Qin, and Tie-Yan Liu. Distributional reinforcement learning for multi-dimensional reward functions. In Neural Information Processing Systems (NeurIPS) , 2021. Chongyi Zheng, Seohong Park, Sergey Levine, and Benjamin Eysenbach. Intention-conditioned flow occupancy models. In International Conference on Learning Representations (ICLR) , 2026. Qinqing Zheng, Matt Le, Neta Shaul, Yaron Lipman, Aditya Grover, and Ricky T. Q. Chen. Guided flows for generative modeling and decision making. CoRR , abs/2311.13443, 2023. Chuning Zhu, Xinqi Wang, Tyler Han, Simon S. Du, and Abhishek Gupta. Distributional successor features enable zero-shot policy optimization. In Neural Information Processing Systems (NeurIPS) , 2024. 
+
+17 Appendices 
+
+Appendix A Extended Related Works 18 Appendix B Algorithms 20 
+
+Algorithm 1: Temporal Difference Flows with Horizon Consistency . . . . . . . . . . . . . . . . . . 20 Algorithm 2: Compositional Planning with Jumpy World Models . . . . . . . . . . . . . . . . . . . 21 Algorithm 3: Goal-Conditioned Proposal . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 21 Algorithm 4: Unconditional Proposal . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 21 
+
+Appendix C Theoretical Results 22 
+
+C.1 Multi-Timescale Temporal Difference Flows with Horizon Consistency . . . . . . . . . . . . . 23 
+
+Appendix D Additional Results 25 
+
+D.1 Compositional Planning / Zero-Shot Results . . . . . . . . . . . . . . . . . . . . . . . . . . . . 25 D.2 Compositional Planning / GPI / Action Planning Results . . . . . . . . . . . . . . . . . . . . 27 D.3 Ablation on the Planning Frequency . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 29 D.4 Ablation on the Planning Objective . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 30 D.5 Ablation on the Proposal Distribution . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 31 D.6 Ablation on the Consistency Objective . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 32 
+
+Appendix E Qualitative Geometric Horizon Model Samples 34 Appendix F Experimental Details 35 
+
+F.1 Base Policies & Hyperparameters . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 35 F.2 Geometric Horizon Model Hyperparameters . . . . . . . . . . . . . . . . . . . . . . . . . . . . 37 F.3 Planning Hyperparameters . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 38 
+
+## A Extended Related Works  
+
+> Successor Measure
+
+Methods that learn (discounted) state occupancies employing temporal difference learning (Sutton, 1995) date back to the successor representation (Dayan, 1993) with more recent extensions like successor features (Barreto et al., 2017) and the successor measure (Blier et al., 2021; Blier, 2022). Janner et al. (2020) was the first to introduce a generative model of the successor measure with γ-models also referred to as geometric horizon models (Thakoor et al., 2022). Wiltzer et al. (2024b) additionally introduced δ-models that learn a distribution over γ-models enabling applications in distributional RL (Bellemare et al., 2017, 2023; Dabney et al., 2018). Many generative modeling techniques have been applied to learn these models, including GANs (Janner et al., 2020; Wiltzer et al., 2024b), normalizing flows (Janner et al., 2020), VAEs (Thakoor et al., 2022; Tomar et al., 2024), flow matching (Farebrother et al., 2025; Zheng et al., 2026), and diffusion (Schramm and Boularias, 2024; Farebrother et al., 2025). Closely related is work on distributional successor features also known as multi-variate distributional RL (Freirich et al., 2019; Gimelfarb et al., 2021; Zhang et al., 2021; Wu et al., 2023; Wiltzer et al., 2024a; Zhu et al., 2024), that involves modeling the distribution over cumulative finite-dimensional features induced by a policy. From a generative modeling perspective, our work generalizes temporal difference flows (Farebrother et al., 2025) and shows how long-horizon predictions can be improved by training across multiple timescales with a novel horizon consistency objective. 18 Additionally, our compositional framework can be viewed as a generalization of Geometric Generalized Policy Improvement (GGPI; Thakoor et al., 2022) to arbitrary switching probabilities; however, our concrete formulation and empirical evaluation differ substantially from Thakoor et al. (2022). First, Thakoor et al. (2022) considers only four pre-trained policies in practice, and learn two separate GHMs with effective horizons of 5 and 10 steps respectively. Their experiments also restrict composition to sequences of only two policies. In contrast, we learn GHM models conditioned on a continuous family of policies and timescales with horizons up to 25 × longer, and evaluate GSPs with lengths ranging from 3 to 24 policies. As a result, our work not only enables a richer class of geometric switching policies but also performs a more comprehensive empirical validation of these techniques on challenging long-horizon tasks where temporal abstraction is most important.  
+
+> Planning With Temporal Abstractions
+
+Several prior works have explored planning over subgoals or waypoints to solve long-horizon tasks (e.g., Nasiriany et al., 2019; Eysenbach et al., 2019; Nair and Finn, 2020; Chane-Sane et al., 2021; Fang et al., 2022; Hafner et al., 2022; Lo et al., 2024; Gürtler and Martius, 2025). These methods typically involve learning sub-goal conditioned policies together with a high-level dynamics model that predicts the outcomes of reaching these subgoals k steps in the future, then employ model predictive control to select subgoal sequences. In contrast, GHMs model the entire state-occupancy distribution rather than a fixed 
+
+k-step lookahead, allowing planning over arbitrary reward functions rather than just goal-conditioned tasks. A parallel line of work employs diffusion models (Vincent, 2011; Sohl-Dickstein et al., 2015; Ho et al., 2020; Song et al., 2021; Lai et al., 2025) for trajectory-level planning (e.g., Janner et al., 2022; Ajay et al., 2023; Zheng et al., 2023; Chen et al., 2025; Yoon et al., 2025a,b; Luo et al., 2025; Lee and Choi, 2025). Rather than modeling policy-induced dynamics, these methods train generative models over trajectory segments and perform planning within the denoising process. Execution then relies on inverse dynamics models to extract actions from planned state sequences. While powerful, this paradigm has notable limitations: (i) it requires learning accurate inverse dynamics; (ii) planning quality depends heavily on the trajectory distribution in the training data rather than on the capabilities of any particular policy; and (iii) these methods often assume access to oracle goal representations during the denoising process. In contrast, our work is policy-grounded: it directly composes the behaviors of pre-trained policies by predicting their induced state occupancies, rather than planning over abstract trajectory segments. This makes our approach agnostic to the policy class and avoids inverse dynamics entirely since actions are sampled directly from the base policies. Closer to our approach, are methods that learn dynamics models over temporally extended behaviors (e.g., Xie et al., 2021; Shi et al., 2022; Zhang et al., 2023; Mishra et al., 2023; Gürtler and Martius, 2025). These methods learn general latent skills together with a high-level dynamics model predicting the outcomes of their execution (more precisely the states reached a fixed number of steps in the future), and use MPC to plan over these skills. However, these approaches suffer from the same limitations as the k-step subgoal methods discussed above. While we only report experiments for goal-based policies, CompPlan also enables planning on top of any set of parameterized skills or policies, for example, those learned via unsupervised RL methods (Borsa et al., 2019; Touati and Ollivier, 2021; Touati et al., 2023; Park et al., 2024; Frans et al., 2024; Cetin et al., 2025; Agarwal et al., 2025; Tirinzoni et al., 2025; Sikchi et al., 2025b,a; Bagatella et al., 2026). Finally, our work connects to both the options framework (Sutton et al., 1999; Precup, 2000) and hierarchical RL (Schmidhuber, 1991; Kaelbling, 1993a; Parr and Russell, 1997; Barto and Mahadevan, 2003; Klissarov et al., 2025), which share a focus on temporal abstraction and multi-level decision making. Prior work has explored planning with options (e.g., Silver and Ciosek, 2012; Jinnai et al., 2019; Barreto et al., 2019; Carvalho et al., 2023; Rodriguez-Sanchez and Konidaris, 2024) or learning policies and value functions at multiple levels of abstraction (e.g., Precup and Sutton, 1997; Precup et al., 1997, 1998; Dayan and Hinton, 1992; Dietterich, 1998; Vezhnevets et al., 2017; Kulkarni et al., 2016; Gürtler et al., 2021; Nachum et al., 2018; Levy et al., 2019; Park et al., 2023, 2025b). Our compositional planning method can be viewed both as planning over options with a simple termination condition – where each policy terminates after a random number of steps – and as a hierarchical RL method that replaces the high-level policy with a test-time planning procedure. 19 B Algorithms 
+
+We present the full td-hc algorithm along with CompPlan and the two proposal distributions outlined herein. 
+
+Algorithm 1 Temporal Difference Flows with Horizon Consistency 
+
+1: Inputs : offline dataset D, policy π, batch size K, Polyak coefficient ζ, randomly initialized weights θ, learning rate 
+
+η, maximum discount factor γmax ∈ [0 , 1) , horizon consistency proportion τc ∈ [0 , 1] .
+
+2: for n = 1 , . . . do 
+
+3: Sample mini-batch {(Sk , A k , S ′ 
+
+> k
+
+, A ′ 
+
+> k
+
+)}Kk=1 from D
+
+4: for k = 1 , . . . , K do 
+
+5: tk ∼ U ([0 , 1]) 
+
+6: γk ∼ U ([0 , γ max ]) 
+
+7: 8: # One-Step Term 
+
+9: X0 ∼ p0(·)
+
+10: →
+
+Xtk ← (1 − tk )X0 + tk S′
+
+> k
+
+11: 
+
+> →
+
+ℓk (θ) = vtk ( →
+
+Xtk | Sk , A k , γk ; θ) − (S′ 
+
+> k
+
+− X0) 2
+
+12: 13: if k ≤ ⌈ K · τc⌉ then 
+
+14: βk ∼ U ([0 , γk ]) 
+
+15: # β-Bootstrap Term 
+
+16: X0 ∼ p0(·)
+
+17: ↷
+
+X β 
+
+> tk
+
+← ψtk (X0 | S′ 
+
+> k
+
+, A ′ 
+
+> k
+
+, βk ; ¯θ)
+
+18: 
+
+> ↷
+
+ℓ β 
+
+> k
+
+(θ) = vtk ( ↷
+
+X β 
+
+> tk
+
+| Sk , A k , γk ; θ) − vtk ( ↷
+
+X β 
+
+> tk
+
+| S′ 
+
+> k
+
+, A ′ 
+
+> k
+
+, βk ; ¯θ) 2
+
+19: # γ-Bootstrap Term 
+
+20: (X0, X ′′  
+
+> 0
+
+) ∼ p0(·)
+
+21: S′′  
+
+> k
+
+← ψ1(X′′  
+
+> 0
+
+| S′ 
+
+> k
+
+, A ′ 
+
+> k
+
+, βk ; ¯θ)
+
+22: A′′  
+
+> k
+
+∼ π(· | S′′  
+
+> k
+
+)
+
+23: ↷
+
+X γ 
+
+> tk
+
+← ψtk (X0 | S′′  
+
+> k
+
+, A ′′  
+
+> k
+
+, γk ; ¯θ)
+
+24: 
+
+> ↷
+
+ℓ γ 
+
+> k
+
+(θ) = vtk ( ↷
+
+X γ 
+
+> tk
+
+| Sk , A k , γk ; θ) − vtk ( ↷
+
+X γ 
+
+> tk
+
+| S′′  
+
+> k
+
+, A ′′  
+
+> k
+
+, γk ; ¯θ) 2
+
+25: # Mixture Loss 
+
+26: ℓk (θ) = (1 − γk )→
+
+ℓk (θ) + γk 1−γk
+
+> 1−βk
+> ↷
+
+ℓ β 
+
+> k
+
+(θ) + γk γk −βk
+
+> 1−βk
+> ↷
+
+ℓ γ 
+
+> k
+
+(θ)
+
+27: else 
+
+28: # γ-Bootstrap Term 
+
+29: X0 ∼ p0(·)
+
+30: ↷
+
+X γ 
+
+> tk
+
+← ψtk (X0 | S′ 
+
+> k
+
+, A ′ 
+
+> k
+
+, γk ; ¯θ)
+
+31: 
+
+> ↷
+
+ℓ γ 
+
+> k
+
+(θ) = vtk ( ↷
+
+X γ 
+
+> tk
+
+| Sk , A k , γk ; θ) − vtk ( ↷
+
+X γ 
+
+> tk
+
+| S′ 
+
+> k
+
+, A ′ 
+
+> k
+
+, γk ; ¯θ) 2
+
+32: # Mixture Loss 
+
+33: ℓk (θ) = (1 − γk )→
+
+ℓk (θ) + γk
+
+> ↷
+
+ℓ γ 
+
+> k
+
+(θ)
+
+34: end if 
+
+35: end for 
+
+36: # Compute loss 
+
+37: ℓ(θ) = 1
+
+> K
+
+PKk=1 ℓk (θ)
+
+38: # Perform gradient step 
+
+39: θ ← θ − η∇θ ℓ(θ)
+
+40: # Update parameters of target vector field 
+
+41: ¯θ ← ζ ¯θ + (1 − ζ)θ
+
+42: end for 
+
+20 Algorithm 2 Compositional Planning with Jumpy World Models 
+
+1: Inputs : parameterized class of policies {πz }z∈Z, geometric horizon model mπz 
+
+> γ
+
+, policy sequence length K, proposal distribution ρ : S → P(ZK ), number of proposals M , number of monte-carlo samples N , reward function r,effective discount factors {βk }Kk=1 , mixture weights {wk }Kk=1 
+
+2: function CompPlan (s)
+
+3: for i = 1 , . . . , M do 
+
+4: # Sample policy sequence from proposal distribution 
+
+5: (z(i)1 , . . . , z (i) 
+
+> K
+
+) ∼ ρ(· | s)
+
+6: 7: # Sample initial action 
+
+8: a(i)1 ∼ πz(i)1
+
+(· | s)
+
+9: 10: # Monte Carlo Q-value estimation (Lemma 1) 
+
+11: for j = 1 , . . . , N do 
+
+12: (S0, A 0) ← (s, a (i)1 )
+
+13: for k = 1 , . . . , K do 
+
+14: Sk ∼ m 
+
+> πz(i)
+> k
+> βk
+
+(· | Sk−1, A k−1)
+
+15: Ak ∼ πz(i)
+
+> k+1
+
+(· | Sk )
+
+16: end for 
+
+17: bQ(i,j ) ← (1 − γ)−1 PKk=1 wk · r(Sk )
+
+18: end for 
+
+19: bQ(i) ← 1
+
+> N
+
+PNj=1 bQ(i,j )
+
+20: end for 
+
+21: 22: # Select best candidate 
+
+23: i∗ ← arg max i∈JM K bQ(i)
+
+24: 25: # Return optimal action and policy 
+
+26: return (a(i∗)1 , z (i∗)1 )
+
+27: end function 
+
+Algorithm 3 Goal-Conditioned Proposal 
+
+1: Inputs : geometric horizon model mπz 
+
+> γ
+
+, policy sequence length K, effective discount factors {βk }Kk=1 
+
+2: function GoalCondProposal (s, g )
+
+3: # Chain GHM samples toward goal 
+
+4: z0 ← s
+
+5: for k = 1 , . . . , K do 
+
+6: Ak−1 ∼ πg (· | zk−1)
+
+7: zk ∼ mπg 
+
+> βk
+
+(· | zk−1, A k−1)
+
+8: end for 
+
+9: return (z1, . . . , z K )
+
+10: end function 
+
+Algorithm 4 Unconditional Proposal 
+
+1: Inputs : unconditional (behavior policy μ) geometric horizon model mμγ , policy sequence length K, effective discount factors {βk }Kk=1 
+
+2: function UncondProposal (s)
+
+3: # Chain unconditional GHM samples 
+
+4: z0 ← s
+
+5: for k = 1 , . . . , K do 
+
+6: zk ∼ mμβk (· | zk−1)
+
+7: end for 
+
+8: return (z1, . . . , z K )
+
+9: end function Figure 2 Two proposal distributions for goal-conditioned compositional planning. Left: GoalCondProposal samples subgoal sequences by chaining GHM predictions conditioned on the goal g ∈ S, guiding the agent toward the target. 
+
+Right: Unconditional proposal samples from the behavior policy’s GHM that can be trained alongside mπz 
+
+> γ
+
+by periodically setting z = ∅, a = ∅.
+
+21 C Theoretical Results 
+
+Theorem 1. Let ν := πz1
+
+> α1
+
+−→ πz2 · · · αn−1
+
+−−−→ πzn be a geometric switching policy with global discount factor γ ∈ (0 , 1) , effective discount factors {βk}nk=1 , and weights {wk}nk=1 from Definition 1. For any state-action pair (s, a ), the successor measure of ν decomposes as: 
+
+mνγ (d s+ | s, a ) = 
+
+> n
+
+X
+
+> k=1
+
+wk
+
+Z
+
+> s1,...,s k−1
+> a1,...,a k−1
+
+mπz1 
+
+> β1
+
+(d s1 | s, a )πz2 (d a1 | s1) · · · mπzk 
+
+> βk
+
+(d s+ | sk−1, a k−1) .
+
+Proof. Let’s denote νl:n = πzl
+
+> αl
+
+−→ πzl+1 . . . αn−1
+
+−−−→ πzn the geometric switching policy that starts by πzl . we will proceed by induction over l ∈ { n, n − 1, . . . 1} to show that: 
+
+mνl:n 
+
+> γ
+
+(d s′ | s, a ) = 
+
+> n
+
+X
+
+> k=l
+
+1 − γ
+
+1 − βk
+
+> k−1
+
+Y
+
+> i=l
+
+γ − βi
+
+1 − βi
+
+! Z
+
+> sl,...,s k−1
+> al,...,a k−1
+
+mπzl 
+
+> βl
+
+(d sl | s, a )πzl+1 (d al | sl) . . . m πzk 
+
+> βk
+
+(d s′ | sk−1, a k−1),
+
+(7) where (sl−1, a l−1) = ( s, a ).For the case l = n, it is straightforward to see that the induction hypothesis (7) is satisfied since mνn:n 
+
+> γ
+
+= mπzn  
+
+> γ
+
+.Let us now assume that the induction hypothesis (7) holds for l + 1 ∈ { n, n − 1, . . . , 2}. Our goal is to demonstrate that it also holds for l.After executing a single step of νl:n, two outcomes are possible:: with probability (1 −αl), we remain committed to νl:n, or with probability αl, we switch to the next policy πzl+1 , thereby continuing the episode with νl+1: n.This leads to the following Bellman-equation: 
+
+mνl:n = (1 − γ)P + γ(1 − αl)P πzl mνl:n + γα lP πzl+1 mνl+1: n
+
+which implies 
+
+(I − γβ lP πzl )mνl:n = (1 − γ)P + γα lP πzl+1 mνl+1: n
+
+=⇒ mνl:n = (1 − γ)( I − γβ lP πzl )−1P + γα l(I − γβ lP πzl )−1P πzl+1 mνl+1: n
+
+=⇒ mνl:n (d s′ | s, a ) = 1 − γ
+
+1 − βl
+
+mπl 
+
+> βl
+
+(d s′ | s, a ) + γ − βl
+
+1 − βl
+
+Z
+
+> sl
+
+mπl 
+
+> βl
+
+(d sl | s, a )ππzl+1 (d al | sl)mνl+1: n (d s′ | sl, a l) .
+
+Using the induction hypothesis for l + 1 , we find: 
+
+mνl:n (d s′ | s, a )= 1 − γ
+
+1 − βl
+
+mπl 
+
+> βl
+
+(d s′ | s, a )+ γ − βl
+
+1 − βl
+
+Z
+
+> sl
+
+mπl 
+
+> βl
+
+(d sl | s, a )ππzl+1 (d al | sl)
+
+×
+
+> n
+
+X
+
+> k=l+1
+
+1 − γ
+
+1 − βk
+
+> k−1
+
+Y
+
+> i=l+1
+
+γ − βi
+
+1 − βi
+
+! Z
+
+> sl+1 ,...,s k−1
+> al+1 ,...,a k−1
+
+mπzl+1  
+
+> βl+1
+
+(d sl+1 | s, a )πzl+2 (d al+1 | sl+1 ) . . . m πzk 
+
+> βk
+
+(d s′ | sk−1, a k−1)= 1 − γ
+
+1 − βl
+
+mπl 
+
+> βl
+
+(d s′ | s, a )+
+
+> n
+
+X
+
+> k=l+1
+
+1 − γ
+
+1 − βk
+
+> k−1
+
+Y
+
+> i=l
+
+γ − βi
+
+1 − βi
+
+! Z
+
+> sl,...,s k−1
+> al,...,a k−1
+
+mπzl 
+
+> βl
+
+(d sl | s, a )πzl+1 (d al | sl) . . . m πzk 
+
+> βk
+
+(d s′ | sk−1, a k−1)=
+
+> n
+
+X
+
+> k=l
+
+1 − γ
+
+1 − βk
+
+> k−1
+
+Y
+
+> i=l
+
+γ − βi
+
+1 − βi
+
+! Z
+
+> sl,...,s k−1
+> al,...,a k−1
+
+mπzl 
+
+> βl
+
+(d sl | s, a )πzl+1 (d al | sl) . . . m πzk 
+
+> βk
+
+(d s′ | sk−1, a k−1)
+
+which shows the desired result. 22 C.1 Multi-Timescale Temporal Difference Flows with Horizon Consistency 
+
+The results in this section generalize those found in Farebrother et al. (2025) to arbitrary mixture distributions. 
+
+Lemma 2. Let {vit}i∈JN K a family of N ∈ N vector fields that generate the probability paths {pit}i∈JN K.Then, the mixture probability path pt = P 
+
+> i
+
+λipit, where {λi}i∈JN K ∈ [0 , 1] and P 
+
+> i
+
+λi = 1 is generated by the vector field 
+
+vt := 
+
+P 
+
+> i
+
+λipitvit
+
+P 
+
+> i
+
+λipit
+
+. (8) 
+
+Proof. Since vti generates pit, we know from the continuity equation that: 
+
+∀i ∈ JN K, ∂p it
+
+∂t = div (pitvit)
+
+where div denotes the divergence operator. Then, by linearity of div, 
+
+∂p t
+
+∂t = ∂  P  
+
+> i
+
+λipit
+
+
+
+∂t 
+
+= X
+
+> i
+
+λidiv (pitvit)= div X
+
+> i
+
+λipitvit
+
+!
+
+= div 
+
+P 
+
+> i
+
+λipitvit
+
+P 
+
+> i
+
+λipit
+
+X
+
+> i
+
+λipit
+
+!
+
+= div (vtpt).
+
+Hence, (vt, p t) satisfies the continuity equation, which implies that vt generates pt.
+
+Lemma 3. Let {vit}i∈JN K a family of N ∈ N vector fields that generate the probability paths {pit}i∈JN K.For λi ∈ [0 , 1] such that P 
+
+> i
+
+λi = 1 , the vector field vt =  
+
+> P
+> iλipitvitP
+> iλipit
+
+satisfies 
+
+vt = arg min 
+
+> v:Rd→Rd
+
+n X 
+
+> i
+
+λi Ext∼p1
+
+> t
+
+∥vt(xt) − vit(xt)∥2 o
+
+.
+
+Proof. Let ℓt(v) := P 
+
+> i
+
+λi Ext∼pit
+
+ ∥vt(xt)−vit(xt)∥2 . The functional derivative of this quantity wrt v evaluated at some point x is 
+
+∇v ℓt(v)( x) = X
+
+> i
+
+λipti(x)( vt(x) − vit(x)) .
+
+Setting this to zero and solving for vt(x) yields the result. The consistency operator in equation (4) combines three different distributions. Lemmas 2 and 3 indicate that we can construct distinct probability paths for each distribution as follows 1. For the first distribution i.e P (· | s, a ), We apply the standard Conditional Flow Matching (CFM) approach, where the probability path is defined as the marginal over a simple conditional path (specifically, we use the Optimal Transport (OT) path): 
+
+qt(x|s, a ) = ES′∼P (·| s,a )
+
+N (x; tS ′, (1 − t)2) (9) 23 where N (x; tS ′, (1 − t)2) is the gaussian distribution of mean tS ′ and variance (1 − t)2. This leads to the standard CFM objective: 
+
+E t, (S,A,S ′)
+
+> X0∼p0,X t=tS ′+(1 −t)X0
+
+
+
+vt(Xt | S, A ; θ, γ ) − (S′ − X0) 2
+
+(10) 2. For the second distribution, i.e., ES′∼P (·| s,a ),A ′∼π(·| S′)
+
+h
+
+mπβ (· | S′, A ′)
+
+i
+
+= ( P π mπβ )( · | s, a ), we leverage that 
+
+mπβ is parametrized by a flow matching model to define the probability path: 
+
+qt(x | s, a ) = ES′∼P (·| s,a ),A ′∼π(·| S′)
+
+p0# ψt(· | S′, A ′; θ, β ) (11) 
+
+qt is a valid probability path, satisfying the boundary conditions: q0(x | s, a ) = ES′∼P (·| s,a ),A ′∼π(·| S′) [p0(x)] =
+
+p0(x) and q1 = P π mπβ . qt can be interpreted as aggregation of conditional paths p0# ψt(· | S′, A ′, β, θ ), for which we have access to their vector field vt(Xt | S′, A ′; θ, β ). Using the equivalence between marginal flow matching and conditional flow matching (Lipman et al., 2023), we arrive at the following objective. 
+
+E t, (S,A,S ′),A ′∼π(·| S′)
+
+> Xt∼p0# ψt(·| S′,A ′,β ;¯θ)
+
+
+
+vt(Xt | S, A, γ ; θ) − vt(Xt | S′, A ′, β ; ¯θ) 2
+
+(12) 3. Similarly, for the third distribution E S′∼P (·| s,a ),A ′∼π(·| S′) 
+
+> S′′ ∼mπβ(·| S′,A ′),A ′′ ∼π(·| S′′ )
+
+mπγ (· | S′′ , A ′′ ), we again leverage that mπγ
+
+is parametrized by flow matching model to define the following probability path: 
+
+qt(x | s, a ) = E S′∼P (·| s,a ),A ′∼π(·| S′)
+
+> S′′ ∼p0# ψ1(·| S′,A ′,β ;¯θ),A ′′ ∼π(·| S′′ )
+
+p0# ψt(· | S′, A ′; θ, γ ) (13) 
+
+qt can be interpreted as aggregation of conditional paths p0# ψt(· | S′, A ′, γ, θ ), for which we have access to their vector field vt(Xt | S′, A ′, γ ; θ). Using the equivalence between marginal flow matching and conditional flow matching (Lipman et al., 2023), we arrive at the following objective. 
+
+E t, (S,A,S ′),A ′∼π(·| S′)
+
+> S′′ ∼p0# ψ1(·| S′,A ′,β ;¯θ)
+> Xt∼p0# ψt(·| S′′ ,A ′′ ,γ ;¯θ)
+
+
+
+vt(Xt | S, A, γ ; θ) − vt(Xt | S′′ , A ′′ , γ ; ¯θ) 2
+
+(14) 24 D Additional Results 
+
+D.1 Compositional Planning / Zero-Shot Results 
+
+We report the full planning results here. Table 4 summarizes the success rate for each task. We evaluate 7 domains with 5 tasks per domain, for a total of 35 tasks. For each task we evaluate the base policy and 
+
+CompPlan by rolling out 10 trajectories. We report standard deviation over the 3 seeds used for GHM training, for the base policy we do not have multiple seeds. We see that CompPlan is better than the base policy in almost all the tasks. Figure 3 shows a bar plot comparing the domain-averaged success rates of 
+
+CompPlan and the zero-shot baseline. 
+
+Table 4 Success rate ( ↑) per task for base policies πg (Zero Shot) and CompPlan . Mean and standard deviation reported over 3 seeds. Blue and red denote an increase and decrease w.r.t. zero-shot with gray indicating no significant difference. 
+
+Domain Task CRL GC-1S GC-BC GC-TD3 HFBC Zero Shot CompPlan Zero Shot CompPlan Zero Shot CompPlan Zero Shot CompPlan Zero Shot CompPlan 
+
+antmaze-medium 
+
+1 0.950 0.970 (0.030) 0.400 0.930 (0.070) 0.400 0.870 (0.090) 0.650 0.800 (0.060) 0.900 0.870 (0.030) 
+
+2 0.950 0.900 (0.100) 0.800 1.000 (0.000) 0.550 0.830 (0.090) 0.900 0.530 (0.120) 0.900 0.970 (0.030) 
+
+3 0.650 0.970 (0.030) 0.100 0.500 (0.120) 0.600 0.900 (0.060) 0.450 0.770 (0.030) 1.000 0.970 (0.030) 
+
+4 0.900 1.000 (0.000) 0.650 0.930 (0.030) 0.100 0.770 (0.090) 0.550 0.600 (0.100) 1.000 0.970 (0.030) 
+
+5 0.950 1.000 (0.000) 0.850 0.970 (0.030) 0.800 0.870 (0.090) 0.700 0.570 (0.070) 0.900 0.930 (0.030) 
+
+antmaze-large 
+
+1 0.800 0.830 (0.030) 0.100 0.770 (0.070) 0.150 0.570 (0.070) 0.300 0.500 (0.120) 0.800 0.970 (0.030) 
+
+2 0.600 0.770 (0.030) 0.150 0.630 (0.120) 0.100 0.730 (0.030) 0.100 0.530 (0.090) 0.600 0.800 (0.000) 
+
+3 0.850 0.930 (0.030) 0.800 0.830 (0.090) 0.550 0.900 (0.060) 0.750 0.500 (0.100) 1.000 0.970 (0.030) 
+
+4 0.950 1.000 (0.000) 0.000 0.430 (0.030) 0.000 0.670 (0.090) 0.000 0.400 (0.060) 0.900 0.900 (0.060) 
+
+5 1.000 0.970 (0.030) 0.000 0.370 (0.120) 0.100 0.770 (0.090) 0.000 0.470 (0.090) 0.600 0.970 (0.030) 
+
+antmaze-giant 
+
+1 0.000 0.070 (0.030) 0.000 0.000 (0.000) 0.000 0.000 (0.000) 0.000 0.000 (0.000) 0.400 0.730 (0.090) 
+
+2 0.000 0.670 (0.070) 0.000 0.000 (0.000) 0.000 0.000 (0.000) 0.000 0.030 (0.030) 0.300 0.830 (0.030) 
+
+3 0.000 0.100 (0.060) 0.000 0.000 (0.000) 0.000 0.000 (0.000) 0.000 0.000 (0.000) 0.200 0.800 (0.060) 
+
+4 0.500 0.230 (0.070) 0.000 0.000 (0.000) 0.000 0.000 (0.000) 0.000 0.000 (0.000) 0.500 0.730 (0.030) 
+
+5 0.300 0.400 (0.120) 0.000 0.100 (0.000) 0.000 0.130 (0.030) 0.000 0.030 (0.030) 0.700 0.830 (0.030) 
+
+cube-1 
+
+1 0.200 0.930 (0.030) 0.300 0.470 (0.030) 1.000 1.000 (0.000) 0.500 0.900 (0.060) 0.800 0.970 (0.030) 
+
+2 0.100 0.830 (0.090) 0.400 0.470 (0.030) 0.950 1.000 (0.000) 0.850 1.000 (0.000) 0.700 1.000 (0.000) 
+
+3 0.500 0.900 (0.000) 0.300 0.900 (0.060) 0.950 1.000 (0.000) 0.600 0.900 (0.000) 0.900 1.000 (0.000) 
+
+4 0.250 0.930 (0.030) 0.500 0.770 (0.030) 1.000 1.000 (0.000) 0.550 0.900 (0.060) 0.700 0.970 (0.030) 
+
+5 0.350 0.700 (0.120) 0.350 0.700 (0.100) 0.600 0.970 (0.030) 0.400 0.870 (0.070) 0.900 0.900 (0.060) 
+
+cube-2 
+
+1 0.100 0.870 (0.030) 0.200 0.970 (0.030) 0.750 1.000 (0.000) 0.300 0.970 (0.030) 1.000 1.000 (0.000) 
+
+2 0.000 0.500 (0.060) 0.200 0.500 (0.170) 0.000 1.000 (0.000) 0.150 0.930 (0.070) 0.900 0.930 (0.030) 
+
+3 0.000 0.570 (0.030) 0.050 0.600 (0.100) 0.000 1.000 (0.000) 0.100 0.870 (0.030) 0.900 1.000 (0.000) 
+
+4 0.000 0.070 (0.030) 0.000 0.400 (0.170) 0.000 0.870 (0.070) 0.000 0.430 (0.130) 0.300 0.200 (0.060) 
+
+5 0.000 0.500 (0.100) 0.050 0.370 (0.070) 0.000 0.970 (0.030) 0.050 0.900 (0.060) 0.700 0.700 (0.100) 
+
+cube-3 
+
+1 0.050 1.000 (0.000) 0.050 0.930 (0.030) 0.450 1.000 (0.000) 0.400 1.000 (0.000) 0.900 1.000 (0.000) 
+
+2 0.000 0.970 (0.030) 0.000 1.000 (0.000) 0.000 1.000 (0.000) 0.050 1.000 (0.000) 0.900 1.000 (0.000) 
+
+3 0.000 0.930 (0.030) 0.000 0.870 (0.090) 0.000 1.000 (0.000) 0.150 0.930 (0.070) 0.800 0.970 (0.030) 
+
+4 0.000 0.270 (0.090) 0.000 0.300 (0.060) 0.000 0.700 (0.060) 0.000 0.700 (0.060) 0.300 0.370 (0.120) 
+
+5 0.000 0.470 (0.030) 0.000 0.230 (0.030) 0.000 0.900 (0.000) 0.000 0.530 (0.170) 0.300 0.800 (0.000) 
+
+cube-4 
+
+1 0.000 0.530 (0.070) 0.050 0.970 (0.030) 0.000 1.000 (0.000) 0.000 1.000 (0.000) 0.600 1.000 (0.000) 
+
+2 0.000 0.870 (0.090) 0.000 0.900 (0.060) 0.000 1.000 (0.000) 0.000 0.970 (0.030) 0.400 0.830 (0.120) 
+
+3 0.000 0.270 (0.120) 0.000 0.800 (0.000) 0.000 1.000 (0.000) 0.000 0.470 (0.030) 0.200 0.770 (0.030) 
+
+4 0.000 0.030 (0.030) 0.000 0.100 (0.060) 0.000 0.170 (0.170) 0.000 0.170 (0.120) 0.000 0.200 (0.100) 
+
+5 0.000 0.230 (0.130) 0.000 0.230 (0.070) 0.000 0.630 (0.130) 0.000 0.230 (0.030) 0.000 0.570 (0.130) 
+
+25 CRL GC-1S GC-BC GC-TD3 HFBC 
+
+Method 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> Success
+
+antmaze-medium 
+
+CRL GC-1S GC-BC GC-TD3 HFBC 
+
+Method 
+
+antmaze-large 
+
+CRL GC-1S GC-BC GC-TD3 HFBC 
+
+Method 
+
+antmaze-giant 
+
+Antmaze Results 
+
+Zero Shot 
+
+CompPlan CRL GC-1S GC-BC GC-TD3 HFBC 
+
+Method 
+
+0.0 
+
+0.2 
+
+0.4 
+
+0.6 
+
+0.8 
+
+1.0 
+
+> Success
+
+cube-1 
+
+CRL GC-1S GC-BC GC-TD3 HFBC 
+
+Method 
+
+cube-2 
+
+CRL GC-1S GC-BC GC-TD3 HFBC 
+
+Method 
+
+cube-3 
+
+CRL GC-1S GC-BC GC-TD3 HFBC 
+
+Method 
+
+cube-4 
+
+Cube Results 
+
+Zero Shot 
+
+CompPlan Figure 3 Success rate ( ↑) of base policies πg (Zero Shot) and compositional planning as in Equation (6) with GHMs (CompPlan , ours) averaged over tasks. 
+
+26 D.2 Compositional Planning / GPI / Action Planning Results CRL GC-1S GC-BC GC-TD3 HFBC 
+
+0.00 
+
+0.25 
+
+0.50 
+
+0.75 
+
+1.00 
+
+> Success Rate
+
+antmaze-medium  
+
+> 97%
+> 91%
+> 94%
+> 88% 87%
+> 65%
+> 67%
+> 56%
+> 85%
+> 71%
+> 60%
+> 49%
+> 65% 65%
+> 68%
+> 65%
+> 94% 95% 95%
+> 94%
+
+CRL GC-1S GC-BC GC-TD3 HFBC 
+
+antmaze-large 
+
+> 90% 87% 87%
+> 84%
+> 61%
+> 25%
+> 19% 21%
+> 73%
+> 67%
+> 34%
+> 18%
+> 48%
+> 28% 26%
+> 23%
+> 92% 88% 89%
+> 78%
+
+CRL GC-1S GC-BC GC-TD3 HFBC 
+
+0.00 
+
+0.25 
+
+0.50 
+
+0.75 
+
+1.00 
+
+> Success Rate
+
+antmaze-giant   
+
+> 29%
+> 14%
+> 7%
+> 16%
+> 2% 3% 1% 1% 1%
+> 79%
+> 62%
+> 73%
+> 42%
+
+antmaze 
+
+CRL GC-1S GC-BC GC-TD3 HFBC 
+
+0.00 
+
+0.25 
+
+0.50 
+
+0.75 
+
+1.00 
+
+> Success Rate
+
+cube-1  
+
+> 86%
+> 93%
+> 96%
+> 28%
+> 66%
+> 59%
+> 92%
+> 37%
+> 99% 99% 98%
+> 90% 91%
+> 94% 97%
+> 58%
+> 97% 96% 98%
+> 80%
+
+CRL GC-1S GC-BC GC-TD3 HFBC 
+
+cube-2 
+
+> 50%
+> 49%
+> 69%
+> 2%
+> 57%
+> 45%
+> 69%
+> 10%
+> 97% 94%
+> 37%
+> 15%
+> 82%
+> 72%
+> 68%
+> 12%
+> 77%
+> 70%
+> 84%
+> 76%
+
+CRL GC-1S GC-BC GC-TD3 HFBC 
+
+0.00 
+
+0.25 
+
+0.50 
+
+0.75 
+
+1.00 
+
+> Success Rate
+
+cube-3 
+
+> 73%
+> 83%
+> 61%
+> 1%
+> 67%
+> 38%
+> 59%
+> 1%
+> 92% 90%
+> 28%
+> 9%
+> 83%
+> 61% 63%
+> 12%
+> 83%
+> 39%
+> 59% 64%
+
+CRL GC-1S GC-BC GC-TD3 HFBC 
+
+cube-4 
+
+> 39%
+> 22%
+> 27%
+> 60%
+> 33%
+> 19%
+> 1%
+> 76%
+> 65%
+> 3%
+> 57%
+> 47%
+> 27%
+> 67%
+> 8%
+> 35%
+> 24%
+
+cube 
+
+Zero Shot ActionPlan GPI CompPlan 
+
+Figure 4 Success rate ( ↑) of planning vs. zero shot. We consider action-level planning ( ActionPlan ) with a world model; generalized policy improvement (GPI) and compositional planning ( CompPlan ; ours) with GHMs. 
+
+27 CRL GC-1S GC-BC GC-TD3 HFBC 
+
+-0.2 
+
+0.0 
+
++0.2 
+
++0.4 
+
++0.6 
+
+> Percent Point Change in Success
+
+antmaze-medium 
+
+> +9%
+> +3%
+> +6%
+> +31%
+> +9%
+> +11%
+> +36%
+> +22%
+> +11%
+> +0%
+> -0%
+> +3%
+> +1% +1%
+
+CRL GC-1S GC-BC GC-TD3 HFBC 
+
+antmaze-large 
+
+> +6% +3% +3%
+> +40%
+> +4%
+> -2%
+> +55%
+> +49%
+> +16%
+> +25%
+> +5% +3%
+> +14%
+> +10% +11%
+
+CRL GC-1S GC-BC GC-TD3 HFBC 
+
+-0.2 
+
+0.0 
+
++0.2 
+
++0.4 
+
++0.6 
+
+> Percent Point Change in Success
+
+antmaze-giant   
+
+> +13%
+> -2%
+> -9%
+> +2% +3%
+> +1% +1% +1%
+> +37%
+> +20%
+> +31%
+
+antmaze 
+
+CRL GC-1S GC-BC GC-TD3 HFBC 
+
+-0.3 
+
+0.0 
+
++0.3 
+
++0.6 
+
++0.9 
+
+> Percent Point Change in Success
+
+cube-1 
+
+> +58%
+> +65%
+> +68%
+> +29%
+> +22%
+> +55%
+> +9% +9% +8%
+> +33% +36% +39%
+> +17% +16% +18%
+
+CRL GC-1S GC-BC GC-TD3 HFBC 
+
+cube-2 
+
+> +48% +47%
+> +67%
+> +47%
+> +35%
+> +59%
+> +82% +79%
+> +22%
+> +70%
+> +60%
+> +56%
+> +1%
+> -6%
+> +8%
+
+CRL GC-1S GC-BC GC-TD3 HFBC 
+
+-0.3 
+
+0.0 
+
++0.3 
+
++0.6 
+
++0.9 
+
+> Percent Point Change in Success
+
+cube-3  
+
+> +72%
+> +82%
+> +60% +66%
+> +37%
+> +58%
+> +83% +81%
+> +19%
+> +71%
+> +49% +51%
+> +19%
+> -25%
+> -5%
+
+CRL GC-1S GC-BC GC-TD3 HFBC 
+
+cube-4 
+
+> +39%
+> +22%
+> +27%
+> +59%
+> +32%
+> +18%
+> +76%
+> +65%
+> +3%
+> +57%
+> +47%
+> +27%
+> +43%
+> -16%
+> +11%
+
+cube 
+
+ActionPlan GPI CompPlan Figure 5 Percent point change ( ↑) of planning over zero shot. We consider action-level planning ( ActionPlan ) with a world model; generalized policy improvement (GPI) and compositional planning ( CompPlan ; ours) with GHMs. 
+
+28 D.3 Ablation on the Planning Frequency 
+
+In this section, we investigate whether the planning cost can be amortized over time. Specifically, we compare the performance of planning at each time step with planning every N steps. In the latter case, we execute the action maximizing the CompPlan objective for the first step and then follow the policy πz1 (i.e., the trajectory is s, a ⋆, s 1, π z1 (s1), s 2, . . . , s N −1, π z1 (sN −1), s N ). Figure 6 reports the average success rate for each domain and method. On average, planning at every step leads to about a 20% improvement compared to planning every 5 steps. This is mostly due to a few cases—most notably, CRL policies in Cube—in which planning every 5 steps results in a large performance drop or complete unlearning. In the majority of experiments, planning every 5 steps does not substantially degrade overall performance, while significantly reducing planning time. Overall, this is a lever that can be used to trade off speed and performance. Finally, Table 5 provides a tabular summary of these results. CRL GC-1S GC-BC GC-TD3 HFBC                         
+
+> Method
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Success
+> antmaze-medium
+> CRL GC-1S GC-BC GC-TD3 HFBC
+> Method
+> antmaze-large
+> CRL GC-1S GC-BC GC-TD3 HFBC
+> Method
+> antmaze-giant
+> Antmaze Results
+> replan_every
+> 1
+> 5CRL GC-1S GC-BC GC-TD3 HFBC
+> Method
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Success
+> cube-1
+> CRL GC-1S GC-BC GC-TD3 HFBC
+> Method
+> cube-2
+> CRL GC-1S GC-BC GC-TD3 HFBC
+> Method
+> cube-3
+> CRL GC-1S GC-BC GC-TD3 HFBC
+> Method
+> cube-4
+> Cube Results
+> replan_every
+> 1
+> 5
+
+Figure 6 Success rate ( ↑) of CompPlan with different base policies when planning at every step of every 5 steps. We report mean and standard deviation 3 seeds for GHM training. 
+
+Table 5 Success rate ( ↑) of CompPlan with different base policies when replanning every 1 or 5 steps. We report mean and standard deviation over 3 seeds. Best method highlighted in blue; gray indicates no significant difference. 
+
+Domain CRL GC-1S GC-BC GC-TD3 HFBC 
+
+1 Step 5 Steps 1 Step 5 Steps 1 Step 5 Steps 1 Step 5 Steps 1 Step 5 Steps 
+
+antmaze-medium 0.97 (0.02) 0.94 (0.02) 0.87 (0.05) 0.83 (0.04) 0.85 (0.08) 0.75 (0.01) 0.65 (0.03) 0.59 (0.05) 0.94 (0.01) 0.99 (0.01) 
+
+antmaze-large 0.90 (0.00) 0.87 (0.02) 0.61 (0.04) 0.64 (0.03) 0.73 (0.02) 0.38 (0.01) 0.48 (0.05) 0.54 (0.01) 0.92 (0.02) 0.93 (0.04) 
+
+antmaze-giant 0.29 (0.03) 0.28 (0.05) 0.02 (0.00) 0.03 (0.02) 0.03 (0.01) 0.01 (0.01) 0.01 (0.01) 0.01 (0.01) 0.79 (0.04) 0.80 (0.02) 
+
+cube-1 0.86 (0.02) 0.75 (0.03) 0.66 (0.02) 0.82 (0.03) 0.99 (0.01) 1.00 (0.00) 0.91 (0.01) 0.93 (0.02) 0.97 (0.01) 0.96 (0.02) 
+
+cube-2 0.50 (0.03) 0.19 (0.03) 0.57 (0.09) 0.75 (0.05) 0.97 (0.01) 0.92 (0.02) 0.82 (0.01) 0.72 (0.00) 0.77 (0.02) 0.79 (0.04) 
+
+cube-3 0.73 (0.02) 0.33 (0.02) 0.67 (0.02) 0.71 (0.05) 0.92 (0.01) 0.93 (0.02) 0.83 (0.02) 0.83 (0.02) 0.83 (0.03) 0.77 (0.01) 
+
+cube-4 0.39 (0.04) 0.00 (0.00) 0.60 (0.02) 0.56 (0.03) 0.76 (0.03) 0.71 (0.02) 0.57 (0.03) 0.49 (0.01) 0.67 (0.03) 0.65 (0.02) 
+
+29 D.4 Ablation on the Planning Objective 
+
+As mentioned in the main paper, we can leverage the GHM in several different planning approaches. In this section, we compare two strategies. The first is the approach presented in the paper, in which we optimize both the first action and the policy sequence (z1, . . . , z n):
+
+max 
+
+a1,z 1,...,z n
+
+Qπz1
+
+> α1
+
+−→πz2 ... αn−1
+
+−−−→πzn 
+
+γ (s, a 1) (15) while the second does not involve action optimization 
+
+max 
+
+z1,...,z n
+
+V πz1
+
+> α1
+
+−→πz2 ... αn−1
+
+−−−→πzn 
+
+γ (s) (16) The difference is that, when using (15) , the first action is deterministic, whereas in (16) it is sampled according to πz1 . Figure 7 shows that maximizing over the first action yields more consistent performance overall, with an average improvement of about 70%. 4 In contrast, planning over the z sequence can fail when the base policy is diffuse (i.e., highly stochastic). This occurs, for example, for CRL policies in the Cube domains and for GC-BC policies in AntMaze. Finally, Table 6 provides a tabular summary of these results. CRL GC-1S GC-BC GC-TD3 HFBC                               
+
+> Method
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Success
+> antmaze-medium
+> CRL GC-1S GC-BC GC-TD3 HFBC
+> Method
+> antmaze-large
+> CRL GC-1S GC-BC GC-TD3 HFBC
+> Method
+> antmaze-giant
+> Antmaze Results
+> planning
+> (a1,z1, …, zn)
+> (z1, …, zn)CRL GC-1S GC-BC GC-TD3 HFBC
+> Method
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Success
+> cube-1
+> CRL GC-1S GC-BC GC-TD3 HFBC
+> Method
+> cube-2
+> CRL GC-1S GC-BC GC-TD3 HFBC
+> Method
+> cube-3
+> CRL GC-1S GC-BC GC-TD3 HFBC
+> Method
+> cube-4
+> Cube Results
+> planning
+> (a1,z1, …, zn)
+> (z1, …, zn)
+
+Figure 7 Success rate ( ↑) of CompPlan with different base policies when maximizing over (a1, z 1, . . . z n) (Eq. 15) or 
+
+(z1, . . . , z n) (Eq. 16). We report mean and standard deviation 3 seeds for GHM training. 
+
+Table 6 Success rate ( ↑) of CompPlan with (Eq. 15) and without (Eq. 16) action maximization. We report mean and standard deviation over 3 seeds. Best method highlighted in blue; gray indicates no significant difference. 
+
+Domain CRL GC-1S GC-BC GC-TD3 HFBC 
+
+max Q max V max Q max V max Q max V max Q max V max Q max V
+
+antmaze-medium 0.97 (0.02) 0.92 (0.03) 0.87 (0.05) 0.89 (0.03) 0.85 (0.08) 0.62 (0.05) 0.65 (0.03) 0.63 (0.10) 0.94 (0.01) 0.96 (0.01) 
+
+antmaze-large 0.90 (0.00) 0.88 (0.01) 0.61 (0.04) 0.55 (0.03) 0.73 (0.02) 0.24 (0.02) 0.48 (0.05) 0.44 (0.04) 0.92 (0.02) 0.94 (0.01) 
+
+antmaze-giant 0.29 (0.03) 0.27 (0.06) 0.02 (0.00) 0.01 (0.01) 0.03 (0.01) 0.00 (0.00) 0.01 (0.01) 0.01 (0.01) 0.79 (0.04) 0.83 (0.02) 
+
+cube-1 0.86 (0.02) 0.73 (0.01) 0.66 (0.02) 0.61 (0.03) 0.99 (0.01) 1.00 (0.00) 0.91 (0.01) 0.95 (0.02) 0.97 (0.01) 0.97 (0.01) 
+
+cube-2 0.50 (0.03) 0.13 (0.02) 0.57 (0.04) 0.57 (0.04) 0.97 (0.01) 0.92 (0.02) 0.82 (0.01) 0.77 (0.04) 0.77 (0.02) 0.80 (0.01) 
+
+cube-3 0.73 (0.02) 0.05 (0.01) 0.67 (0.02) 0.69 (0.01) 0.92 (0.01) 0.95 (0.01) 0.83 (0.04) 0.90 (0.02) 0.83 (0.03) 0.79 (0.01) 
+
+cube-4 0.39 (0.04) 0.00 (0.00) 0.60 (0.02) 0.54 (0.02) 0.76 (0.03) 0.72 (0.01) 0.57 (0.03) 0.42 (0.01) 0.67 (0.03) 0.69 (0.01) 
+
+4This is mostly due to unsuccessful outcomes (i.e., near-zero performance) on certain tasks when Equation 16. 
+
+30 D.5 Ablation on the Proposal Distribution 
+
+In this section, we study the effect of the sampling distribution on the planning procedure. As mentioned in the main paper, GHMs are trained either with the policy condition z or with a learnable token ∅. In the latter case, the resulting GHM corresponds to the behavioral policy. We compare two planning strategies: (1) sampling from the GHM conditioned on the policy associated with the goal ( conditional proposal ); and (2) sampling from the GHM of the behavioral policy ( unconditional proposal ). Figure 8 shows that, in AntMaze, sampling from the unconditional distribution performs only marginally worse than the conditional proposal, highlighting the robustness of our planning procedure. Table 7 provides a tabular summary of these results. CRL GC-1S GC-BC GC-TD3 HFBC                         
+
+> Method
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Success
+> antmaze-medium
+> CRL GC-1S GC-BC GC-TD3 HFBC
+> Method
+> antmaze-large
+> CRL GC-1S GC-BC GC-TD3 HFBC
+> Method
+> antmaze-giant
+> Antmaze Results
+> planning
+> Conditional Proposal
+> Unconditional Proposal CRL GC-1S GC-BC GC-TD3 HFBC
+> Method
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Success
+> cube-1
+> CRL GC-1S GC-BC GC-TD3 HFBC
+> Method
+> cube-2
+> CRL GC-1S GC-BC GC-TD3 HFBC
+> Method
+> cube-3
+> CRL GC-1S GC-BC GC-TD3 HFBC
+> Method
+> cube-4
+> Cube Results
+> planning
+> Conditional Proposal
+> Unconditional Proposal
+
+Figure 8 Success rate ( ↑) of CompPlan with different base policies when using the conditional or unconditional GHMs to propose subgoals. We report mean and standard deviation 3 seeds for GHM training. 
+
+Table 7 Success rate ( ↑) of CompPlan with conditional and unconditional proposal. We report mean and standard deviation 3 seeds. Best method highlighted in blue; gray indicates no significant difference. 
+
+Domain CRL GC-1S GC-BC GC-TD3 HFBC Cond Uncond Cond Uncond Cond Uncond Cond Uncond Cond Uncond 
+
+antmaze-medium 0.97 (0.02) 0.91 (0.01) 0.87 (0.05) 0.93 (0.02) 0.85 (0.04) 0.85 (0.04) 0.65 (0.03) 0.52 (0.01) 0.94 (0.01) 0.84 (0.02) 
+
+antmaze-large 0.90 (0.00) 0.85 (0.01) 0.61 (0.04) 0.71 (0.02) 0.73 (0.02) 0.65 (0.05) 0.48 (0.05) 0.31 (0.03) 0.92 (0.02) 0.70 (0.07) 
+
+antmaze-giant 0.29 (0.03) 0.14 (0.00) 0.02 (0.00) 0.01 (0.01) 0.03 (0.02) 0.03 (0.02) 0.01 (0.01) 0.00 (0.00) 0.79 (0.04) 0.35 (0.07) 
+
+cube-1 0.75 (0.01) 0.86 (0.02) 0.72 (0.01) 0.66 (0.02) 1.00 (0.00) 0.99 (0.01) 0.97 (0.02) 0.91 (0.01) 0.93 (0.01) 0.97 (0.01) 
+
+cube-2 0.51 (0.02) 0.50 (0.03) 0.57 (0.09) 0.57 (0.09) 0.77 (0.04) 0.97 (0.01) 0.71 (0.02) 0.82 (0.01) 0.77 (0.02) 0.77 (0.02) 
+
+cube-3 0.73 (0.02) 0.73 (0.02) 0.67 (0.02) 0.67 (0.02) 0.87 (0.04) 0.92 (0.01) 0.75 (0.02) 0.83 (0.04) 0.45 (0.06) 0.83 (0.03) 
+
+cube-4 0.36 (0.03) 0.39 (0.04) 0.55 (0.01) 0.60 (0.02) 0.77 (0.04) 0.76 (0.03) 0.39 (0.03) 0.57 (0.03) 0.09 (0.04) 0.67 (0.03) 
+
+31 D.6 Ablation on the Consistency Objective 
+
+This section expands upon § 4.4, providing the complete empirical results for the Temporal Difference Horizon Consistency ( td-hc ) objective across generative fidelity (Table 8), qualitative predictions (Figure 9), and downstream planning performance (Table 9). 
+
+Generative Fidelity Table 8 shows that td-hc systematically improves the generative accuracy of the td-flow 
+
+baseline as measured by the Earth Mover’s Distance (EMD; Rubner et al., 2000). These gains are especially pronounced in complex domains like antmaze-giant where bootstrapping errors easily compound. Figure 9 visually confirms this effect: while both models perform comparably at shorter horizons ( γ = 0 .99 ), td-flow 
+
+suffers from severe compounding errors at longer horizons ( γ = 0 .998 ), and fails to capture the tail of the distribution. By anchoring its predictions with shorter-horizons, td-hc successfully respects the topological constraints and properly captures the tail of the true successor state distribution. 
+
+Planning Performance Despite the generative advantages of td-hc at extreme horizons, Table 9 reveals that downstream planning success rates remain broadly similar between the two methods. Because our planning procedure evaluates candidate sequences using moderate effective horizons ( βi ∈ [0 .98 , 0.99] , or roughly 
+
+50 − 100 steps), it does not query the extreme timescales where td-flow breaks down. We expect td-hc to enable planning over more extreme horizons in the future as benchmarks evolve towards more complex tasks. 
+
+Table 8 Accuracy (EMD, ↓) of GHMs trained with ( td-hc ) and without ( td-flow ) our horizon consistency loss (§ 3.2). Best method is highlighted in blue.      
+
+> Domain CRL GC-1S GC-BC GC-TD3 HFBC td-flow (
+
+✗) td-hc ( ✓) td-flow ( ✗) td-hc ( ✓) td-flow ( ✗) td-hc ( ✓) td-flow ( ✗) td-hc ( ✓) td-flow ( ✗) td-hc ( ✓)
+
+antmaze-medium 4.41 (0.05) 4.22 (0.06) 4.40 (0.02) 4.22 (0.03) 4.56 (0.05) 4.36 (0.03) 4.68 (0.05) 4.44 (0.05) 3.38 (0.02) 3.22 (0.02) 
+
+antmaze-large 5.24 (0.07) 4.81 (0.03) 5.12 (0.18) 4.67 (0.04) 5.32 (0.03) 4.73 (0.02) 5.33 (0.07) 4.83 (0.04) 3.50 (0.05) 3.18 (0.01) 
+
+antmaze-giant 6.77 (0.49) 5.74 (0.06) 7.29 (0.69) 5.25 (0.08) 6.46 (0.10) 4.95 (0.12) 6.51 (0.14) 5.24 (0.11) 3.78 (0.03) 3.00 (0.09) 
+
+cube-1 1.60 (0.02) 1.57 (0.03) 1.43 (0.00) 1.33 (0.03) 1.03 (0.01) 0.98 (0.01) 1.12 (0.01) 1.06 (0.01) 1.82 (0.06) 1.27 (0.01) 
+
+cube-2 2.36 (0.03) 2.23 (0.02) 1.86 (0.04) 1.71 (0.01) 1.47 (0.00) 1.42 (0.01) 1.89 (0.04) 1.80 (0.03) 2.29 (0.09) 1.54 (0.04) 
+
+cube-3 2.15 (0.02) 2.10 (0.02) 1.80 (0.04) 1.71 (0.03) 1.89 (0.02) 1.85 (0.02) 1.91 (0.06) 1.84 (0.04) 1.99 (0.09) 1.55 (0.02) 
+
+cube-4 2.41 (0.03) 2.34 (0.01) 2.13 (0.03) 2.05 (0.03) 2.33 (0.03) 2.22 (0.02) 2.21 (0.02) 2.15 (0.02) 2.05 (0.05) 1.61 (0.03) 
+
+Table 9 Success rate ( ↑) of CompPlan with consistency ( td-hc ) and without consistency ( td-flow ). Mean and standard deviation over 3 seeds. Best method highlighted in blue; gray indicates no significant difference.      
+
+> Domain CRL GC-1S GC-BC GC-TD3 HFBC td-flow (
+
+✗) td-hc ( ✓) td-flow ( ✗) td-hc ( ✓) td-flow ( ✗) td-hc ( ✓) td-flow ( ✗) td-hc ( ✓) td-flow ( ✗) td-hc ( ✓)
+
+antmaze-medium 0.95 (0.01) 0.97 (0.02) 0.85 (0.01) 0.87 (0.05) 0.91 (0.01) 0.85 (0.08) 0.71 (0.03) 0.65 (0.03) 0.95 (0.02) 0.94 (0.01) 
+
+antmaze-large 0.91 (0.03) 0.90 (0.00) 0.53 (0.09) 0.61 (0.04) 0.79 (0.01) 0.73 (0.02) 0.51 (0.03) 0.48 (0.05) 0.91 (0.03) 0.92 (0.02) 
+
+antmaze-giant 0.31 (0.05) 0.29 (0.03) 0.01 (0.01) 0.02 (0.00) 0.02 (0.00) 0.03 (0.01) 0.01 (0.01) 0.01 (0.01) 0.81 (0.02) 0.79 (0.04) 
+
+cube-1 0.89 (0.03) 0.86 (0.02) 0.55 (0.02) 0.66 (0.02) 1.00 (0.00) 0.99 (0.01) 0.97 (0.01) 0.91 (0.01) 0.97 (0.01) 0.97 (0.01) 
+
+cube-2 0.41 (0.02) 0.50 (0.03) 0.57 (0.09) 0.57 (0.09) 0.95 (0.02) 0.97 (0.01) 0.85 (0.02) 0.82 (0.01) 0.84 (0.03) 0.77 (0.02) 
+
+cube-3 0.72 (0.02) 0.73 (0.02) 0.72 (0.01) 0.67 (0.02) 0.91 (0.02) 0.92 (0.01) 0.83 (0.04) 0.83 (0.04) 0.83 (0.03) 0.83 (0.03) 
+
+cube-4 0.36 (0.00) 0.39 (0.04) 0.56 (0.02) 0.60 (0.02) 0.75 (0.02) 0.76 (0.03) 0.56 (0.03) 0.57 (0.03) 0.64 (0.04) 0.67 (0.03) 
+
+32 γ = 0 .99 
+
+(≈ 100 steps )
+
+γ = 0 .995 
+
+(≈ 200 steps )
+
+γ = 0 .998 
+
+(≈ 500 steps ) 
+
+> td-flow td-hc ground truth
+> Figure 9
+
+Qualitative plots of GHM samples on antmaze-giant task 1 at different horizons (0 .99 , 0.995 , 0.998) from 
+
+td-flow and td-hc with the last row depicting the ground truth discounted occupancy. As can be seen in the figure, performance is comparable at smaller horizons with td-hc doing a much better job at capturing the true distribution as the horizon increases. 
+
+33 E Qualitative Geometric Horizon Model Samples 
+
+t = 0 t = 15 t = 30 t = 45 t = 60 t = 75 
+
+t = 90 t = 105 t = 120 t = 135 t = 150 t = 165 
+
+t = 180 t = 195 t = 210 t = 225 t = 240 t = 255 
+
+t = 270 t = 285 t = 300 t = 315 t = 330 t = 345  
+
+> Figure 10
+
+Qualitative visualization for an episode of cube-4-task-5 . The robots and cubes shown with transparency indicated GHM samples from the first policy in the GSP. 
+
+34 F Experimental Details 
+
+F.1 Base Policies & Hyperparameters 
+
+Each policy class is chosen to highlight a different aspect of the pipeline (i.e., GHM learning and skill planning). 1. Goal-Conditioned TD3 (GC-TD3; Pirotta et al., 2024) : A standard goal-conditioned offline RL algorithm where we employ Flow Q-learning (FQL; Park et al., 2025c), a flow-based variant of TD3-BC (Fujimoto and Gu, 2021) for policy extraction. Due to bootstrapping on its own learned policy, actions may drift out-of-distribution (OOD) from the dataset, posing a challenge for off-policy predictive modeling (Levine et al., 2020). In particular, we use the standard TD3 critic loss (Fujimoto et al., 2018) to learn a goal-conditioned action-value function Qϕ(S, A, G ) (Schaul et al., 2015): 
+
+ℓ(ϕ) = E (S,A,S ′,G )
+
+> A′∼πG(·| S′)
+
+h Qϕ(S, A, G ) − I{S′ = G} − γQ ¯ϕ(S′, A ′, G )2i
+
+,
+
+where (S, A, S ′) are transition sampled uniformly from the dataset, and G is a goal state drawn from the following mixture distribution: with probability 0.2, set G = S′, with probability 0.3 sample G uniformly from the dataset and with 0.5 set G to a randomly selected future state along the trajectory starting from 
+
+(S, A ), where the selection time step is drawn from a γ-geometric distribution. For policy training, we use the flow Q-learning procedure. We learn jointly a behavior policy π(· | S)
+
+and goal-conditioned policy πG(· | S) parametrized by flow-matching vector field. The behavioral policy is trained by a standard conditional flow-matching objective (Lipman et al., 2023) on state-action pairs uniformly sampled from the dataset. The goal-conditioned policy is modeled as a one-step flow map. We denote by μψ (S, X 0) and μω (S, G, X 0) the flow-maps of π and πG, respectively. 
+
+ℓ(ψ) = −E (S,A,G ) 
+
+> X0∼N (0 ,I )
+
+Q(S, μ ψ (S, G, X 0), G ) + λ∥μψ (S, G, X 0) − μω (S, X 0)∥2 , (17) where λ is the distillation coefficient that controls the behavior cloning regularization. Here G is a goal state drawn from the following mixture distribution: with probability 0.5 sample G uniformly from the dataset, and with 0.5 set G to a randomly selected future state along the trajectory starting from (S, A ).2. Goal-Conditioned 1-Step RL (GC-1S) : A more conservative variant of GC-TD3 that bootstraps using the behavior policy via the dataset’s actions. We expect this to yield easier-to-model occupancies as we no longer query the learned value function with OOD actions. Policy extraction on the resulting value function is also performed using FQL (17) . In particular, we follow the same training as explained for TD3, and we change only the critic objective: 
+
+ℓ(ϕ) = E(S,A,S ′,A ′,G )
+
+h Qϕ(S, A, G ) − I{S′ = G} − γQ ¯ϕ(S′, A ′, G )2i
+
+,
+
+where A′ is now sampled from the dataset rather than from the learned policy. 3. Contrastive RL (CRL; Eysenbach et al., 2022) : An alternative value-based approach that uses contrastive learning to approximate the successor measure of the behavior policy (Eysenbach et al., 2022). In particular CRL learns a state-action ϕ(s, a ) and goal encoder ψ(g) by the following Monte-Carlo InfoNCE (van den Oord et al., 2018) contrastive loss: 
+
+ℓ(ϕ, ψ ) = E(S,A,G )
+
+−ϕ(S, A )⊤ψ(G) −
+
+log X
+
+> (S,A,G ′)
+
+exp  ϕ(S, A )⊤ψ(G′) (18) where G is γ-distributed sampled future state along the trajectory starting from (S, A ) and G′ is a state distribued uniformly from the dataset. Moreover, policy extraction is performed using FQL (17) with Q-function Q(S, A, G ) estimated as ϕ(S, A )⊤ψ(G).35 4. Goal-Conditioned Behavior Cloning (GC-BC; Lynch et al., 2019; Ghosh et al., 2021) : A purely imitative policy trained via flow matching (Lipman et al., 2023) to mimic the high-quality trajectories in the dataset to reach specific goals using hindsight relabeling (Andrychowicz et al., 2017). Specially, we parametrize the policy by vector field vϕ(t, S, G )
+
+ℓ(ϕ) = E t,S,A,G X0∼N (0 ,I )
+
+∥vϕ(t, S, G ) − (A − X0)∥2 , (19) where G is γ-distributed sampled future state along the trajectory starting from (S, A ). A key consequence of this value-free approach is that the policy struggles to generalize to distant goals, which can limit the effectiveness of proposing goal-directed “waypoints” during planning. 5. Hierarchical Flow Behavior Cloning (HFBC; Park et al., 2025b) : an imitative approach that trains two policies: a high-level policy is trained to predict subgoals that are h steps away from the current state for a fixed lookahead h, and the low-level policy is trained to predict actions to reach the given subgoal. Specially we parametrize both high-level and low-level policy by two vector fields vϕ(t, S, G ) and νψ (t, S, G ) respectively. 
+
+ℓ(ϕ) = Et,S n,S n+h,G X0∼N (0 ,I )
+
+∥vϕ(t, S n, G ) − (Sn+h − X0)∥2 ,ℓ(ψ) = Et,S n,A n,S n+h 
+
+> X0∼N (0 ,I )
+
+∥vϕ(t, S n, S n+h) − (An − X0)∥2 ,
+
+where Sn+h is the h-steps way from the current state Sn and G is is γ-distributed sampled future state along the trajectory starting from Sn Consequently, the high-level policy can be used as a proposal for sub-goal distribution at planning time.  
+
+> Table 10
+
+Base policy hyperparameters. Parameters in { } denote sweeps performed over the values inside brackets.    
+
+> Method Hyperparameter Antmaze Cube CRL GC-TD3 GC-1S
+
+FQL Distillation coefficient {0.1, 0.15 , 0.2, 0.3, 0.4} {0.7, 0.8, 0.9, 1, 3}
+
+Discount factor {0.995 , 0.997 } for giant 
+
+0.99 otherwise 
+
+{0.99 , 0.995 } for cube-4 
+
+0.99 otherwise Gradient steps {1M, 3M}
+
+500 k for cube-{1, 2}
+
+1M for cube-3 
+
+3M for cube-4 
+
+> GC-BC
+
+Discount factor 
+
+{0.99 , 0.995 } for giant 
+
+{0.98 , 0.99 } for medium 
+
+{0.98 , 0.99 } for large 
+
+{0.95 , 0.96 } for cube-1 
+
+{0.96 , 0.97 } for cube-2 
+
+{0.96 , 0.97 , 0.98 } for cube-3 
+
+{0.96 , 0.98 , 0.99 } for cube-4 
+
+Gradient steps 125 k
+
+500 k for cube-1 
+
+1M for cube-2 
+
+2M for cube-3 
+
+3M for cube-4 
+
+> HFBC SHARSA
+
+Lookahead [25 , 50] [25 , 50] 
+
+Discount factor {0.99 , 0.995 } {0.95 , 0.99 , 0.995 }
+
+Gradient steps 3M 1M for cube-{1, 2}
+
+3M for cube-{3, 4}
+
+36 F.2 Geometric Horizon Model Hyperparameters  
+
+> Table 11 Hyperparameters for Geometric Horizon Model pre-training.
+
+Hyperparameter Value 
+
+Flow Matching (Lipman et al., 2023) Probability Path Conditional OT ( σ=0 )Time Sampler U([0 , 1]) 
+
+ODE Solver Euler ODE dt (train) / steps 0.1 / 10 
+
+ODE dt (eval) / steps 0.05 / 20 
+
+Network (U-Net) (Ronneberger et al., 2015) 
+
+t-Positional Embedding Dim. 256 
+
+t-Positional Embedding MLP (1024 , 1024) 
+
+Hidden Activation mish (Misra, 2019) Blocks per Stage 1
+
+Block Dimensions (1024 , 1024 , 1024) 
+
+Conditional Encoder Encoder MLP (1024 , 1024 , 1024) 
+
+Encoder Activation mish (Misra, 2019) Conditioning Mixing additive Optimizer Adam (Kingma and Ba, 2015) Learning Rate 10 −4
+
+Weight Decay 0
+
+Gradient Norm Clip —Training Max Discount γmax 0.996 
+
+Target Network EMA 5 × 10 −4
+
+Gradient Steps 3MBatch Size 256 
+
+Context Drop Probability ( z = ∅) 0.1
+
+Consistency Proportion 
+
+> 
+
+0.25 for antmaze 
+
+0.15 for cube 
+
+GCRL Goal Sampling 
+
+p(trajectory goal ) 0.5
+
+p(random goal ) 0.5
+
+Geometric Trajectory Discount 0.995 
+
+37 F.3 Planning Hyperparameters 
+
+Table 12 CompPlan hyperparameters for the main results of the paper. 
+
+Method Domain Candidates Effective horizons Proposal Distribution Eval samples Replan every Discount 
+
+> CRL
+
+antmaze-medium 256 [50 , 50 , 100 , 100 , 200] Conditional 256 1 0.999 
+
+antmaze-large 256 [50 , 50 , 100 , 100 , 200] Conditional 256 1 0.999 
+
+antmaze-giant 256 [50 , 50 , 100 , 100 , 200] Conditional 256 1 0.999 
+
+cube-1 1024 [20 , 80] Unconditional 128 1 0.99 
+
+cube-2 1024 [20 , 20 , 80] Unconditional 128 1 0.99 
+
+cube-3 1024 [20 , 20 , 20 , 80] Unconditional 128 1 0.99 
+
+cube-4 1024 [20 , 20 , 20 , 20 , 80] Unconditional 128 1 0.99 
+
+> GC-TD3
+
+antmaze-medium 256 [50 , 50 , 100 , 100 , 200] Conditional 256 1 0.999 
+
+antmaze-large 256 [50 , 50 , 100 , 100 , 200] Conditional 256 1 0.999 
+
+antmaze-giant 256 [50 , 50 , 100 , 100 , 200] Conditional 256 1 0.999 
+
+cube-1 1024 [20 , 80] Unconditional 128 1 0.99 
+
+cube-2 1024 [20 , 20 , 80] Unconditional 128 1 0.99 
+
+cube-3 1024 [20 , 20 , 20 , 80] Unconditional 128 1 0.99 
+
+cube-4 1024 [20 , 20 , 20 , 20 , 80] Unconditional 128 1 0.99 
+
+> GC-BC
+
+antmaze-medium 256 [50 , 50 , 100 , 100 , 200] Conditional 256 1 0.999 
+
+antmaze-large 256 [50 , 50 , 100 , 100 , 200] Conditional 256 1 0.999 
+
+antmaze-giant 256 [50 , 50 , 100 , 100 , 200] Conditional 256 1 0.999 
+
+cube-1 1024 [20 , 80] Unconditional 128 1 0.99 
+
+cube-2 1024 [20 , 20 , 80] Unconditional 128 1 0.99 
+
+cube-3 1024 [20 , 20 , 20 , 80] Unconditional 128 1 0.99 
+
+cube-4 1024 [20 , 20 , 20 , 20 , 80] Unconditional 128 1 0.99 
+
+> GC-1S
+
+antmaze-medium 256 [50 , 50 , 100 , 100 , 200] Conditional 256 1 0.999 
+
+antmaze-large 256 [50 , 50 , 100 , 100 , 200] Conditional 256 1 0.999 
+
+antmaze-giant 256 [50 , 50 , 100 , 100 , 200] Conditional 256 1 0.999 
+
+cube-1 1024 [20 , 80] Unconditional 128 1 0.99 
+
+cube-2 1024 [20 , 20 , 80] Unconditional 128 1 0.99 
+
+cube-3 1024 [20 , 20 , 20 , 80] Unconditional 128 1 0.99 
+
+cube-4 1024 [20 , 20 , 20 , 20 , 80] Unconditional 128 1 0.99 
+
+> HFBC
+
+antmaze-medium 32 [25] ∗ 24 Conditional 128 1 0.999 
+
+antmaze-large 32 [25] ∗ 24 Conditional 128 1 0.999 
+
+antmaze-giant 32 [25] ∗ 24 Conditional 128 1 0.999 
+
+cube-1 32 [25] ∗ 4 Unconditional 128 1 0.99 
+
+cube-2 32 [25] ∗ 5 Unconditional 128 1 0.99 
+
+cube-3 32 [25] ∗ 6 Unconditional 128 1 0.99 
+
+cube-4 32 [25] ∗ 7 Unconditional 128 1 0.99 
+
+38

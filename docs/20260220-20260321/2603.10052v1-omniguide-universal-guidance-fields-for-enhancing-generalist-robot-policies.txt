@@ -1,0 +1,604 @@
+Title: OmniGuide: Universal Guidance Fields for Enhancing Generalist Robot Policies
+
+URL Source: https://arxiv.org/pdf/2603.10052v1
+
+Published Time: Thu, 12 Mar 2026 00:05:23 GMT
+
+Number of Pages: 17
+
+Markdown Content:
+# OmniGuide: Universal Guidance Fields for Enhancing Generalist Robot Policies 
+
+Yunzhou Song 1∗ Long Le 1∗ Yong-Hyun Park 1 Jie Wang 1 Junyao Shi 1 Lingjie Liu 1 Jiatao Gu 1 Eric Eaton 1
+
+Dinesh Jayaraman 1 Kostas Daniilidis 11University of Pennsylvania 
+
+Abstract —Vision-language-action (VLA) models have shown great promise as generalist policies for a large range of relatively simple tasks. However, they demonstrate limited performance on more complex tasks, such as those requiring complex spatial or semantic understanding, manipulation in clutter, or precise manipulation. We propose O MNI GUIDE , a flexible framework that improves VLA performance on such tasks by leveraging arbitrary sources of guidance, such as 3D foundation models, semantic-reasoning VLMs, and human pose models. We show how many kinds of guidance can be naturally expressed as differentiable energy functions with task-specific attractors and repellers located in 3D space, that influence the sampling of VLA actions. In this way, O MNI GUIDE enables guidance sources with complementary task-relevant strengths to improve a VLA model’s performance on challenging tasks. Extensive experi-ments in both simulation and real-world environments, across diverse sources of guidance, demonstrate that OMNI GUIDE 
+
+enhances the performance of state-of-the-art generalist policies (e.g., π0.5, GR00T N1.6) significantly across success and safety rates. Critically, our unified framework matches or surpasses the performance of prior methods designed to incorporate 
+
+specific sources of guidance into VLA policies. Project Page: https://omniguide.github.io/ 
+
+I. I NTRODUCTION 
+
+Today’s predominant paradigm for developing generalist robotic policies is to train Vision-Language-Action (VLA) models via Behavior Cloning (BC) on massive human teleop-erated datasets [60, 30, 82]. While this approach has yielded capable models such as Gemini Robotics [79, 80], GR00T [58], MolmoAct [38], and the π series [2, 27], the scalability of pure imitation faces an inherent performance ceiling. Without dense coverage of the space of all possible environments and tasks—which is practically impossible to achieve via human teleoperation alone—these VLAs pre-trained with behavior cloning often fall short of mastery. Instead of becoming experts, pre-trained VLAs often emerge as jacks-of-all-trades, masters of none – possessing a broad understanding of diverse tasks but lacking the specialized precision required for reliable execution in a new environment. Consequently, even the most advanced VLA models often fail at the “last mile” – struggling with 3D collision avoidance, precise physical grounding, and robust articulated object manipulation [21, 94, 93, 24]. Common approaches [78, 39, 40] to bridge this gap require intensive post-training and fine-tuning on additional high-
+
+> ∗
+
+Equal contribution ⚠ Collide     
+
+> ❌Wrong
+> “Put the Fruit in the purple bowl”
+> Base Policy OmniGuide A7ractor
+> Repeller
+
+Fig. 1. OMNI GUIDE unifies different kinds of guidance via attractive and repulsive fields to improve the performance of generalist robot policies. 
+
+quality robotic data in the target environment, which is both expensive and scarce. We explore an alternative strategy to overcome these weak-nesses of VLAs that relies on no additional robotic data, and no additional training. Instead, we propose that VLA models could simply “get by with a little help from their friends”, namely, foundation models in perception, such as 3D geometry reconstruction, or human pose estimation, or Vision-Language Models (VLMs). But how might these perception models help a VLA to overcome its deficiencies? We introduce O MNI GUIDE , a general framework for im-proving VLA generalist policies through unified inference-time guidance . O MNI GUIDE applies to any VLA that generates actions through diffusion or flow matching. Rather than at-tempting to bake every constraint into the pre-training stage, OMNI GUIDE leverages external foundation models – such as 3D reconstruction [83] for safety-critical collision avoidance, VLMs [11] for semantic guidance, and hand-tracking [91] for one-shot human demonstrations – to inject knowledge otherwise missing in the VLA, and steer the policy’s actions at test-time. We unify these diverse sources of guidance through adifferentiable energy function over 3D space, whose spatial gradients represent two types of “forces”: attraction toward task-relevant regions such as goals, and repulsion away from undesirable regions such as collisions and other safety con-straints. These external gradients, in conjunction with the VLA’s native velocity field narrows the VLA’s multi-modal solution space, steering the robot toward actions that are 
+
+> arXiv:2603.10052v1 [cs.RO] 9 Mar 2026
+
+simultaneously task-effective, safe, and physically grounded, as shown in Fig. 1. To validate our approach, we perform extensive experiments both in simulation and real-world across three classes of guidance and two generalist VLA base models [27, 58]. OMNI GUIDE consistently improves the base VLA models across different metrics, including increasing success rates from 24.2% to 92.4% and collision avoidance rates from 7.0% to 93.5%, all without incurring significant execution latencies or requiring retraining. We summarize our main contributions here: 1) We introduce test-time guidance for any differentiable generative policy, agnostic of how it has been trained or of what particular VLA expert was implemented. 2) Our guidance term can express attractive (semantically grounded targets, human demonstrations) or repulsive (ob-stacle avoidance) energy fields, as well as their synergy. These energies and their gradients are computed in real-time, thus allowing both safe operation in dynamic envi-ronments and test-time steering towards target trajectories. 3) Our framework is versatile: we demonstrate that it permits many perception foundation models, sometimes in tandem, to guide state-of-the-art VLA policies and improve their performance on challenging tasks. We experimentally ana-lyze the trade-offs between staying on the prior distribution vs. being safe or following new targets. II. R ELATED WORK 
+
+A. Generalist Robotic Manipulation Policies 
+
+The current frontier in generalist robot manipulation is driven by Vision-Language-Action (VLA) models, which are large, multimodal systems that unify perception, reasoning, and control by coupling VLMs with generative models for actions. These end-to-end architectures [4, 32, 59, 2, 42] allow robots to leverage the vast semantic knowledge embedded in VLM backbones. However, recent evaluations reveal several key limitations, including shortcomings in grounding abstract language to diverse scenarios [79, 80, 27, 44], long-term task planning [69, 28, 95], and spatial perception and reasoning [38, 65, 96, 20]. While contemporary efforts attempt to miti-gate these failures through supervised finetuning on curated datasets [30, 38, 27] or reinforcement learning [8, 26] for broader action exploration, these approaches incur prohibitive computational costs and risk degrading the foundational capa-bilities of the base model via catastrophic forgetting. 
+
+B. Guidance for Generative Policies 
+
+Test-time guidance has emerged as a powerful paradigm for steering the generative process of diffusion [6, 61, 81, 84, 76, 15, 5] or flow matching [3, 12] policies, allowing the incorpo-ration of extra constraints or objectives beyond those initially trained. However, previous works are either limited to modi-fying only the initial noise distribution [61, 81, 90, 33, 45] or rely on small, specialized models trained on narrow domains, such as the latent space or dynamic models [15, 76, 23, 56, 53], which hinder their utility in more general in-the-wild robotic settings. Recent approaches introduced safety constraints to flow matching: SafeFlowMatcher [88] biases the learned flow toward safety during training, whereas SafeFlow [41] enforces safety on the generative dynamics at inference time by solving a quadratic optimization at each denoising step. None of them is tested in complex environments and tasks or in combina-tion with any generalist policy. The closest work to ours is Inference-time Policy Steering [84]. While their method is limited to human demonstrations and requires iterative MCMC sampling process and expertise-demanding robotic kinesthetic teaching, O MNI GUIDE demonstrates a unified guidance frame-work over several guidance types including both the initial noise prior and intermediate conditional distributions along the generative trajectory, and leverages a hand-tracking model for ease of use. 
+
+C. Harnessing Foundation Priors for Robot Manipulation 
+
+While modern robot manipulation systems are increasingly powered by large Vision-Language Models (VLMs) for task specification and generalization [72, 14, 70, 25], most other foundation models with rich physical or geometric understand-ing remain underexploited in robotic control. Meanwhile, a growing ecosystem of specialized foundation models—such as 3D reconstruction and geometry-aware models [83, 73, 52], articulation and kinematic reasoning models [36, 37, 55, 48], human motion [63, 91], and object tracking systems [29, 74, 85] offer powerful priors. Yet, it remains unclear how to harness these heterogeneous models to improve robotic poli-cies. O MNI GUIDE addresses this challenge by incorporating these diverse foundation models, ranging from VLMs to 3D geometry and human priors, through a unified inference-time guidance mechanism without having to retrain the base VLAs. III. O MNI GUIDE : U NIVERSAL GUIDANCE FIELDS FOR 
+
+ENHANCING GENERALIST ROBOT POLICIES 
+
+A. Background 
+
+We present a unified inference-time guidance framework for flow-matching-based Vision-Language-Action (VLA) policies. Our key idea is to treat diverse sources of task constraints, like obstacle avoidance, semantic goals, and human demonstra-tions— as energy functions defined over Cartesian trajectories .These energies are used to shape the generative flow of a pretrained VLA policy during inference, without retraining or collecting additional data. Below, we provide the mathematical framework for injecting guidance into flow-matching policies. The derivations for diffusion policies are similar [22, 34]. 
+
+Action-Chunk Flow Matching as a Generative Prior. Flow matching provides a framework for modeling complex dis-tributions by learning to transform samples from a simple base distribution (e.g., Gaussian noise) to the target data distribution (e.g., teleoperation robot trajectories). We consider a pretrained VLA policy that generates an action chunk At =[at, at+1 , . . . , at+H−1] conditioned on the current observation 
+
+ot. For simplicity, we drop the time subscript t when the temporal index is clear from context. Depending on the policy, actions may live in joint space or a learned latent space. Gr00t [58] operates in a learned latent action space, whereas π0.5
+
+[27] uses action chunks in the robot joint space. When this distinction is not required, we refer to all such representations collectively as A for clarity. The VLA policy is trained using flow matching to model the conditional distribution p(A|o). To distinguish it from the action time t, we denote the denoising time as τ . Flow matching defines a continuous-time( τ ) generative process that transports samples from a simple base distribution to the data distribution. Specifically, the model learns a time-dependent vector field 
+
+dAτ
+
+dτ = vθ (Aτ , o), τ ∈ [0 , 1] , (1) where τ = 0 corresponds to noise and τ = 1 to clean samples. At inference time, actions are generated by integrating this ODE starting from A0 ∼ N (0, I) to obtain a clean action chunk A1 at τ = 1 .Formally, given a forward process q(Aτ |A1) =
+
+N (τ A1, (1 − τ )2I), the network vθ (Aτ , o) is trained to match the conditional vector field u(Aτ |A1) by minimizing [46, 51] 
+
+L(θ) = Ep(A1|o),q (Aτ |A1)
+
+∥vθ (Aτ , o) − u(Aτ |A1)∥22
+
+ ,
+
+(2) where the conditional vector field follows from the linear interpolation path Aτ = (1 − τ )A0 + τ A1 [46, 51]: 
+
+u(Aτ |A1) = A1 − A0. (3) It is known that the learned velocity has a closed-form relation with the score function ∇Aτ log pτ (Aτ ) [46, 31]: 
+
+vθ (Aτ , o) = − 11 − τ Aτ + τ
+
+1 − τ ∇Aτ log pτ (Aτ |o).
+
+At inference time, action chunks are generated by integrat-ing the learned vector field from τ = 0 (random noise), to τ =1 (clean sample), starting with random noise A0 ∼ N (0, I)
+
+and ending at the data distribution, using an ODE solver: 
+
+Aτ +δ = Aτ + δ · vθ (Aτ , o) (4) This generative process produces diverse, multimodal action distributions that capture the stochasticity inherent in robotic manipulation tasks. Using Tweedie’s formula, we estimate the posterior mean of the clean action trajectory ˜Aτ at denoising timestep τ as [17, 10, 31]: 
+
+˜Aτ = E[A1|Aτ ] = Aτ + (1 − τ )vθ (Aτ , o) (5) This provides an approximation of the clean sample corre-sponding to the current noisy action. The pretrained VLA defines a naturalness prior over ac-tions, capturing semantic understanding, smoothness, kinemat-ics feasibility, and contact patterns present in the training data. 
+
+Guidance for Controllable Generation. However, the pretrained prior alone does not enforce constraints such as collision avoidance or semantic grounding. To incorporate these additional conditions y, we aim to sample from the −ℒ!(𝐗 )
+
+∇!! ℒ"    
+
+> Gradient
+> Base
+> Policy
+> One -step
+> Denoise Kinematics Eval
+> Foundation
+> Knowledge
+> Noisy Actions Approx Clean Actions Cartesian Poses
+
+𝐀 # $𝐀 # 𝐗 
+
+# Demo figure              
+
+> Guidance Field
+> Observation, State, Prompt
+> Fig. 2. Method Overview. For each denoising step, O MNI GUIDE first estimates the clean action chunk ˜Aτby the base policy vθ, and then decodes it into joint space. A differentiable dynamics/kinematic model is then used to obtain the robot’s Cartesian trajectories X, which are evaluated using the energy functions Lyextracted from foundation models. Finally, the gradient will be backpropagated through the robot model and all neural networks, yielding a guidance vector on the noisy latent action chunk Aτ.
+
+posterior distribution p(Aτ |y) rather than the unconditional 
+
+p(Aτ ). By Bayes rule: 
+
+∇Aτ log p(Aτ |y) = ∇Aτ log p(Aτ ) + ∇Aτ log p(y|Aτ ) (6) Substituting this into the velocity-score relation yields the posterior velocity field: 
+
+vθ (Aτ , o | y) = vθ (Aτ , o) + λτ ∇Aτ log p(y|Aτ ), (7) where λτ denotes the flow time-dependent guidance strength. For stability, we use a constant guidance strength λ across all timesteps [62]. The guided generation process thus becomes: 
+
+Aτ +δ = Aτ + δ · (vθ (Aτ , o) + λ∇Aτ log p(y|Aτ )) (8) This formulation enables test-time steering toward task-specific objectives without retraining the base policy. Rather than interpreting y as a discrete conditioning vari-able, we adopt an energy-based view and define the task-induced energy [49, 16] 
+
+Ly( ˜Aτ ) := − log p(y| ˜Aτ ). (9) where ˜Aτ is the approximated clean action as Eq. 5. Guided flow matching can then be interpreted as energy shaping : The generative process follows the superposition of the learned naturalness field and the gradient of a task-defined energy. 
+
+B. Guidance Defined in Cartesian Space 
+
+Most task constraints of interest are naturally defined in Cartesian space rather than in action space, and they apply to the clean trajectory that the policy will ultimately execute. Therefore, guidance cannot be evaluated directly on noisy actions Aτ .At each flow step τ , we estimate guidance gradients through the following procedure, as shown in Fig. 2: 1) Estimate the clean action chunk ˜Aτ using Eq. (5). 2) Decode ˜Aτ from latent to joint space if required by the specific policy. 𝐗 
+
+𝐗 
+
+𝐗 
+
+−∇𝐗 ℒ"#$$%&%#' 
+
+−∇𝐗 ℒ&()*'+%" 
+
+−∇𝐗 ℒ"#),%'(-      
+
+> w/oguidance
+> during denoise
+> with guidance
+> Semantic target
+> Collision obstacles Fig. 3. Guidance Visualization . We visualize the guidance gradient(lines) on the predicted Cartesian trajectories(dots), which will be backpropagated to the latent space as denoising guidance. The guidance gradient from collision energy repels the trajectories from obstacles, and the semantic energy gradient attracts the gripper for the grounded target. The two guidances are naturally blended in the space, yielding a joint guidance gradient which steers the denoising to a safe and task-oriented state.
+
+3) Predict the corresponding Cartesian trajectory using a differentiable dynamics and kinematics model[50]: 
+
+X = f (p| ˜Aτ , s) (10) where p denotes probe points or frames rigidly attached to the robot (e.g. the end-effector 3D coordinates) and s
+
+is the robot state. 4) Evaluate a task-specific energy Ly(X) in Cartesian space. The guidance gradient visualized in Fig. 3 is obtained by backpropagating through this chain: 
+
+∇Aτ log p(y|Aτ ) = −∇ Aτ Ly(X). (11) The final denoising update becomes 
+
+Aτ +δ = Aτ + δ
+
+
+
+vθ (Aτ , o) − λ clip (∇Aτ Ly(X), α )
+
+
+
+, (12) where gradients are clipped to some constant α for numerical stability. In addition to intermediate guidance during denoising, we optionally apply guidance at the initial noise distribution. Motivated by recent findings that combining initial-distribution guidance with denoising guidance improves performance [92], we sample N initial noise {A0 
+
+> i
+
+}Ni=1 from the prior, perform denoising with few integration steps to obtain approximately clean actions {A1 
+
+> i
+
+}Ni=1 , and select the one with the lowest energy Ly(A1 
+
+> i
+
+). This procedure can be interpreted as a Monte-Carlo approximation to the zero-temperature limit ( α → 0) of an energy-reweighted prior [54]: 
+
+p∗(A0) ∝ p(A0) exp( −L y(A1)/α ). (13) 
+
+C. A Universal Spatial Guidance Field 
+
+All guidance sources in our framework instantiate the same abstraction: they define attractive or repulsive energy fields in 3D space that act on the predicted Cartesian trajectory. These fields are projected to action space via differentiable kinemat-ics and shape the VLA’s generative process. We describe three instantiations used in this work. 
+
+Collision Avoidance via Repulsive Fields. We construct this objective function upon the environment point cloud {p},which can be built either from RGB-D images or via calibrated VGGT predictions (see Appendix for details). We utilize CLIP features [66] and mesh rendering to remove task-relevant regions like the object of interest and robot body from the collision point cloud. We quantize the point cloud into discrete occupancy grids 
+
+O ∈ RH×W ×L, and compute a discrete signed distance function SDF O (x) based on it. Given a bounded finite risk region Ω = {x ∈ R3 | 0 <
+
+SDF O (x) ≤ d}, where d is a pre-defined barrier distance, the integral value Z = R 
+
+> Ω
+
+SDF O (x) dx over Ω is finite as shown in the appendix. Since depth-based reconstruction captures only visible surfaces rather than solid volumes, encountering 
+
+SDF O (x) < 0 is rare in practice. Thus, we can model the safety probability pC (x) as 
+
+pC (x) = SDF O (x)
+
+Z , x ∈ Ω, (14) and define a repulsive energy 
+
+LC (x) = − log pC (x) = − log SDF O (x) + Const . (15) By the definition of the SDF, the gradient with respect to the query position x takes the form 
+
+−∇ xLC (x) = 1SDF O (x)
+
+x − p∗
+
+∥x − p∗∥ , (16) where p∗ is the closest point on the obstacle surface to x.This expression is easy to interpret: the first term ensures the gradient strength decreases as the distance to the obstacle increases, and the second term directs the gradient away from the obstacle. We approximate the discrete SDF gradient by finite differences ∇SDF O (xi) ≈ SDF O (xi+1 )−SDF O (xi)∆i , and apply trilinear interpolation for continuous queries x. As the representation is discrete and feedforward, we can update the 3D environment swiftly for each inference query, enabling interaction with a changing environment. 
+
+Semantic Grounding via Attractive Targets. To augment the semantic grounding capabilities of the VLA base policy, we make use of the zero-shot spatial reasoning of state-of-the-art VLMs. Specifically, we query the VLM with the current image observations and task instruction to localize the most task-relevant object or affordance in pixel space, denoted as 
+
+u∗ ∈ R2. Leveraging the aligned depth map, we back-project its 2D coordinates into the 3D world frame to obtain a spatial target centroid x∗ ∈ R3. We model the likelihood of the predicted end-effector position x successfully grounding to this target as a Gaussian distribution, centered at x∗ with variance σ2 
+
+> S
+
+:
+
+pS (x) = N (x | x∗, σ 2 
+
+> S
+
+I). (17) The resulting semantic grounding attractive energy LS is the negative log-likelihood of this distribution: 
+
+LS (x) = − log pS (x) = ∥x − x∗∥22
+
+2σ2
+
+> S
+
++ Const . (18) Complementary to this positional guidance, we formulate an orientation objective to align the gripper’s forward vector with the approach direction defined by the vector x∗ − x. The detailed derivation of this orientation constraint is provided in the Appendix. 
+
+Human Demonstrations as Sparse Trajectory Attrac-tors. While human demonstrations are a readily accessi-ble source of task data, utilizing them for direct control is challenged by the inherent kinematic heterogeneity between human and robot structures [71]. Fortunately, advances in human hand pose estimation provide a robust mechanism to bridge this domain gap. We leverage one-shot human demonstrations to guide the robot through spatially sensitive manipulation tasks. Specifically, we employ HaPTIC [91] to extract human wrist positions from demonstration sequences, yielding a reference trajectory H = {h0, . . . , hN −1}, where 
+
+h ∈ R3. To align the robot’s predicted end-effector trajec-tory X = {xt}H−1 
+
+> t=0
+
+with this human reference, we propose a monotonic matching strategy inspired by Dynamic Time Warping (DTW), as detailed in Alg. 1. This procedure enforces temporal monotonicity; however, since the robot’s planning horizon and the demonstration length may differ, a one-to-one correspondence is not guaranteed. Consequently, guidance is applied exclusively to the subset of matched poses. For every identified correspondence in the set M, we model the spatial alignment probability as a Gaussian distribution 
+
+pH (x | h∗) = N (x | h∗, σ 2 
+
+> H
+
+I). This formulation yields a trajectory-level attraction energy given by the negative log-likelihood as follows: 
+
+LH (X ) = 12σ2
+
+> H
+
+X 
+
+> (xi,h∗
+> i)∈M
+
+∥xi − h∗ 
+
+> i
+
+∥22 + Const . (19) The guidance fields we introduced are deterministic and task-specific, and may exhibit local minima or incomplete mod-eling of contact dynamics. The pretrained VLA policy, by contrast, provides a stochastic and diverse prior over action chunks. Guided flow matching combines these complementary strengths: The base policy supplies diversity and realism, while guidance shapes generation toward task-relevant regions of the action space. IV. E XPERIMENTS 
+
+The goal of our experiments is to understand when, why, and how inference-time guidance improves generalist Vision-Language-Action (VLA) policies. While O MNI GUIDE is de-signed as a general and modular framework, its effectiveness depends on interacting factors: the strength of the pretrained VLA prior, the nature of the guidance signal, the trade-off between naturalness and constraint satisfaction, and the ability to compose multiple heterogeneous objectives. 
+
+A. Simulation Experiments 
+
+We evaluate our unified guidance framework in a high-fidelity simulation using the RoboCasa benchmark [57]. Our system is built upon the NVIDIA GR00T N1.6-3B foundation model, which serves as the backbone policy predicting relative 
+
+Algorithm 1 Monotonic Trajectory Alignment 
+
+Require: Predicted Robot Trajectory X = ( x0, . . . , xH−1),where x ∈ R3
+
+Require: Reference Human Trajectory H = ( h0, . . . , hN −1),where hk ∈ R3
+
+Ensure: Matched Correspondence Set M 
+
+> 1:
+
+Initialize: M ← ∅ , start index kcurr ← 0 
+
+> 2:
+
+for t = 0 , . . . , H − 1 do  
+
+> 3:
+
+▷ Find nearest neighbor in the remaining horizon  
+
+> 4:
+
+k∗ ← arg min k≥kcurr ∥xt − hk∥2 
+
+> 5:
+
+M ← M ∪ { (xt, hk∗ )} ▷ Store the matched pair  
+
+> 6:
+
+kcurr ← k∗ ▷ Pruning for temporal monotonicity  
+
+> 7:
+
+if kcurr = N − 1 then  
+
+> 8:
+
+break ▷ Reference trajectory exhausted  
+
+> 9:
+
+end if  
+
+> 10:
+
+end for  
+
+> 11:
+
+return M
+
+Cartesian end-effector motions for a Franka Emika Panda robot. To study the synergy between guidance and generative priors, we exclude perception artifacts from foundation models by using ground-truth depth and object poses provided by the simulator. 
+
+Guidance Tasks: We curate a challenging suite of tasks to test distinct guidance modalities. To evaluate O MNI GUIDE 
+
+for collision avoidance, we introduce extra clutter into two RoboCasa tasks: pick-and-place and turning the sink spout in a kitchen. Fig 4 shows these tasks. Note that we do not alter the original definition of success for these RoboCasa tasks. Thus, collision avoidance is only incidentally related to “success”, and policies that incur frequent collisions can still have high “success rates”. To directly measure collision avoidance behavior, we also track “safety rates” for each policy, where an episode is considered a safety failure if even one collision occurs between the robot body and static furniture. Next, for semantic grounding, we construct a Multi-Choice 
+
+task following [43, 7], where the agent must identify and manipulate a specific target object from multiple candidates initialized at randomized locations (see Fig 4 for an example). Note that later in Sec. IV-B, we will also test O MNI GUIDE ’s ability to combine both collision avoidance and semantic guidance. We configure the collision barrier distance for O MNI GUIDE 
+
+at d = 0.15 meter, with collision and semantic guidance weights set to λC = 0.02 and λS = 5.0, respectively, alongside an auxiliary orientation term weighted at 0.02 λS .
+
+Results: Fig. 4 shows the experiment setup and qualitative results. All experiments are conducted over 50 independent trials, and we report the Success Rate and Safety Rate. As detailed in Fig. 5, our method significantly outperforms the un-guided baseline across all settings. For the collision avoidance tasks, as expected, it dramatically boosts the safety rate, and even slightly improves success rates. On semantic grounding, Ours  Baseline 
+
+## Guidance: Collision Avoidance 
+
+“Turn the sink spout to the left” 
+
+❌
+
+## Guidance: Semantic Grounding 
+
+“Put the [Obj] in the pan” 
+
+## Guidance: Combined 
+
+“Put the [Obj] in the pan” 
+
+Collided 
+
+✓ No Collision 
+
+❌ Wrong Object 
+
+Desired Object 
+
+❌❌ Wrong Object & Collided 
+
+Desired Object & No Collision  
+
+> Obj=“lemon” Obj=“lime”
+> Obj=“bell pepper”
+
+✓ ✓✓ 
+
+> Obj =“fish”
+
+Fig. 4. Qualitative Results of Simulation Experiments. OMNI GUIDE demonstrates strong generalization capabilities and flexibility across diverse tasks. We show the individual and joint effects of our method on different tasks. Left: collision avoidance guidance for the TurnSinkSpout task. Middle: semantic grounding guidance for the Multi-Choice task. Right: combination of the two guidance for the Multi-Choice in a clutter scene. Success Rate Safety Rate     
+
+> 20%
+> 30%
+> 40%
+> 50%
+> 60%
+> 70%
+> 80% (a) Collision Avoidance
+> Success Rate
+> (b) Grounded Semantic
+> Base Policy (GR00T N1.6) w/ Initialization Guidance w/ Denoising Guidance Ours
+
+Fig. 5. Quantitative Results of Simulation Experiments. OMNI GUIDE is an effective method for enhancing base VLA’s task performance and safety. Each component, including the initialization and denoising guidance, yields an improvement over the base policy, with denoising guidance being more effective, while our combined method produces the largest boost. 
+
+OMNI GUIDE ’s guidance is directly relevant to task success. Figure 4 shows some example results for O MNI GUIDE and the base VLA. 
+
+B. Ablations and Further Analyses 
+
+Impacts of different components of O MNI GUIDE : OM-
+
+NI GUIDE consists of an optimized initialization of the noise via guidance evaluation (Eqn. 13) followed by denoising guidance (Eqn. 8). To quantify each component’s contribution, we conduct an ablation study. As shown in Fig. 5, initialization guidance improves success by 8% and reduces collisions by 18%, while denoising guidance yields larger gains (20% success, 34% collision reduction). Combined, they improve success by 26% and reduce collisions by 46%. 
+
+Sensitivity Analysis of Guidance Strength: What are the trade-offs between adherence to the pretrained VLA prior and the strength of external guidance? We investigate the system’s sensitivity to the guidance weight λ in the Robocasa collision avoidance task. To strictly isolate the influence of the guidance gradient, the initialization guidance is disabled for this analysis. The trajectory of metrics in Fig. 7 illustrates a clear trade-off: as guidance strength increases, the safety utility improves; however, excessively high weights eventually compete with the base policy’s task objective, leading to a decline in success rate. Crucially, the semi-logarithmic plot reveals that our framework is robust to hyperparameter vari-ations, i.e., there is a wide range of viable hyper-parameters that can balance between the policy’s prior and the external guidance, achieving both high success and safety rates. 
+
+Synergy of Combined Guidance: Can multiple guidance objectives be composed without destructive interference? We evaluate the composability of our framework by deploying the policy in a cluttered Multi-Choice environment, a scenario necessitating simultaneous semantic grounding and obstacle avoidance. As summarized in Fig. 8, while each guidance modality proves effective in isolation, their concurrent applica-tion yields cumulative improvements. This demonstrates that the unified energy formulation can successfully coordinate het-erogeneous objectives—steering the robot toward the correct semantic target while maintaining safety—without destructive interference. 
+
+C. Real-World Robot Experiments 
+
+To validate OMNI GUIDE ’s effectiveness in a real-world environment, we conduct experiments on a DROID [30] platform featuring a 7-DoF Franka Research 3 robot arm. The perception stack consists of a wrist-mounted ZED Mini and three stationary ZED 2 cameras, with 3D scene geometry reconstructed via VGGT [83] to provide the point cloud for guidance. We employ π0.5 [27] as the base generalist policy, and Gemini-2.5-Flash [80] to provide semantic guidance. We evaluate nine experimental configurations across three guidance modalities including collision avoidance, grounded Human Traj 
+
+## Guidance: Collision Avoidance 
+
+“Put the banana in the purple bowl” 
+
+## Guidance: Semantic Grounding 
+
+“Put the soda can in the correct trash bin” 
+
+## Guidance: Human Imitation 
+
+“Open the cabinet fully” 
+
+> Ours  Baseline
+
+Fig. 6. Real-world Qualitative Results : Our method can handle different types of guidance including 3D awareness (left), semantic reasoning (middle), and human demonstration (right). The top row shows the base π0.5 policy struggling to complete the tasks while the bottom row features the method’s successes. Arrows illustrate the end effector trajectories. 
+
+Fig. 7. Guidance Strength Sensitivity Analysis: As the collision guidance strength increases, the safety rate improves. However, excessively high guid-ance strength interferes with the base policy’s naturalness prior, eventually hindering task performance. Additionally, the semi-logarithmic plot reveals there is a wide range of viable hyper-parameters that can balance between the policy’s prior and the external guidance, achieving both high success and safety rates. 20% 40% 60% 
+
+> Safety Rate
+> 0%
+> 20%
+> 40%
+> 60%
+> Success Rate  Semantic + Collision
+> (Ours) Semantic
+> Collision
+> No Guidance
+> (Gr00t N1.6)
+
+Combining Guidance Fields 
+
+Fig. 8. Composing guidance fields : Semantic guidance improves the success rate while collision guidance improves the safety rate. By composing both guidance fields, O MNI GUIDE simultaneously enhances safety and task performance. 
+
+semantic and human imitation. Additionally, to demonstrate OMNI GUIDE ’s potential as a universal framework for all kinds of guidance fields, for each guidance type, we also compare OMNI GUIDE against one specialized prior method specifically designed to solve that task. 
+
+Guidance Tasks: We design a challenging suite of tasks inspired by prior works including three different tasks for each guidance modality. For each task, an experiment is repeated across five different trials, each with varying environment conditions (e.g., object placement, object type). For colli-sion avoidance, the three tasks are avoiding collision with a static barrier (“static”), with suddenly appearing obstacle (“dynamic”), and reacting to human blockage (“reactive”), following [13, 89]. For grounded semantic, the robot must reason about the given instruction to solve Multi-Choice tasks following [43, 7]. For the “Picture” tasks, the robot must pick up an object and place it in a bowl closer to a picture of a named celebrity. For the “Objects” task, five different objects are present, and the robot must pick up the correct object as instructed. For the “Trash Cans” task, the object must correctly place the soda can in a recycled bin as opposed to a compost bin. For human imitation, common articulation manipulation tasks including opening a drawer, a cabinet, and a miniature oven are considered. 
+
+Baselines: For collision avoidance, we compare against a post-hoc strategy to make VLA’s generated trajectories safe. Specifically, given a trajectory, we construct a cost function comprising of an alignment term (staying closer to the initial trajectory), a goal-reaching term, and a collision avoidance Static Dynamic Reactive             
+
+> 0%
+> 20%
+> 40%
+> 60%
+> 80%
+> 100%
+> Success Rate
+> (a) Collision Avoidance
+> Specialized: cuRobo
+> 0% 0% 0% 0%
+> Pictures Objects Trash Cans
+> (b) Semantic Grounding
+> Specialized: F3RM
+> 0%
+> Drawer Cabinet Oven
+> (c) Human Imitation
+> Specialized: DemoDiffusion
+> VLA ( π0.5)Specialized Baselines OmniGuide (Ours) Fig. 9. Quantitative Results of Real-world Experiments. OMNI GUIDE consistently and significantly outperforms the base VLA and other specialized methods across three guidance modalities and nine tasks.
+
+term. We then initialize the trajectory with the VLA’s output, and iteratively optimize this cost function using a combination of stochastic sampling MPPI [87] and gradient-based L-BFGS [47] optimization. The implementation is done efficiently us-ing GPU-accelerated operations in cuRobo [77]. For semantic grounding, we compare against F3RM [68], a method for localizing relevant objects in the scene using distilled CLIP features. Lastly, for human imitation, we compare against DemoDiffusion [61], a recent approach that initializes the VLA’s initial noise distribution with a kinematically targeted human trajectory. 
+
+Results: As demonstrated in Fig. 9, O MNI GUIDE substantially outperforms the base VLA and specialized baselines across all tasks. Qualitative results are included in Fig. 6. For collision avoidance, we observe that when the base VLA outputs a disastrously unsafe trajectory, it is very difficult for a post-hoc method like cuRobo to mitigate. O MNI GUIDE ,in contrast, intervenes with guidance during the denoising process, ensuring that the generated actions are safe. For semantic grounding, we found that by leveraging a capable VLM [80] for high-level guidance, we can enable the robot to perform manipulation requiring more nuanced reasoning (e.g., “where to place the soda can”) or world knowledge (e.g., “put the object in the bowl next to celebrity X”) that the base VLA struggles to solve. The specialized baseline F3RM, which uses the less expressive CLIP features, similarly struggles with complex reasoning and world knowl-edge. Additionally, this method also requires a few human demonstrations to learn how to grasp and place the object once localized. In contrast, O MNI GUIDE inherits the manipulation capabilities of the base VLA. Lastly, for human imitation, O MNI GUIDE also outperform the base VLA and the specialized method. We found two critical limitations of DemoDiffusion. Firstly, DemoDiffusion provides guidance in an open-loop manner: the next action chunk from the human trajectory will be provided as guidance regardless of whether the previous chunk was successfully imitated. This open-loop design leads to suboptimal behavior, such as the robot gripper closing and moving away from the cabinet even when the robot has not successfully grasped the handle in the previous step. O MNI GUIDE , in contrast, grounds guidance in the Cartesian space and employs an    
+
+> Fig. 10. Latency Analysis: we parallelize three expensive operations includ-ing KV cache, CLIP, and VGGT computation to improve latency. Compared to the base VLA, O MNI GUIDE is about two times slower. Nonetheless, it is still fast enough at 15 Hz to be deployed as a reactive policy in the real-world.
+
+adaptive and sequential matching process (Alg 1) to determine the optimal human’s trajectory segment to imitate. Secondly, Demodiffusion only influence the VLA’s generative process by shaping the initial noise distribution, while O MNI GUIDE 
+
+provides constant denoising guidance, which is much more effective as illustrated in the previous ablation (Fig. 5). 
+
+Latency overhead of O MNI GUIDE : Real-time robot deploy-ment demands that a method can produce action predictions without significant delays. In Fig. 10, we compare the infer-ence speed of O MNI GUIDE against the base VLA, broken down by different components, measured on a single Nvidia RTX 5090 GPU. We found that in π0.5, computing the KV cache for the VLM backbone is much more expensive than denoising actions on the action expert. Thus, we parallelize this KV computation with other components in our method, including VGGT point-cloud construction and CLIP compu-tation. We found that our guided denoising also introduces some latency due to the added computation of guidance 
+
+∇Aτ log p(y|Aτ ). In practice, this leads to a reduction of control frequency from 30Hz to around 15Hz, which is still fast enough for our policy to be reactive as illustrated by the “reactive” experiment in Fig. 9. V. C ONCLUSION 
+
+OMNI GUIDE combines the strengths of both components: the data-driven VLA prior covering from high-level plan-ning to contact-awareness, and the precise, task-specific, and environmental structure imposed by external guidance. This combination enables controllable yet natural behavior that neither component could achieve on its own. We showed that O MNI GUIDE improves task success and safety across guidance tasks and environments. Our results also show why pretrained VLA priors still remain essential: Guidance fields alone cannot reliably resolve kinematic mismatches in human-to-robot retargeting, avoid local minima inherent to potential-field formulations, or model complex contact dynamics. There are several promising directions for addressing current limi-tations. Incorporating object-centric representations, such as hand-object geometry and articulated contact states, could improve dexterity. Other modalities such as force sensors, point-tracks [1], AI-generated videos [86], retrieved actions [75], or UMI trajectories [9] can also be incorporated as guidance in the future. 
+
+Acknowledgement The financial support by the grants NSF FRR 2220868, NSF IIS-RI 2212433, ONR N00014-22-1-2677, and NSF SLES 2331783, NSF CAREER 2239301, DARPA TIAMAT HR00112490421 is gratefully acknowl-edged. REFERENCES 
+
+[1] Homanga Bharadhwaj, Roozbeh Mottaghi, Abhinav Gupta, and Shubham Tulsiani. Track2act: Predicting point tracks from internet videos enables generalizable robot manipulation. In European Conference on Com-puter Vision , pages 306–324. Springer, 2024. [2] Kevin Black, Noah Brown, Danny Driess, Adnan Es-mail, Michael Equi, Chelsea Finn, Niccolo Fusai, Lachy Groom, Karol Hausman, Brian Ichter, et al. π0: A vision-language-action flow model for general robot control. 
+
+arXiv preprint arXiv:2410.24164 , 2024. [3] Kevin Black, Manuel Y Galliker, and Sergey Levine. Real-time execution of action chunking flow policies. 
+
+arXiv preprint arXiv:2506.07339 , 2025. [4] Anthony Brohan, Noah Brown, Justice Carbajal, Yevgen Chebotar, Xi Chen, Krzysztof Choromanski, Tianli Ding, Danny Driess, Avinava Dubey, Chelsea Finn, Pete Flo-rence, Chuyuan Fu, Montse Gonzalez Arenas, Keerthana Gopalakrishnan, Kehang Han, Karol Hausman, Alex Herzog, Jasmine Hsu, Brian Ichter, Alex Irpan, Nikhil Joshi, Ryan Julian, Dmitry Kalashnikov, Yuheng Kuang, Isabel Leal, Lisa Lee, Tsang-Wei Edward Lee, Sergey Levine, Yao Lu, Henryk Michalewski, Igor Mordatch, Karl Pertsch, Kanishka Rao, Krista Reymann, Michael Ryoo, Grecia Salazar, Pannag Sanketi, Pierre Sermanet, Jaspiar Singh, Anikait Singh, Radu Soricut, Huong Tran, Vincent Vanhoucke, Quan Vuong, Ayzaan Wahid, Ste-fan Welker, Paul Wohlhart, Jialin Wu, Fei Xia, Ted Xiao, Peng Xu, Sichun Xu, Tianhe Yu, and Brianna Zitkovich. Rt-2: Vision-language-action models transfer web knowledge to robotic control. In arXiv preprint arXiv:2307.15818 , 2023. [5] Joao Carvalho, An T Le, Piotr Kicki, Dorothea Koert, and Jan Peters. Motion planning diffusion: Learning and adapting robot motion planning with diffusion models. 
+
+IEEE Transactions on Robotics , 2025. [6] Evangelos Chatzipantazis, Nishanth Rao, and Kostas Daniilidis. Stride: State-space riemannian diffusion for equivariant planning. In Necmiye Ozay, Laura Balzano, Dimitra Panagou, and Alessandro Abate, editors, Pro-ceedings of the 7th Annual Learning for Dynamics &amp; Control Conference , volume 283 of Proceed-ings of Machine Learning Research , pages 1338–1352. PMLR, 04–06 Jun 2025. URL https://proceedings.mlr. press/v283/chatzipantazis25a.html. [7] Chilam Cheang, Sijin Chen, Zhongren Cui, Yingdong Hu, Liqun Huang, Tao Kong, Hang Li, Yifeng Li, Yuxiao Liu, Xiao Ma, et al. Gr-3 technical report. arXiv preprint arXiv:2507.15493 , 2025. [8] Zengjue Chen, Runliang Niu, He Kong, Qi Wang, Qianli Xing, and Zipei Fan. Tgrpo: Fine-tuning vision-language-action model via trajectory-wise group relative policy optimization. arXiv preprint arXiv:2506.08440 ,2025. [9] Cheng Chi, Zhenjia Xu, Chuer Pan, Eric Cousineau, Benjamin Burchfiel, Siyuan Feng, Russ Tedrake, and Shuran Song. Universal manipulation interface: In-the-wild robot teaching without in-the-wild robots. arXiv preprint arXiv:2402.10329 , 2024. [10] Hyungjin Chung, Jeongsol Kim, Michael T Mccann, Marc L Klasky, and Jong Chul Ye. Diffusion posterior sampling for general noisy inverse problems. arXiv preprint arXiv:2209.14687 , 2022. [11] Gheorghe Comanici, Eric Bieber, Mike Schaekermann, Ice Pasupat, Noveen Sachdeva, Inderjit Dhillon, Marcel Blistein, Ori Ram, Dan Zhang, Evan Rosen, et al. Gem-ini 2.5: Pushing the frontier with advanced reasoning, multimodality, long context, and next generation agentic capabilities. arXiv preprint arXiv:2507.06261 , 2025. [12] Xiaobing Dai, Zewen Yang, Dian Yu, Shanshan Zhang, Hamid Sadeghian, Sami Haddadin, and Sandra Hirche. Safe flow matching: Robot motion planning with con-trol barrier functions. arXiv preprint arXiv:2504.08661 ,2025. [13] Murtaza Dalal, Jiahui Yang, Russell Mendonca, Youssef Khaky, Ruslan Salakhutdinov, and Deepak Pathak. Neu-ral mp: A generalist neural motion planner. arXiv preprint arXiv:2409.05864 , 2024. [14] Murtaza Dalal, Min Liu, Walter Talbott, Chen Chen, Deepak Pathak, Jian Zhang, and Ruslan Salakhutdinov. Local policies enable zero-shot long-horizon manipu-lation. In 2025 IEEE International Conference on Robotics and Automation (ICRA) , pages 13875–13882. IEEE, 2025. [15] Maximilian Du and Shuran Song. Dynaguide: Steering diffusion polices with active dynamic guidance. arXiv preprint arXiv:2506.13922 , 2025. [16] Yilun Du, Conor Durkan, Robin Strudel, Joshua BTenenbaum, Sander Dieleman, Rob Fergus, Jascha Sohl-Dickstein, Arnaud Doucet, and Will Sussman Grathwohl. Reduce, reuse, recycle: Compositional generation with energy-based diffusion models and mcmc. In Inter-national conference on machine learning , pages 8489– 8510. PMLR, 2023. [17] Bradley Efron. Tweedie’s formula and selection bias. 
+
+Journal of the American Statistical Association , 106 (496):1602–1614, 2011. [18] Benjamin Ellenberger. Pybullet gymperium. benelot/ pybullet-gym, 2018–2019. [19] Martin A Fischler and Robert C Bolles. Random sample consensus: a paradigm for model fitting with applications to image analysis and automated cartography. Commu-nications of the ACM , 24(6):381–395, 1981. [20] Li Fuhao, Song Wenxuan, Zhao Han, Wang Jingbo, Ding Pengxiang, Wang Donglin, Zeng Long, and Li Haoang. Spatial forcing: Implicit spatial representation align-ment for vision-language-action model. arXiv preprint arXiv:2510.12276 , 2025. [21] Jensen Gao, Suneel Belkhale, Sudeep Dasari, Ashwin Balakrishna, Dhruv Shah, and Dorsa Sadigh. A tax-onomy for evaluating generalist robot policies. arXiv preprint arXiv:2503.01238 , 2025. [22] Ruiqi Gao, Emiel Hoogeboom, Jonathan Heek, Valentin De Bortoli, Kevin P. Murphy, and Tim Salimans. Diffusion meets flow matching: Two sides of the same coin. 2024. URL https://diffusionflow.github.io/. [23] Harsh Gupta, Xiaofeng Guo, Huy Ha, Chuer Pan, Muqing Cao, Dongjae Lee, Sebastian Sherer, Shuran Song, and Guanya Shi. Umi-on-air: Embodiment-aware guidance for embodiment-agnostic visuomotor policies. 
+
+arXiv preprint arXiv:2510.02614 , 2025. [24] Songqiao Hu, Zeyi Liu, Shuang Liu, Jun Cen, Zihan Meng, and Xiao He. Vlsa: Vision-language-action mod-els with plug-and-play safety constraint layer. arXiv preprint arXiv:2512.11891 , 2025. [25] Wenlong Huang, Chen Wang, Yunzhu Li, Ruohan Zhang, and Li Fei-Fei. Rekep: Spatio-temporal reasoning of relational keypoint constraints for robotic manipulation. 
+
+arXiv preprint arXiv:2409.01652 , 2024. [26] Physical Intelligence, Ali Amin, Raichelle Aniceto, Ash-win Balakrishna, Kevin Black, Ken Conley, Grace Con-nors, James Darpinian, Karan Dhabalia, Jared DiCarlo, et al. π0.6: A VLA that learns from experience. arXiv preprint arXiv:2511.14759 , 2025. [27] Physical Intelligence, Kevin Black, Noah Brown, James Darpinian, Karan Dhabalia, Danny Driess, Adnan Es-mail, Michael Equi, Chelsea Finn, Niccolo Fusai, et al. 
+
+π0.5: A vision-language-action model with open-world generalization. arXiv preprint arXiv:2504.16054 , 2025. [28] Huiwon Jang, Sihyun Yu, Heeseung Kwon, Hojin Jeon, Younggyo Seo, and Jinwoo Shin. Contextvla: Vision-language-action model with amortized multi-frame con-text. arXiv preprint arXiv:2510.04246 , 2025. [29] Nikita Karaev, Yuri Makarov, Jianyuan Wang, Natalia Neverova, Andrea Vedaldi, and Christian Rupprecht. Cotracker3: Simpler and better point tracking by pseudo-labelling real videos. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 6013–6022, 2025. [30] Alexander Khazatsky, Karl Pertsch, Suraj Nair, Ash-win Balakrishna, Sudeep Dasari, Siddharth Karam-cheti, Soroush Nasiriany, Mohan Kumar Srirama, Lawrence Yunliang Chen, Kirsty Ellis, Peter David Fagan, Joey Hejna, Masha Itkina, Marion Lepert, Yecheng Jason Ma, Patrick Tree Miller, Jimmy Wu, Suneel Belkhale, Shivin Dass, Huy Ha, Arhan Jain, Abra-ham Lee, Youngwoon Lee, Marius Memmel, Sungjae Park, Ilija Radosavovic, Kaiyuan Wang, Albert Zhan, Kevin Black, Cheng Chi, Kyle Beltran Hatch, Shan Lin, Jingpei Lu, Jean Mercat, Abdul Rehman, Pan-nag R Sanketi, Archit Sharma, Cody Simpson, Quan Vuong, Homer Rich Walke, Blake Wulfe, Ted Xiao, Jonathan Heewon Yang, Arefeh Yavary, Tony Z. Zhao, Christopher Agia, Rohan Baijal, Mateo Guaman Cas-tro, Daphne Chen, Qiuyu Chen, Trinity Chung, Jaimyn Drake, Ethan Paul Foster, Jensen Gao, Vitor Guizilini, David Antonio Herrera, Minho Heo, Kyle Hsu, Jiaheng Hu, Muhammad Zubair Irshad, Donovon Jackson, Char-lotte Le, Yunshuang Li, Kevin Lin, Roy Lin, Zehan Ma, Abhiram Maddukuri, Suvir Mirchandani, Daniel Morton, Tony Nguyen, Abigail O’Neill, Rosario Scalise, Derick Seale, Victor Son, Stephen Tian, Emi Tran, Andrew E. Wang, Yilin Wu, Annie Xie, Jingyun Yang, Patrick Yin, Yunchu Zhang, Osbert Bastani, Glen Berseth, Jean-nette Bohg, Ken Goldberg, Abhinav Gupta, Abhishek Gupta, Dinesh Jayaraman, Joseph J Lim, Jitendra Ma-lik, Roberto Mart´ ın-Mart´ ın, Subramanian Ramamoorthy, Dorsa Sadigh, Shuran Song, Jiajun Wu, Michael C. Yip, Yuke Zhu, Thomas Kollar, Sergey Levine, and Chelsea Finn. Droid: A large-scale in-the-wild robot manipulation dataset. 2024. [31] Jeongsol Kim, Bryan Sangwoo Kim, and Jong Chul Ye. Flowdps: Flow-driven posterior sampling for inverse problems. arXiv preprint arXiv:2503.08136 , 2025. [32] Moo Jin Kim, Karl Pertsch, Siddharth Karamcheti, Ted Xiao, Ashwin Balakrishna, Suraj Nair, Rafael Rafailov, Ethan Foster, Grace Lam, Pannag Sanketi, Quan Vuong, Thomas Kollar, Benjamin Burchfiel, Russ Tedrake, Dorsa Sadigh, Sergey Levine, Percy Liang, and Chelsea Finn. Openvla: An open-source vision-language-action model. 
+
+arXiv preprint arXiv:2406.09246 , 2024. [33] Jacky Kwok, Christopher Agia, Rohan Sinha, Matt Fout-ter, Shulu Li, Ion Stoica, Azalia Mirhoseini, and Marco Pavone. Robomonkey: Scaling test-time sampling and verification for vision-language-action models. arXiv preprint arXiv:2506.17811 , 2025. [34] Chieh-Hsin Lai, Yang Song, Dongjun Kim, Yuki Mit-sufuji, and Stefano Ermon. The principles of diffusion models. arXiv preprint arXiv:2510.21890 , 2025. [35] Jim Lawrence, Javier Bernal, and Christoph Witzgall. A purely algebraic justification of the kabsch-umeyama algorithm. Journal of research of the National Institute of Standards and Technology , 124:1, 2019. [36] Long Le, Jason Xie, William Liang, Hung-Ju Wang, Yue Yang, Yecheng Jason Ma, Kyle Vedder, Arjun Kr-ishna, Dinesh Jayaraman, and Eric Eaton. Articulate-anything: Automatic modeling of articulated objects via a vision-language foundation model. arXiv preprint arXiv:2410.13882 , 2024. [37] Long Le, Ryan Lucas, Chen Wang, Chuhao Chen, Dinesh Jayaraman, Eric Eaton, and Lingjie Liu. Pixie: Fast and generalizable supervised learning of 3d physics from pixels. arXiv preprint arXiv:2508.17437 , 2025. [38] Jason Lee, Jiafei Duan, Haoquan Fang, Yuquan Deng, Shuo Liu, Boyang Li, Bohan Fang, Jieyu Zhang, Yi Ru Wang, Sangho Lee, et al. Molmoact: Action reason-ing models that can reason in space. arXiv preprint arXiv:2508.07917 , 2025. [39] Hengtao Li, Pengxiang Ding, Runze Suo, Yihao Wang, Zirui Ge, Dongyuan Zang, Kexian Yu, Mingyang Sun, Hongyin Zhang, Donglin Wang, et al. Vla-rft: Vision-language-action reinforcement fine-tuning with veri-fied rewards in world simulators. arXiv preprint arXiv:2510.00406 , 2025. [40] Muyao Li, Zihao Wang, Kaichen He, Xiaojian Ma, and Yitao Liang. Jarvis-vla: Post-training large-scale vision language models to play visual games with keyboards and mouse. In Findings of the Association for Computa-tional Linguistics: ACL 2025 , pages 17878–17899, 2025. [41] Peiran Li, Xinkai Zou, Zhuohang Wu, Ruifeng Li, Shuo Xing, Hanwen Zheng, Zhikai Hu, Yuping Wang, Haoxi Li, Qin Yuan, et al. Safeflow: A principled protocol for trustworthy and transactional autonomous agent systems. 
+
+arXiv preprint arXiv:2506.07564 , 2025. [42] Qixiu Li, Yaobo Liang, Zeyu Wang, Lin Luo, Xi Chen, Mozheng Liao, Fangyun Wei, Yu Deng, Sicheng Xu, Yizhong Zhang, et al. Cogact: A foundational vision-language-action model for synergizing cognition and action in robotic manipulation. arXiv preprint arXiv:2411.19650 , 2024. [43] Yi Li, Yuquan Deng, Jesse Zhang, Joel Jang, Marius Memmel, Raymond Yu, Caelan Reed Garrett, Fabio Ramos, Dieter Fox, Anqi Li, et al. Hamster: Hierarchical action models for open-world robot manipulation. arXiv preprint arXiv:2502.05485 , 2025. [44] Wenqi Liang, Gan Sun, Yao He, Jiahua Dong, Suyan Dai, Ivan Laptev, Salman Khan, and Yang Cong. Pixelvla: Advancing pixel-level understanding in vision-language-action model. arXiv preprint arXiv:2511.01571 , 2025. [45] Yongyuan Liang, Wei Chow, Feng Li, Ziqiao Ma, Xiyao Wang, Jiageng Mao, Jiuhai Chen, Jiatao Gu, Yue Wang, and Furong Huang. Rover: Benchmarking reciprocal cross-modal reasoning for omnimodal generation. arXiv preprint arXiv:2511.01163 , 2025. [46] Yaron Lipman, Ricky TQ Chen, Heli Ben-Hamu, Maxim-ilian Nickel, and Matt Le. Flow matching for generative modeling. arXiv preprint arXiv:2210.02747 , 2022. [47] Dong C Liu and Jorge Nocedal. On the limited memory bfgs method for large scale optimization. Mathematical programming , 45(1):503–528, 1989. [48] Jiayi Liu, Denys Iliash, Angel X Chang, Manolis Savva, and Ali Mahdavi-Amiri. Singapo: Single image con-trolled generation of articulated parts in objects. arXiv preprint arXiv:2410.16499 , 2024. [49] Nan Liu, Shuang Li, Yilun Du, Antonio Torralba, and Joshua B Tenenbaum. Compositional visual generation with composable diffusion models. In European confer-ence on computer vision , pages 423–439. Springer, 2022. [50] Ruoshi Liu, Alper Canberk, Shuran Song, and Carl Vondrick. Differentiable robot rendering, 2024. URL https://arxiv.org/abs/2410.13851. [51] Xingchao Liu, Chengyue Gong, and Qiang Liu. Flow straight and fast: Learning to generate and transfer data with rectified flow. arXiv preprint arXiv:2209.03003 ,2022. [52] Zeyi Liu, Shuang Li, Eric Cousineau, Siyuan Feng, Ben-jamin Burchfiel, and Shuran Song. Geometry-aware 4d video generation for robot manipulation. arXiv preprint arXiv:2507.01099 , 2025. [53] Jinqi Luo, Tianjiao Ding, Kwan Ho Ryan Chan, Hancheng Min, Chris Callison-Burch, and Ren´ e Vidal. Concept lancet: Image editing with compositional repre-sentation transplant. In Proceedings of the Computer Vi-sion and Pattern Recognition Conference , pages 28502– 28512, 2025. [54] David JC MacKay. Information theory, inference and learning algorithms . Cambridge university press, 2003. [55] Zhao Mandi, Yijia Weng, Dominik Bauer, and Shuran Song. Real2code: Reconstruct articulated objects via code generation. arXiv preprint arXiv:2406.08474 , 2024. [56] Mitsuhiko Nakamoto, Oier Mees, Aviral Kumar, and Sergey Levine. Steering your generalists: Improving robotic foundation models via value guidance. arXiv preprint arXiv:2410.13816 , 2024. [57] Soroush Nasiriany, Abhiram Maddukuri, Lance Zhang, Adeet Parikh, Aaron Lo, Abhishek Joshi, Ajay Man-dlekar, and Yuke Zhu. Robocasa: Large-scale simulation of everyday tasks for generalist robots. In Robotics: Science and Systems (RSS) , 2024. [58] NVIDIA, Johan Bjorck, Nikita Cherniadev Fernando Casta˜ neda, Xingye Da, Runyu Ding, Linxi ”Jim” Fan, Yu Fang, Dieter Fox, Fengyuan Hu, Spencer Huang, Joel Jang, Zhenyu Jiang, Jan Kautz, Kaushil Kundalia, Lawrence Lao, Zhiqi Li, Zongyu Lin, Kevin Lin, Guilin Liu, Edith Llontop, Loic Magne, Ajay Mandlekar, Avnish Narayan, Soroush Nasiriany, Scott Reed, You Liang Tan, Guanzhi Wang, Zu Wang, Jing Wang, Qi Wang, Jiannan Xiang, Yuqi Xie, Yinzhen Xu, Zhenjia Xu, Seonghyeon Ye, Zhiding Yu, Ao Zhang, Hao Zhang, Yizhou Zhao, Ruijie Zheng, and Yuke Zhu. GR00T N1: An open foundation model for generalist humanoid robots. In ArXiv Preprint , March 2025. [59] Octo Model Team, Dibya Ghosh, Homer Walke, Karl Pertsch, Kevin Black, Oier Mees, Sudeep Dasari, Joey Hejna, Charles Xu, Jianlan Luo, Tobias Kreiman, You Liang Tan, Lawrence Yunliang Chen, Pannag Sanketi, Quan Vuong, Ted Xiao, Dorsa Sadigh, Chelsea Finn, and Sergey Levine. Octo: An open-source generalist robot policy. In Proceedings of Robotics: Science and Systems ,Delft, Netherlands, 2024. [60] Abby O’Neill, Abdul Rehman, Abhiram Maddukuri, Ab-hishek Gupta, Abhishek Padalkar, Abraham Lee, Acorn Pooley, Agrim Gupta, Ajay Mandlekar, Ajinkya Jain, et al. Open x-embodiment: Robotic learning datasets and rt-x models: Open x-embodiment collaboration 0. In 2024 IEEE International Conference on Robotics and Automation (ICRA) , pages 6892–6903. IEEE, 2024. [61] Sungjae Park, Homanga Bharadhwaj, and Shubham Tulsiani. Demodiffusion: One-shot human imitation using pre-trained diffusion policy. arXiv preprint arXiv:2506.20668 , 2025. [62] Maitreya Patel, Song Wen, Dimitris N Metaxas, and Yezhou Yang. Steering rectified flow models in the vector field for controlled image generation. arXiv preprint arXiv:2412.00100 , 2024. [63] Georgios Pavlakos, Dandan Shan, Ilija Radosavovic, Angjoo Kanazawa, David Fouhey, and Jitendra Malik. Reconstructing hands in 3D with transformers. In CVPR ,2024. [64] Ri-Zhao Qiu, Ge Yang, Weijia Zeng, and Xiaolong Wang. Feature splatting: Language-driven physics-based scene synthesis and editing. arXiv preprint arXiv:2404.01223 ,2024. [65] Delin Qu, Haoming Song, Qizhi Chen, Yuanqi Yao, Xinyi Ye, Yan Ding, Zhigang Wang, JiaYuan Gu, Bin Zhao, Dong Wang, et al. Spatialvla: Exploring spatial representations for visual-language-action model. arXiv preprint arXiv:2501.15830 , 2025. [66] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, et al. Learning transferable visual models from natural lan-guage supervision. In International conference on ma-chine learning , pages 8748–8763. PmLR, 2021. [67] Johannes Lutz Sch¨ onberger and Jan-Michael Frahm. Structure-from-motion revisited. In Conference on Com-puter Vision and Pattern Recognition (CVPR) , 2016. [68] William Shen, Ge Yang, Alan Yu, Jansen Wong, Leslie Pack Kaelbling, and Phillip Isola. Distilled feature fields enable few-shot language-guided manipulation. 
+
+arXiv preprint arXiv:2308.07931 , 2023. [69] Hao Shi, Bin Xie, Yingfei Liu, Lin Sun, Fengrong Liu, Tiancai Wang, Erjin Zhou, Haoqiang Fan, Xi-angyu Zhang, and Gao Huang. Memoryvla: Perceptual-cognitive memory in vision-language-action models for robotic manipulation. arXiv preprint arXiv:2508.19236 ,2025. [70] Junyao Shi, Rujia Yang, Kaitian Chao, Bingqing Selina Wan, Yifei Simon Shao, Jiahui Lei, Jianing Qian, Long Le, Pratik Chaudhari, Kostas Daniilidis, et al. Maestro: Orchestrating robotics modules with vision-language models for zero-shot generalist robots. In NeurIPS 2025 Workshop on Space in Vision, Language, and Embodied AI , 2025. [71] Junyao Shi, Zhuolun Zhao, Tianyou Wang, Ian Pedroza, Amy Luo, Jie Wang, Jason Ma, and Dinesh Jayaraman. Zeromimic: Distilling robotic manipulation skills from web videos. In International Conference on Robotics and Automation (ICRA) , 2025. [72] Lucy Xiaoyang Shi, Brian Ichter, Michael Equi, Liy-iming Ke, Karl Pertsch, Quan Vuong, James Tanner, Anna Walling, Haohuan Wang, Niccolo Fusai, et al. Hi robot: Open-ended instruction following with hier-archical vision-language-action models. arXiv preprint arXiv:2502.19417 , 2025. [73] Harris Song and Long Le. Avi: Action from volumetric inference. arXiv preprint arXiv:2510.21746 , 2025. [74] Yunzhou Song, Jiahui Lei, Ziyun Wang, Lingjie Liu, and Kostas Daniilidis. Track everything everywhere fast and robustly. In European Conference on Computer Vision ,pages 343–359. Springer, 2024. [75] Kaustubh Sridhar, Souradeep Dutta, Dinesh Jayaraman, and Insup Lee. Ricl: Adding in-context adaptability to pre-trained vision-language-action models. arXiv preprint arXiv:2508.02062 , 2025. [76] Zhanyi Sun and Shuran Song. Latent policy bar-rier: Learning robust visuomotor policies by staying in-distribution. arXiv preprint arXiv:2508.05941 , 2025. [77] Balakumar Sundaralingam, Siva Kumar Sastry Hari, Adam Fishman, Caelan Garrett, Karl Van Wyk, Valts Blukis, Alexander Millane, Helen Oleynikova, Ankur Handa, Fabio Ramos, Nathan Ratliff, and Dieter Fox. curobo: Parallelized collision-free minimum-jerk robot motion generation, 2023. [78] Shuhan Tan, Kairan Dou, Yue Zhao, and Philipp Kr¨ ahenb¨ uhl. Interactive post-training for vision-language-action models. arXiv preprint arXiv:2505.17016 , 2025. [79] Gemini Robotics Team, S Abeyruwan, J Ainslie, JB Alayrac, MG Arenas, T Armstrong, A Balakrishna, R Baruch, M Bauza, M Blokzijl, et al. Gemini robotics: Bringing ai into the physical world, 2025. URL https://arxiv. org/abs/2503.20020 .[80] Gemini Robotics Team, Abbas Abdolmaleki, Saminda Abeyruwan, Joshua Ainslie, Jean-Baptiste Alayrac, Montserrat Gonzalez Arenas, Ashwin Balakrishna, Nathan Batchelor, Alex Bewley, Jeff Bingham, et al. Gemini robotics 1.5: Pushing the frontier of generalist robots with advanced embodied reasoning, thinking, and motion transfer. arXiv preprint arXiv:2510.03342 , 2025. [81] Andrew Wagenmaker, Mitsuhiko Nakamoto, Yunchu Zhang, Seohong Park, Waleed Yagoub, Anusha Naga-bandi, Abhishek Gupta, and Sergey Levine. Steering your diffusion policy with latent space reinforcement learning. 
+
+Conference on Robot Learning , 2025. [82] Homer Walke, Kevin Black, Abraham Lee, Moo Jin Kim, Max Du, Chongyi Zheng, Tony Zhao, Philippe Hansen-Estruch, Quan Vuong, Andre He, Vivek Myers, Kuan Fang, Chelsea Finn, and Sergey Levine. Bridgedata v2: A dataset for robot learning at scale. In Conference on Robot Learning (CoRL) , 2023. [83] Jianyuan Wang, Minghao Chen, Nikita Karaev, Andrea Vedaldi, Christian Rupprecht, and David Novotny. Vggt: Visual geometry grounded transformer. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2025. [84] Yanwei Wang, Lirui Wang, Yilun Du, Balakumar Sun-daralingam, Xuning Yang, Yu-Wei Chao, Claudia P´ erez-D’Arpino, Dieter Fox, and Julie Shah. Inference-time policy steering through human interactions. In 2025 IEEE International Conference on Robotics and Automa-tion (ICRA) , pages 15626–15633. IEEE, 2025. [85] Bowen Wen, Wei Yang, Jan Kautz, and Stan Birchfield. Foundationpose: Unified 6d pose estimation and tracking of novel objects. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,pages 17868–17879, 2024. [86] Thadd¨ aus Wiedemer, Yuxuan Li, Paul Vicol, Shixi-ang Shane Gu, Nick Matarese, Kevin Swersky, Been Kim, Priyank Jaini, and Robert Geirhos. Video models are zero-shot learners and reasoners. arXiv preprint arXiv:2509.20328 , 2025. [87] Grady Williams, Paul Drews, Brian Goldfain, James M Rehg, and Evangelos A Theodorou. Aggressive driving with model predictive path integral control. In 2016 IEEE international conference on robotics and automation (ICRA) , pages 1433–1440. IEEE, 2016. [88] Jeongyong Yang, Seunghwan Jang, and SooJean Han. Safeflowmatcher: Safe and fast planning using flow matching with control barrier functions. In Int. Conf. Learning Representations (ICLR) , 2026. [89] Jiahui Yang, Jason Jingzhou Liu, Yulong Li, Youssef Khaky, Kenneth Shaw, and Deepak Pathak. Deep reactive policy: Learning reactive manipulator motion planning for dynamic environments. arXiv preprint arXiv:2509.06953 , 2025. [90] Siyuan Yang, Yang Zhang, Haoran He, Ling Pan, Xiu Li, Chenjia Bai, and Xuelong Li. Steering vision-language-action models as anti-exploration: A test-time scaling approach. arXiv preprint arXiv:2512.02834 , 2025. [91] Yufei Ye, Yao Feng, Omid Taheri, Haiwen Feng, Shub-ham Tulsiani, and Michael J Black. Predicting 4d hand trajectory from monocular videos. arXiv preprint arXiv:2501.08329 , 2025. [92] Taehoon Yoon, Yunhong Min, Kyeongmin Yeo, and Minhyuk Sung. psi -sampler: Initial particle sampling for smc-based inference-time reward alignment in score models. arXiv preprint arXiv:2506.01320 , 2025. [93] Borong Zhang, Jiahao Li, Jiachen Shen, Yishuai Cai, Yuhao Zhang, Yuanpei Chen, Juntao Dai, Jiaming Ji, and Yaodong Yang. Vla-arena: An open-source framework for benchmarking vision-language-action models. arXiv preprint arXiv:2512.22539 , 2025. [94] Shiduo Zhang, Zhe Xu, Peiju Liu, Xiaopeng Yu, Yuan Li, Qinghui Gao, Zhaoye Fei, Zhangyue Yin, Zuxuan Wu, Yu-Gang Jiang, et al. Vlabench: A large-scale benchmark for language-conditioned robotics manipula-tion with long-horizon reasoning tasks. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 11142–11152, 2025. [95] Qingqing Zhao, Yao Lu, Moo Jin Kim, Zipeng Fu, Zhuoyang Zhang, Yecheng Wu, Zhaoshuo Li, Qianli Ma, Song Han, Chelsea Finn, et al. Cot-vla: Visual chain-of-thought reasoning for vision-language-action models. In Proceedings of the Computer Vision and Pattern Recognition Conference , pages 1702–1713, 2025. [96] Ruijie Zheng, Yongyuan Liang, Shuaiyi Huang, Jianfeng Gao, Hal Daum´ e III, Andrey Kolobov, Furong Huang, and Jianwei Yang. Tracevla: Visual trace prompting en-hances spatial-temporal awareness for generalist robotic policies. arXiv preprint arXiv:2412.10345 , 2024. [97] Chong Zhou, Chen Change Loy, and Bo Dai. Extract free dense labels from clip. In European conference on computer vision , pages 696–712. Springer, 2022. VI. A PPENDIX 
+
+A. Simulation Experiment Setup 
+
+We choose the NVIDIA Gr00t N1.6 [58] model as our base policy for simulation experiments. The policy performs flow-matching denoising in the latent space and decodes the latent into action chunks that contain relative end effector positions {∆xi}, and orientations {∆ri} in the axis-angle convention, whose corresponding rotation matrix is computed as R(∆ ri). We use the Euler method to estimate the absolute robot positions and orientations as 
+
+xi = xi−1 + γx ⊙ ∆xi (20) 
+
+Ri = R(γr ⊙ ∆ri)Ri−1 (21) where γx and γr are dynamic parameter vectors esti-mated from simulator properties, and ⊙ denotes element-wise product. We set γx = [0 .011 , 0.011 , 0.02] and γr =[0 .15 , 0.15 , 0.15] .  
+
+> Fig. 11. Hardware Setup. We use a standard 7-DOF Franka Emika Panda arm with a Robotiq 2-fingered gripper and three Zed 2 stereo cameras to provide left, right and overhead views for 3D reconstruction.
+
+B. Real-World Experiment Hardware Setup 
+
+We followed the DROID robot setup [30], which consists of a 7 DoF Franka Emika Panda Robot Arm, a Robotiq 2F-85 parallel-jaw gripper, a wrist-mounted ZED Mini RGB-D camera and two side-mounted ZED 2 stereo cameras on the left and right side view. We additionally mounted an over-head camera to provide more coverage for 3D reconstruction (Fig. 11). 
+
+VGGT Metric-Scale Reconstruction: We use VGGT [83] to construct a pointmap from each of the RGB view, resulting in a 3D point-cloud. However, VGGT predicted depth is scale-invariant. To achieve the metric-accurate reconstruction re-quired for precise manipulation, we perform a scale-alignment procedure. We define the ground-truth Euclidean distance between a calibrated camera pair as dgt . Given the VGGT-predicted camera extrinsics, we compute the relative predicted  
+
+> Fig. 12. VGGT 3D Reconstruction . From three camera views, we construct a 3D point cloud of the scene. We have a left, right, and overhead camera view. We also ensure that the scene has proper metric scale by comparing between the ground-truth camera pairwise distance against the VGGT’s predicted camera distance, and rescaling the depth accordingly. Shaded blue regions are the rendering of the robots in simulation by Pybullet [18] using the calibrated camera extrinsic and then super-imposed on the images . The robot is removed from the scene point-cloud.
+
+distance dpred . The point cloud depth is then rescaled by the ratio κ = dgt /d pred . This ensures the resulting point cloud aligns with the physical dimensions of the robot’s workspace as shown in Fig. 12. 
+
+Task-relevant Region Detection and Filtering : To facili-tate collision-free planning, we must distinguish between the static environment, the robot’s own body, and task-relevant objects. For the robot body, we use Pybullet simulation [18] to render the robot URDF synchronized with the robot’s calibrated extrinsics, and superimpose the resulting mask onto the camera frames (Fig. 12). This allows us to remove the robot body from the aggregate point cloud. For object removal, we employ a variant of the CLIP model [64, 97] to extract dense patch-level visual feature embeddings of each camera frame. These features are projected into 3D space using the VGGT pointmaps. Next, for each 3D point i in the reconstructed point cloud, we compute the task relevance score 
+
+si = ei · etext 
+
+|ei|| etext | (22) using the cosine similarity between the visual embedding ei
+
+and the task instruction etext . The 3D points scoring in top 95% percentile are marked as task relevant and removed from the collision point cloud. A visualization of the heatmap of the CLIP similarity and the resulting filtered point-cloud is provided in Fig. 13. All of our inference including VGGT, CLIP, guidance computation and denoising is run using a single Nvidia RTX 5090 GPU. 
+
+VLM Pointing Guidance: To provide grounded semantic guidance, we leveraged a capable VLM, Gemini-2.5-Flash [11], to point to the relevant target in the scene (Fig. 14). Specifically, the VLM first provide a list of the 2D coordinates of all interesting points in the scene. Then, for each 2D candidate, we visually highlight the point and query the VLM whether it is relevant to a given task. At the end, we keep one 2D point. We then lift this 2D coordinate to 3D via VGGT predicted pointmap. This provides a semantic target for guiding VLAs in tasks requiring high-level reasoning. 
+
+C. Baseline Implementation Details 
+
+cuRobo : The base VLA policy generates an action chunk 
+
+At:t+H = [ at, at+1 , . . . , at+H−1] where H is the chunk size. The robot typically only executes a portion h of such chunk. For our π0.5 setup, H = 15 and h = 8 . The goal of this baseline is thus to transform the effective chunk At:t+h into a collision-free trajectory Q∗. This is done by optimizing a given cost function by stochastic sampling MPPI [87] and gradient-based optimization L-BFGS [47]. We use cuRobo default values of 2 iterations of MPPI followed by 100 iterations of L-BFGS. MPPI aggregates 25 candidates per seed. The optimization objective J(Q) minimizes the deviation from the VLA’s reference actions while strictly penalizing collisions  
+
+> Fig. 13. Detecting Task-relevant Regions . We use patch-level CLIP to compute 3D visual features of the point cloud. We then compute the cosine similarity of each 3D point against the language instruction. The top image is the heatmap of similarities for the task “put the banana in the purple bowl”. Task-relevant regions are defined to be the 3D points scoring in the top 95% percentile in CLIP similarity. The bottom image shows the filtered point cloud where the banana and the purple bowl were correctly removed using our procedure.
+
+and joint limit violations: 
+
+Q∗ = arg min 
+
+> Q
+> t+h
+
+X
+
+> k=t
+
+
+
+walign ∥qk − qref  
+
+> k
+
+∥2
+
++ wcoll Csdf (FK (qk)) + wbound Cbound (qk)
+
+
+
++ wgoal Jgoal (qh)
+
+(23) where qkref is the joint-space reference derived from the VLA action ak, Csdf represents the collision cost calculated via a voxelized Signed Distance Field (SDF) queried by robot collision spheres, Cbound enforces physical joint and velocity limits, Jgoal measures how closely the final cartesian coordi-nate matches the goal where joint-to-cartesian conversion was done using forward kinematics. To ensure safety in complex environments, we tune wcoll = 1 e7, w align = 100 , prioritizing collision avoidance over strict adherence to the VLA’s initial plan. wbound = 0 .1 is kept at the cuRobo’s default value. 
+
+F3RM : We followed the setup in F3RM [68]. The robot holds a Zed camera in its gripper and scan the scene. CLIP features and then computed and lifted to 3D via aligned Colmap [67]. During scanning, we also saved the end-effector poses and use these labels to align Colmap predictions to metric depth by predicting a scale by simple RANSAC [19] Fig. 14. VLM Pointing Guidance . (Top) First, the VLM points to all interesting points in an image. (Bottom) Then, we visually highlight each point in the image, and ask the VLM whether that point is relevant to a given task. One point is kept at the end. In this example, the VLM successfully localized the relevant object for the task of putting the object in a bowl closer to a named celebrity. 
+
+and a rigid registration between the end-effector points and Colmap predicted points via the Kabsch algorithm [35]. 
+
+DemoDiffusion : We followed the setup in DemoDiffusion [61] closely with one modification. We replace the original HaMer [63] system with the more recent Haptic method [91] for 3D human motion capture and reconstruction. Note that our method, O MNI GUIDE , also use Haptic for the human imitation guidance experiments. 
+
+D. Mathematical Details 
+
+Proposition 1. The integral value Z = R 
+
+> Ω
+
+SDF O (x) dx over 
+
+Ω is finite on the domain Ω = {x ∈ R3 | 0 < SDF O (x) ≤ d},where d ∈ (0 , ∞).Proof. 
+
+Z =
+
+Z
+
+> Ω
+
+SDF O (x) dx ≤
+
+Z
+
+> Ω
+
+d d x = d · V (Ω) 
+
+where V (Ω) is the volume of the finite domain. 
+
+E. Orientation Guidance 
+
+Given the current end effector Cartesian position x and the target position x∗, we can compute the normalized target gripper orientation as 
+
+r∗ = x∗ − x
+
+|| x∗ − x|| (24) We define the canonical orientation vector of the gripper in its local frame as g ∈ R3, || g|| = 1 . For example, the Franka arm gripper has the orientation vector g = [0 , 0, 1] pointing to its z-axis. After the policy predicts the gripper orientation, we convert it into a rotation matrix R and compute the current gripper orientation as r = Rg. Now the orientation guidance energy can be expressed as 
+
+Lo(r) = − log pR(r) = || r − r∗|| 
+
+2σ2
+
+> R
+
++ Const. (25)
