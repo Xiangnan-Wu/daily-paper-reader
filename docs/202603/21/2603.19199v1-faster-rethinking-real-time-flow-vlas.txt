@@ -1,0 +1,881 @@
+Title: FASTER: Rethinking Real-Time Flow VLAs
+
+URL Source: https://arxiv.org/pdf/2603.19199v1
+
+Published Time: Fri, 20 Mar 2026 01:41:54 GMT
+
+Number of Pages: 36
+
+Markdown Content:
+# FASTER: Rethinking Real-Time Flow VLAs 
+
+Yuxiang Lu 1,2, Zhe Liu 1,2, Xianzhe Fan 1, Zhenya Yang 1, Jinghua Hou 1,Junyi Li 1, Kaixin Ding 1, and Hengshuang Zhao 1,2⋆
+
+> 1
+
+The University of Hong Kong, 2ACE Robotics 
+
+https://innovator-zero.github.io/FASTER 7.8ms 22.4ms            
+
+> 22.4ms 76.7ms
+> VLM prefill
+> VLM prefill step2 step3 step4 step5 step6 step7 step8 step9 step10
+> 10x Faster Sampling
+> Action Sampling w/ Constant Schedule
+> step1
+> step1
+
+Fast Action Sampling for ImmediaTE Reaction  
+
+> Dynamic Task Slow Reaction Fast Reaction
+
+Fig. 1: We propose FASTER to alleviate the reaction latency bottleneck in action chunking flow policies. By compressing the sampling iterations of the immediate reac-tion into a single step, FASTER (bottom) achieves 10 × acceleration compared to original π0.5 and X-VLA (top). This enables real-time responsiveness in highly dynamic tasks such as playing table tennis. FASTER is a plug-and-play solution for flow-based VLAs, demanding no architectural modifications or additional training. 
+
+Abstract. Real-time execution is crucial for deploying Vision-Language-Action (VLA) models in the physical world. Existing asynchronous in-ference methods primarily optimize trajectory smoothness, but neglect the critical latency in reacting to environmental changes. By rethinking the notion of reaction in action chunking policies, this paper presents a systematic analysis of the factors governing reaction time. We show that reaction time follows a uniform distribution determined jointly by the Time to First Action (TTFA) and the execution horizon. Moreover, we reveal that the standard practice of applying a constant schedule in flow-based VLAs can be inefficient and forces the system to com-plete all sampling steps before any movement can start, forming the bottleneck in reaction latency. To overcome this issue, we propose Fast 
+
+Action Sampling for Immedia TE R eaction ( FASTER ). By introducing a Horizon-Aware Schedule, FASTER adaptively prioritizes near-term ac-tions during flow sampling, compressing the denoising of the immediate reaction by tenfold ( e.g ., in π0.5 and X-VLA) into a single step, while pre-serving the quality of long-horizon trajectory. Coupled with a streaming client-server pipeline, FASTER substantially reduces the effective reac-tion latency on real robots, especially when deployed on consumer-grade GPUs. Real-world experiments, including a highly dynamic table tennis  
+
+> ⋆
+
+Corresponding author.       
+
+> arXiv:2603.19199v1 [cs.RO] 19 Mar 2026 2Y. Lu, Z. Liu et al. task, prove that FASTER unlocks unprecedented real-time responsive-ness for generalist policies, enabling rapid generation of accurate and smooth trajectories.
+> Keywords: Vision-Language-Action Model ·Real-Time VLA ·Flow Matching Acceleration
+
+## 1 Introduction 
+
+The paradigm of robot learning is undergoing a profound transformation with the advent of Vision-Language-Action (VLA) models [58, 69, 70, 105]. By formulat-ing continuous motor control as a generative sequence modeling problem, recent approaches leveraging diffusion models [27, 75] and flow matching [46] for action chunking have achieved unprecedented capabilities in dexterous robotic manipu-lation tasks [2,31,93,110]. As research focus shifts from simulation to real-world physical deployment, real-time capability has become increasingly paramount. Existing real-time execution methods primarily address the “stop-and-wait” issue in standard synchronous inference [15] for action chunking policies [73]. By introducing an asynchronous pipeline, the robot can initiate the next infer-ence request before the current action chunk is exhausted, thereby eliminating inter-chunk pauses and enhancing motion continuity [4]. While state-of-the-art advances in asynchronous inference strategy [5, 53, 80, 85, 109] further reinforce trajectory smoothness, these methods drastically overlook another essential di-mension of real-time embodied intelligence: reaction . Beyond smooth execution, a practical VLA system must promptly and precisely respond to dynamically changing physical environments. Delayed reactions to unexpected perturbations create a perilous “blind spot” in closed-loop control, limiting the robustness of generalist policies in open-world scenarios. Our in-depth analysis of the inference pipeline in Sec. 3 reveals that reac-tion time is not a trivial constant determined by inference latency. Instead, it should be modeled as a random variable following a uniform distribution, due to the stochastic timing of external events relative to robot controller. We further illustrate that existing asynchronous methods are inherently limited, and a col-laborative enhancement in both perception-execution latency and the frequency of inference-execution cycle is entailed to acquire truly responsive behavior. We then revisit a common design in flow-based VLAs: a constant timestep schedule across the action chunk, which allocates an equal number of sampling steps to every action. Under this scheme, the full multi-step denoising process must be completed before any action can be dispatched, severely inflating the reaction delay. Considering the intrinsic causal structure of physical interaction, near-term actions are more tightly coupled with current observations and typ-ically lie in a significantly narrower solution space. Our pilot study in Sec. 4.2 supports this intuition. We clearly observe that early actions follow straighter interpolation paths and attain precise estimation of clean actions within only a few sampling steps, whereas a constant schedule redundantly over-samples these FASTER: Rethinking Real-Time Flow VLAs 3
+
+dimensions. This naturally raises a key question: since earlier actions are easier to predict than later ones, can flow-based VLAs generate these latency-critical actions with fewer sampling steps for immediate reaction? 
+
+To address these challenges, we propose Fast Action Sampling for Imme-dia TE R eaction ( FASTER ), a simple yet effective method applicable to flow-based VLAs [3,110] without architecture alternations or additional training cost. As shown in Fig. 1, FASTER aims to accelerate the sampling process of leading actions, as quantified by the newly introduced Time to First Action (TTFA) metric for reactivity. Concretely, a Horizon-Aware Schedule (HAS) is incorpo-rated to decouple the local denoising timestep for each frame within the chunk. HAS adaptively allocates more aggressive sampling steps to near-term actions while maintaining a slower schedule for long-horizon ones. Consequently, the model can output the immediate action as fast as one-step sampling, without compromising long-term trajectory accuracy. Beyond algorithmic acceleration, FASTER also catalyzes a paradigm shift from conventional asynchronous pipeline to a streaming client-server interaction, wherein early actions can be dispatched to the robot controller instantly upon completion. While the robot executes these initial movements, the VLA model continues refining subsequent actions in parallel and progressively replenishes the client’s action buffer. Real-world evaluations on two GPU platforms ( i.e. , RTX 4060 and RTX 4090) demonstrate that FASTER substantially reduces inference latency, as reflected by lower TTFA, while simultaneously boosting inference-execution cycle frequency through the synergization of streaming output and early-stopping strategies. Real-robot experiments further confirm the superior reaction capability of FASTER, even when deployed on resource-constrained GPUs, offering a general and promising path toward genuinely real-time VLAs. Our contributions are summarized as follows: 1. We present a systematic analysis of reaction attributes in action chunking VLA policies, revealing the inherent limitations of existing methods for real-time responsiveness. 2. We propose FASTER, capitalizing on a Horizon-Aware Schedule that pri-oritizes immediate actions during flow matching sampling, effectively com-pressing TTFA to one-step sampling without sacrificing prediction quality. 3. We design a streaming client-server interface with early stopping, jointly trimming the delay and accelerating the closed loop of inference-execution. 4. Extensive experiments on real robots and simulation benchmarks demon-strate significant improvements in reaction capability and promising perfor-mance in dexterous action generation for manipulation tasks. 
+
+## 2 Related Work 
+
+Vision-Language-Action Models. Vision-Language-Action (VLA) models [2, 3,26,39,54] extend large-scale vision-language pretraining from Vision-Language Models (VLMs) [1, 40, 98] to embodied action learning, and have demonstrated impressive performance in robotic manipulation. By pretraining on large-scale 4 Y. Lu, Z. Liu et al. 
+
+vision-text-action corpora [6, 37, 63, 83], VLAs enable robots to map multimodal observations and language instructions directly to low-level motor commands, facilitating dexterous manipulation across a wide range of tasks and promoting generalization to diverse and complicated environments [19, 31, 32, 72, 81]. Early approaches such as RT-2 [112] and OpenVLA [39] discretize robot ac-tions into tokens, making them compatible with the auto-regressive objective of VLMs. Subsequent effort explores diffusion- or flow-matching-based action gen-eration [15], adopting continuous action representations to model the multimodal distribution. Represented by methods including π0 [3] and GR00T [2], these ap-proaches incorporate a dedicated action expert alongside the VLM backbone, generating high-quality actions conditioned on vision-language features. 
+
+Real-Time VLAs. In contrast to VLMs operating purely in cyberspace, VLAs interact with the physical world and are therefore highly sensitive to real-time interaction [43, 95]. Consequently, improving the efficiency of VLAs has become an active research focus [25, 103]. A straightforward strategy is to shorten the model inference latency. Existing approaches include adopting smaller VLM backbones [12, 45, 68, 91], compressing LLM layers [13, 99, 104, 107], accelerat-ing action decoding [38,67,76,87], distilling diffusion models [50], pruning visual tokens [23,55,66,97], and applying optimization or quantization [16,57,64,86,92]. Another line of work seeks to eliminate inter-chunk pauses introduced by standard action chunking and synchronous inference paradigm. By introduc-ing asynchronous execution, VLA models can generate the next action chunk concurrently while the current one is being executed, resulting in non-stop tra-jectories [9,53,73,95,109]. However, naively switching between chunks may cause abrupt multimodal transitions and jerky motions, a phenomenon known as inter-chunk discontinuity [4, 44]. To mitigate this issue, RTC [4] inpaints the next action chunk conditioned on the current chunk, while Training-time RTC [5], REMAC [85], and VLASH [80] condition the model on the predicted actions. Different from prior work, FASTER is the first real-time VLA that explic-itly targets responsiveness by accelerating the sampling of immediate actions. Notably, it requires no architectural modifications, rendering it orthogonal and complementary to aforementioned efficient VLA techniques. 
+
+## 3 Analysis on Action Chunking Policy Inference 
+
+Action chunking is a standard method in VLA policies [3, 15, 108]. Given a pol-icy π, the model processes an observation ot at real-world time t to predict a sequence of future actions At = [ at, at+1 , . . . , at+H−1], where H denotes the 
+
+prediction horizon specified by the policy. In practice, instead of executing the entire action chunk, it is common to execute only s actions, then trigger a new inference and discard the remaining actions. s is referred to as the execution horizon [4]. Deploying a VLA policy on a physical robot typically utilizes a client-server architecture, consisting of a policy server for model inference and a robot client for motor control. After initialization, the server remains active to process incom-FASTER: Rethinking Real-Time Flow VLAs 5Pause Pause Action Chunk Action Chunk    
+
+> Infer
+> Action Chunk
+> Infer
+> Infer Interval
+> Policy Server Robot Client
+> Action Chunk Action Chunk
+> Infer
+> Action Chunk
+> Infer
+> Infer Latency Infer Interval
+> Policy Server Robot Client
+> Infer
+> Action Chunk
+> Sync Inference Async Inference
+> time time
+> (a) (b)
+> Infer Latency
+> delayed executed discarded
+> Execution Duration
+> Execution Duration
+> C-S Communication
+> Best Reaction Case Worst Reaction Case
+
+Fig. 2: Temporal pipelines of (a) synchronous and (b) asynchronous inference in a robotic system composed of an action chunking policy server and a robot client. As indicated by the best and worst cases, reaction time depends on both inference latency and the interval between consecutive inference-execution cycles. We also illustrate the decomposition of two adjacent action chunks to clarify the discretized inference delay 
+
+d and the execution horizon s (bounded by smin and H − d) in the asynchronous client. 
+
+ing requests from the client and returns predictions with a certain latency, giving rise to two interaction paradigms: synchronous and asynchronous inference. We first define several time quantities to assist analysis of the pipeline: 
+
+– Control period ∆t ctrl := 1 /f . In robotic systems, the controller operates at a specific frequency f (e.g ., 30Hz), corresponding to a fixed period between consecutive operations, such as executing action or triggering inference. 
+
+– Inference latency ∆t infer . This is defined as the time interval between trans-mitting an observation and receiving the predicted actions on the client side. It encompasses model inference, network communication, pre- and post-processing, memory I/O, and other system overheads. For analytical conve-nience, we model the total latency as a constant. Following prior work [4], we also define the discretized inference delay as d := ⌊∆t infer /∆t ctrl ⌋.
+
+– Execution duration ∆t exec := s ∗ ∆t ctrl . This denotes the time required for the robot client to execute s actions. 
+
+Synchronous Inference. The system operates synchronously by default, as shown in Fig. 2(a). After completing execution of the preceding chunk at time 
+
+t, the client sends the observation ot to the server to request a new inference. After the inference latency, the server returns the predicted chunk. During this period, the robot controller pauses and resumes only when the new actions arrive at t + ∆t infer . To achieve uninterrupted execution, the condition ∆t infer < ∆t ctrl 
+
+(i.e ., d = 0 ) should hold, meaning the next chunk is available within a single control step. In practice, however, this requirement is hardly satisfied, resulting in non-smooth trajectories and degraded task performance [4, 80]. 6 Y. Lu, Z. Liu et al. 
+
+Table 1: Reaction characteristics of synchronous and asynchronous inference. U(a, b )
+
+denotes a uniform distribution with lower and upper bounds a and b, so the expectation of ∆t react equals the midpoint (a + b)/2.Mode Infer Interval ∆t react ∼ Dreact E[∆t react ] smin                          
+
+> Sync ∆t infer +∆t exec U(∆t infer ,2∗∆t infer +∆t exec )1.5∗∆t infer + 0 .5∗∆t exec 1Async ∆t exec U(∆t infer , ∆t infer +∆t exec )∆t infer + 0 .5∗∆t exec ⌈∆t infer /∆t ctrl ⌉
+
+Asynchronous Inference. A natural strategy to tackle inter-chunk pauses is asynchronous inference [73]. The core idea is to initiate inference of the next chunk before the current chunk is fully executed, as depicted in Fig. 2(b). Specif-ically, once inference is triggered at time t, the robot continues executing the remaining actions in the ongoing chunk. By time t + ∆t infer , when the final ac-tion is completed, the newly predicted chunk is expected to be available, thereby enabling seamless execution without halt. However, asynchronous execution incurs the problem of perception-execution gap [44, 95]. The observation is captured at time t, but when the new chunk be-comes available, the environment and the robot state may have changed due to actions executed during the interval (t, t +∆t infer ). A naive strategy of discarding the first d delayed actions in the new chunk and switching to the remaining ones (d ∼ d + s) can lead to unstable and discontinuous motion, and this issue be-comes increasingly severe as the delay d grows [4,80]. Recent approaches mitigate inter-chunk discontinuity by incorporating the overlapping actions ( s ∼ d + s in previous chunk) as part of the model input [4, 5, 9, 53, 85]. This paper follows RTC [4,5], where the overlapping actions are treated as prefix conditions during action generation, guiding the new actions to transition smoothly. 
+
+Smoothness vs . Reaction. Existing real-time VLAs primarily focus on improving inter-chunk smoothness. Nevertheless, they often overlook or misun-derstand another fundamental aspect of real-time performance: reaction . In this work, we revisit the notion of reaction in action chunking policy inference and provide a systematic analysis. Reaction time ∆t react is defined as the interval between the occurrence of a sudden event and the response produced by the robot. We summarize the reaction characteristics of synchronous and asynchronous clients in Tab. 1. A key insight is that reaction time is susceptible to the dual influence of inference latency and frequency. Given that policy inference is performed periodically, with consecutive inference triggers at time t and t′ in Fig. 2. When a new event occurs, the system can only respond after the next inference cycle is completed. Therefore, the lower bound of ∆t react is ∆t infer , corresponding to the case where the event happens just before an inference starts. In the worst case, the event occurs immediately after inference begins; the reaction will then only be reflected at t′ +∆t infer , shaping an upper bound equal to ∆t infer plus the inference interval. As events occur stochastically in the physical world, the reaction time can be modeled as following a uniform distribution , denoted by Dreact . An important finding from the expectation E[∆t react ] in Tab. 1 is that the gain by upgrading FASTER: Rethinking Real-Time Flow VLAs 7
+
+from synchronous to asynchronous inference is potentially limited, as it reduces the expected reaction time by only 0.5 ∗ ∆t infer .Reducing the execution horizon s is an intuitive idea to increase the in-ference frequency. In the asynchronous setting, s has a minimum value smin := 
+
+⌈∆t infer /∆t ctrl ⌉ to guarantee that the inference interval exceeds the latency ( i.e ., 
+
+∆t exec ≥ ∆t infer ). Under this configuration, inference is triggered every smin con-trol steps, achieving optimal reaction performance [95]. 
+
+Time to First Action. As observed in Tab. 1, reaction time heavily depends on inference latency. More importantly, if actions are not generated simultaneously, responsiveness is determined solely by how quickly the system can produce the 
+
+first action. Since the robot does not need the entire action chunk to begin moving, later actions, while essential for task accuracy, do not directly affect immediate responsiveness. Therefore, we introduce Time to First Action (TTFA) 
+
+as a more precise metric for measuring reactivity, analogous to Time to First Token (TTFT) in large language models [29, 111]. TTFA explicitly captures the earliest moment at which the robot can initiate movement, making it the true bottleneck of reaction speed. This paper presents a novel asynchronous pipeline that jointly minimizes TTFA and increases inference frequency, leading to substantially improved reaction capability in action chunking policies. 
+
+## 4 Methodology 
+
+4.1 Preliminaries 
+
+We adopt the widely used flow-based VLA structure [2, 3, 32, 110]. The model consists of a VLM backbone and an action expert (AE) module, learning a velocity field that transports a noise sample to the target action chunk using conditional flow matching [46, 47]. Training follows the optimal transport for-mulation [51, 82], which assumes a linear interpolation path between Gaussian noise ϵ ∼ N (0, I) and the ground-truth actions ˆAt: Aτt = τ ϵ + (1 − τ ) ˆAt, where 
+
+τ ∈ (0 , 1) is the continuous timestep of the flow. The objective is to regress the velocity field along this path with network vθ :
+
+L(θ) = Eτ ∼U (0 ,1) vθ (ot, Aτt , τ ) − (ϵ − ˆAt) 2
+
+. (1) During inference, actions are generated by initializing from Gaussian noise 
+
+A1 
+
+> t
+
+∼ N (0, I) at τ = 1 , and progressively integrating the learned velocity field toward τ = 0 using an ODE solver such as the Euler method: 
+
+Aτ +∆τ t = Aτt + vθ (ot, Aτt , τ )∆τ,  (2) where ∆τ = −1/N is related to the number of sampling steps N , with a typical value of 10 in practice. 8 Y. Lu, Z. Liu et al. 0 10 20 30 40 50      
+
+> action index
+> 0.00 0.02 0.04 0.06 0.08 0.10 0.12
+> straightness  S(A)
+> (a) 010 20 30 40 50
+> action index
+> 12345678910
+> ← sampling step
+> (b)
+> 0.00 0.01 0.02 0.03 0.04 0.05 0.06 0.07
+
+Fig. 3: Visualizations of (a) straightness S(A) of the denoising path during sampling of the action chunk, and (b) differences between the intermediate clean action estimates 
+
+˜Aτ →0 
+
+> t
+
+at each sampling timestep τ and the final output A0 
+
+> t
+
+.
+
+4.2 Pilot Study on Action Chunk Sampling 
+
+Existing flow-based VLAs treat the entire action chunk as an indivisible unit and apply a constant timestep schedule across all action indexes. As a result, every action within the chunk undergoes the same number of denoising steps during inference. The immediate next action At, which is urgently required for execution, is therefore forced to share the same schedule as the most distant future action At+H−1. Consequently, the entire multi-step denoising procedure has to be completed before any individual action can be issued, which constitutes a dominant bottleneck of the overall inference latency [99]. Nevertheless, action chunks exhibit an inherent temporal structure. Given current observations and proprioceptive states, early-stage actions are subject to stronger causal constraints and thus lie in a substantially narrower search space compared to future actions. Intuitively, this makes short-term predictions easier and more certain. Furthermore, when asynchronous methods incorporate action prefixes as input [5, 53, 80], these extra priors provide additional conditioning that constrains subsequent predictions. This further reduces the uncertainty of the immediate actions and lowers the complexity of generation. We validate this hypothesis through a quantitative analysis of the sampling dynamics in flow-based VLAs. Specifically, we adopt the straightness metric [51], which is defined for any continuously differentiable process Z = {Zτ } evolving from Z0 to Z1 as S(Z) = R 10 E
+
+h
+
+∥(Z1 − Z0) − ˙Zτ ∥2
+
+i
+
+dτ, where ˙Zτ = ddτ Zτ denotes the instantaneous velocity at time τ . In our context, the VLA denoising process is discretized and the straightness can be formulated as: 
+
+S(A) = 
+
+> 1
+
+X 
+
+> τ=0
+
+Et
+
+h
+
+(A1 
+
+> t
+
+− A0 
+
+> t
+
+) − vθ (ot, Aτt , τ ) 2i
+
+∆τ,  (3) where A0 
+
+> t
+
+represents the final actions obtained via Eq. (2). A value of S(A) = 0 
+
+indicates a perfectly straight path. Smaller S(A) corresponds to paths closer to linear interpolation, which in turn can be accurately integrated with fewer steps [51]. We also investigate the estimated clean actions at each denoising step 
+
+{1, 1+ ∆τ, . . . , −∆τ }, denoted as ˜Aτ →0 
+
+> t
+
+, obtained via the following extrapolation: FASTER: Rethinking Real-Time Flow VLAs 9(a) Constant Schedule (b) Horizon-Aware Schedule  
+
+> sampling steps
+> prediction horizon action index
+> sampling step
+> hit time
+> noise clean
+> dispatched
+> output
+
+Fig. 4: Illustration of (a) constant timestep schedule used in conventional flow sampling and (b) Horizon-Aware Schedule (HAS) used in FASTER that allocates adaptive hit times across the action chunk and accelerates the sampling of early actions, enabling streaming output. 
+
+˜Aτ →0 
+
+> t
+
+= Aτt − vθ (ot, Aτt , τ )τ.  (4) We measure their deviation from the final output A0 
+
+> t
+
+using ℓ2 norm ∥ ˜Aτ →0 
+
+> t
+
+−
+
+A0 
+
+> t
+
+∥. During sampling, this deviation is expected to decrease monotonically and reaches zero at the final step. A smaller deviation suggests that the model pro-vides a more accurate estimate of the clean results at the current timestep. We conduct a pilot study by fine-tuning a pretrained π0.5 model on our real-world robotic tasks. As visualized in Fig. 3, we can find that both the straightness metric and the estimate deviation exhibit non-uniformity across the temporal dimension (action index) of the action chunk. In particular, early actions (ap-proximately the first 1 ∼ 10 frames) demonstrate lower straightness values and smaller variations in ˜Aτ →0 
+
+> t
+
+throughout the sampling iterations. This empirical observation provides strong evidence supporting our hypothesis. 
+
+4.3 FASTER 
+
+Motivated by the insight that near-term actions within a chunk are easier to generate under flow matching, we propose to prioritize the sampling of these latency-critical actions with a Horizon-Aware Schedule (HAS). 
+
+Horizon-Aware Schedule. Unlike conventional flow-based VLAs, which em-ploy a constant time schedule across the entire action chunk (Fig. 4(a)), we design a horizon-aware time allocation mechanism that accelerates the denois-ing of near-term actions during inference, while allowing later-horizon actions to follow a comparatively slower schedule. Inspired by Diffusion Forcing [10], the flow matching timestep is made index-dependent and represented as a vector τ = {τi}, where i ∈ [0 , H − 1] denotes the action index. As illustrated in Fig. 4(b), we use ρj ∈ (0 , 1) to represent the global sampling progress at j-th step, which still iterates from 1 to 0 following the standard flow matching procedure. Each action reaches completion at a distinct 10 Y. Lu, Z. Liu et al. 
+
+hit time ui determined by its index: 
+
+ui = (1 − i/ (H − 1)) α ∗ u0 i ∈ [1 , H − 1] , (5) where the predefined u0 specifies the global timestep at which the first action is finalized. The hyperparameter α ∈ (0 , 1] controls how the hit times vary across the action index. When α = 1 , the hit times decrease uniformly from u0 to 0. When α < 1, early actions reach their hit times rapidly, while future actions have hit times closer to 0. This design adaptively allocates more denoising steps to future actions due to compounding uncertainty, preserving generation quality and minimizing deviation from the original schedule inherited from pretraining. Given the global timestep ρj , the local time schedule for each action index is formulated as: 
+
+τ ji = max  0, (ρj − ui)/(1 − ui) . (6) Under this schedule, once ρj reaches u0, the first action is fully denoised and can be dispatched immediately, while the remaining actions continue refining. We set 
+
+u0 = ( N − 1) /N , thus guaranteeing that the first action is ready with a single sampling step. With ρj further decreasing, subsequent actions are progressively completed when ρj = ui.
+
+Fine-tuning with Mixed Schedule. Directly fine-tuning a pretrained VLA using HAS may introduce two challenges. First, existing pretrained models are optimized under a constant timestep schedule, thus naively switching to an index-dependent schedule can enlarge the fine-tuning gap, in addition to the distribution shift. Second, when randomly selecting ρ ∼ U (0 , 1) , there exists a high probability that the corresponding local timestep for near-term actions be-comes zero. This could collapse the learning of these actions since the inputs are constantly ground-truth and potentially deteriorating rollout performance. To address these issues, we introduce a mixed scheduling strategy for fine-tuning. Concretely, given a mixing probability p, each action sample in a training batch utilizes HAS with probability p, and retains the original constant schedule with probability 1 − p. The mixed schedule enables the model to learn the flow matching velocity under both timestep parameterizations, thereby improving robustness to the schedule variation across the action horizon. It is worth noting that the proposed scheduling methodology can be readily incorporated into the standard fine-tuning pipeline of flow-based VLAs, without any architecture modifications or additional training cost. 
+
+Synergization with Action Conditioning. HAS naturally synergizes with the action conditioning technique proposed in Training-time RTC [5], which conditions both training and sampling on the action prefixes by treating them as fully denoised. Under our adaptive schedule, early actions frequently receive timesteps close to zero, while future actions are assigned progressively larger timesteps. This pattern is inherently consistent with the principle of action con-ditioning. Moreover, it encourages the model to learn a more structured mapping between timestep values and the degree of noise interpolation relative to the tar-get actions, thereby strengthening its understanding of temporally conditioned FASTER: Rethinking Real-Time Flow VLAs 11 
+
+generation. Action conditioning is integrated into HAS with an offset on the index, and we provide a detailed description in the supplementary material. 
+
+Streaming Client-Server Interface. With FASTER, actions are generated progressively during the denoising iterations. To exploit this property in real-world robotic systems, we implement a streaming client-server interface. On the server side, newly finalized actions from the policy are dispatched immediately, while the model proceeds to generate the remaining actions concurrently. On the client side, the controller continuously listens for incoming packets and appends received actions to the robot’s action buffer for execution, without waiting for the entire chunk to complete. As long as the action acquisition rate exceeds the robot control frequency—which is achievable even on consumer-level GPUs—the robot can operate without interruption. 
+
+Enhancing Reaction Capability. We analyze how FASTER improves reac-tion time by tightening both its lower and upper bounds. For conventional flow-based VLAs with N sampling steps, TTFA is approximately ∆t VLM + N ∗ ∆t AE ,where ∆t VLM and ∆t AE denote the inference time of the VLM and AE, respec-tively. Equipped with FASTER, TTFA is shortened to ∆t VLM + ∆t AE , as the first action requires only a single AE sampling step. Responsiveness can be further improved by increasing the inference fre-quency, i.e ., reducing the execution horizon s, whose minimum value smin must satisfy ∆t exec ≥ ∆t infer . When a high frequency is desired, a relatively small s
+
+is selected ( e.g . 4 out of H = 50 ), implying that only a small portion of the chunk is useful while the other actions are discarded. Our method enables an additional early-stopping strategy: once all actions within the execution horizon are finalized, the remaining sampling steps can be skipped. This avoids complet-ing all AE iterations and effectively reduces the overall inference latency for s
+
+actions. Consequently, we can apply a smaller feasible smin compared with con-ventional asynchronous inference, tightening the upper bound of ∆t react without sacrificing execution smoothness. 
+
+## 5 Experiments 
+
+5.1 Experimental Analysis on Reaction Speed Experimental Setup. To investigate improvements in reaction capability, we first compare the inference latency—measured by TTFA—and the expected re-action time of our method against the synchronous and asynchronous baselines. Since prior real-time VLA approaches [4, 5, 80] follow the same naive asyn-chronous paradigm in these aspects, we do not report them separately. Experi-ments are conducted on two hardware platforms: a high-performance RTX 4090 GPU, and a consumer-grade RTX 4060 GPU. We utilize two representative flow-based VLAs, π0.5 [32] and X-VLA [110], and adhere to their default con-figurations. The robot control frequency is set to f = 30 Hz, corresponding to a control period ∆t ctrl = 33 .3ms. To reflect the optimal achievable reaction speed, we set the execution horizon to smin , thereby maximizing inference frequency. 12 Y. Lu, Z. Liu et al. 
+
+Table 2: Comparison of reaction capability on RTX 4090 and RTX 4060 GPUs. “Speedup ” denotes the relative gain of our method over the asynchronous baseline. Model Method RTX 4090 RTX 4060 TTFA ↓ smin ↓ E[∆t react ] ↓ TTFA ↓ smin ↓ E[∆t react ] ↓                                                
+
+> π0.5
+> Sync 80.0 ±1.6ms 3170.0ms 303.3 ±0.8ms 10 621.6ms Async 80.0 ±1.6ms 3130.0ms 303.3 ±0.8ms 10 470.0ms FASTER 62.1 ±3.1ms 3112.1 ms 238.6 ±1.9ms 8371.9 ms
+> Speedup 1.29 ×–1.16 ×1.27 ×1.25 ×1.26 ×
+> X-VLA Sync 113.7 ±0.8ms 4237.2ms 399.5 ±8.5ms 12 799.2ms Async 113.7 ±0.8ms 4180.4ms 399.5 ±8.5ms 12 599.5ms FASTER 44.8 ±0.3ms 278.1 ms 129.2 ±2.4ms 6229.2 ms
+> Speedup 2.54 ×2×2.31 ×3.09 ×2×2.62 ×
+
+Table 3: Comparison of reaction speed from a probabilistic perspective on RTX 4090 and RTX 4060 GPUs. “ vs . Sync” denotes the probability that a given method has a shorter reaction time than Sync, and “ vs . Async” is defined analogously. Model Method RTX 4090 RTX 4060 
+
+vs . Sync vs . Async vs . Sync vs . Async 
+
+π0.5
+
+Async 0.72 - 0.74 -FASTER 0.81 0.66 0.88 0.77 
+
+X-VLA Async 0.73 - 0.75 -FASTER 1.00 1.00 1.00 1.00 
+
+Results. As detailed in Tab. 2, our method manifests substantial acceleration in reaction performance across all scenarios. As the design of X-VLA incurs a higher computational cost in its action expert, FASTER delivers particularly significant gains, achieving a 3 × boost in TTFA on RTX 4060. Notably, the early-stopping strategy in our approach effectively decreases the feasible inference interval by a smaller smin , which minimizes the inference-execution cycle and contributes to additional enhancements in responsiveness. As highlighted in Sec. 3, reaction time should be treated as a random variable, since event occurrences are inherently stochastic. Accordingly, Tab. 3 presents a probabilistic analysis that more faithfully reflects real-world conditions, measur-ing the probability that one method attains a faster reaction time than another. FASTER surpasses both baselines by a clear margin, with a larger advantage in the more resource-constrained scenario. Notably, on X-VLA, our method is deterministically superior: its upper bound of reaction time is lower than the baselines’ lower bound, establishing a strict performance dominance. 
+
+5.2 Real-world Experiments Experimental Setup. To examine the real-robot reaction capability in a highly dynamic environment, we design a task that demands both rapid response and FASTER: Rethinking Real-Time Flow VLAs 13 RTX 4090  
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Score
+> 0.00
+> 0.20
+> 0.53
+> 0.80 RTX 4060
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Score
+> 0.00
+> 0.20 0.30
+> 0.47 Sync FASTER  Training-time RTC
+> Sync
+> FASTER Training-time RTC
+> Naive Async
+> Naive Async
+
+Fig. 5: Comparison of real-world reaction speed on the table tennis task. Left : Visual-ization of rollouts on RTX 4090, the third column corresponds to the contact moment, and the interval between each image in a row is 166.7ms. Right : Quantitative comple-tion scores on two GPUs. Pick Beverage  Fold Towel          
+
+> 0.75
+> 0.80
+> 0.85
+> 0.90
+> 0.95
+> 1.00
+> Score  0.879
+> 0.957 0.950 0.957
+> 0.788
+> 0.825
+> 0.888
+> 0.963 Pick Beverage Fold Towel
+> 0
+> 5
+> 10
+> 15
+> 20
+> 25
+> Duration (s)
+> 13.0 12.5 11.9 12.0
+> 24.7 24.0
+> 20.7 20.5 Sync FASTER Training-time RTC Naive Async
+
+Fig. 6: Comparison of real-world performance and task completion duration on two additional tasks. 
+
+accurate motion execution. Specifically, we train VLA to play table tennis us-ing a racket mounted on a 6-DoF Piper robot arm in the AgileX Cobot Magic platform. We collect approximately 14 minutes of demonstration data via human teleoperation to fine-tune the π0.5 models. In addition, we include two tasks that place less emphasis on real-time reaction: (1) “Pick Beverage”: picking up a bever-age and placing it in a basket, focusing on object and localization generalization; (2) “Fold Towel”: folding a towel twice with dual arms, representing deformable object manipulation. Details are provided in supplementary material. 
+
+Results. We compare synchronous inference (“Sync”), naive asynchronous in-ference (“Naive Async”), and the state-of-the-art Training-time RTC [5] with our FASTER. Representative rollouts are visualized on the left of Fig. 5, with quantitative results presented in the right panels. We can observe that Sync thoroughly fails to respond to incoming balls due to its drastically slow reaction speed. Naive Async and Training-time RTC share the same temporal pipeline and thus similar reaction capability. However, Training-time RTC improves the smoothness of racket swing through its action conditioning mechanism, leading to moderately higher scores. Our method exhibits noticeably faster reaction than all baselines, which can be intuitively observed from the racket angle at the moment of ball contact. To 14 Y. Lu, Z. Liu et al.                                                          
+
+> Table 4: Comparison of performance on simulation benchmarks. “ ∗” indicates exper-imental results evaluated on our cluster with official checkpoints. Method LIBERO CALVIN ABC →DSpatial Object Goal 10 Avg. 12345Avg. Len
+> π0.598.8 98.2 98.0 92.4 96.9 94.2 88.7 85.7 83.2 79.5 4.313
+> π0.5+FASTER 98.6 97.8 97.8 91.6 96.5 95.1 89.1 85.0 81.9 78.1 4.292 X-VLA ∗97.8 99.4 97.8 96.8 98.0 95.7 89.8 82.4 77.0 70.2 4.151 X-VLA+FASTER 99.0 99.2 97.6 92.0 97.0 97.7 91.1 81.2 72.1 63.7 4.058
+
+successfully return the ball, the robot should begin adjusting its arm posture in advance to reach an appropriate hitting position with sufficient swing veloc-ity. If the reaction is delayed, there is insufficient time left to move, leading to suboptimal contact angles, as seen in the baselines. In contrast, faster reactions allow the robot to initiate motion earlier, providing adequate time to rotate the racket and build up swing speed, resulting in a more powerful and controlled hit. Therefore, the racket angle serves as a clear and visually interpretable indicator of reaction speed. Overall, FASTER achieves the best performance across both hardware settings. The advantage is particularly pronounced on the RTX 4060, where inference runs at merely 3Hz, highlighting the compounded benefits of reduced inference latency and increased inference frequency. We report the average completion score and duration for the additional tasks in Fig. 6. The results show that asynchronous methods outperform Sync by a clear gap, and FASTER achieves better or comparable scores across both tasks. It showcases a critical insight that task performance is not determined solely by action accuracy, but also by the real-time interaction with the physical world. Though our method may slightly compromise action prediction due to accelerated sampling, it strikes a more effective balance between responsiveness and accuracy. Consistent with previous findings [5,80], the synchronous method exhibits the longest task duration due to frequent inter-chunk pauses. In contrast, Training-time RTC and FASTER effectively reduce completion time, yielding greater efficiency for downstream applications. 
+
+5.3 Simulation Experiments 
+
+We conduct experiments on two widely used simulation benchmarks, LIBERO [48] and CALVIN [61]. Although their simulation environments are not directly in-fluenced by inference latency, these benchmarks provide a protocol to verify whether FASTER preserves the original model performance. As demonstrated in Tab. 4, despite HAS applying aggressive action sampling, it maintains com-petitive performance with only marginal degradation on both benchmarks. FASTER: Rethinking Real-Time Flow VLAs 15 
+
+## 6 Conclusion 
+
+In this paper, we revisit reaction capability in action chunking VLA policies and identify the constant timestep schedule in flow-based VLAs as a key bottleneck of real-time responsiveness. We propose FASTER, which leverages a Horizon-Aware Schedule to adaptively accelerate action sampling. It enables single-step generation of the immediate action, without compromising overall trajectory quality. Capitalizing on a streaming client-server interface with early stopping, FASTER jointly reduces TTFA and speeds up closed-loop control. Real-robot experiments confirm that FASTER offers a robust, general, and plug-and-play path toward real-time embodied intelligence, particularly on edge devices. While highly aggressive action sampling may marginally impact long-horizon accuracy in simulation, it establishes a better trade-off in robotic manipulation. 
+
+## References 
+
+1. Bai, J., Bai, S., Chu, Y., Cui, Z., Dang, K., Deng, X., Fan, Y., Ge, W., Han, Y., Huang, F., et al.: Qwen technical report. arXiv preprint arXiv:2309.16609 (2023) 2. Bjorck, J., Castañeda, F., Cherniadev, N., Da, X., Ding, R., Fan, L., Fang, Y., Fox, D., Hu, F., Huang, S., et al.: GR00T N1: an open foundation model for generalist humanoid robots. arXiv preprint arXiv:2503.14734 (2025) 3. Black, K., Brown, N., Driess, D., Esmail, A., Equi, M., Finn, C., Fusai, N., Groom, L., Hausman, K., Ichter, B., et al.: π0: A vision-language-action flow model for general robot control. In: RSS (2025) 4. Black, K., Galliker, M.Y., Levine, S.: Real-time execution of action chunking flow policies. In: NeurIPS (2025) 5. Black, K., Ren, A.Z., Equi, M., Levine, S.: Training-time action conditioning for efficient real-time chunking. arXiv preprint arXiv:2512.05964 (2025) 6. Bu, Q., Cai, J., Chen, L., Cui, X., Ding, Y., Feng, S., He, X., Huang, X., et al.: Agibot world colosseo: A large-scale manipulation platform for scalable and in-telligent embodied systems. In: IROS (2025) 7. Budzianowski, P., Maa, W., Freed, M., Mo, J., Hsiao, W., Xie, A., Młoduchowski, T., Tipnis, V., Bolte, B.: Edgevla: Efficient vision-language-action models. arXiv preprint arXiv:2507.14049 (2025) 8. Cadene, R., Alibert, S., Capuano, F., Aractingi, M., Zouitine, A., Kooijmans, P., Choghari, J., Russi, M., Pascal, C., Palma, S., Shukor, M., Moss, J., Soare, A., Aubakirova, D., Lhoest, Q., Gallouédec, Q., Wolf, T.: Lerobot: An open-source library for end-to-end robot learning. In: ICLR (2026) 9. Cai, R., Guo, J., He, X., Jin, P., Li, J., Lin, B., Liu, F., Liu, W., Ma, F., Ma, K., et al.: Xiaomi-robotics-0: An open-sourced vision-language-action model with real-time execution. arXiv preprint arXiv:2602.12684 (2026) 10. Chen, B., Monsó, D.M., Du, Y., Simchowitz, M., Tedrake, R., Sitzmann, V.: Diffusion forcing: Next-token prediction meets full-sequence diffusion. In: NeurIPS (2024) 11. Chen, H., Liu, M., Ma, C., Ma, X., Ma, Z., Wu, H., Chen, Y., Zhong, Y., Wang, M., Li, Q., Yang, Y.: Falcon: Fast visuomotor policies via partial denoising. In: ICML (2025) 16 Y. Lu, Z. Liu et al. 12. Chen, J., Wang, J., Chen, L., Cai, C., Lu, J.: Nanovla: Routing decoupled vision-language understanding for nano-sized generalist robotic policies. arXiv preprint arXiv:2510.25122 (2025) 13. Chen, Y., Li, X.: Rlrc: Reinforcement learning-based recovery for compressed vision-language-action models. arXiv preprint arXiv:2506.17639 (2025) 14. Chen, Z., Yuan, X., Mu, T., Su, H.: Responsive noise-relaying diffusion policy: Responsive and efficient visuomotor control. TMLR (2025) 15. Chi, C., Feng, S., Du, Y., Xu, Z., Cousineau, E., Burchfiel, B., Song, S.: Diffusion Policy: Visuomotor policy learning via action diffusion. In: RSS (2023) 16. Dai, Y., Gu, H., Wang, T., Cheng, Q., Zheng, Y., Qiu, Z., Gong, L., Lou, W., Zhou, X.: Actionflow: A pipelined action acceleration for vision language models on edge. arXiv preprint arXiv:2512.20276 (2025) 17. Ding, H., Jaquier, N., Peters, J., Rozo, L.: Fast and robust visuomotor riemannian flow matching policy. IEEE Transactions on robotics (2025) 18. Duan, Y., Yin, H., Kragic, D.: Real-time iteration scheme for diffusion policy. In: IROS. pp. 11758–11764 (2025) 19. Fan, X., Deng, S., Wu, X., Lu, Y., Li, Z., Yan, M., Zhang, Y., Zhang, Z., Wang, H., Zhao, H.: Any3d-vla: Enhancing vla robustness via diverse point clouds. arXiv preprint arXiv:2602.00807 (2026) 20. Fang, H., Liu, Y., Du, Y., Du, L., Yang, H.: Sqap-vla: A synergistic quantization-aware pruning framework for high-performance vision-language-action models. arXiv preprint arXiv:2509.09090 (2025) 21. Frans, K., Hafner, D., Levine, S., Abbeel, P.: One step diffusion via shortcut models. In: ICLR (2025) 22. Fu, Z., Zhao, T.Z., Finn, C.: Mobile ALOHA: Learning bimanual mobile manip-ulation using low-cost whole-body teleoperation. In: CoRL (2024) 23. Gao, J., Ye, F., Zhang, J., Qian, W.: Compressor-vla: Instruction-guided visual token compression for efficient robotic manipulation. arXiv preprint arXiv:2511.18950 (2025) 24. Geng, Z., Deng, M., Bai, X., Kolter, J.Z., He, K.: Mean flows for one-step gener-ative modeling. In: NeurIPS (2025) 25. Guan, W., Hu, Q., Li, A., Cheng, J.: Efficient vision-language-action models for embodied manipulation: A systematic survey. arXiv preprint arXiv:2510.17111 (2025) 26. Hao, X., Zhou, L., Huang, Z., Hou, Z., Tang, Y., Zhang, L., Li, G., Lu, Z., Ren, S., Meng, X., et al.: Mimo-embodied: X-embodied foundation model technical report. arXiv preprint arXiv:2511.16518 (2025) 27. Ho, J., Jain, A., Abbeel, P.: Denoising diffusion probabilistic models. In: NeurIPS (2020) 28. Høeg, S.H., Du, Y., Egeland, O.: Streaming diffusion policy: Fast policy synthesis with variable noise diffusion models. arXiv preprint arXiv:2406.04806 (2024) 29. Holmes, C., Tanaka, M., Wyatt, M., Awan, A.A., Rasley, J., Rajbhandari, S., Aminabadi, R.Y., Qin, H., Bakhtiari, A., Kurilenko, L., et al.: Deepspeed-fastgen: High-throughput text generation for llms via mii and deepspeed-inference. arXiv preprint arXiv:2401.08671 (2024) 30. Huang, Y., Ding, L., Tang, Z., Zhu, Z., Deng, J., Lin, X., Liu, S., Ren, H., Ji, J., Zhang, Y.: Environment-aware adaptive pruning with interleaved inference orchestration for vision-language-action models. arXiv preprint arXiv:2602.00780 (2026) FASTER: Rethinking Real-Time Flow VLAs 17 31. Intelligence, P., Amin, A., Aniceto, R., Balakrishna, A., Black, K., Conley, K., Connors, G., Darpinian, J., Dhabalia, K., DiCarlo, J., et al.: π∗
+
+> 0.6
+
+: a vla that learns from experience. arXiv preprint arXiv:2511.14759 (2025) 32. Intelligence, P., Black, K., Brown, N., Darpinian, J., Dhabalia, K., Driess, D., Esmail, A., Equi, M., Finn, C., Fusai, N., et al.: π0.5: a vision-language-action model with open-world generalization. arXiv preprint arXiv:2504.16054 (2025) 33. Jabbour, J., Kim, D.K., Smith, M., Patrikar, J., Ghosal, R., Wang, Y., Agha, A., Reddi, V.J., Omidshafiei, S.: Don’t run with scissors: Pruning breaks vla models but they can be recovered. arXiv preprint arXiv:2510.08464 (2025) 34. Jeon, B., Choi, Y., Kim, T.: Shallow-π: Knowledge distillation for flow-based vlas. arXiv preprint arXiv:2601.20262 (2026) 35. Jia, B., Ding, P., Cui, C., Sun, M., Qian, P., Huang, S., Fan, Z., Wang, D.: Score and distribution matching policy: Advanced accelerated visuomotor policies via matched distillation. arXiv preprint arXiv:2412.09265 (2024) 36. Jiang, T., Jiang, X., Ma, Y., Wen, X., Li, B., Zhan, K., Jia, P., Liu, Y., Sun, S., Lang, X.: The better you learn, the smarter you prune: Towards efficient vision-language-action models via differentiable token pruning. arXiv preprint arXiv:2509.12594 (2025) 37. Khazatsky, A., Pertsch, K., Nair, S., Balakrishna, A., Dasari, S., Karamcheti, S., Nasiriany, S., Srirama, M.K., Chen, L.Y., Ellis, K., et al.: DROID: A large-scale in-the-wild robot manipulation dataset. In: RSS (2024) 38. Kim, M.J., Finn, C., Liang, P.: Fine-tuning vision-language-action models: Opti-mizing speed and success. In: RSS (2025) 39. Kim, M.J., Pertsch, K., Karamcheti, S., Xiao, T., Balakrishna, A., Nair, S., Rafailov, R., Foster, E., Lam, G., Sanketi, P., et al.: OpenVLA: An open-source vision-language-action model. In: CoRL (2024) 40. Li, B., Zhang, Y., Guo, D., Zhang, R., Li, F., Zhang, H., Zhang, K., Zhang, P., Li, Y., Liu, Z., et al.: Llava-onevision: Easy visual task transfer. arXiv preprint arXiv:2408.03326 (2024) 41. Li, W., Zhang, R., Shao, R., Fang, Z., Zhou, K., Tian, Z., Nie, L.: Semanticvla: Semantic-aligned sparsification and enhancement for efficient robotic manipula-tion. arXiv preprint arXiv:2511.10518 (2025) 42. Li, Y., Meng, Y., Sun, Z., Ji, K., Tang, C., Fan, J., Ma, X., Xia, S., Wang, Z., Zhu, W.: Sp-vla: A joint model scheduling and token pruning approach for vla model acceleration. arXiv preprint arXiv:2506.12723 (2025) 43. Li, Z., Wu, X., Xu, Z., Zhao, H.: Train once, deploy anywhere: Realize data-efficient dynamic object manipulation. arXiv preprint arXiv:2508.14042 (2025) 44. Liao, A., Kim, D.K., Smith, M.O., Agha-mohammadi, A.a., Omidshafiei, S.: Delay-aware diffusion policy: Bridging the observation-execution gap in dynamic tasks. arXiv preprint arXiv:2512.07697 (2025) 45. Lin, T., Zhong, Y., Du, Y., Zhang, J., Liu, J., Chen, Y., Gu, E., Liu, Z., Cai, H., Zou, Y., et al.: Evo-1: Lightweight vision-language-action model with preserved semantic alignment. arXiv preprint arXiv:2511.04555 (2025) 46. Lipman, Y., Chen, R.T.Q., Ben-Hamu, H., Nickel, M., Le, M.: Flow matching for generative modeling. In: ICLR (2023) 47. Lipman, Y., Havasi, M., Holderrieth, P., Shaul, N., Le, M., Karrer, B., Chen, R.T., Lopez-Paz, D., Ben-Hamu, H., Gat, I.: Flow matching guide and code. arXiv preprint arXiv:2412.06264 (2024) 48. Liu, B., Zhu, Y., Gao, C., Feng, Y., Liu, Q., Zhu, Y., Stone, P.: Libero: Benchmark-ing knowledge transfer for lifelong robot learning. In: NeurIPS. pp. 44776–44791 (2023) 18 Y. Lu, Z. Liu et al. 49. Liu, J., Liu, M., Wang, Z., An, P., Li, X., Zhou, K., Yang, S., Zhang, R., Guo, Y., Zhang, S.: Robomamba: Efficient vision-language-action model for robotic reasoning and manipulation. In: NeurIPS. pp. 40085–40110 (2024) 50. Liu, S., Li, B., Ma, K., Wu, L., Tan, H., Ouyang, X., Su, H., Zhu, J.: RDT2: Exploring the scaling limit of umi data towards zero-shot cross-embodiment gen-eralization. arXiv preprint arXiv:2602.03310 (2026) 51. Liu, X., Gong, C., qiang liu: Flow straight and fast: Learning to generate and transfer data with rectified flow. In: ICLR (2023) 52. Liu, Y., Hamid, J.I., Xie, A., Lee, Y., Du, M., Finn, C.: Bidirectional decoding: Improving action chunking via guided test-time sampling. In: ICLR (2025) 53. Liu, Y., Yu, H., Zhao, J., Li, B., Zhang, D., Li, M., Wu, W., Hu, Y., Xie, J., Guo, J., et al.: Learning native continuation for action chunking flow policies. arXiv preprint arXiv:2602.12978 (2026) 54. Liu, Z., Huang, R., Yang, R., Yan, S., Wang, Z., Hou, L., Lin, D., Bai, X., Zhao, H.: Drivepi: Spatial-aware 4d mllm for unified autonomous driving understanding, perception, prediction and planning. In: CVPR (2026) 55. Liu, Z., Chen, Y., Cai, H., Lin, T., Yang, S., Liu, Z., Zhao, B.: Vla-pruner: Temporal-aware dual-level visual token pruning for efficient vision-language-action inference. arXiv preprint arXiv:2511.16449 (2025) 56. Lu, G., Gao, Z., Chen, T., Dai, W., Wang, Z., Ding, W., Tang, Y.: Manicm: Real-time 3d diffusion policy via consistency model for robotic manipulation. arXiv preprint arXiv:2406.01586 (2024) 57. Ma, X., Yuan, Z., Zhang, Z., Shi, K., Sun, L., Ye, Y.: Blurr: A boosted low-resource inference for vision-language-action models. arXiv preprint arXiv:2512.11769 (2025) 58. Ma, Y., Song, Z., Zhuang, Y., Hao, J., King, I.: A survey on vision-language-action models for embodied ai. arXiv preprint arXiv:2405.14093 (2024) 59. Ma, Y., Zhou, Y., Yang, Y., Wang, T., Fan, H.: Running vlas at real-time speed. arXiv preprint arXiv:2510.26742 (2025) 60. Matthews, M., Beukman, M., Lu, C., Foerster, J.N.: Kinetix: Investigating the training of general agents through open-ended physics-based control tasks. In: ICLR (2025) 61. Mees, O., Hermann, L., Rosete-Beas, E., Burgard, W.: CALVIN: A benchmark for language-conditioned policy learning for long-horizon robot manipulation tasks. RAL (2022) 62. Ni, C., Chen, C., Wang, X., Zhu, Z., Zheng, W., Wang, B., Chen, T., Zhao, G., Li, H., Dong, Z., et al.: Swiftvla: Unlocking spatiotemporal dynamics for lightweight vla models at minimal overhead. arXiv preprint arXiv:2512.00903 (2025) 63. Padalkar, A., Pooley, A., Jain, A., Bewley, A., Herzog, A., Irpan, A., Khazatsky, A., Rai, A., Singh, A., Brohan, A., et al.: Open X-Embodiment: Robotic learning datasets and RT-X models. In: ICRA (2024) 64. Park, S., Kim, H., Jeon, W., Yang, J., Jeon, B., Oh, Y., Choi, J.: Quantization-aware imitation-learning for resource-efficient robotic control. arXiv preprint arXiv:2412.01034 (2024) 65. Park, S., Kim, H., Kim, S., Jeon, W., Yang, J., Jeon, B., Oh, Y., Choi, J.: Saliency-aware quantized imitation learning for efficient robotic control. In: ICCV. pp. 13140–13150 (2025) 66. Pei, X., Chen, Y., Xu, S., Wang, Y., Shi, Y., Xu, C.: Action-aware dynamic pruning for efficient vision-language-action manipulation. In: ICLR (2026) FASTER: Rethinking Real-Time Flow VLAs 19 67. Pertsch, K., Stachowicz, K., Ichter, B., Driess, D., Nair, S., Vuong, Q., Mees, O., Finn, C., Levine, S.: Fast: Efficient action tokenization for vision-language-action models. arXiv preprint arXiv:2501.09747 (2025) 68. Reuss, M., Zhou, H., Rühle, M., Yağmurlu, Ö.E., Otto, F., Lioutikov, R.: Flower: Democratizing generalist robot policies with efficient vision-language-action flow policies. In: CoRL (2025) 69. Sapkota, R., Cao, Y., Roumeliotis, K.I., Karkee, M.: Vision-language-action (vla) models: Concepts, progress, applications and challenges. arXiv preprint arXiv:2505.04769 (2025) 70. Shao, R., Li, W., Zhang, L., Zhang, R., Liu, Z., Chen, R., Nie, L.: Large vlm-based vision-language-action models for robotic manipulation: A survey. arXiv preprint arXiv:2508.13073 (2025) 71. Sheng, J., Wang, Z., Li, P., Liu, M.: Mp1: Meanflow tames policy learning in 1-step for robotic manipulation. In: AAAI (2026) 72. Shi, M., Chen, L., Chen, J., Lu, Y., Liu, C., Ren, G., Luo, P., Huang, D., Yao, M., Li, H.: Is diversity all you need for scalable robotic manipulation? arXiv preprint arXiv:2507.06219 (2025) 73. Shukor, M., Aubakirova, D., Capuano, F., Kooijmans, P., Palma, S., Zoui-tine, A., Aractingi, M., Pascal, C., Russi, M., Marafioti, A., et al.: Smolvla: A vision-language-action model for affordable and efficient robotics. arXiv preprint arXiv:2506.01844 (2025) 74. Sochopoulos, A., Malkin, N., Tsagkas, N., Moura, J., Gienger, M., Vijayakumar, S.: Fast flow-based visuomotor policies via conditional optimal transport cou-plings. In: CoRL (2025) 75. Song, J., Meng, C., Ermon, S.: Denoising diffusion implicit models. In: ICLR (2021) 76. Song, W., Chen, J., Ding, P., Huang, Y., Zhao, H., Wang, D., Li, H.: Ceed-vla: Consistency vision-language-action model with early-exit decoding. arXiv preprint arXiv:2506.13725 (2025) 77. Song, W., Chen, J., Ding, P., Zhao, H., Zhao, W., Zhong, Z., Ge, Z., Ma, J., Li, H.: Accelerating vision-language-action model integrated with action chunking via parallel decoding. In: IROS (2025) 78. Sun, M., Wang, W., Li, G., Liu, J., Sun, J., Feng, W., Lao, S., Zhou, S., He, Q., Liu, J.: Ar-diffusion: Asynchronous video generation with auto-regressive diffusion. In: CVPR. pp. 7364–7373 (2025) 79. Taherin, A., Lin, J., Akbari, A., Akbari, A., Zhao, P., Chen, W., Kaeli, D., Wang, Y.: Cross-platform scaling of vision-language-action models from edge to cloud gpus. arXiv preprint arXiv:2509.11480 (2025) 80. Tang, J., Sun, Y., Zhao, Y., Yang, S., Lin, Y., Zhang, Z., Hou, J., Lu, Y., Liu, Z., Han, S.: Vlash: Real-time vlas via future-state-aware asynchronous inference. arXiv preprint arXiv:2512.01031 (2025) 81. Team, G.R., Abdolmaleki, A., Abeyruwan, S., Ainslie, J., Alayrac, J.B., Arenas, M.G., Balakrishna, A., Batchelor, N., Bewley, A., Bingham, J., et al.: Gemini Robotics 1.5: Pushing the frontier of generalist robots with advanced embodied reasoning, thinking, and motion transfer. arXiv preprint arXiv:2510.03342 (2025) 82. Tong, A., FATRAS, K., Malkin, N., Huguet, G., Zhang, Y., Rector-Brooks, J., Wolf, G., Bengio, Y.: Improving and generalizing flow-based generative models with minibatch optimal transport. TMLR (2024) 83. Walke, H.R., Black, K., Zhao, T.Z., Vuong, Q., Zheng, C., Hansen-Estruch, P., He, A.W., Myers, V., Kim, M.J., Du, M., et al.: BridgeData v2: A dataset for robot learning at scale. In: CoRL (2023) 20 Y. Lu, Z. Liu et al. 84. Wang, H., Xu, J., Pan, J., Zhou, Y., Dai, G.: Specprune-vla: Accelerating vision-language-action models via action-aware self-speculative pruning. arXiv preprint arXiv:2509.05614 (2025) 85. Wang, H., Zhang, G., Yan, Y., Shang, Y., Kompella, R.R., Liu, G.: Real-time robot execution with masked action chunking. In: ICLR (2026) 86. Wang, H., Xiong, C., Wang, R., Chen, X.: Bitvla: 1-bit vision-language-action models for robotics manipulation. arXiv preprint arXiv:2506.07530 (2025) 87. Wang, S., Yu, R., Yuan, Z., Yu, C., Gao, F., Wang, Y., Wong, D.F.: Spec-vla: speculative decoding for vision-language-action models with relaxed acceptance. In: EMNLP. pp. 26916–26928 (2025) 88. Wang, Y., Ding, P., Li, L., Cui, C., Ge, Z., Tong, X., Song, W., Zhao, H., Zhao, W., Hou, P., et al.: Vla-adapter: An effective paradigm for tiny-scale vision-language-action model. In: AAAI (2025) 89. Wang, Z., Li, M., Mandlekar, A., Xu, Z., Fan, J., Narang, Y., Fan, L., Zhu, Y., Balaji, Y., Zhou, M., Liu, M.Y., Zeng, Y.: One-step diffusion policy: Fast visuomotor policies via diffusion distillation. In: ICML (2025) 90. Wei, Y., Fan, J., Guo, J., Zhen, R., Shao, R., Su, X., Xie, Z., Yang, S.: Learning to accelerate vision-language-action models through adaptive visual token caching. arXiv preprint arXiv:2602.00686 (2026) 91. Wen, J., Zhu, Y., Li, J., Zhu, M., Tang, Z., Wu, K., Xu, Z., Liu, N., Cheng, R., Shen, C., et al.: TinyVLA: Towards fast, data-efficient vision-language-action models for robotic manipulation. RAL (2025) 92. Williams, J., Gupta, K.D., George, R., Sarkar, M.: Lite vla: Efficient vision-language-action control on cpu-bound edge robots. arXiv preprint arXiv:2511.05642 (2025) 93. Wu, W., Lu, F., Wang, Y., Yang, S., Liu, S., Wang, F., Zhu, Q., Sun, H., Wang, Y., Ma, S., et al.: A pragmatic vla foundation model. arXiv preprint arXiv:2601.18692 (2026) 94. Wu, Y., Wang, H., Chen, Z., Pang, J., Xu, D.: On-device diffusion transformer policy for efficient robot manipulation. In: ICCV. pp. 14073–14083 (2025) 95. Xie, H., Wen, B., Zheng, J., Chen, Z., Hong, F., Diao, H., Liu, Z.: Dynamicvla: A vision-language-action model for dynamic object manipulation. arXiv preprint arXiv:2601.22153 (2026) 96. Xiong, Z., Li, K., Wang, Z., Jackson, M., Foerster, J., Whiteson, S.: Hypervla: Effi-cient inference in vision-language-action models via hypernetworks. arXiv preprint arXiv:2510.04898 (2025) 97. Xu, S., Wang, Y., Xia, C., Zhu, D., Huang, T., Xu, C.: Vla-cache: Towards efficient vision-language-action model via adaptive token caching in robotic manipulation. In: NeurIPS (2025) 98. Yang, A., Li, A., Yang, B., Zhang, B., Hui, B., Zheng, B., Yu, B., Gao, C., Huang, C., Lv, C., et al.: Qwen3 technical report. arXiv preprint arXiv:2505.09388 (2025) 99. Yang, Y., Wang, Y., Wen, Z., Zhongwei, L., Zou, C., Zhang, Z., Wen, C., Zhang, L.: EfficientVLA: Training-free acceleration and compression for vision-language-action models. In: NeurIPS (2025) 100. Ye, W., Wang, T., Zhu, L., Li, F., Yang, G.: Actdistill: General action-guided self-derived distillation for efficient vision-language-action models. arXiv preprint arXiv:2511.18082 (2025) 101. Ye, Y., Ma, J., Cen, J., Lu, Z.: Token expand-merge: Training-free token compres-sion for vision-language-action models. arXiv preprint arXiv:2512.09927 (2025) FASTER: Rethinking Real-Time Flow VLAs 21 102. Yu, W., Wang, T., Li, F., Li, J., Zhu, L.: Ac 2-vla: Action-context-aware adaptive computation in vision-language-action models for efficient robotic manipulation. arXiv preprint arXiv:2601.19634 (2026) 103. Yu, Z., Wang, B., Zeng, P., Zhang, H., Zhang, J., Gao, L., Song, J., Sebe, N., Shen, H.T.: A survey on efficient vision-language-action models. arXiv preprint arXiv:2510.24795 (2025) 104. Yue, Y., Wang, Y., Kang, B., Han, Y., Wang, S., Song, S., Feng, J., Huang, G.: Deer-vla: Dynamic inference of multimodal large language models for efficient robot execution. In: NeurIPS. pp. 56619–56643 (2024) 105. Zhang, D., Sun, J., Hu, C., Wu, X., Yuan, Z., Zhou, R., Shen, F., Zhou, Q.: Pure vision language action (vla) models: A comprehensive survey. arXiv preprint arXiv:2509.19012 (2025) 106. Zhang, Q., Liu, Z., Fan, H., Liu, G., Zeng, B., Liu, S.: Flowpolicy: Enabling fast and robust 3d flow-based policy via consistency flow matching for robot manipulation. In: AAAI. pp. 14754–14762 (2025) 107. Zhang, R., Dong, M., Zhang, Y., Heng, L., Chi, X., Dai, G., Du, L., Du, Y., Zhang, S.: Mole-vla: Dynamic layer-skipping vision language action model via mixture-of-layers for efficient robot manipulation. In: AAAI (2026) 108. Zhao, T.Z., Kumar, V., Levine, S., Finn, C.: Learning fine-grained bimanual ma-nipulation with low-cost hardware. In: RSS (2023) 109. Zhao, Y., Zhao, L., Cheng, B., Yao, G., Wen, X., Gao, H.: Vla-rail: A real-time asynchronous inference linker for vla models and robots. arXiv preprint arXiv:2512.24673 (2025) 110. Zheng, J., Li, J., Wang, Z., Liu, D., Kang, X., Feng, Y., Zheng, Y., Zou, J., Chen, Y., Zeng, J., et al.: X-VLA: Soft-prompted transformer as scalable cross-embodiment vision-language-action model. In: ICLR (2026) 111. Zhou, Z., Ning, X., Hong, K., Fu, T., Xu, J., Li, S., Lou, Y., Wang, L., Yuan, Z., Li, X., et al.: A survey on efficient inference for large language models. arXiv preprint arXiv:2404.14294 (2024) 112. Zitkovich, B., Yu, T., Xu, S., Xu, P., Xiao, T., Xia, F., Wu, J., Wohlhart, P., Welker, S., Wahid, A., et al.: Rt-2: Vision-language-action models transfer web knowledge to robotic control. In: CoRL. pp. 2165–2183 (2023) 22 Y. Lu, Z. Liu et al. 
+
+# Appendix 
+
+We provide the following contents in the appendix: 
+
+– Sec. A provides a fine-grained analysis of the asynchronous inference pipeline and clarifies the relationship between inference latency, delay, and minimal execution horizon. 
+
+– Sec. B presents additional pilot study results that further support the non-uniform sampling difficulty across action indices. 
+
+– Sec. C gives additional methodological details, including the integration with action conditioning, the streaming client-server interface, and pseudo-code for training and inference. 
+
+– Sec. D summarizes implementation details for real-world experiments, sim-ulation benchmarks, policy training, and robot deployment. 
+
+– Sec. E reports additional experimental results, including reaction analysis, ablation studies, extra real-world results, and the Kinetix benchmark. 
+
+– Sec. F reviews related work on efficient VLA approaches and discusses closely related acceleration directions. 
+
+## A Details of Asynchronous Inference Pipeline 
+
+Here we provide a fine-grained illustration of the asynchronous inference pipeline. Since the robot controller typically operates at a fixed frequency, all operations occur with an interval of control period ∆t ctrl . As shown in Fig. 7, the infer-ence latency generally does not align with the controller timesteps in real-world robotic systems. Therefore, if inference starts at time t0, the predicted actions can only be executed at time t0 + ⌈∆t infer /∆t ctrl ⌉ ∗ ∆t ctrl . However, the next action is expected to be available at t0 + ∆t ctrl (one control step later), resulting in a delay of d actions: 
+
+d := ⌈∆t infer /∆t ctrl ⌉ − 1 = ⌊∆t infer /∆t ctrl ⌋. (7) Once the current inference finishes, the next inference can only be triggered at the subsequent controller timestep ( e.g ., t3 in Fig. 7). Consequently, the inference interval is at least ⌈∆t infer /∆t ctrl ⌉ ∗ ∆t ctrl . As discussed in Tab. 1, the inference interval is related to the execution duration ∆t exec , and the minimum feasible execution horizon is therefore smin := ⌈∆t infer /∆t ctrl ⌉.
+
+## B Additional Results in Pilot Study 
+
+We present additional results from our pilot study in Sec. 4.2. We further analyze the effect of using a smaller prediction horizon H = 30 in Fig. 8(c)(d), compared with the default setting H = 50 in Fig. 8(a)(b). Although the straightness met-rics exhibit larger variance at certain indices, all metrics reveal a similar non-uniform pattern across the action index, consistent with Fig. 3. These results further support our observation that earlier actions are easier to sample than later ones, forming the foundation for the motivation behind FASTER. FASTER: Rethinking Real-Time Flow VLAs 23 Infer 
+
+Policy Server Robot Client 
+
+> time
+
+Infer 
+
+Fig. 7: Temporal pipeline of asynchronous inference at a fine-grained level. Suppose the inference latency ∆t infer is 2.5 times the controller period ∆t ctrl , resulting in an inference delay of d = 2 and a minimal execution horizon of smin = 3 .0 10 20 30 40 50 
+
+> action index
+> 0.000 0.025 0.050 0.075 0.100 0.125 0.150
+> straightness  S(A)
+
+(a) 0 10 20 30 40 50 
+
+> action index
+> 12345678910
+> ← sampling step
+
+(b)    
+
+> 0.00 0.01 0.02 0.03 0.04 0.05 0.06 0.07 010 20 30
+> action index
+> 0.000 0.025 0.050 0.075 0.100 0.125 0.150
+> straightness  S(A)
+
+(c) 0 5 10 15 20 25 30 
+
+> action index
+> 12345678910
+> ← sampling step
+
+(d) 
+
+> 0.00 0.01 0.02 0.03 0.04 0.05 0.06 0.07
+
+Fig. 8: Additional visualizations of (a)(c) straightness S(A) and (b)(d) differences be-tween the intermediate clean action estimates and the final output. (a)(b) are computed using a π0.5 model fine-tuned on Pick Beverage task with prediction horizon H = 50 ,while (c)(d) are computed using a model with H = 30 . The shadow regions in (a)(c) denote the 5% ∼ 95% percentile range across 200 samples. 
+
+## C Additional Methodological Details 
+
+C.1 Horizon-Aware Schedule with Action Conditioning 
+
+We provide details on how the Action Conditioning strategy [5] is integrated into our Horizon-Aware Schedule. In the main paper, we use the superscript j
+
+in ρj and τ ji to denote the j-th sampling step. Here we omit j, as the following 24 Y. Lu, Z. Liu et al. 
+
+description applies to both training and sampling. Specifically, given an action prefix of length d < H , we set the local flow matching timesteps of the prefix actions to zero 1 (i.e ., τi ≡ 0 for i < d ) and apply an offset −d to the action indices. The hit time formulation is accordingly updated from Eq. (5) to: 
+
+u = {ui} =
+
+
+
+1 − i − d
+
+max( H − 1 − d, 1) 
+
+α
+
+∗ ud, i ∈ [d + 1 , H − 1] , (8) where ud replaces u0 as the predefined global timestep at which the first valid action (now the action at index d) is finalized. Consequently, the immediate action still reaches its hit time ud = ( N − 1) /N with a single sampling step, ensuring low latency while preserving the temporal consistency of flow matching. During inference, we simply set d to the real inference delay, where the action prefix corresponds to the overlapping actions [s, s + d − 1] from the previous chunk. During training, d is sampled uniformly from 0 to dmax to simulate varying Time to First Action (TTFA) on distinct devices. An action prefix mask m is introduced to mask the loss function: 
+
+m = {mi} = 1(i ≥ d), i ∈ [0 , H − 1] , (9) where 1(·) denotes the indicator function. The overall learning objective is for-mulated as: 
+
+τ = {τi} =
+
+(
+
+0, i < d, 
+
+max (0 , (ρ − ui)/(1 − ui)) , i ≥ d, (10) 
+
+L(θ) = Eρ∼U (0 ,1) , d ∼U{ 0,d max }
+
+m ⊙
+
+
+
+vθ (ot, Aτ 
+
+> t
+
+, τ ) − (ϵ − ˆAt)
+
+ 2
+
+∥m∥1
+
+, (11) where ⊙ is element-wise multiplication and the ℓ1 norm ∥m∥1 denotes the num-ber of elements equal to one. Therefore, the loss is computed only over the suffix actions. 
+
+C.2 Streaming Client-Server Interface 
+
+Unlike conventional action chunking pipelines that transmit an entire action chunk as a single large payload, the streaming client-server interface in FASTER employs a progressive streaming mechanism, decomposing the transmission into a sequence of high-frequency, smaller packets. While this mechanism increases the total completion time for a full chunk due to network communication (partic-ularly for the final action), it aligns naturally with the sequential characteristic of robotic execution.  
+
+> 1The notation of timestep is opposite in Training-time RTC [5], so they set the timesteps to one in their formulation.
+
+FASTER: Rethinking Real-Time Flow VLAs 25 
+
+Table 5: Illustration of inference latency vs . sequential execution. “Index” denotes the index of valid actions in the chunk, excluding delayed actions. “Time Req.” is the time at which an action is required by the robot controller, while “Time Rec.” is the time at which an action is received from the policy server via the streaming interface. All timestamps are measured relative to the start of inference. GPU π0.5 X-VLA Index Time Req. Time Rec. Index Time Req. Time Rec. RTX 4090 1 66.7ms 62.1ms 1 66.7ms 44.8ms 2 100.0ms 70.2ms 2 100.0ms 52.0ms 3 133.3ms 77.1ms 3 133.3ms 59.6ms RTX 4060 7 266.7ms 238.6ms 3 133.3ms 129.2ms 8 300.0ms 253.3ms 4 166.7ms 159.0ms 9 333.3ms 266.9ms 5 200.0ms 186.8ms 
+
+Suppose the i-th action ai is executed at controller time t. The system only requires the (i + 1) -th action ai+1 to be available at t + ∆t ctrl . As long as the latency for acquiring ai+1 remains below the control period ∆t ctrl , the controller avoids pipeline stalls. We provide detailed illustrations in Tab. 5, including la-tency measurements for two VLAs on RTX 4090 and RTX 4060 GPUs, respec-tively. Under this paradigm, the network latency incurred by subsequent actions is effectively masked by the execution time of preceding actions. Consequently, the marginal delay for actions at the end of a chunk becomes functionally neg-ligible and imperceptible during real-time execution. 
+
+C.3 Algorithms 
+
+The pseudo-code for VLA policy training and inference in FASTER are provided in Algorithm 1 and Algorithm 2, respectively. 26 Y. Lu, Z. Liu et al. 
+
+Algorithm 1 FASTER policy training 
+
+Input: Training dataset D, pretrained VLA model vθ , prediction horizon H, HAS parameters α, u d, mixing probability p, max prefix length dmax 
+
+Output: Fine-tuned VLA model v′
+
+> θ
+
+1: for each training step do 
+
+2: Sample: data (ot, ˆAt) ∼ D , noise ϵ ∼ N (0, I), global timestep ρ ∼ U (0 , 1) ,prefix length d ∼ U{ 0, d max }, schedule type z ∼ Bernoulli( p)
+
+3: Compute action prefix mask m:
+
+m = {mi} = 1(i ≥ d), i ∈ [0 , H − 1] ,
+
+4: if z = 1 then  ▷ Use Horizon-Aware Schedule 5: Compute hit times u:
+
+u = {ui} =
+
+
+
+1 − i − d
+
+max( H − 1 − d, 1) 
+
+α
+
+∗ ud, i ∈ [d + 1 , H − 1] ,
+
+6: Compute local timesteps τ :
+
+τ = {τi} =
+
+(
+
+0, i < d, 
+
+max (0 , (ρ − ui)/(1 − ui)) , i ≥ d, 
+
+7: else  ▷ Use Constant Schedule with Action Conditioning 8: Set local timesteps τ :9: 
+
+τ = {τi} =
+
+(
+
+0, i < d, ρ, i ≥ d, 
+
+10: end if 
+
+11: Construct noisy actions: 
+
+Aτ 
+
+> t
+
+= τ ⊙ ϵ + (1 − τ ) ⊙ ˆAt
+
+12: Compute masked loss: 
+
+L(θ) = 
+
+m ⊙
+
+
+
+vθ (ot, Aτ 
+
+> t
+
+, τ ) − (ϵ − ˆAt)
+
+ 2
+
+∥m∥1
+
+,
+
+13: Update model parameters θ using ∇θ L(θ)
+
+14: end for FASTER: Rethinking Real-Time Flow VLAs 27 
+
+Algorithm 2 FASTER policy inference 
+
+Input: Fine-tuned VLA model v′ 
+
+> θ
+
+, sampling steps N , prediction horizon H, HAS pa-rameters α, u d, observation ot, delay d, action prefix Apre , execution horizon s
+
+1: Initialize At ∼ N (0, I)
+
+2: Compute hit times uu = {ui} =
+
+
+
+1 − i − d
+
+max( H − 1 − d, 1) 
+
+α
+
+∗ ud, i ∈ [d + 1 , H − 1] ,
+
+3: Forward VLM backbone with ot
+
+4: for j = 1 to N do 
+
+5: Set global timestep ρj = ( N − j + 1) /N 
+
+6: Compute local timesteps τ j w.r.t. ρj :
+
+τ j = {τ ji } =
+
+(
+
+0, i < d, 
+
+max  0, (ρj − ui)/(1 − ui) , i ≥ d, 
+
+7: Similarly, compute next local timesteps τ j+1 w.r.t. ρj+1  ▷ ρN +1 := 0 
+
+8: Overwrite actions prefix At[0 : d − 1] with Apre 
+
+9: Predict velocity vj = vθ (ot, At, τ j ) ▷ Forward AE only 10: Compute delta timestep ∆τ = τ j+1 − τ j
+
+11: Euler update At ← At + vj ⊙ ∆τ
+
+12: for each valid action index i ∈ [d, H − 1] do 
+
+13: if τ j+1  
+
+> i
+
+= 0 and action i has not been streamed then 
+
+14: Dispatch at+i to client immediately  ▷ Streaming Interface 15: end if 
+
+16: end for 
+
+17: if all actions within execution horizon [d, d + s − 1] have been finalized then 
+
+18: break  ▷ Early stopping 19: end if 
+
+20: end for 28 Y. Lu, Z. Liu et al. 
+
+## D Implementation Details 
+
+D.1 Real-world Experiments Hardware Setup. We use the AgileX Cobot Magic robotic platform shown in Fig. 9, designed in the Mobile Aloha style [22, 108]. It is equipped with four 6-DoF Piper robot arms: two master arms for human teleoperation and two puppet arms for data collection and policy inference. A multi-camera setup is used, consisting of one front camera (RealSense D455) and two wrist cameras (RealSense D435), each mounted on a puppet arm.  
+
+> Fig. 9: AgileX Cobot Magic robotic platform with Piper arms.
+
+Tasks. We evaluate three real-robot tasks: “Table Tennis”, “Pick Beverage”, and “Fold Towel”. The visualization of Table Tennis task is already provided in the main paper, while illustrations of the other two tasks are shown in Fig. 10. We collect 335 demonstration episodes (approximately 14 minutes) for Table Tennis task and 150 episodes for the other two tasks via human teleoperation. All data is recorded at 30 FPS. The language instructions for the tasks are as follows: 
+
+– Table Tennis: “Hit the table tennis ball to the opponent.” 
+
+– Pick Beverage: “Pick up the beverage and put it in the plastic basket.” 
+
+– Fold Towel: “Fold the towel.” 
+
+Evaluation. The tasks are evaluated with a fixed number of rollouts: 15 trials for Table Tennis, 35 trials for Pick Beverage, and 10 trials for Fold Towel. For Pick Beverage and Fold Towel, we follow predefined test cases with fixed object types, positions, and orientations to ensure fair comparison. For Table Tennis, we regulate the ball speed to the best of our ability. We define fine-grained evaluation metrics to more precisely assess the real-world performance of the models under a limited number of rollouts. Results are reported by averaging scores across sub-steps and rollouts. The scoring criteria are as follows: FASTER: Rethinking Real-Time Flow VLAs 29 Pick Beverage Fold Towel  
+
+> Fig. 10: Visualization of Pick Beverage and Fold Towel tasks.
+
+1. Table Tennis 
+
+– Step 1: Hitting the table tennis ball with the racket 
+
+• 0 point: The robot misses the ball. 
+
+• 0.5 point: The robot returns the ball but produces a weak hit due to reaction latency; the ball travels only a short distance before landing on the table. 
+
+• 1 point: The robot performs a powerful return, and the ball travels a significant distance before landing on the table. 2. Pick Beverage 
+
+– Step 1: Grasping the beverage 
+
+• 0 point: The robot fails to grasp the object. 
+
+• 0.5 point: The robot grasps the object after multiple (up to five) attempts and recovers from errors. 
+
+• 1 point: The robot successfully grasps the object on the first attempt. 
+
+– Step 2: Placing the beverage into the basket 
+
+• 0 point: The object is not placed into the basket or is dropped. 
+
+• 0.5 point: The robot places the object into the basket but causes a collision. 
+
+• 1 point: The robot successfully places the object into the basket on the first attempt. 3. Fold Towel 
+
+– Step 1: Grasping the towel 
+
+• 0 point: The robot fails to grasp both sides of the towel. 
+
+• 0.5 point: The robot grasps both sides after multiple (up to five) attempts and recovers from errors. 30 Y. Lu, Z. Liu et al. 
+
+• 1 point: The robot successfully grasps both sides on the first attempt. 
+
+– Step 2: Forward folding the towel 
+
+• 0 point: The robot fails to fold the towel forward ( e.g ., slippage from the grippers). 
+
+• 0.5 point: The towel is folded forward but not well aligned. 
+
+• 1 point: The robot folds the towel forward perfectly. 
+
+– Step 3: Grasping the towel again 
+
+• 0 point: The robot fails to grasp both sides of the towel. 
+
+• 0.5 point: The robot grasps both sides after multiple (up to five) attempts and recovers from errors. 
+
+• 1 point: The robot successfully grasps both sides on the first attempt. 
+
+– Step 4: Backward folding the towel 
+
+• 0 point: The robot fails to fold the towel backward ( e.g ., slippage from the grippers). 
+
+• 0.5 point: The towel is folded backward but not well aligned. 
+
+• 1 point: The robot folds the towel backward perfectly. 
+
+D.2 Simulation Benchmarks LIBERO. The LIBERO benchmark [48] consists of four task suites: Spatial, Object, Goal, and 10 (Long), each targeting distinct aspects of embodied ca-pabilities. Following prior work [32, 110], we train a single policy across all four suites. For training π0.5, we use the dataset provided by OpenVLA 2 [39] and con-vert it to the LeRobot format [8] using the script in openpi . While for training X-VLA, we use the HDF5-format dataset provided by X-VLA authors 3, which aligns with the EE6D action space. Each suite contains 10 tasks, and every task is evaluated over 50 trials. 
+
+CALVIN. The CALVIN benchmark [61] comprises 34 tasks with unconstrained language instructions spanning diverse manipulation skills. We adopt the widely used ABC →D evaluation setting and use the LeRobot-format dataset 4. Each model is evaluated on 1,000 unique instruction chains, where each chain consists of five consecutive tasks. Performance is measured by the average number of successfully completed tasks per chain. 
+
+D.3 Training Setup 
+
+We use the official codebases of π0.55 and X-VLA 6 to fine-tune the VLA models. All experiments are conducted on 8 NVIDIA A800 GPUs. We follow their default or recommended configurations, with key hyperparameters listed in Tab. 6. Our real-robot dataset is recorded in the absolute joint space. Actions are converted                                                                    
+
+> 2HuggingFace: openvla/modified_libero_rlds
+> 3HuggingFace: 2toINF/Libero-XVLA-format
+> 4HuggingFace: InternRobotics/InternData-Calvin_ABC
+> 5Github: Physical-Intelligence/openpi
+> 6Github: 2toinf/X-VLA FASTER: Rethinking Real-Time Flow VLAs 31
+> Table 6: Hyperparameter settings for fine-tuning VLA models. Model π0.5X-VLA Task AgileX Simulation AgileX Simulation Prediction Horizon H50 10 30 30 Action Space Relative Joint Delta EEF Abs EE6D Abs EE6D Global Batch Size 128 256 128 128 Training Steps 50k 30k 50k 60k Optimizer AdamW AdamW AdamW AdamW Weight Decay 0000Betas (0.9, 0.95) (0.9, 0.95) (0.9, 0.95) (0.9, 0.95) Base LR 2.5e-5 5e-5 1e-4 1e-4 LR Scheduler Cosine Decay Cosine Decay Constant Constant Warmup Steps 1k 10k 2k 2k Grad Norm Clip 1.0 1.0 1.0 1.0 EMA Decay 0.99 0.999 N/A N/A
+
+to the relative joint space by computing offsets from the proprioceptive states, and to the absolute EE6D space using forward kinematics. Regarding the hyperparameters of our proposed Horizon-Aware Schedule, we use α = 0 .6 to control the hit times and p = 0 .5 for the mixed schedule by default. When training X-VLA on LIBERO and CALVIN, we set α to 0.8 and 0.7, respectively; ablation studies are provided in Sec. E.2. Since both VLAs use 10 sampling steps for flow matching, we set u0 = 0 .9 to ensure that the immediate action requires only a single step, as described in the main paper. Although the prediction horizon is 50 or 30, we set the maximum prefix length dmax to 10 during fine-tuning real-world tasks, which simulate TTFA up to 333.3ms. This design is motivated by practical considerations: inference delays exceeding 333.3ms can render real-time reactive control functionally infeasible for certain tasks. By limiting the maximum prefix length, we prevent the model from wasting capacity on physically unrealistic scenarios. This range already provides sufficient coverage even for an RTX 4060 GPU, thereby ensuring better sample efficiency and smoother flow matching in the critical low-latency regime. 
+
+D.4 Robot Deployment Setup 
+
+As mentioned in the main paper, the ROS system on the robot runs at a fixed 30Hz frequency, i.e ., with a control period ∆t ctrl = 33 .3ms. The robot is con-nected to policy server via LAN and communicates through websocket protocol. We define the inference delay as d := ⌊∆t infer /∆t ctrl ⌋ and the minimum execu-tion horizon as smin := ⌈∆t infer /∆t ctrl ⌉. To account for additional overhead from network communication, local processing, memory I/O, and other system costs, we set these values slightly larger in real-robot deployment, as listed in Tab. 7. 32 Y. Lu, Z. Liu et al. 
+
+Table 7: Settings of inference delay d and execution horizon s on RTX 4090 and RTX 4060 GPUs. “Async” refers to Naive Async and Training-time RTC. Task Method RTX 4090 RTX 4060 
+
+d s d s
+
+Table Tennis Sync 4 5 10 11 Async 4 5 10 11 FASTER 3 4 8 10 Pick Beverage, Fold Towel Sync 4 50 10 50 Async 4 46 10 40 FASTER 3 47 8 42 
+
+Table 8: Detailed comparison of reaction capability on RTX 4090 and RTX 4060 GPUs. The inference latency ∆t infer corresponds to TTFA, and execution dura-tion ∆t exec is computed as smin ∗ ∆t ctrl . The distribution of reaction time Dreact is 
+
+U(∆t infer , 2 ∗ ∆t infer + ∆t exec ) for Sync, and U(∆t infer , ∆t infer + ∆t exec ) for Async and FASTER. Model Method RTX 4090 RTX 4060 
+
+∆t infer ∆t exec Dreact ∆t infer ∆t exec Dreact 
+
+π0.5
+
+Sync 80.0ms 100.0ms U(80 .0, 260 .0) 303.3ms 333.3ms U(303 .3, 939 .9) 
+
+Async 80.0ms 100.0ms U(80 .0, 180 .0) 303.3ms 333.3ms U(303 .3, 636 .6) 
+
+FASTER 62.1 ms 100.0ms U(62 .1, 162 .1) 238.6 ms 266.7 ms U(238 .6, 505 .3) 
+
+X-VLA Sync 113.7ms 133.3ms U(113 .7, 360 .7) 399.5ms 400.0ms U(399 .5, 1199 .0) 
+
+Async 113.7ms 133.3ms U(113 .7, 247 .0) 399.5ms 400.0ms U(399 .5, 799 .5) 
+
+FASTER 44.8 ms 66.7 ms U(44 .8, 111 .5) 129.2 ms 200.0 ms U(129 .2, 329 .2) 
+
+For the table tennis task, we set the execution horizon to smin to achieve optimal reaction capability. For other tasks that do not heavily depend on high-frequency control, we set the execution horizon to the number of valid actions ( H
+
+for Sync, H − d for Async and FASTER) to ensure smooth action trajectories. 
+
+## E Additional Experimental Results 
+
+E.1 Additional Analysis on Reaction Speed 
+
+We provide Tab. 8 to complement the reaction time details in Tab. 2. The proba-bilities reported in Tab. 3 are also derived from the distributions Dreact , defined as the probability that one independently sampled ∆t react from a method is smaller than the other method. As discussed in the main paper, FASTER is deterministically superior on X-VLA, since its upper bound of reaction time is lower than the baselines’ lower bound: 111.5ms vs . 113.7ms on RTX 4090, and 329.2ms vs . 399.5ms on RTX 4060. FASTER: Rethinking Real-Time Flow VLAs 33 0 5 10 15 20 25 30 
+
+> action index
+> 0.00.20.40.60.8
+> hit time  u
+> α=0.4
+> α=0.5
+> α=0.6
+> α=0.7
+> α=0.8
+> α=0.9
+> α=1.0
+
+Fig. 11: Hit times used in ablation study, with factor α from 0.4 to 1.0. 
+
+Table 9: Ablation study of factor α in the Horizon-Aware Schedule, using X-VLA on the CALVIN benchmark. Mixing probability p is set to 0.5.                                                 
+
+> αCALVIN ABC →D12345Avg. Len 0.4 96.7 91.3 82.5 73.1 63.5 4.071
+> 0.5 95.1 88.4 79.3 69.6 58.7 3.911 0.6 97.5 89.5 80.2 71.2 60.7 3.991 0.7 97.7 91.1 81.2 72.1 63.7 4.058 0.8 95.9 88.7 79.7 71.2 61.5 3.970 0.9 99.0 88.1 75.2 70.3 59.4 3.921 1.0 94.7 84.0 71.7 61.3 51.8 3.635
+
+E.2 Ablation Study 
+
+We conduct ablation studies to analyze the impact of our proposed methods on task performance. Since real-world experiments are difficult to repeat with a large number of rollouts and are easily affected by environmental factors, we use simulation benchmarks for more controlled evaluation. Moreover, as the LIBERO benchmark is highly saturated, we focus on CALVIN to better highlight long-horizon performance. We first investigate the factor α in the Horizon-Aware Schedule, which con-trols the decreasing trend of hit times across the action index. As shown in Fig. 11, a smaller α leads to a faster decay of hit times, allocating more denois-ing steps to future actions. From Tab. 9, we observe that HAS is robust across different values of α, except when α = 1 .0. Although the best performance is achieved at α = 0 .4, this schedule produces actions more slowly during the sampling progress. Therefore, we choose α = 0 .7 as a better trade-off between performance and efficiency. We further analyze the influence of the mixed schedule in FASTER training. In addition to varying the mixing probability p between HAS and the conven-tional constant schedule, we also include the independent time schedule proposed in Diffusion Forcing [10], where the timestep is sampled independently across the action index during training while HAS is used for sampling. As shown in Tab. 10, a small value of p results in degraded performance, since the schedule used during inference is less frequently encountered during training. As discussed in the main paper, fine-tuning a pretrained VLA primarily with HAS, i.e ., large value of p, also introduces severe adverse effects, particularly on long-horizon performance. Although training with the independent schedule achieves certain accuracy, it is not comparable to our training strategy due to the enlarged search space introduced by independently sampled timesteps for each action, which leads to inconsistencies between training and inference [78]. 34 Y. Lu, Z. Liu et al. 
+
+Table 10: Ablation study of mixing probability p in the mixed schedule, using X-VLA on the CALVIN benchmark. Factor α is set to 0.7. 
+
+p CALVIN ABC →D1 2 3 4 5 Avg. Len Baseline 95.7 89.8 82.4 77.0 70.2 4.151 0.3 93.7 85.2 76.0 65.5 55.2 3.756 0.5 97.7 91.1 81.2 72.1 63.7 4.058 
+
+0.7 89.6 76.7 63.2 50.8 40.3 3.206 1.0 (w/o mixed) 89.0 74.7 60.4 49.0 38.1 3.112 Independent 91.4 82.6 74.0 64.6 54.5 3.671 Pick Beverage  Fold Towel            
+
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Score
+> 0.293 0.243
+> 0.371 0.336
+> 0.488
+> 0.313 0.338
+> 0.513 Pick Beverage Fold Towel
+> 0
+> 5
+> 10
+> 15
+> 20
+> 25
+> Duration (s)
+> 11.4 10.2 11.1 9.9
+> 23.4 21.7 22.5 21.5 Sync FASTER Training-time RTC Naive Async
+
+Fig. 12: Comparison of real-world performance and task completion duration on two real-world tasks using X-VLA. Note that the duration is computed only from successful rollouts, and therefore is not directly comparable to the results in Fig. 6. 
+
+E.3 Additional Real-world Experiments 
+
+We evaluate FASTER on real-world Pick Beverage and Fold Towel tasks using the X-VLA [110] model and present the results in Fig. 12. We observe that though X-VLA performs significantly worse than the state-of-the-art VLA π0.5,our method consistently achieves better or comparable results in terms of both completion scores and task duration. It is worth noting that Naive Async often fails due to unstable actions caused by inter-chunk discontinuities. 
+
+E.4 Kinetix Benchmark 
+
+The Kinetix benchmark is proposed by RTC [4] and contains 12 dynamic tasks in the Kinetix simulation environment [60]. Since these tasks involve dynamic motions with force-based control, they are suitable for evaluating asynchronous execution methods under varying inference delays. However, the policy used in this benchmark is a simple 4-layer MLP rather than a VLA model, so it is not the primary focus of our study. Following prior work [4, 5], the policy uses a prediction horizon of H = 8 .During evaluation, the inference delay d ranges from 0 to 4, with the correspond-ing execution horizon varying between max( d, 1) and H −d. During training, the simulated delay is randomly sampled from 0 to 4 with exponentially decreasing FASTER: Rethinking Real-Time Flow VLAs 35 Inference delay d       
+
+> Solve Rate
+> 01234
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> 0.9 BID Inference-time RTC FASTER Training-time RTC Naive Async
+
+Fig. 13: Comparison of performance on the Kinetix benchmark under differ-ent inference delays d, averaged across all feasible execution horizons s.
+
+Table 11: Comparison of performance on the Kinetix benchmark under the identical-latency setting. Method d s Solve Rate Naive Async 4 4 0.492 BID [52] 4 4 0.553 Inference-time RTC [4] 4 4 0.614 Training-time RTC [5] 4 4 0.726 FASTER 1 4 0.869 
+
+weights. We resume training from the 24th epoch and fine-tune the policy for 8 epochs using our mixed schedule. The number of sampling steps is set to 5, and accordingly we set ud = 0 .8. Each (d, s ) pair is evaluated over 2,048 rollouts, and we report the average success rates across feasible execution horizons in Fig. 13. We also include two additional baselines: Bidirectional Decoding (BID) [52] and the original Inference-time RTC [4]. We first consider the identical-delay setting, where all methods are compared under the same inference delay d. Compared with our main baseline Training-time RTC [5], FASTER shows marginal degradation when the delay is small ( d =0 or 1). This is mainly due to cases with very short execution horizons, where the Horizon-Aware Schedule becomes less effective. For example, when s = 1 , only the first valid action is executed, which in HAS is accelerated to a single sampling step, thus potentially affecting its generation quality. As the delay and execution horizon increase, our method achieves performance comparable to Training-time RTC while significantly outperforming earlier approaches. This further validates the effectiveness of the adaptive scheduling strategy in maintaining the accuracy of long-horizon trajectories. Moreover, since flow-matching sampling is applied to the entire model in this benchmark, FASTER can reduce the inference latency of the immediate action by 5×. We therefore introduce an additional identical-latency setting in Tab. 11. Given that the maximum supported delay is 4, we compare the baselines at d = 4 with FASTER at d = 1 under the same execution horizon. Under this setting, our method surpasses the others by a clear margin, highlighting the importance of reducing reaction latency in asynchronous execution, even in simulated environments. 
+
+## F Additional Related Work 
+
+We provide additional related work on efficient VLAs, as this has become an increasingly popular research area with a rapidly growing body of literature. Representative directions for enhancing VLA efficiency include: 36 Y. Lu, Z. Liu et al. 
+
+– Replacing the VLM backbone (typically 3 ∼ 7B parameters) with smaller models consisting of fewer than 1B parameters [7, 12, 45, 49, 62, 68, 73, 88, 91, 96, 110]; 
+
+– Compressing the LLM backbone through mechanisms such as layer selection and early exiting [2, 13, 33, 34, 73, 76, 99, 100, 102, 104, 107]; 
+
+– Accelerating action decoding, mainly for auto-regressive VLAs [38,67,76,77, 87]; 
+
+– Pruning visual tokens, as multi-view image inputs account for a large pro-portion of tokens while often introducing perceptual redundancy [20, 23, 30, 36, 41, 42, 55, 66, 84, 90, 97, 101, 102]; 
+
+– Applying low-level inference optimizations or quantization techniques [13, 16, 20, 57, 59, 64, 65, 79, 86, 92, 94]. A line of work closely related to ours aims to distill multi-step diffusion or flow matching models into one-step models, or to train one-step models directly. In the VLA context, the only existing work in diffusion distillation is RDT2 [50], while other studies focus on conventional diffusion policies [11,17,35,56,71,74,89,106]. Distillation-based methods typically involve two stages: first training a standard multi-step model and then distilling it into a one-step model, which significantly increases training cost. Direct one-step training often requires model modifica-tions, such as additional inputs in Shortcut Model [21] or alternative objectives in MeanFlow [24]. These changes make it difficult to fine-tune pretrained VLAs while preserving their strong capabilities. In contrast, FASTER requires no ar-chitectural modifications and can be seamlessly integrated into the standard fine-tuning pipeline of flow-based VLAs with the same optimization objective. Another related direction explores streaming policies, where the immedi-ate action is also produced within a single sampling step [14, 18, 28]. However, these approaches update the observation input at every step, which introduces a substantial inference burden when applied to VLAs. Updating observations re-quires a forward pass through the VLM backbone at each step, making real-time VLA deployment impractical. In contrast, our method is specifically designed for VLAs: the VLM backbone is forwarded only once per action chunk, thereby avoiding the primary computational bottleneck in VLA inference. The imme-diate action is generated through one-step sampling of the action expert after VLM prefilling, while subsequent actions are progressively completed through iterations of the action expert based on the same VLM representations.

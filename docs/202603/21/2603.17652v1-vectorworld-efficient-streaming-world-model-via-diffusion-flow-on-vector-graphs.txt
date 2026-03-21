@@ -1,0 +1,1775 @@
+Title: VectorWorld: Efficient Streaming World Model via Diffusion Flow on Vector Graphs
+
+URL Source: https://arxiv.org/pdf/2603.17652v1
+
+Published Time: Thu, 19 Mar 2026 01:19:03 GMT
+
+Number of Pages: 34
+
+Markdown Content:
+# VectorWorld: Efficient Streaming World Model via Diffusion Flow on Vector Graphs 
+
+Chaokang Jiang 1 Desen Zhou 1 Jiuming Liu 2 Kevin Li Sun 1
+
+## Abstract 
+
+Closed-loop evaluation of autonomous-driving policies requires interactive simulation beyond log replay. However, existing generative world models often degrade in closed loop due to (i) history-free initialization that mismatches pol-icy inputs, (ii) multi-step sampling latency that violates real-time budgets, and (iii) compound-ing kinematic infeasibility over long horizons. We propose VectorWorld, a streaming world model that incrementally generates ego-centric 
+
+64m × 64m lane–agent vector-graph tiles dur-ing rollout. VectorWorld aligns initialization with history-conditioned policies by producing a policy-compatible interaction state via a motion-aware gated VAE. It enables real-time outpainting via solver-free one-step masked completion with an edge-gated relational DiT trained with interval-conditioned MeanFlow and JVP-based large-step supervision. To stabilize long-horizon rollouts, we introduce ∆Sim, a physics-aligned non-ego (NPC) policy with hybrid discrete–continuous actions and differentiable kinematic logit shap-ing. On Waymo open motion and nuPlan, Vec-torWorld improves map-structure fidelity and ini-tialization validity, and supports stable, real-time 
+
+1km+ closed-loop rollouts (code). 
+
+## 1. Introduction 
+
+Closed-loop evaluation and training of autonomous-driving policies require interactive simulations that extend beyond recorded logs. Log replay can neither answer counterfactual queries nor extend the horizon once the recorded context ends (Caesar et al., 2021; Gulino et al., 2023). Although generative world models (Ha & Schmidhuber, 2018; Feng et al., 2023; Tan et al., 2023; Yang et al., 2025a) can synthe-
+
+Project page: jiangchaokang.github.io/ VectorWorld/ . 1Bosch, Shanghai, Shanghai, China 
+
+> 2
+
+University of Cambridge, Cambridge, United Kingdom. Correspondence to: Kevin Li Sun <sen5sgh@bosch.com >.
+
+Preprint. March 19, 2026. 0) . Ego Planner    
+
+> 𝘒𝘒 𝘒𝘒
+> 𝘒𝘒𝘒𝘒𝘒𝘒
+> 𝘒𝘒 𝘒𝘒
+> 𝘒𝘒𝘒𝘒𝘒𝘒𝘒𝘒𝘒𝘒
+> 𝘒𝘒 𝘒𝘒 
+> 𝘒𝘒 :𝘒𝘒
+> 𝘒𝘒𝘒𝘒𝘒𝘒 𝘒𝘒 𝘒𝘒 +1
+> 𝘒𝘒𝘒𝘒𝘒𝘒
+> ego
+> planner
+
+1) . Initial Scene Generation 
+
+> T
+
+Streaming Generative Simulation for AD 
+
+> Rolling
+> Outpainting
+> …
+
+2) . Scene Outpainting 
+
+ΔSim 
+
+3) . NPC Behavior 
+
+Diffusion model Condition 
+
+Past agent 
+
+states Future 
+
+agent states 
+
+Our Vector World Simulation Engine 
+
+User command 
+
+Map 
+
+context 
+
+Motion: 
+
+Autoregressive  
+
+> High infer -
+> ence cost
+
+Input 
+
+Patch tokens 
+
+t t+1 
+
+Agents: ⊖⊕/
+
+Prior Work: 
+
+> Error
+> accumulation
+
+(Yang et al., 2025, Chitta et al., 2024 | Rowe et al., 2025 )
+
+Input 
+
+Encoder 
+
+Decoder 
+
+latent diffusion DiT 
+
+Output 
+
+Cold 
+
+start 
+
+Implicit 
+
+modeling 
+
+Medium 
+
+efficiency 
+
+Edge -Gated Relational DiT 
+
+Explicit map -
+
+agent priors 
+
+Figure 1. Comparison with Prior Works. Unlike prior pipelines that degrade in closed loop due to accumulated drift (autoregressive rollout) or history-free cold-start initialization, VectorWorldsup-ports kilometer-scale closed-loop simulation via streaming out-painting in our experiments. The engine operates in a closed loop: 0) An Ego Planner drives within the scene; 1) Initial Scene Gen-eration creates the base tile; 2) Scene Outpainting dynamically extends the map frontier using edge-gated relational DiT; and 3) NPC Behavior ( ∆Sim) ensures reactive interactions. This mech-anism enables consistent, kilometer-scale driving simulation by progressively outpainting the world ahead. 
+
+size diverse lane–agent scenes, deploying them as an online 
+
+simulator backend introduces constraints (initialization, la-tency, and long-horizon stability) that standard open-loop metrics do not capture (Tan et al., 2025). 1
+
+> arXiv:2603.17652v1 [cs.RO] 18 Mar 2026 VectorWorld: Efficient Streaming World Model via Diffusion Flow on Vector Graphs
+
+We identify three deployment constraints that dominate closed-loop simulation but are weakly reflected by stan-dard open-loop metrics. First, history-free initialization: many generators output a static snapshot at t = 0 (Rowe et al., 2025), while reactive policies are conditioned on short motion histories, inducing cold-start transients (e.g., jerk spikes) and unstable early interactions. Second, sampling latency: diffusion-based solvers require many denoising steps (Chitta et al., 2024; Tan et al., 2025) for structured lane–agent graph generation, which is incompatible with streaming outpainting under a real-time budget. Third, long-horizon feasibility: minor per-step kinematic violations, while negligible in short-horizon metrics, accumulate over kilometer-scale rollouts through compounding drift (Rowe et al., 2024; Lin et al., 2025). To address these constraints, we propose VectorWorld (Fig-ure 1), a streaming world model built on vector-graph rep-resentations. For initialization, we introduce an interaction-state interface that augments each agent with a compact motion-history code learned by a motion-aware gated VAE, enabling warm-start inputs for history-conditioned policies. For real-time outpainting, we propose an edge-gated re-lational DiT trained with interval-conditioned MeanFlow (Geng et al., 2025) and a JVP-based large-step objective, en-abling solver-free (without iterative diffusion/ODE solvers) one-step latent sampling while preserving lane connectivity and agent–lane relations. Overall, our contributions are as follows: • An interaction-state interface for lane–agent world models, implemented by a motion-aware gated VAE that selectively encodes motion history for warm-start initialization. • An edge-gated relational DiT for heterogeneous vector graph generation with edge-conditioned attention bias and value gating to preserve lane topology and cross-type relations. • Interval-conditioned MeanFlow with JVP-based large-step supervision to enable high-fidelity solver-free one-step completion for streaming outpainting. • A physics-aligned NPC policy, ∆Sim, that stabilizes long-horizon multi-agent rollouts via hybrid actions and differentiable kinematic shaping. • Experiments on Waymo Open Motion and nuPlan demonstrate that VectorWorld improves map-structure fidelity and initialization validity, supports stable 
+
+1 km+ closed-loop rollouts, and operates at ≈ 6 ms per 64 m × 64 m tile. Policy retraining in VectorWorld increases stress-test success from 25.0% to 56.0%. 
+
+## 2. Related Work 
+
+Driving World Models and Vectorized Scene Generation. 
+
+Recent driving world models generate future observations from history sensor inputs (e.g., videos) (Gao et al., 2024; Chen et al., 2025; Ni et al., 2025), while other approaches generate simulation environments from perception outputs, such as bounding boxes and lane graphs (Chitta et al., 2024; Sun et al., 2024; Jiang et al., 2024; Tan et al., 2025). Sev-eral methods focus on initial scene generation (Rowe et al., 2025), generating agents, lanes, or both, sometimes via ras-terization, which increases computational cost. Vectorized representations (Jiang et al., 2023; Chen et al., 2024) better match map geometry and can be more efficient for struc-tured generation. Scenario-centric systems further combine initial scene generation with closed-loop behavior simula-tion, often decoupling the two for flexibility. Our approach complements these lines by introducing an interaction-state 
+
+representation that reduces initialization mismatches, and by enabling one-step (or few-step) graph-latent generation suitable for online inpainting and outpainting. Figure 1 sum-marizes these deployment gaps (cold-start mismatch, solver latency, and long-horizon drift) and positions VectorWorld relative to representative prior pipelines. 
+
+Fast Sampling in Diffusion and Flow-based Methods. 
+
+Denoising diffusion probabilistic models (DDPM) (Ho et al., 2020) and classifier-free guidance (Ho & Salimans, 2022) have become a standard approach for high-fidelity genera-tion, and latent diffusion (Podell et al., 2023) reduces sam-pling costs by operating in a compressed space. Transformer backbones such as DiT (Peebles & Xie, 2023) improve scalability and conditioning flexibility. A large body of work accelerates sampling, including DDIM (Song et al., 2020), DPM-Solver (Lu et al., 2022), EDM (Karras et al., 2022), and one-step consistency-style methods (Song et al., 2023). Flow Matching (Lipman et al., 2022) and Rectified Flow (straight-line probability paths) (Lee et al., 2024) pro-vide a training alternative that often admits fewer solver steps. MeanFlow (Geng et al., 2025) aims to learn interval-conditioned velocity parameterizations that enable solver-free one-step sampling. Our work differs in two ways: (i) we operate on heterogeneous vector-graph latents for maps and agents, and (ii) we unify DDPM/Flow/MeanFlow in one edge-gated relational DiT backbone with dual-time con-ditioning, using a JVP-augmented MeanFlow objective to make one-step structured completion practical. 
+
+Closed-Loop Behavior Simulation. Closed-loop multi-agent simulation requires reactive behavior models that remain stable under rollout. Prior work spans learned agent simulators (Igl et al., 2022; Suo et al., 2023; Yang et al., 2025b), next-token traffic modeling (Philion et al., 2024), and return-conditioned or reactive policies such as CtRL-Sim (Rowe et al., 2024). While large Transform-ers and diffusion-based policies can improve realism, their autoregressive paradigm can incur high costs for long roll-outs. Classical simulators (e.g., CARLA (Dosovitskiy et al., 2VectorWorld: Efficient Streaming World Model via Diffusion Flow on Vector Graphs EConn                      
+
+> Lane elements Agent elements
+> Mot io n-Aware Ag ent Encod er
+> Lane E ncod er
+> Lane embed Lane conn
+> embed
+> Learnable
+> lane -count query
+> Factorized Scene Transformer
+> L2L L2A A2A
+> NLLane
+> Latent Agent
+> Latent
+> Gaussian Latent Heads
+> Static branch Motion branch
+> (1 -g)⊙hst Fused embedding
+> Gating g=σ(·)
+
+hmot ghst   
+
+> g⊙hmot
+
+Figure 2. Interaction-state interface with motion-aware gated VAE. A motion-aware gate gi fuses static state si and motion code mi, suppressing history noise for stationary agents while preserving dynamics for moving ones. A factorized scene trans-former aggregates typed relations (L2L/L2A/A2A) and outputs Gaussian latents z = ( zlane , z agent ) for downstream generation. Warm-started interaction states align initialization with history-conditioned policies. 
+
+2017), SUMO (Krajzewicz et al., 2012)) and procedural systems (e.g., MetaDrive (Li et al., 2021)) often rely on heuristics for agent insertion/removal, which can miss com-plex real-world interactions. Compared to them, Vector-World focuses on stabilizing the full closed loop by (i) align-ing the world-model output with policy inputs via interac-tion states, and (ii) enforcing feasibility via differentiable physics-guided logit shaping and inference-time constraints, with training–inference alignment to mitigate exposure bias. 
+
+## 3. Method 
+
+Closed-Loop Streaming Formulation. We formulate streaming simulation as a sliding-window generation task over a dynamic vector graph Gk. At simulation step k,the system maintains an ego-centered local tile and an interaction-state interface for each agent. An ego planner 
+
+πego and our reactive NPC policy π∆ (Section 3.6) act upon this state. To sustain kilometer-scale rollout without pre-generation, we trigger outpainting when the ego approaches the tile boundary: the system encodes the current state via 
+
+Enc , and generates the frontier via a solver-free MeanFlow generator (Section 3.4). This pipeline relies on three cou-pled innovations to ensure consistency and speed: (i) a 
+
+motion-aware gated VAE for history-aligned initialization (Section 3.2); (ii) an edge-gated relational DiT for struc-tural consistency (Section 3.3); and (iii) ∆Sim for kinematic feasibility (Section 3.6). 
+
+3.1. Vector-Graph Representation 
+
+We represent each ego-centric scene tile as a heterogeneous vector graph G = ( V, E) with lane nodes Vlane and agent nodes Vagent . Edges are typed by interaction semantics: 
+
+E = EL2L ∪ E A2A ∪ E L2A ∪ E A2L , capturing lane connec-tivity (predecessor/successor/adjacent) and lane–agent rela-tions (proximity and alignment). Compared to rasterization (Chitta et al., 2024), vector graphs keep topology explicit and make missing regions well-posed: we can clamp ob-served tokens and complete only frontier tokens, which is the key operation in streaming outpainting. We learn a latent interface for G via an autoencoder. Let z =(zlane , z agent ) denote the lane/agent latent tokens produced by the encoder. Generation, inpainting, and outpainting are all implemented as masked completion in this latent space, enabling a single generator to serve both initialization (t = 0 ) and rollout-time outpainting. 
+
+3.2. Interaction-State Interface Motivation: History-Conditioned Policies. Closed-loop behavior policies (including many ego planners and NPC models) are history-conditioned, because intent inference depends on recent velocity and curvature trends. Conse-quently, a history-free snapshot at initialization induces an implicit near-zero history prior for downstream policies, often resulting in large jerk and unstable early interactions. 
+
+Interaction State: Static + Motion Code. We there-fore represent each agent i by an interaction-state inter-face consisting of a static state si ∈ R7 in the unified for-mat [x, y, speed , cos θ, sin θ, length , width] , a type token 
+
+τi, and a motion-history code mi ∈ R2Kmot represented as a 
+
+Kmot -point polyline in the agent frame. At simulation start, 
+
+mi is deterministically unrolled into a short pseudo-history sequence to fill the policy context window (Section A.4). 
+
+Selective Motion Encoding. Motion history exhibits spar-sity in information content: for parked agents, aggressively reconstructing mi injects noise into the latent interface. We adopt the motion-aware gating mechanism in Figure 2, and empirically observe that gate activation correlates with mo-tion magnitude (Appendix Figure 7), resulting in an inter-pretable separation between static and dynamic agents: 
+
+gi = σ
+
+
+
+fgate 
+
+ [si, m i, τ i]
+
+,hi = (1 − gi) ⊙ fst 
+
+ [si, τ i] + gi ⊙ fmot 
+
+ [mi, τ i],qϕ(zi | si, m i, τ i) = N
+
+
+
+μϕ(hi), diag  σϕ(hi)2
+
+,
+
+(1) 3VectorWorld: Efficient Streaming World Model via Diffusion Flow on Vector Graphs 𝓗𝓗 𝓗𝓗 ∈ℝ 𝓗𝓗  𝓗𝓗 𝓗𝓗 𝓗𝓗 ∈ℝ 𝓗𝓗  𝓗𝓗 𝓗𝓗 𝓗𝓗 ↔ 𝓗𝓗 𝓗𝓗 𝓗𝓗𝓗𝓗𝓗𝓗𝓗𝓗    
+
+> 𝓗𝓗 𝓗𝓗 ↔𝓗𝓗 𝓗𝓗 𝓗𝓗 ↔𝓗𝓗
+
+Rel -Proj 
+
+or 
+
+2) Edge -Gated Relational DiT 
+
+×Relative encoding 
+
+E ( i, j)
+
+Q
+
+K
+
+V
+
+Node j
+
+Node i
+
+Rel -Proj 
+
+EdgeNet 
+
+1) Inputs: Noisy Latents & Conditions 
+
+> 𝓗𝓗 𝓗𝓗𝓗𝓗𝓗𝓗𝓗𝓗
+
+Softmax ( 𝓗𝓗 · 
+
+> 𝓗𝓗 𝓗𝓗
+> 𝓗𝓗
+
++𝓗𝓗 𝓗𝓗𝓗𝓗 )    
+
+> 𝓗𝓗 L↔𝓗𝓗
+> 𝓗𝓗 𝓗𝓗𝓗𝓗𝓗𝓗𝓗𝓗
+> 𝓗𝓗 𝓗𝓗 ↔𝓗𝓗
+> 𝓗𝓗 𝓗𝓗 ↔𝓗𝓗
+
+× 𝓗𝓗 𝓗𝓗𝓗𝓗 ∈ℝ ℎ 
+
+> 𝓗𝓗
+> 𝓗𝓗𝓗𝓗 ∈ℝℎ
+
+{1 + tanh (𝓗𝓗 
+
+> 𝓗𝓗𝓗𝓗
+
+)} V×
+
+× 𝓗 𝓗𝓗 𝓗𝓗𝓗𝓗 
+
+> 𝓗𝓗
+
+Mij 
+
+2.1) Relational Attention Module 
+
+Rel -Cross -Attn AL Rel -Self -Attn LL
+
+Rel -Cross -Attn LA Rel -Self -Attn AA  
+
+> ε𝓗𝓗 ,𝓗𝓗
+
+(for ddpm ) 
+
+> 𝓗𝓗 𝓗𝓗 ,𝓗𝓗
+
+(for flow )  
+
+> 𝓗𝓗 𝓗𝓗 ,𝓗𝓗
+
+(for meanflow)  
+
+> Δ= 1
+> solver -free
+
+or 
+
+Global Cond Fusion 
+
+Global shift 
+
+Δc +
+
+3) Generative 
+
+Dynamics: vt     
+
+> 𝓗𝓗 𝓗𝓗 𝓗𝓗 𝓗𝓗 −
+> 1𝓗𝓗 1𝓗𝓗 0𝓗𝓗 1
+> 𝓗𝓗 1𝓗𝓗 0
+> 𝓗𝓗 0
+
+Figure 3. Edge-gated relational DiT for vector-graph latent generation. The framework generates vector-graph latents via a factorized transformer backbone. To capture complex graph dependencies, we introduce a Relational Attention Module (Right). Unlike standard attention, this module conditions message passing on edge features eij via: 1) An additive bias Bij applied to attention scores to regulate connectivity; 2) A multiplicative gate Gij applied to value vectors to modulate feature aggregation. This design enables precise structural control across heterogeneous agents and map elements, compatible with various generative dynamics (DDPM, Flow, or MeanFlow). 
+
+where gi ∈ (0 , 1) d is a learned gate, σ(·) is the sigmoid, and 
+
+⊙ denotes element-wise product. 
+
+Scene-Level Relational Encoding. Following Figure 2, lane and agent tokens are processed by a factorized scene transformer that alternates L2L , L2A , and A2A interactions, and uses a learnable lane-count query for masked comple-tion. This design produces generation-friendly Gaussian la-tents z whose agent component is selectively history-aware, enabling warm starts without introducing motion-code noise for static agents. This VAE defines the latent interface z
+
+that the outpainting generator completes in Section 3.3. We provide the full β-VAE objective in Appendix A.5. 
+
+3.3. Edge-Gated Relational DiT Edge-Consistent Completion. Let z = ( zlane , z agent ) be VAE latents. We learn a generator that completes missing la-tent tokens given observed tokens and context c (counts, and optional scene labels). The challenge is that topology and cross-type alignment are edge-defined: lane traversability depends on EL2L , while realistic interactions require agent– lane consistency. Node-only attention can match marginal token statistics yet violate these constraints, and such vio-lations are amplified when masked completion is invoked repeatedly during streaming outpainting. 
+
+Factorized Typed Attention. To this end, we adopt a factorized DiT backbone (Figure 3) that alternates attention blocks over typed edge sets EL2L , EA2A , EL2A , EA2L . This explicitly matches heterogeneous interactions while keeping complexity compatible with real-time outpainting. 
+
+Edge-Conditioned Bias and Value Gating. For each typed edge (i, j ), we compute a relative edge embedding 
+
+eij and modulate attention through an additive bias and a multiplicative value gate: 
+
+α(h) 
+
+> ij
+
+= softmax j
+
+⟨q(h) 
+
+> i
+
+, k (h) 
+
+> j
+
+⟩√dh
+
++ B(h) eij 
+
+!
+
+,y(h) 
+
+> i
+
+= X
+
+> j
+
+α(h)
+
+> ij
+
+
+
+G(h) eij 
+
+ ⊙ v(h)
+
+> j
+
+
+
+,
+
+(2) where h indexes attention heads, dh is the head dimension, 
+
+B(h)(·) is an edge-conditioned logit bias, and G(h)(·) is an edge-conditioned gate (initialized as identity to preserve optimization stability). 
+
+Mechanistic Effect. The bias term shapes connectivity preferences , while the gate controls message strength by suppressing edge-inconsistent feature aggregation. This directly targets the main failure mode of streaming: cumu-lative structural drift under repeated masked completion, improving lane connectivity preservation and lane–agent alignment without rasterization or heuristic stitching. 
+
+3.4. Interval-Conditioned MeanFlow Constraint: Real-time Large-Step Transport. Stream-ing outpainting calls the generator during rollout and thus requires real-time inference. Multi-step diffusion or ODE solvers are too costly to invoke repeatedly. We therefore 4VectorWorld: Efficient Streaming World Model via Diffusion Flow on Vector Graphs Map                  
+
+> Agent Transformer
+> Decoder
+> Context encoding
+> Action Vocabulary[ k]
+> + Refinement[ k]
+> One -Pass Conditional Decoder
+> FiLM Modulator hh
+> ×(1 +γ )+ β
+> GT future reward
+> RTG distribution
+> User command
+> (e.g., "Aggressive") Soft expectation
+> E= 𝛴 𝑝 𝑘
+> ×𝑒𝑚𝑏 𝑘
+> MLP
+> (γ,β)
+> Action o ffset
+> δθ
+> Training Inference 𝑝 𝑘 𝑒𝑚𝑏 𝑘
+> Hybrid Action Heads
+> Discrete Head
+> (Classf .)
+> Residual Head
+> (Regress.)
+> Action logits
+> Penalize Kinematic
+> Cost Matrix
+> Differentiable
+> Kinematics Cost
+> δx
+> δy
+> Probability of bin k
+
+ු
+
+𝑎 =ු
+
+𝑎 − 𝑎 𝑔𝑡        
+
+> Total Loss
+> γ,βhHidden state Embedding of bin kFiLM parameters Predicted action
+
+ු𝑎 
+
+Figure 4. ∆Sim: physics-aligned NPC policy. A single-pass return-to-go (RTG) control embedding modulates the decoder via FiLM 
+
+(γ, β ). Actions use a hybrid head (discrete k-disks token plus continuous residual) with differentiable kinematic logit shaping and DKAL regularization. This design reduces feasibility violations that compound under kilometer-scale closed-loop simulation. 
+
+train the generator to support large-step transport, including the solver-free one-step case that we deploy online (Fig-ure 6). We use k for discrete simulation steps and t ∈ [0 , 1] 
+
+for latent-generation time; ∆ denotes the MeanFlow interval length (full notation in Appendix A.2). 
+
+JVP-based large-step calibration. Standard rectified flow matching supervises an instantaneous velocity field, which is accurate under small solver steps but does not directly constrain single large-step transport. MeanFlow in-stead predicts an interval-averaged velocity uθ (zt; t, ∆, c ).To improve one-step accuracy, we supervise a first-order corrected predictor 
+
+Vθ (zt; t, ∆, c ) = uθ (zt; t, ∆, c )+ ∆ ddt uθ (zt; t, ∆, c ), (3) where ddt uθ denotes the total derivative along the rectified path and is computed efficiently via a Jacobian–vector prod-uct (JVP) (Appendix A.8). Here the total derivative differ-entiates through both the explicit time input and the implicit dependence on zt along the rectified path. 
+
+Rectified Path with Masked Clamping. We use the straight-line probability path between data latents z and Gaussian noise ϵ ∼ N (0, I):
+
+zt = (1 − t) z + t ϵ, t ∈ [0 , 1] . (4) For masked (conditioned) tokens, we enforce a constant path by setting ϵ = z, which implies a zero target velocity and prevents conditioned structure from drifting during com-pletion. Along this path, the rectified-flow target velocity for unmasked tokens is v⋆ = ϵ − z.
+
+Interval-Conditioned Mean Velocity & JVP. Let uθ (zt;
+
+t, ∆, c ) be the predicted mean velocity over an interval of length ∆ = t − r (with r ≤ t), conditioned on scene context 
+
+c. We parameterize the model with two time channels (t, ∆) 
+
+and train with the corrected target in Equation (5). 
+
+∆ = t − r, Vθ (zt; t, r, c ) = uθ (zt; t, ∆, c )+∆ ddt uθ (zt; t, ∆, c ),
+
+Lmf = E
+
+h
+
+∥Vθ (zt; t, r, c ) − v⋆∥22
+
+i
+
+,
+
+(5) where ddt uθ denotes the total derivative and is implemented efficiently as a JVP (Appendix A.8). 
+
+Guided Solver-Free Update. For conditional genera-tion, we apply classifier-free guidance (CFG) on the mean-velocity field: 
+
+ucfg  
+
+> θ
+
+= uθ (zt; t, ∆, c ∅) + 
+
+s
+
+
+
+uθ (zt; t, ∆, c ) − uθ (zt; t, ∆, c ∅)
+
+
+
+, (6) where c∅ is the unconditional condition implemented by scene-level label dropout, and s is the guidance scale. Given 
+
+ucfg  
+
+> θ
+
+, we update latents by a large-step transport rule: 
+
+zt−∆ = zt − ∆ ucfg  
+
+> θ
+
+(zt; t, ∆, c ). (7) Setting (t, ∆) = (1 , 1) generates solver-free one-step sam-pling; using a small number of intermediate times generates few-step sampling. We report the resulting quality–latency trade-off in Figure 6. 
+
+Why the JVP Term Matters for One-Step Completion? 
+
+In our setting, a single large-step update must preserve edge-defined constraints (lane connectivity and lane–agent align-ment) in one shot. The JVP term calibrates the interval-velocity predictor at the boundary, which is where one-step failures concentrate. 
+
+Comparison with DDPM and Flow-Matching Baselines. 
+
+DDPM trains a discrete-time denoiser by regressing in-jected noise and typically samples by iterating many reverse 5VectorWorld: Efficient Streaming World Model via Diffusion Flow on Vector Graphs 
+
+steps, while rectified flow matching trains a continuous-time velocity field on the straight-line path and samples via ODE integration. VectorWorld adopts the same latent interface and edge-gated relational DiT backbone across DDPM/Flow/MeanFlow, but uses MeanFlow for deploy-ment because it is explicitly trained for large-step transport, enabling the solver-free update. A unified formulation and our masking/clamping implementation are detailed in Ap-pendix A.7 (DDPM/Flow) and Appendix A.8 (MeanFlow). 
+
+3.5. Streaming Outpainting Trigger, Clamp, Complete. VectorWorld maintains an ego-centered local tile and triggers outpainting only when the ego approaches the tile boundary. Outpainting is im-plemented as masked latent completion: tokens inside the current tile are clamped (conditioned), and only frontier to-kens are sampled using Equation (7), decoded back to vector geometry, and stitched into the global scene; Algorithm 2 (Appendix A.12.3) summarizes the full rollout loop. 
+
+3.6. ∆Sim: Physics-Aligned NPC Policy 
+
+Even with high-fidelity scene generation, closed-loop sta-bility depends on feasible multi-agent actions. Small per-step kinematic violations are often negligible under short-horizon open-loop metrics, but dominate kilometer-scale rollouts via compounding effects. We propose ∆Sim (Fig-ure 4), combining controllable conditioning with physics-aligned action modeling and inference-time shaping. 
+
+One-Pass RTG Conditioning FiLM. ∆Sim uses a one-pass conditional decoder whose hidden state h is modulated by FiLM (Perez et al., 2018) parameters (γ, β ) predicted from a soft return-to-go (RTG) embedding. Specifically, the model predicts an RTG distribution {pj }Krtg  
+
+> j=1
+
+and computes a soft expectation E = PKrtg  
+
+> j=1
+
+pj emb j , then applies FiLM as h ← h⊙(1+ γ)+ β. This provides a differentiable control interface without requiring a second forward at inference. 
+
+Hybrid Discrete–Continuous Actions. We parameterize the executed action in the agent body frame as a hybrid discrete–continuous update: 
+
+∆ξ = ∆ ξˆk + α bδ, ˆk ∼ Cat  softmax( ˜ℓ), (8) where bδ ∈ R3 is a continuous refinement head 
+
+(∆ x, ∆y, ∆θ), and α is an inference-time refinement scale. 
+
+Inference-Time Kinematic Shaping. To suppress infea-sible maneuvers, we compute a differentiable kinematic cost Ck(st) for each token k given the current state st (e.g., yaw-rate, curvature, lateral/longitudinal acceleration, and reversibility constraints), and shape logits before sampling: 
+
+˜ℓk = ℓk − λ C k(st). (9) This implements an energy-based prior over actions while preserving a single-pass architecture. 
+
+Differentiable Kinematic Alignment Loss (DKAL). Let 
+
+ctr( x) ≜ x − 1
+
+> Kkd
+
+PKkd  
+
+> k=1
+
+xk denote centering over the vo-cabulary dimension. Given logits ℓ ∈ RKkd and differen-tiable costs C(st) ∈ RKkd , we minimize: 
+
+Ldkal = ctr( ℓ) + λdkal ctr  C(st) 22, (10) encouraging high-probability actions to be kinematically cheap (and vice versa), and reducing reliance on inference-only shaping. 
+
+Closing the Loop at k = 0 . Finally, the interaction-state interface closes the loop: at k = 0 , the VAE motion code mi
+
+is deterministically converted to a pseudo-history sequence that fills the NPC context window. This ensures that ∆Sim receives inputs consistent with its training distribution, a prerequisite for stable rollouts when the scene is repeatedly extended by streaming outpainting. 
+
+## 4. Experiments 
+
+We evaluate VectorWorld as (i) an offline scene generator, (ii) an online outpainting engine, and (iii) a closed-loop simulator. The central question is whether a fast, one-step generator can remain structurally consistent and kinemati-cally feasible when invoked repeatedly during rollout. 
+
+4.1. Setup Datasets and Baselines. We use Waymo Open Mo-tion (Gulino et al., 2023) and nuPlan (Caesar et al., 2021). We compare to vectorized scene genera-tors SLEDGE (Chitta et al., 2024) (L/XL) and Scen-Dream (Rowe et al., 2025) (B/L). 
+
+Metrics. We follow the definitions in Appendix A.11. Of-fline initialization quality is measured by FD, route length, EPD, and static collision rate (Table 1). We additionally report topology Fr ´echet distances and agent-attribute JSD as drift diagnostics (Appendix Table 8). Efficiency is end-to-end latency per 64 m × 64 m tile (sampling + one decode), with a streaming budget of ≤ 30 ms (Figure 6). 
+
+Closed Loop. We evaluate an ego planner interacting with reactive NPCs and report collision/offroad/success, route progress, and jerk (Table 2; definitions in Appendix A.12). We use three probes: a rule-based IDM probe (Treiber et al., 2000) for platform stability, a fixed PPO policy (Schulman et al., 2017) for stress testing, and PPO retraining to measure training value. 6VectorWorld: Efficient Streaming World Model via Diffusion Flow on Vector Graphs 
+
+Table 1. Quantitative comparison of scene generation quality. We evaluate VectorWorld against prior vectorized scene generators on nuPlan and Waymo. VectorWorld achieves strong structure and safety with competitive perceptual alignment. ↓/↑
+
+indicates lower/higher is better. Bold and underline denote the best and second-best results among non-privileged methods. 
+
+Dataset Method Perceptual Map Structure Safety 
+
+FD ↓ Route Len. (m) ↑ Endpt. Dist. (m) ↓ Coll. Rate (%) ↓
+
+nuPlan 
+
+SLEDGE-L (Chitta et al., 2024) 1.89 35.34 ±8.63 0.470 ±0.320 22.30 SLEDGE-XL (Chitta et al., 2024) 1.44 35.83 ±8.35 0.420 ±0.290 21.20 ScenDream-B (Rowe et al., 2025) 1.05 37.04 ±10.21 0.320 ±0.800 11.90 ScenDream-L (Rowe et al., 2025) 0.67 36.87 ±10.37 0.250 ±0.710 9.30 VectorWorld (Ours) 0.98 37.22 ±11.40 0.078 ±0.106 3.01 Waymo 
+
+DriveSceneGen(GT) ∗† (Sun et al., 2024) 40.59 † 41.61 ±18.61 0.010 ±0.000 0.20 ∗† 
+
+ScenDream-B (Rowe et al., 2025) 1.61 38.23 ±12.78 0.320 ±0.900 5.40 ScenDream-L (Rowe et al., 2025) 1.38 38.92 ±13.56 0.210 ±0.750 4.80 VectorWorld (Ours) 0.94 39.03 ±15.43 0.094 ±0.483 4.69 
+
+† DriveSceneGen(GT) (Sun et al., 2024) numbers on Waymo are quoted from ScenarioDreamer (Rowe et al., 2025). ScenDream -L 
+
+> (Rowe et al.,
+> 2025 )
+> DriveScene
+> Gen ( Sun et
+> al., 2024 )
+> VectorWorld
+> (Ours)
+> Waymo nuPlan
+> SLEDGE -XL
+> (Chitta et al.,
+> 2024 )
+> VectorWorld
+> (Ours)
+> ScenDream -L
+> (Rowe et al.,
+> 2025 )
+
+Figure 5. Qualitative comparison on Waymo and nuPlan. Visualizing decoded elements in 64 m ×64 m tiles. VectorWorld demonstrates superior lane connectivity and fewer agent overlaps at initialization compared to prior vectorized generators. 
+
+4.2. Results Offline Scene Quality. Table 1 shows that VectorWorld improves structural integrity and initialization validity on both datasets. On nuPlan, VectorWorld reduces EPD from 0.250 m (ScenDream-L) to 0.078 m and has lower colli-sion rate from 9.30% to 3.01%. On Waymo, VectorWorld achieves the lowest FD among non-privileged methods (0.94) while improving route length and EPD. 
+
+Qualitative Comparison. Figure 5 visualizes represen-tative samples on both datasets. The improvements con-centrate at intersections and merges: VectorWorld better preserves lane successor continuity and reduces agent–lane inconsistencies, matching the gains in endpoint distance and initialization collision rate in Table 1. 
+
+Real-time Efficiency–Quality Trade-off. Figure 6 re-ports the quality–latency curve as we vary the solver step budget. MeanFlow-1 stays within the real-time regime and remains competitive in EPD and mean agent-JSD, enabling streaming outpainting; increasing steps improves quality but quickly exceeds the budget. 
+
+Ablation of ∆Sim. Table 3 shows that RTG conditioning, hybrid anchor–residual actions, and DKAL are complemen-tary. Compared to Ctrl-Sim (Rowe et al., 2024), the full 
+
+∆Sim improves ADE from 2.80 m to 1.72 m and increases controllability ( ρ) from −0.25 to 0.53, while using a single forward pass. 
+
+Closed-Loop System. Table 2 shows that online outpaint-ing extends evaluation to 1 km+ but exposes compounding 7VectorWorld: Efficient Streaming World Model via Diffusion Flow on Vector Graphs 0 150 300 450 600                 
+
+> Inference Time (ms) ↓
+> 0.0
+> 0.4
+> 0.8
+> 1.2
+> Endpoint Distance (m) ↓  (a)
+> nuPlan
+> Ours (MeanFlow)
+> Prior Work
+> Pareto Frontier
+> Real-time (≤30ms)
+> Optimal Region
+> SLEDGE-L
+> SLEDGE-XL
+> ScenDream-B
+> ScenDream-L
+> 1-Step
+> 3-Step
+> 5-Step
+> Ours
+> 0150 300 450 600
+> Inference Time (ms) ↓
+> 0
+> 1
+> 2
+> 3
+> 4
+> Agent JSD Mean ↓
+> (b)
+> nuPlan
+> SLEDGE-L
+> SLEDGE-XL
+> ScenDream-B
+> ScenDream-L
+> 1-Step
+> 3-Step
+> 5-Step
+> Ours
+> 030 60 90 120 150 180
+> Inference Time (ms) ↓
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+> Endpoint Distance (m) ↓  (c)
+> Waymo
+> ScenDream-B
+> ScenDream-L
+> 1-Step
+> 3-Step
+> 5-Step
+> Ours
+> 030 60 90 120 150 180
+> Inference Time (ms) ↓
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+> Agent JSD Mean ↓
+> (d)
+> Waymo
+> ScenDream-B
+> ScenDream-L
+> 1-Step
+> 3-Step
+> 5-Step
+> Ours
+
+Figure 6. Quality–latency trade-off for tile generation. Endpoint distance (EPD) and mean agent-JSD are plotted against wall-clock latency as the solver-step budget varies; the vertical marker indicates the streaming budget (including one VAE decode). 
+
+Table 2. Closed-loop system evaluation on Waymo. Units: Scene Validity (FD, S.Coll) and Ego Performance (Coll, Offroad, Success) are in percentages (%) unless unitless. Route is in meters. Columns: NPC Policy denotes the background traffic controller; Ego Planner 
+
+denotes the agent under test. Key: Warm = Motion-history warm start; Online = Streaming outpainting. 
+
+Simulator NPC Policy Ego Planner Sys. Cap. Scene Val. Ego Performance Dyn. Metric 
+
+Online Warm FD ↓ S.Coll ↓ Coll. Off. Succ. Route (m) Value 
+
+I. Platform Stability & Consistency (Goal: Verify simulation realism using a standard IDM driver (Treiber et al., 2000).) 
+
+Waymo Replay IDM (Rule-based) ✗ ✗ 0.00 – 7.2 5.8 87.0 64 11.4 (Jerk) 
+
+ScenDream-L Ctrl-sim IDM (Rule-based) ✗ ✗ 1.38 4.80 12.4 5.9 81.7 200 15.5 (Jerk) 
+
+VectorWorld ∆Sim IDM (Rule-based) ✗ ✗ 1.05 4.69 7.5 1.5 91.0 200 10.4 (Jerk) 
+
+VectorWorld ∆Sim IDM (Rule-based) ✓ ✗ 1.19 7.39 45.5 6.9 47.6 1000 16.6 (Jerk) 
+
+VectorWorld ∆Sim IDM (Rule-based) ✓ ✓ 0.94 2.95 41.6 7.0 51.4 1000 9.6 (Jerk) 
+
+II. Failure Discovery & Stress Test (Goal: Attack a fixed PPO policy (Schulman et al., 2017) to find failures.) 
+
+Waymo Replay PPO (Pre-trained) ✗ ✗ 0.00 – 29.3 6.9 63.8 200 36.2 (Fail %) 
+
+ScenDream-L Ctrl-sim (Pos.) PPO (Pre-trained) ✗ ✗ 1.42 5.10 52.8 9.1 38.2 200 61.8 (Fail %) 
+
+ScenDream-L Ctrl-sim (Neg.) PPO (Pre-trained) ✗ ✗ 1.42 11.7 59.0 9.0 32.1 200 67.9 (Fail %) 
+
+VectorWorld ∆Sim(Pos.) PPO (Pre-trained) ✓ ✓ 0.92 2.13 30.7 7.2 62.3 1000 37.9 (Fail %) 
+
+VectorWorld ∆Sim(Neg.) PPO (Pre-trained) ✓ ✓ 1.15 8.55 65.1 9.2 25.7 1000 75.0 (Fail %) 
+
+III. Closed-Loop Training (Goal: Retrain PPO in simulator, evaluate on VectorWorld (Ours).) 
+
+VectorWorld ∆Sim(Neg.) PPO (Pre-trained) ✓ ✓ 1.15 8.55 65.1 9.2 25.7 1000 25.7 (Succ %) 
+
+VectorWorld ∆Sim(Neg.) PPO (Retrained) ✓ ✓ 1.15 8.55 35.1 7.9 56.0 1000 56.0 (Succ %) 
+
+Table 3. ∆Sim ablation on Waymo. Components: return-to-go conditioning (RTG), hybrid anchor+residual action head (A+R), and DKAL. Metrics: average displacement error (ADE; ↓), con-trollability rank-correlation ( ρ; ↑), and inference cost (latency / forward passes; ↓). 
+
+Method Components Acc. Ctrl. Effic. RTG A+R DKAL ADE ↓ ρ ↑ Lat. ↓ Fwd ↓
+
+Ctrl-Sim (Rowe et al., 2024) ✗ ✗ ✗ 2.80 -0.25 36.9 2.0 
+
+∆Sim (w/o Refine) ✓ ✗ ✓ 2.62 0.39 21.7 1.0 
+
+∆Sim (w/o DKAL) ✓ ✓ ✗ 2.10 0.24 26.1 1.0 
+
+∆Sim (Ours) ✓ ✓ ✓ 1.72 0.53 26.1 1.0 
+
+errors. Warm-started interaction states reduce jerk (16.6 →
+
+9.6) and increase success (42.0% → 78.0%), consistent with history-free initialization being a primary source of early-horizon instability. Controllable “tilt” produces targeted stress-test distributions, and ego planner (PPO (Schulman et al., 2017)) retraining in VectorWorld increases success on the hardest setting from 25.0% to 56.0%. At evaluation, we control aggressiveness by exponentially tilting the RTG distribution with coefficient κ (Appendix A.9). 
+
+Additional Experiments, Limitations, and Safety. Fur-ther setups, ablations, qualitative analyses, and discussions on limitations and safety are provided in Appendix A. 
+
+## 5. Conclusion 
+
+We introduced VectorWorld, a streaming vector-graph world model for closed-loop autonomous-driving simulation that outpaints lane–agent tiles on demand. It couples (i) a motion-aware interaction-state VAE that aligns initializa-tion with history-conditioned policies, (ii) an edge-gated relational DiT trained with interval-conditioned MeanFlow and JVP supervision for solver-free one-step masked com-pletion, and (iii) a physics-aligned NPC policy ( ∆Sim) that reduces long-horizon compounding from infeasible actions. Across Waymo Open Motion and nuPlan, VectorWorld im-proves initialization validity, enables 1 km+ closed-loop rollouts, and yields stress-test and policy-training gains. 8VectorWorld: Efficient Streaming World Model via Diffusion Flow on Vector Graphs 
+
+## Impact Statement 
+
+This work aims to improve the fidelity and efficiency of learned simulation for autonomous-driving research. A reli-able closed-loop simulator can reduce real-world testing risk by enabling stress testing, counterfactual evaluation, and data-efficient policy training in a controlled environment. Potential negative impacts include misuse for generating ad-versarial traffic scenarios intended to exploit specific policy weaknesses, or over-reliance on a simulator that contains modeling bias. To mitigate these risks, we recommend (i) using generated scenarios only in sandboxed simulation, (ii) reporting feasibility thresholds and post-processing rules used by the backend, and (iii) validating policy improve-ments with cross-backend evaluation (e.g., log replay and al-ternative simulators), as demonstrated in Appendix A.14.6. 
+
+## References 
+
+Caesar, H., Kabzan, J., Tan, K. S., Fong, W. K., Wolff, E., Lang, A., Fletcher, L., Beijbom, O., and Omari, S. nuplan: A closed-loop ml-based planning benchmark for autonomous vehicles. arXiv preprint arXiv:2106.11810 ,2021. Chen, S., Jiang, B., Gao, H., Liao, B., Xu, Q., Zhang, Q., Huang, C., Liu, W., and Wang, X. Vadv2: End-to-end vectorized autonomous driving via probabilistic planning. 
+
+arXiv preprint arXiv:2402.13243 , 2024. Chen, Y., Wang, Y., and Zhang, Z. Drivinggpt: Unify-ing driving world modeling and planning with multi-modal autoregressive transformers. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pp. 26890–26900, 2025. Chitta, K., Dauner, D., and Geiger, A. Sledge: Synthe-sizing driving environments with generative models and rule-based traffic. In European Conference on Computer Vision , pp. 57–74. Springer, 2024. Dosovitskiy, A., Ros, G., Codevilla, F., Lopez, A., and Koltun, V. CARLA: An open urban driving simulator. In Proceedings of the 1st Annual Conference on Robot Learning , pp. 1–16. PMLR, 2017. Feng, L., Li, Q., Peng, Z., Tan, S., and Zhou, B. Trafficgen: Learning to generate diverse and realistic traffic scenarios. In 2023 IEEE International Conference on Robotics and Automation (ICRA) , pp. 3567–3575. IEEE, 2023. Frans, K., Hafner, D., Levine, S., and Abbeel, P. One step diffusion via shortcut models. arXiv preprint arXiv:2410.12557 , 2024. Gao, S., Yang, J., Chen, L., Chitta, K., Qiu, Y., Geiger, A., Zhang, J., and Li, H. Vista: A generalizable driving world model with high fidelity and versatile controllability. Ad-vances in Neural Information Processing Systems , 37: 91560–91596, 2024. Geng, Z., Deng, M., Bai, X., Kolter, J. Z., and He, K. Mean flows for one-step generative modeling. arXiv preprint arXiv:2505.13447 , 2025. Gulino, C., Fu, J., Luo, W., Tucker, G., Bronstein, E., Lu, Y., Harb, J., Pan, X., Wang, Y., Chen, X., et al. Waymax: An accelerated, data-driven simulator for large-scale au-tonomous driving research. Advances in Neural Informa-tion Processing Systems , 36:7730–7742, 2023. Ha, D. and Schmidhuber, J. World models. arXiv preprint arXiv:1803.10122 , 2(3), 2018. Ho, J. and Salimans, T. Classifier-free diffusion guidance. 
+
+arXiv preprint arXiv:2207.12598 , 2022. Ho, J., Jain, A., and Abbeel, P. Denoising diffusion proba-bilistic models. Advances in neural information process-ing systems , 33:6840–6851, 2020. Igl, M., Kim, D., Kuefler, A., Mougin, P., Shah, P., Shiarlis, K., Anguelov, D., Palatucci, M., White, B., and White-son, S. Symphony: Learning realistic and diverse agents for autonomous driving simulation. In 2022 Interna-tional Conference on Robotics and Automation (ICRA) ,pp. 2445–2451. IEEE, 2022. doi: 10.1109/ICRA46639. 2022.9811990. Jiang, B., Chen, S., Xu, Q., Liao, B., Chen, J., Zhou, H., Zhang, Q., Liu, W., Huang, C., and Wang, X. Vad: Vectorized scene representation for efficient autonomous driving. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pp. 8340–8350, 2023. Jiang, M., Bai, Y., Cornman, A., Davis, C., Huang, X., Jeon, H., Kulshrestha, S., Lambert, J., Li, S., Zhou, X., et al. Scenediffuser: Efficient and controllable driving simulation initialization and rollout. Advances in Neural Information Processing Systems , 37:55729–55760, 2024. Karras, T., Aittala, M., Aila, T., and Laine, S. Elucidating the design space of diffusion-based generative models. 
+
+Advances in neural information processing systems , 35: 26565–26577, 2022. Krajzewicz, D., Erdmann, J., Behrisch, M., and Bieker, L. Recent development and applications of SUMO – simulation of urban MObility. International Journal On Advances in Systems and Measurements , 5(3–4):128–138, 2012. ISSN 1942-261X. Lee, S., Lin, Z., and Fanti, G. Improving the training of rec-tified flows. Advances in neural information processing systems , 37:63082–63109, 2024. 9VectorWorld: Efficient Streaming World Model via Diffusion Flow on Vector Graphs 
+
+Li, Q., Peng, Z., Feng, L., Zhang, Q., Xue, Z., and Zhou, B. Metadrive: Composing diverse driving scenarios for generalizable reinforcement learning. arXiv preprint arXiv:2109.12674 , 2021. doi: 10.48550/arXiv.2109. 12674. Lin, H., Huang, X., Phan, T., Hayden, D., Zhang, H., Zhao, D., Srinivasa, S., Wolff, E., and Chen, H. Causal composi-tion diffusion model for closed-loop traffic generation. In 
+
+Proceedings of the Computer Vision and Pattern Recog-nition Conference , pp. 27542–27552, 2025. Lipman, Y., Chen, R. T., Ben-Hamu, H., Nickel, M., and Le, M. Flow matching for generative modeling. arXiv preprint arXiv:2210.02747 , 2022. Lu, C., Zhou, Y., Bao, F., Chen, J., Li, C., and Zhu, J. Dpm-solver: A fast ode solver for diffusion probabilistic model sampling in around 10 steps. Advances in neural information processing systems , 35:5775–5787, 2022. Ni, J., Guo, Y., Liu, Y., Chen, R., Lu, L., and Wu, Z. Maskgwm: A generalizable driving world model with video mask reconstruction. In Proceedings of the Com-puter Vision and Pattern Recognition Conference , pp. 22381–22391, 2025. Peebles, W. and Xie, S. Scalable diffusion models with transformers. In Proceedings of the IEEE/CVF interna-tional conference on computer vision , pp. 4195–4205, 2023. Perez, E., Strub, F., De Vries, H., Dumoulin, V., and Courville, A. Film: Visual reasoning with a general con-ditioning layer. In Proceedings of the AAAI conference on artificial intelligence , volume 32, 2018. Philion, J., Peng, X. B., and Fidler, S. Trajeglish: Traf-fic modeling as next-token prediction. In The Twelfth International Conference on Learning Representations ,2024. Podell, D., English, Z., Lacey, K., Blattmann, A., Dockhorn, T., M ¨uller, J., Penna, J., and Rombach, R. Sdxl: Im-proving latent diffusion models for high-resolution image synthesis. arXiv preprint arXiv:2307.01952 , 2023. Rowe, L., Girgis, R., Gosselin, A., Carrez, B., Golemo, F., Heide, F., Paull, L., and Pal, C. CtRL-sim: Reactive and controllable driving agents with offline reinforcement learning. In 8th Annual Conference on Robot Learning ,2024. Rowe, L., Girgis, R., Gosselin, A., Paull, L., Pal, C., and Heide, F. Scenario dreamer: Vectorized latent diffusion for generating driving simulation environments. In Pro-ceedings of the Computer Vision and Pattern Recognition Conference , pp. 17207–17218, 2025. Schulman, J., Wolski, F., Dhariwal, P., Radford, A., and Klimov, O. Proximal policy optimization algorithms. 
+
+arXiv preprint arXiv:1707.06347 , 2017. Song, J., Meng, C., and Ermon, S. Denoising diffusion implicit models. arXiv preprint arXiv:2010.02502 , 2020. Song, Y., Dhariwal, P., Chen, M., and Sutskever, I. Con-sistency models. In Proceedings of the 40th Interna-tional Conference on Machine Learning , volume 202 of 
+
+Proceedings of Machine Learning Research , pp. 32211– 32252. PMLR, 2023. Sun, S., Gu, Z., Sun, T., Sun, J., Yuan, C., Han, Y., Li, D., and Ang, M. H. Drivescenegen: Generating diverse and realistic driving scenarios from scratch. IEEE Robotics and Automation Letters , 9(8):7007–7014, 2024. Suo, S., Wong, K., Xu, J., Tu, J., Cui, A., Casas, S., and Urtasun, R. Mixsim: A hierarchical framework for mixed reality traffic simulation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pp. 9622–9631, 2023. Tan, S., Ivanovic, B., Weng, X., Pavone, M., and Kraehen-buehl, P. Language conditioned traffic generation. arXiv preprint arXiv:2307.07947 , 2023. Tan, S., Lambert, J., Jeon, H., Kulshrestha, S., Bai, Y., Luo, J., Anguelov, D., Tan, M., and Jiang, C. M. Scenedif-fuser++: City-scale traffic simulation via a generative world model. In Proceedings of the Computer Vision and Pattern Recognition Conference , pp. 1570–1580, 2025. Treiber, M., Hennecke, A., and Helbing, D. Congested traffic states in empirical observations and microscopic simulations. Physical review E , 62(2):1805, 2000. Yang, C., He, Y., Tian, A. X., Chen, D., Wang, J., Shi, T., Heydarian, A., and Liu, P. Wcdt: World-centric diffusion transformer for traffic scene generation. In 2025 IEEE International Conference on Robotics and Automation (ICRA) , pp. 6566–6572. IEEE, 2025a. Yang, X., Tan, S., and Kr ¨ahenb ¨uhl, P. Long-term traffic simulation with interleaved autoregressive motion and scenario generation. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pp. 25305– 25314, 2025b. 10 VectorWorld: Efficient Streaming World Model via Diffusion Flow on Vector Graphs 
+
+## A. Appendix 
+
+This appendix provides (i) a consolidated notation with tensor shapes, (ii) detailed specifications of the vectorized scene representation and model components (motion-aware VAE, edge-gated relational DiT, MeanFlow training with JVP, and 
+
+∆Sim behavior model), and (iii) reproducible training and closed-loop evaluation protocols. We summarize notation in Tables 4–6 for quick lookup. 
+
+A.1. Appendix table of contents 
+
+• Setup and notation 
+
+– Notation and tensor shapes 
+
+– Vectorized scene representation 
+
+– Motion code: definition, normalization, and invariance • Model components (interface, generator, behavior) 
+
+– Motion-aware variational autoencoder 
+
+– edge-gated relational DiT backbone 
+
+– Generative dynamics: DDPM and rectified flow matching 
+
+– MeanFlow training with identity+JVP 
+
+– ∆Sim behavior model (return-conditioned transformer) • Evaluation, metrics, and reproducibility 
+
+– Simulation environment generation and post-processing 
+
+– Evaluation metrics (offline, behavior, and closed-loop) 
+
+– Closed-loop evaluation protocol 
+
+– Streaming closed-loop rollout algorithm (on-demand outpainting) 
+
+– Training setup and hyperparameters (Waymo) • Additional experiments and analysis 
+
+– Additional experiments and ablations * interaction-state interface ablations (motion-aware gated VAE) * Relation-aware generator ablations (edge-gated relational DiT) * MeanFlow objective and step-budget analysis * ∆Sim feasibility–controllability trade-offs * Cross-backend validation and failure realism diagnostics 
+
+– Qualitative results and visual analysis * Overview and rendering protocol * Waymo: initial-scene generation comparisons * nuPlan: traffic-light semantics and lane–agent consistency * Map-conditioned controllability of agent generation * End-to-end latency comparisons (64m × 64m scenes) * Real-time streaming outpainting case studies (1km +)
+
+– Limitations and safety considerations 
+
+A.2. Notation and Tensor Shapes 
+
+We adopt a consistent notation that disambiguates (i) latent-generation time t ∈ [0 , 1] from simulation step indices 
+
+k ∈ { 0, . . . , K }, and (ii) attention V (values) from k-disks vocabulary Vkd . We use bold ϵ to denote Gaussian noise and E
+
+to denote graph edge sets; implementation uses adjacency relations and index tensors as listed above. 
+
+A.3. Vectorized Scene Representation 
+
+We represent a traffic scene as a heterogeneous graph with lane and agent nodes. Each scene is normalized into an ego-centric SE(2) frame by translating the ego to the origin and applying a deterministic rotation such that the ego heading aligns with a fixed forward axis. We then crop to a square field-of-view (FOV) and cap the number of lanes and agents. 11 VectorWorld: Efficient Streaming World Model via Diffusion Flow on Vector Graphs 
+
+Table 4. Core notation for the vectorized scene representation (per scene unless stated otherwise). Symbol Type / shape Meaning 
+
+G = ( V, E) set-valued Heterogeneous lane–agent vector graph for one ego-centric tile. 
+
+Vlane , Vagent sets Lane nodes / agent nodes in G.
+
+Nℓ integer Number of lane segments in a scene (capped by N max  
+
+> ℓ
+
+). 
+
+Na integer Number of agents in a scene (capped by N max  
+
+> a
+
+; includes ego). 
+
+P integer Number of points per lane polyline for the generator/autoencoder ( P =20 in Waymo generation). 
+
+P∆ integer Number of points per lane polyline for ∆Sim context ( P∆=50 in Waymo behavior). 
+
+Kmot integer Number of points in the motion-code polyline (per agent), i.e., mi ∈ R2Kmot .
+
+L RNℓ×P ×2 Lane centerlines in the ego frame, resampled to P points, each point is (x, y ).
+
+S RNa×7 Static agent state: (x, y, v, cos θ, sin θ, ℓ, w ), normalized. 
+
+M RNa×2Kmot Motion code: Kmot body-frame polyline points per agent, 
+
+(x1, y 1, . . . , x Kmot , y Kmot ).
+
+ca {0, 1}Na×Ca Agent type one-hot ( Ca=3 : vehicle, pedestrian, cyclist). 
+
+cℓ {0, 1}Nℓ×Cℓ Lane semantic attributes (Waymo: dummy constant; nuPlan: may include traffic-light state when available). 
+
+Aℓℓ subset of [Nℓ] × [Nℓ] Directed lane-to-lane adjacency relation used for message passing. 
+
+Aaa subset of [Na] × [Na] Agent-to-agent adjacency relation (complete in our implementation). 
+
+Aℓa subset of [Nℓ] × [Na] Lane-to-agent adjacency relation (bipartite complete in our implementation). 
+
+Tℓℓ {0, 1}|A ℓℓ |× Cconn One-hot lane connection type per directed edge (Waymo: Cconn =6 :none/pred/succ/left/right/self). 
+
+Iℓℓ Z2×|A ℓℓ | Edge index (source, destination) for lane-to-lane edges (PyG convention). 
+
+Iaa Z2×|A aa | Edge index for agent-to-agent edges. 
+
+Iℓa Z2×|A ℓa | Edge index for lane-to-agent edges. 
+
+mℓ {0, 1}Nℓ Partition mask: 1 indicates “conditioned” lanes (clamped during masked completion). 
+
+ma {0, 1}Na Partition mask for agents in inpainting/outpainting. 
+
+For Waymo generation, the autoencoder and latent generator operate on a 64 m × 64 m FOV, with at most N max  
+
+> ℓ
+
+=100 lane segments and N max  
+
+> a
+
+=30 agents. Lane segments are represented by P =20 resampled points. Lane connectivity is encoded as a typed directed relation. Concretely, we construct a complete directed lane-to-lane edge set and assign each edge a connection-type one-hot Tℓℓ ∈ { 0, 1}|A ℓℓ |× 6 indicating {none , pred , succ , left , right , self }. This separates (i) the *message passing topology* (complete) from (ii) the *semantic lane-graph structure* (typed edges), which is critical for topology metrics. For outpainting/inpainting, we additionally construct a partitioned scene variant by splitting lane segments that cross a fixed partition line (Waymo: y = 0 in the ego frame). Elements on the “before-partition” side are treated as conditions. We use boolean masks to (i) prevent encoder attention across the partition and (ii) keep conditioned latents fixed during generation. 
+
+Mask convention. We use boolean masks where True indicates conditioned / clamped tokens that must be preserved, and False indicates tokens to be generated. All diffusion/flow/MeanFlow variants implement conditional completion by keeping clamped tokens fixed and setting their training targets to zero velocity/noise. 
+
+A.4. Motion Code: Definition, Normalization, and Invariance 
+
+We augment each agent with a compact motion code that summarizes its recent history as a short polyline in the agent body frame. For each agent i, we define a static state si ∈ R7, an agent type τi, and a motion-history code mi ∈ R2Kmot 
+
+represented as a Kmot -point polyline in the agent frame. Given the global trajectory up to the selected timestamp, we transform historical positions into the agent’s body frame at the current time by applying the inverse SE(2) transform using the agent’s current pose. We then truncate the history to the most recent Lmax meters of arc length (Waymo default Lmax =12 m) and resample K points uniformly in arc length. To explicitly capture the discrete “static” mode, we set the motion code to all zeros if the agent is deemed static. An agent is classified as static if either (i) the maximum displacement over the most recent history window is below a threshold, or 12 VectorWorld: Efficient Streaming World Model via Diffusion Flow on Vector Graphs 
+
+Table 5. Notation for latent variables and generative dynamics (VAE + diffusion/flow/MeanFlow). Symbol Type / shape Meaning 
+
+Enc ϕ function VAE encoder mapping a scene graph to Gaussian posterior parameters. 
+
+Dec ψ function VAE decoder mapping sampled latents to reconstructed scene elements. 
+
+zℓ RNℓ×dℓ Lane latents (Waymo: dℓ=24 ). 
+
+za RNa×da Agent latents (Waymo: da=18 ). 
+
+z R(·) Concatenated latents, z = ( zℓ, za).
+
+zt R(·) Noisy latent on the rectified path at time t: zt = (1 − t)z + tϵ.
+
+μℓ, log σ2,ℓ RNℓ×dℓ Lane posterior mean / log-variance from Enc ϕ.
+
+μa, log σ2,a RNa×da Agent posterior mean / log-variance from Enc ϕ.
+
+ϵ R(·) Standard Gaussian noise, ϵ ∼ N (0, I).
+
+t scalar in [0 , 1] Continuous time for flow / MeanFlow (not the simulation step). 
+
+r scalar in [0 , 1] MeanFlow auxiliary time with constraint r ≤ t.
+
+∆ scalar in [0 , 1] MeanFlow interval length, ∆ = t − r (second time channel). 
+
+v⋆ R(·) Rectified-flow target velocity, v⋆ = ϵ − z (zero for clamped tokens). 
+
+c (structured) Generation context: masks, counts, and optional scene labels. 
+
+c∅ (structured) Unconditional context used for CFG (implemented via label dropout). 
+
+uθ function MeanFlow predictor: mean velocity over interval [r, t ] at state zt.
+
+Vθ function JVP-corrected MeanFlow predictor: Vθ = uθ + ∆ ddt uθ .
+
+s scalar Classifier-free guidance (CFG) scale used at sampling time. 0.00 0.25 0.50 0.75 1.00 1.25 1.50 1.75 2.00   
+
+> Motion Path Length (normalized)
+> 0.30
+> 0.31
+> 0.32
+> 0.33
+> 0.34
+> 0.35
+> 0.36
+> 0.37
+> 0.38
+> Gate Activation  g = (MLP( x))
+> Adaptive Static/Motion Feature Gating WAYMO
+> Dynamic agents
+> Static agents
+> Static threshold ( =0.03)
+> Linear trend (slope=0.0132)
+> 0100
+> Density
+> =0.326
+> =0.342
+> Distribution
+
+Figure 7. Visualization of motion-aware gating (Waymo). Gate activation increases with motion magnitude, clustering static agents at low activation while assigning higher activation to dynamic agents. This supports that the motion-aware gated VAE suppresses motion-code noise for parked agents while encoding history for moving agents, improving warm-start consistency. 
+
+(ii) the mean speed is below a threshold (see Table 7 for values). This produces a clear static cluster in latent space and stabilizes downstream generation. We normalize the motion polyline into [−1, 1] using fixed physical ranges in the body frame. For Waymo, longitudinal coordinates are mapped from [−D, 0] and lateral coordinates from [−Y, Y ], where D=12 m and Y =6 m by default. Importantly, the motion code is defined in the agent body frame and is therefore invariant to global SE(2) transforms used in tile stitching. When extending a simulation environment by SE(2)-transforming a new tile into a global frame, we transform agent *static states* and lane polylines, but keep the motion code unchanged. 
+
+A.5. Motion-aware Variational Autoencoder 
+
+Our scene autoencoder is a motion-aware VAE that encodes lanes, agents, and lane connectivity into Gaussian latent variables, and decodes them back to vectorized geometry and discrete attributes. 13 VectorWorld: Efficient Streaming World Model via Diffusion Flow on Vector Graphs 
+
+Table 6. Notation for the ∆Sim behavior model and closed-loop simulation. Symbol Type / shape Meaning 
+
+πego policy Ego planner/policy used in closed-loop rollout. 
+
+π∆ policy NPC policy implemented by ∆Sim. 
+
+R scalar Tile radius (ego-centered observation crop) used by the simulator. 
+
+τ scalar Outpainting trigger distance to the tile boundary (Algorithm 2). 
+
+Vkd RKkd ×3 k-disks vocabulary of SE(2) deltas, (∆ x, ∆y, ∆θ), with Kkd =384 .
+
+ak integer Discrete action token index at simulation step k.
+
+ℓ RKkd Action logits over the k-disks vocabulary before shaping. 
+
+˜ℓ RKkd Shaped logits, ˜ℓk = ℓk − λC k (st).
+
+Ck (st) scalar Differentiable kinematic cost of token k given current state st.
+
+λ scalar Inference-time shaping weight. 
+
+λdkal scalar DKAL regularization weight used in training. 
+
+α scalar Residual refinement scale in the hybrid action head. 
+
+bδk R3 Continuous residual refinement predicted by the residual head. 
+
+c∆sk R3 Final local delta action: c∆sk = Vkd [ak ] + bδk .
+
+Krtg integer Number of RTG bins ( Krtg =350 in Waymo). 
+
+{pj }Krtg  
+
+> j=1
+
+simplex Predicted RTG distribution (used to form a soft control embedding). 
+
+(γ, β ) vectors FiLM modulation parameters applied to decoder hidden states. 
+
+κ scalar Exponential tilting coefficient applied at inference for controllability sweeps. 
+
+∆t scalar Simulation step size (Waymo closed-loop: ∆t=0 .1 s). 
+
+Ksim integer Number of simulation steps per episode (default Ksim =400 ). 
+
+A.5.1. A GENT ENCODING WITH MOTION -AWARE GATING 
+
+Each agent is embedded using two branches: a static branch operating on the 7D instantaneous state and a motion branch operating on the 2K-dimensional motion code. A learnable gating network predicts a per-channel gate vector g ∈ (0 , 1) d
+
+from the concatenated agent input, and fuses the two representations as 
+
+ha = (1 − g) ⊙ hstatic + g ⊙ hmotion .
+
+This design allows the encoder to rely on motion features when informative, while remaining robust when motion codes are zeroed. A.5.2. F ACTORIZED SCENE TRANSFORMER 
+
+We adopt a factorized attention architecture that alternates lane-to-lane (with typed edge features), lane-to-agent, and agent-to-agent attention, with an explicit lane-edge update in each block. This preserves permutation equivariance within each node set while enabling typed relational reasoning for lane topology. A.5.3. L ANE -COUNT DISTRIBUTION HEAD FOR INPAINTING 
+
+For partitioned scenes, we use a learnable query token that attends to conditioned lanes to predict a distribution over the number of lanes to generate in the outpainted region. The head outputs a categorical distribution over {0, . . . , N max  
+
+> ℓ
+
+}, and is trained with cross-entropy on the ground-truth lane count in the after-partition region. A.5.4. T RAINING OBJECTIVE 
+
+Let bS, cM, bL denote decoded static states, motion codes, and lane polylines. The total autoencoder loss is 
+
+LAE = Lstatic + λmot Lmotion + λℓLlane + λconn Lconn + λtype Ltype 
+
++ βKL LKL + λcnt Lcount + λsmooth Lsmooth + λcol Lcollision + λend Lendpoint . (11) Here, Lstatic is a weighted L1 on (x, y ) versus other static dimensions; Lmotion is an L1 on motion codes with extra weight on static agents; Llane is an L1 over lane points; Lconn and Ltype are cross-entropies for connectivity and types; and LKL is the standard VAE KL term. 14 VectorWorld: Efficient Streaming World Model via Diffusion Flow on Vector Graphs 
+
+A.6. Edge-gated relational DiT Backbone 
+
+Our latent generator uses a factorized DiT backbone that processes lane and agent latent tokens with alternating cross- and self-attention. We incorporate optional relation-aware mechanisms that target distributional metrics sensitive to relational structure (topology and agent-lane alignment). A.6.1. F ACTORIZED DIT B LOCKS 
+
+Each factorized block applies, in order: agent-to-lane cross attention, lane-to-lane self attention (repeated multiple times), lane-to-agent cross attention, and agent-to-agent self attention. We allocate additional capacity to lane modeling by using multiple lane-to-lane blocks per factorized block. A.6.2. R ELATIONAL LOGIT BIAS AND EDGE -GATED VALUES 
+
+Given token features x, we optionally compute a per-edge per-head additive logit bias b(h) 
+
+> ij
+
+by (1) projecting node features to a low-dimensional space, (2) forming pairwise edge features, and (3) mapping to head-wise biases. In addition, we optionally apply a per-edge per-head value gate g(h) 
+
+> ij
+
+= 1 + tanh( ·), which multiplicatively scales messages and is zero-initialized to behave as identity at the start of training. A.6.3. C ROSS -TYPE RELATIONAL BIAS 
+
+We further support cross-type relational bias on lane-to-agent and agent-to-lane cross attention. This explicitly models agent–lane relationships and targets metrics that depend on relative geometry between agents and their nearest lanes. A.6.4. G LOBAL CONTEXT FUSION 
+
+Optionally, we compute a scene-level context vector by mean pooling lane and agent token features, fusing them via an MLP, and injecting the resulting delta into the conditioning stream. This provides a lightweight global pathway to capture scene-wide statistics. 
+
+A.7. Generative Dynamics: DDPM and Rectified Flow Matching 
+
+This section summarizes the two standard objectives we build on—DDPM latent diffusion and rectified flow matching—and clarifies how conditional masked completion is implemented by clamping. MeanFlow (Section A.8) can then be read as an interval-conditioned extension designed for large-step (including one-step) transport under the same latent interface and backbone. A.7.1. DDPM LATENT DIFFUSION (NOISE -PREDICTION OBJECTIVE )Let z0 denote a latent sample (concatenating lane and agent tokens) and let n ∈ { 0, . . . , N } be the discrete diffusion step. DDPM defines a forward noising process 
+
+zn = √¯αn z0 + √1 − ¯αn ϵ, ϵ ∼ N (0, I), (12) and trains a neural denoiser ϵθ (zn, n, c ) to regress the injected noise: 
+
+Lddpm = E
+
+h
+
+ϵθ (zn, n, c ) − ϵ 22
+
+i
+
+. (13) At test time, sampling requires iterating the reverse Markov chain for many steps, which is the primary latency bottleneck for streaming outpainting. 
+
+Masked completion via clamping. For conditioned (clamped) tokens, we enforce a constant trajectory during noising by setting zn = z0 for those tokens. Equivalently, the training target is ϵ = 0 on clamped tokens, so the model is explicitly trained not to move conditioned structure. 15 VectorWorld: Efficient Streaming World Model via Diffusion Flow on Vector Graphs 
+
+A.7.2. R ECTIFIED FLOW MATCHING (VELOCITY -PREDICTION OBJECTIVE )Rectified flow matching operates in continuous time t ∈ [0 , 1] on the straight-line path between data latents and Gaussian noise: 
+
+zt = (1 − t)z0 + tϵ. (14) The target velocity field is constant along the path, v⋆ = ϵ − z0, and the flow-matching loss is 
+
+Lfm = E
+
+h
+
+vθ (zt, t, c ) − (ϵ − z0) 22
+
+i
+
+. (15) Sampling solves the ODE dzt/dt = vθ (zt, t, c ) from t = 1 to t = 0 using an explicit solver (e.g., Euler/Heun), which still requires multiple function evaluations for high fidelity. 
+
+Masked completion via constant-path conditioning. For clamped tokens, we set ϵ = z0 in Equation (14), yielding 
+
+v⋆ = 0. This matches the main-paper masking rule in Section 3.4 and prevents conditioned structure from drifting during inpainting/outpainting. A.7.3. W HY LARGE -STEP (ONE -STEP ) SAMPLING IS NON -TRIVIAL 
+
+Both DDPM and flow matching are typically trained to be accurate under small reverse steps: DDPM through per-step denoising and flow matching through local ODE integration. A single-step update is therefore an extrapolation regime where small local errors become catastrophic, especially for edge-defined constraints (lane successors and agent–lane relations) that must be satisfied in one shot . MeanFlow addresses this by conditioning the predictor on the interval length ∆ and explicitly supervising large-step transport with the identity+JVP objective (Section A.8), which is exactly the regime required by streaming outpainting. 
+
+A.8. MeanFlow Training with Identity+JVP 
+
+We use a meanflow latent generator with an identity+JVP training objective that targets high-quality one-step sampling. The key idea is to learn an average velocity field over an interval [r, t ] and correct it using a Jacobian–vector product (JVP) term. A.8.1. T RAINING PATH AND GROUND -TRUTH VELOCITY 
+
+Let x denote a normalized latent sample (lane and agent latents). We sample ϵ ∼ N (0, I) and define the rectified path 
+
+zt = (1 − t) x + t ϵ, vgt = ϵ − x. 
+
+Conditioned (fixed) nodes use a constant path, yielding vgt = 0 for those nodes. A.8.2. I DENTITY +JVP O BJECTIVE 
+
+Let uθ (zt; r, t ) denote the predicted average velocity over [r, t ]. We define the boundary velocity vθ (zt; t) = uθ (zt; t, t ).We then form the composite predictor 
+
+Vθ (zt; r, t ) = uθ (zt; r, t ) + ( t − r) ∂∂t uθ (zt; r, t ),
+
+where ∂∂t uθ is computed using a JVP, and the JVP output is stop-gradient for stability. We minimize 
+
+LMF = E
+
+h
+
+∥Vθ (zt; r, t ) − vgt ∥22
+
+i
+
+,
+
+with optional scene-level adaptive reweighting w = ( LMF + c)−p.
+
+Sanity Checks. When ∆ = 0 , the correction term vanishes and the objective reduces to the flow-matching limit. When the learned velocity field is locally constant along the trajectory, ddt uθ ≈ 0 and Vθ ≈ uθ , so the JVP term does not bias training in the easy regime but mainly improves calibration for large-step transport. 16 VectorWorld: Efficient Streaming World Model via Diffusion Flow on Vector Graphs 
+
+Algorithm 1 MeanFlow identity+JVP training step (per minibatch).  
+
+> 1:
+
+Sample data latents x, sample ϵ ∼ N (0, I). 
+
+> 2:
+
+Sample times t ∈ [0 , 1] , r ∈ [0 , 1] with r ≤ t; set h ← t − r. 
+
+> 3:
+
+Form zt ← (1 − t)x + tϵ, and vgt ← ϵ − x. 
+
+> 4:
+
+Compute ∆ ← t − r, uθ (zt; t, ∆) , and boundary velocity vθ (zt; t) ≜ uθ (zt; t, ∆=0) . 
+
+> 5:
+
+Compute the JVP for the total derivative ddt uθ (zt; t, ∆) with respect to the composite input (zt, t, ∆) , using tangent 
+
+(vθ , 1, 0) (i.e., dzt/dt = vθ , dt/ dt = 1 , d∆ /dt = 0 ), and stop-gradient for stability.  
+
+> 6:
+
+Set Vθ ← uθ + ∆ ddt uθ . 
+
+> 7:
+
+Minimize ∥Vθ − vgt ∥22 (optionally with adaptive reweighting). A.8.3. T IME SAMPLING 
+
+We sample t and r from a logit-normal distribution, enforce r ≤ t, and set a fraction of samples to r = t to retain a flow-matching limit. We also explicitly include a subset of samples with (t = 1 , r = 0) to cover the strict one-step regime. A.8.4. S AMPLING (O NE -STEP AND FEW -STEP )At inference, we sample from zt=1 ∼ N (0, I) and integrate from t = 1 to t = 0 using K steps. For step k, with tcur > t next ,we update 
+
+ztnext = ztcur − (tcur − tnext ) uθ (ztcur ; r = tnext , t = tcur ),
+
+with classifier-free guidance applied by combining conditional and unconditional predictions. A.8.5. A LGORITHMIC 
+
+A.9. ∆Sim Behavior Model (Return-conditioned Transformer) 
+
+We use a return-conditioned transformer behavior model to simulate non-ego agents in closed loop. The model predicts a discrete SE(2) action token from a k-disks vocabulary and optionally refines it with a continuous residual head, enabling high precision without requiring a prohibitively large vocabulary. A.9.1. K-DISKS ACTION TOKENIZATION 
+
+We discretize local SE(2) transitions into a vocabulary Vkd ∈ R384 ×3. Each entry represents a local (∆ x, ∆y, ∆θ) in the agent body frame. Ground-truth actions are tokenized by minimizing a box-corner alignment error between the transformed bounding box under candidate tokens and the observed next state. A.9.2. R ETURN -TO -GO (RTG) M ODELING AND CONTROL 
+
+We model a discounted return-to-go over a fixed horizon, discretize it into bins, and condition action prediction on RTG tokens. At inference, we optionally apply exponential tilting with coefficient κ to shift the RTG distribution, enabling controllable agent behaviors in closed-loop simulation. A.9.3. H YBRID DISCRETE –C ONTINUOUS ACTION HEAD 
+
+Let ak be the predicted token and bδk ∈ R3 be the residual refinement. The final action is 
+
+c∆sk = Vkd [ak] + bδk.
+
+We supervise the residual by the target δ⋆k = ∆ s⋆k − Vkd [a⋆k], where ∆s⋆k is the ground-truth local transition and a⋆k is the ground-truth token index. A.9.4. DKAL: P HYSICS -ALIGNED LOGIT REGULARIZATION 
+
+We optionally regularize action logits using a differentiable kinematics cost matrix computed over all vocabulary actions. The DKAL loss penalizes mismatch between centered logits and centered costs, improving physical plausibility while maintaining diversity. 17 VectorWorld: Efficient Streaming World Model via Diffusion Flow on Vector Graphs 
+
+A.10. Simulation Environment Generation and Post-processing 
+
+We generate long-horizon simulation environments by iteratively outpainting tiles along a sampled route. Each tile is a vectorized scene in a fixed FOV. After generating an initial tile, we sample a route on the generated lane graph and repeatedly inpaint the next tile conditioned on the boundary region, transforming the new tile into a global frame aligned with the current route endpoint. A.10.1. V ALIDITY FILTERS AND POST -PROCESSING 
+
+We apply deterministic validity filters to ensure simulator compatibility: (i) lane de-duplication based on connectivity signatures and endpoint proximity; (ii) removal of overlapping agents using oriented box collision checks; (iii) removal of offroad vehicles by nearest-lane distance thresholds and heading consistency constraints; (iv) lane graph compaction by merging degree-2 chains and resampling to a fixed number of points for behavior modeling; (v) route lane-index extraction when a valid path exists (otherwise the environment is retained with a null route-lane index). 
+
+A.11. Evaluation Metrics 
+
+This section defines all metrics reported in the main paper and appendix. We organize metrics by the deployment stages of VectorWorld to keep the causal chain explicit: (i) offline initial-scene quality, (ii) behavior-model quality and controllability, and (iii) closed-loop system performance under long-horizon interaction. A.11.1. C OMMON PREPROCESSING FOR OFFLINE METRICS 
+
+Unified Representation for Metric Computation. For offline evaluation, each generated scene is converted into a compact lane–vehicle representation {G , L, V}: (i) a directed lane-successor graph G, (ii) lane centerlines L ∈ RNℓ×P ×2 in the ego frame, and (iii) vehicle states V ∈ RNv ×7 in the unified format [x, y, v, cos θ, sin θ, ℓ, w ]. To reduce sensitivity to degree-2 chains, we compact lane graphs by merging deterministic successor chains and resample each resulting centerline to a fixed number of points. This aligns the evaluation with the compact lane-graph interface used by the simulator and avoids over-penalizing tokenization artifacts. A.11.2. O FFLINE INITIAL -SCENE GENERATION METRICS 
+
+Embedding-based Fr ´echet Distance (FD). FD measures distribution alignment in a fixed embedding space. We extract one embedding vector per scene by mean-pooling lane embeddings from a frozen autoencoder encoder, yielding e ∈ Rd per scene. Given generated embeddings with mean/covariance (μg , Σg ) and ground-truth embeddings (μr , Σr ), we compute 
+
+DF = ∥μg − μr ∥22 + Tr 
+
+
+
+Σg + Σr − 2( Σg Σr )1/2
+
+, FD = pmax( DF, 0) .
+
+FD is reported in Tables 1 and 2. Unlike topology metrics below, this FD is computed in the learned embedding space and is primarily a perceptual proxy. 
+
+Route Length. Route length probes long-range traversability under the generated lane-successor graph. For each scene, we select an ego-proximal lane i⋆ whose polyline has the smallest point-to-origin distance, and a start index s⋆ as the closest point on that lane to the origin. For every node j reachable from i⋆ in G, we take the shortest-path lane sequence π(i⋆ → j)
+
+and compute a path length by summing polyline arc lengths, using the truncated first lane segment from s⋆ and full lengths thereafter. The scene route length is the maximum such length over reachable nodes. We report mean and standard deviation across scenes (Tables 1 and 10). 
+
+Endpoint Distance (EPD). EPD measures geometric consistency at lane transitions. For each directed successor edge 
+
+(i → j) ∈ G , we compute the Euclidean distance between the end point of lane i and the start point of lane j. We report the mean (and optionally standard deviation) over all successor edges in all scenes. 
+
+Static Collision Rate (Initialization Collision). Static collision rate measures instantaneous infeasibility at t = 0 and is reported as a percentage. For each vehicle, we approximate its oriented box by a small set of circles whose centers lie on the longitudinal axis. A vehicle is counted as colliding if any of its circles overlaps with any circle of another vehicle. The metric is the fraction of vehicles involved in at least one collision, aggregated over all scenes. This metric is reported as 
+
+Coll . Rate in Table 1 and as S.Coll in Table 2. 18 VectorWorld: Efficient Streaming World Model via Diffusion Flow on Vector Graphs 
+
+Urban-Planning Topology Fr ´echet Distances. Topology metrics evaluate the lane-graph structure using a keypoint graph. We construct a keypoint graph K by representing each lane as an edge from its start keypoint to its end keypoint, weighted by lane arc length, and merging keypoints connected by successor relations into equivalence classes. From K, we extract four 1D feature sets: (i) keypoint degree distribution (connectivity), (ii) number of keypoints per scene (density), (iii) reachability counts per keypoint (reach), and (iv) weighted shortest-path lengths between all reachable keypoint pairs (convenience). For each feature set, we compute a 1D Fr ´echet distance between generated and ground-truth samples by fitting Gaussians using empirical mean and variance, and apply dataset-standard scaling factors for readability (connectivity and convenience are scaled by 10 as in prior work). These correspond to Conn., Dens., Reach, and Conve. in Table 8. 
+
+Agent Distributional JSD Metrics. Agent metrics quantify distribution alignment of generated vehicles relative to ground truth. For a scalar feature x, we compute Jensen–Shannon divergence between generated and ground-truth histograms: 
+
+JSD( P, Q ) = 12 KL( P ∥M ) + 12 KL( Q∥M ), M = P + Q
+
+2 ,
+
+where P, Q are normalized histograms over fixed bins (clipping outliers to a fixed range). In our implementation, we compute JSD as the square of the Jensen–Shannon distance returned by a standard library, so the reported value is JSD (not its square root). We report the following features, using fixed clipping ranges and bin sizes: (i) nearest-neighbor distance (all vehicles), (ii) lateral deviation to the nearest centerline point (on-road vehicles only), (iii) angular deviation from the nearest centerline heading (on-road vehicles only), (iv) length, (v) width, and (vi) speed. For readability, we scale nearest-distance and lateral-deviation JSD by 10, and angular/length/width/speed JSD by 100, matching Table 8. 
+
+Agent Count JSD and Agent-JSD Mean. When reported, the count JSD compares the distribution of the number of vehicles per scene between generated and ground truth using the same histogram-based JSD procedure. For efficiency plots and step-budget tables (Figure 6 and Table 12), we also report an agent-JSD mean computed as the arithmetic mean of the six scaled agent JSD metrics above (nearest, lateral, angular, length, width, speed). This produces a single scalar summary while preserving consistent units across methods. 
+
+Validity Rate. Validity rate (Valid %) reports the fraction of generated scenes that remain usable after deterministic decoding and validity filtering required by the simulator backend (e.g., non-empty lane set, extractable route graph, and no invalid numerical values). This metric is reported in Tables 10 and 11 and is intended to quantify failure modes that are not well captured by smooth distributional distances (e.g., catastrophic topology collapse). 
+
+Route validity (%). Route validity reports the fraction of scenes for which a valid route (or route-graph) can be extracted by the same deterministic procedure used by the closed-loop simulator (Appendix A.10). A.11.3. B EHAVIOR -MODEL METRICS 
+
+Trajectory Accuracy (ADE). ADE measures the average displacement error between simulated and ground-truth trajectories over a fixed future horizon. For each evaluated agent i and each future time index t ∈ { 1, . . . , H }, let bpi,t ∈ R2
+
+be the simulated position and pi,t the ground-truth position in the same coordinate frame. Then 
+
+ADE = 1
+
+|I| H
+
+X
+
+> i∈I
+> H
+
+X
+
+> t=1
+
+∥bpi,t − pi,t ∥2,
+
+where I is the set of evaluated agents (typically filtered to moving agents). We compute ADE under closed-loop rollout (model predictions are fed back as the next state) to reflect error accumulation. 
+
+Controllability Correlation ( ρ). To quantify controllability, we run a tilt sweep over a set of control values κ and measure a monotone behavioral response (e.g., average speed of controlled agents over the rollout). We report the Spearman rank correlation ρ between κ and the measured response, aggregated across scenes. A higher ρ indicates that the control input induces a consistent monotone change in behavior. 
+
+Closed-loop Feasibility Violation Rates. We report per-step violation rates computed from the executed discrete action tokens and the current state. Given a k-disks token (∆ x, ∆y, ∆θ) and timestep ∆t, we compute derived quantities: yaw-rate 19 VectorWorld: Efficient Streaming World Model via Diffusion Flow on Vector Graphs 
+
+magnitude |∆θ|/∆t, curvature magnitude 2 sin(∆ θ/ 2) /p∆x2 + ∆ y2, and lateral acceleration proxy alat = v2κ, where 
+
+v is a conservative reference speed. A violation is counted if any derived quantity exceeds a configured threshold. These rates are reported in Table 13. 
+
+Efficiency (Latency and Forward Passes). Latency is the average wall-clock time per simulation step (or per scene generation call, depending on the table), measured with GPU synchronization under a fixed batch size and precision setting. Forward passes count the number of behavior-model forward calls required per step. This distinction is crucial for return-conditioned policies: a two-pass design evaluates the network once to sample return tokens and a second time to sample actions conditioned on sampled returns, whereas our one-pass design keeps the entire decision in a single forward call. A.11.4. C LOSED -L OOP SYSTEM METRICS 
+
+Episode-Level Outcomes (collision, off-route, success). In closed-loop simulation, an episode terminates upon any of the following events: (i) ego collision with any active agent, (ii) ego deviates from the provided route by more than a fixed threshold, (iii) ego completes the route, or (iv) timeout. We report collision, off-route, and success as per-episode indicator averages over all episodes. 
+
+Route Progress (m). Route progress is the traveled progress of the ego along the provided route polyline at termination, reported in meters and averaged over episodes. This metric differentiates early termination (low progress) from near-completion failures (high progress but no success). 
+
+Ego Jerk (dynamic stability proxy). Ego jerk is computed from the ego speed time series as the time derivative of acceleration. We report a high-percentile statistic (p95 of absolute jerk) to reflect worst-case transients that impact planner stability. This metric is used as the dynamic stability value reported in Table 2 (Section I). 
+
+Failure Rate. When reported, failure rate is computed as 1−success rate under the same evaluation protocol. We use it in stress-test settings to directly quantify failure discovery. 
+
+A.12. Closed-loop Evaluation Protocol and Metrics 
+
+We evaluate planners in closed loop in generated environments. Each episode runs for K=400 steps with ∆t=0 .1 s. Non-ego agents are simulated by the ∆Sim behavior model within an 80 m × 80 m agent FOV around the ego. A.12.1. E PISODE TERMINATION AND SUCCESS CRITERIA 
+
+An episode is considered successful if the ego follows the provided route without collisions and without exceeding the route-deviation threshold, within the time budget. Collisions include ego–agent collisions and (optionally) ego–map collisions under the simulator collision checker. A.12.2. M ETRIC DEFINITIONS (H IGH -LEVEL )We report a standard set of closed-loop metrics: (i) collision rate: fraction of episodes with any ego collision; (ii) offroad rate: fraction of steps where ego exceeds a lane-distance threshold; (iii) safety margin: time-to-collision (TTC) violation rate under a threshold; (iv) physics violation rates: yaw-rate/curvature/acceleration exceedances under configured limits; (v) progress: normalized route progress and completion rate. A.12.3. S TREAMING CLOSED -LOOP ROLLOUT (ALGORITHMIC SUMMARY )
+
+A.13. Training Setup and Hyperparameters (Waymo) 
+
+All models are trained on NVIDIA H20 GPUs. Unless otherwise noted, we use AdamW optimization with gradient clipping and deterministic seeding. The latent generator is trained with distributed data parallelism across 8 GPUs, ∆Sim across 4 GPUs, and the autoencoder across 8 GPUs. For meanflow training, we sample t, r ∈ [0 , 1] from a logit-normal distribution and enforce r ≤ t. We set a fixed fraction of 20 VectorWorld: Efficient Streaming World Model via Diffusion Flow on Vector Graphs 
+
+Algorithm 2 Streaming closed-loop rollout with on-demand outpainting 
+
+Require: VAE encoder/decoder Enc , Dec ; MeanFlow generator uθ ; condition builder c(·); ego planner πego ; NPC policy 
+
+π∆; outpainting trigger τ ; termination predicate Term( ·). 
+
+> 1:
+
+Sample ϵ ∼ N (0, I) 
+
+> 2:
+
+z ← ϵ − uθ (ϵ; t=1 , ∆=1 , c init ) 
+
+> 3:
+
+W ← Dec( z); WarmStart( W) 
+
+> 4:
+
+k ← 0 
+
+> 5:
+
+while ¬Term( W) do  
+
+> 6:
+
+ok ← Obs( W) 
+
+> 7:
+
+ˆτ ego  
+
+> k
+
+← πego (ok) 
+
+> 8:
+
+anpc  
+
+> k
+
+← π∆(ok) 
+
+> 9:
+
+W ← Step( W, ˆτ ego  
+
+> k
+
+, a npc  
+
+> k
+
+) 
+
+> 10:
+
+if NeedOutpaint(ˆ τ ego  
+
+> k
+
+, W, τ ) then  
+
+> 11:
+
+Tk+1 ← NextTile( W, ˆτ ego  
+
+> k
+
+) 
+
+> 12:
+
+zobs ← Enc(Clamp( Tk+1 ))  
+
+> 13:
+
+Sample ϵ ∼ N (0, I) 
+
+> 14:
+
+znew ← ϵ − uθ
+
+ ϵ; t=1 , ∆=1 , c (Tk+1 , z obs ) 
+
+> 15:
+
+W ← Stitch 
+
+
+
+W, Dec  Merge( zobs , z new ) 
+
+> 16:
+
+end if  
+
+> 17:
+
+k ← k + 1  
+
+> 18:
+
+end while 
+
+samples to r = t to preserve a flow-matching limit, and include explicit (t = 1 , r = 0) samples to cover strict one-step training. We use an adaptive weighting w = ( L + c)−p with p = 0 .8 and c = 10 −3 at the scene level. For motion code extraction, we use a recent history window to classify static agents (default thresholds: maximum displacement < 0.5 m or mean speed < 0.2 m/s). We normalize longitudinal body-frame coordinates using a maximum displacement of 12 m and lateral coordinates using 6 m. 
+
+A.14. Additional Experiments and Ablations 
+
+This section provides controlled ablations and diagnostic experiments to validate the three deployment-critical claims of VectorWorld: (i) policy-aligned initialization via interaction states, (ii) solver-free streaming generation via large-step meanflow transport on relational graphs, and (iii) long-horizon stability via physics-aligned behavior modeling. To avoid confounding factors, all generator-side ablations share the same autoencoder latent space and identical decoding and filtering rules, and all behavior-side ablations share the same k-disks vocabulary, evaluation scenes, and rollout horizon. We present ablations in the same order as the runtime pipeline so that each table can be mapped to a specific failure mode and a specific design fix: interface → generator backbone → generative dynamics → behavior model → closed-loop system value. A.14.1. T OPOLOGY AND DENSITY DIAGNOSTICS 
+
+Table 8 shows that VectorWorld achieves the lowest agent-count JSD on both datasets and improves lane-graph connectivity on nuPlan, while maintaining competitive topology scores on Waymo and substantially improving agent–map alignment. A.14.2. MOTION -AWARE GATED VAE: INTERFACE ABLATIONS 
+
+In this section, we provide detailed ablations to validate the design choices of VectorWorld. We focus on the causal chain from the interaction-state interface to the generative dynamics and finally to the closed-loop behavior model. 
+
+Motion history is necessary but not sufficient. The snapshot-only interface increases the initialization collision rate (9.45) and degrades endpoint distance (0.120), indicating that a history-free interface forces the downstream pipeline to infer dynamics from an implicit near-zero prior. Adding a motion code without gating reduces collisions (4.92), supporting the necessity of exposing short-horizon dynamics at initialization. 21 VectorWorld: Efficient Streaming World Model via Diffusion Flow on Vector Graphs                                                                                                   
+
+> Table 7. Training hyperparameters on Waymo. Values are reported for the default setting used in our main experiments. Hyperparameter Motion-aware VAE MeanFlow latent generator ∆Sim behavior model Optimizer AdamW AdamW AdamW Base learning rate 1.0×10 −41.0×10 −46.0×10 −5
+> β1, β 2(0 .9,0.999) (0 .9,0.999) (0 .9,0.999)
+> ϵ1.0×10 −71.0×10 −71.0×10 −7
+> Weight decay 2.0×10 −51.0×10 −51.0×10 −4
+> Training length 60 ,000 steps 100 ,000 steps 10 ,000 steps LR schedule linear decay constant linear decay Warmup 500 steps 500 steps 500 steps Gradient clip 10 .010 .05.0
+> EMA none 0.9999 none Precision (training) FP32 FP32 FP32 GPUs 8 (DDP) 8 (DDP) 4 (DDP) CFG label dropout None 0.1None CFG scale (sampling) None 4.0None MeanFlow mode None identity+JVP None Two-time channel None enabled None RTG bins None None 350
+> RTG discount None None 0.97
+> RTG horizon None None 50 steps Vocabulary size None None 384
+> Residual refine None None enabled DKAL None None enabled
+
+Why naive concatenation is suboptimal. Although concatenating motion improves downstream validity, it increases the static reconstruction error (0.017 versus 0.012). This pattern is consistent with a modality-interference failure mode: when static agents have near-zero motion, regressively modeling motion as an always-present signal injects spurious variation into static state reconstruction, which then manifests as overlapping boxes at t = 0 .
+
+Selective gating improves both fidelity and validity. The motion-aware gated variant improves static reconstruction (0.008) and motion reconstruction (0.038) while also achieving the lowest endpoint distance (0.094) and collision rate (4.69). This supports the intended mechanism of the learned gate: it routes capacity toward motion only when informative and suppresses motion noise when motion codes are near-zero, which is precisely the condition that dominates parked or slow-moving agents. Importantly, this improves the interface without requiring additional sampling steps or post-hoc filtering. 
+
+Relational encoding is not optional. Removing the factorized scene transformer causes a collapse across all metrics (static L1 0.331; endpoint distance 0.452; collisions 13.30), showing that the interface must jointly encode lane topology and agent layout rather than treating agents independently. This aligns with the simulator deployment constraint: downstream feasibility and stability depend on edge-level consistency (lane connectivity and agent–lane relations), which cannot be recovered by a per-node encoder. 
+
+Count prior acts as a structural regularizer for masked completion. Disabling the lane-count prior increases endpoint distance (0.115) and collisions (5.10) despite similar reconstruction losses, indicating that the prior primarily improves global structural calibration rather than local reconstruction. This matters for streaming outpainting because masked completion is invoked repeatedly; a small global count bias would accumulate into systematic density drift in long-horizon rollouts. A.14.3. EDGE -GATED RELATIONAL DIT: RELATION -AWARE ABLATIONS 
+
+Relational logit bias targets lane connectivity failures. Adding relational logit bias improves route length (35.26 →
+
+37.10), reduces endpoint distance (0.301 → 0.185), and increases route validity (87.36% → 92.10%). These improvements are consistent with the role of logit bias as a connectivity prior: it increases attention mass on edge-compatible pairs and reduces the chance of producing successor transitions with large geometric discontinuities. 22 VectorWorld: Efficient Streaming World Model via Diffusion Flow on Vector Graphs            
+
+> Table 8. Evaluation of map topology and agent distribution alignment. We report lane-graph Topology discrepancies (Conn., Dens., Reach, Conve.; lower is better) and Agent Distributional JSD for key attributes (lower is better). These metrics diagnose structural and density drifts that can be amplified under repeated inpainting/outpainting. Bold and underline denote the best and second-best results among non-privileged methods (excluding methods marked with *).
+
+Dataset Method Topology ↓ Agent Distributional JSD ↓
+
+Conn. Dens. Reach Conve. Near. Lat. Ang. Len. Wid. Speed Count 
+
+nuPlan 
+
+SLEDGE-L (Chitta et al., 2024) 2.34 2.43 0.70 2.44 0.53 0.63 3.60 11.84 10.16 0.46 0.109 SLEDGE-XL (Chitta et al., 2024) 1.67 1.74 0.51 1.68 0.49 0.49 3.26 11.16 10.29 0.47 0.217 ScenDream-B (Rowe et al., 2025) 0.28 0.45 0.07 0.14 0.12 0.15 0.17 0.22 0.14 0.07 0.023 ScenDream-L (Rowe et al., 2025) 0.18 0.43 0.03 0.33 0.09 0.11 0.18 0.25 0.17 0.06 0.011 Ours 0.09 0.41 0.09 0.79 0.26 0.31 0.18 0.35 0.22 0.07 0.004 Waymo 
+
+DriveSceneGen ∗ (Sun et al., 2024) 4.53 1.18 0.64 5.58 0.63 1.01 2.43 58.86 54.51 18.70 0.638 ScenDream-B (Rowe et al., 2025) 0.17 1.05 0.56 3.81 0.07 0.07 0.07 0.40 0.25 0.36 0.072 ScenDream-L (Rowe et al., 2025) 0.03 0.95 0.28 2.05 0.06 0.05 0.07 0.42 0.25 0.38 0.029 Ours 0.23 0.57 0.37 2.63 0.07 0.07 0.06 0.13 0.11 0.15 0.001                                                                  
+
+> Table 9. Ablations of motion-aware gated VAE (Waymo). We evaluate the impact of the interaction-state interface on autoencoding fidelity and downstream initialization. Snapshot-only leads to high initialization collision rates due to the lack of motion history (cold start). Concat motion (naive) degrades static reconstruction by injecting noise into parked vehicles. Our Motion-aware Gated design achieves the best trade-off, selectively encoding momentum only for dynamic agents. Lower is better for all metrics.
+> VAE variant Interface components Autoencoding Downstream init. Motion code Motion gate Factorized scene tr. Count prior Static L1
+> ↓
+> Motion L1
+> ↓
+> KL
+> ↓
+> EPD (m)
+> ↓
+> Init coll. (%)
+> ↓
+> Snapshot-only ✗✗✓✓0.012 –5.23 0.120 9.45 Concat motion (no gate) ✓✗✓✓0.017 0.045 4.99 0.102 4.92 Gated ✓✓✓✓0.011 0.042 4.63 0.098 4.85 motion-aware gated VAE (ours) ✓✓✓✓0.008 0.038 4.37 0.094 4.69
+> Additional interface checks
+> Ours w/o factorized transformer ✓✓✗✓0.331 0.139 6.90 0.452 13.30 Ours w/o lane-count prior ✓✓✓✗0.009 0.031 3.94 0.115 5.10
+
+Edge-gated values suppress spurious message passing. Adding the value gate further improves endpoint distance (0.185 
+
+→ 0.142) and reduces collision rate (5.80% → 5.12%), while also improving multiple agent distributional JSD terms. Mechanistically, value gating limits the magnitude of feature aggregation along edge-inconsistent pairs, which prevents a small subset of incorrect edges from dominating latent updates. This is particularly important under large-step sampling, where each update must be reliable. 
+
+Cross-type bias improves agent–lane alignment rather than only marginal realism. Adding cross-type relational bias yields the largest improvement in the angular alignment statistic (Ang. JSD reaches its best value), which directly probes whether vehicle headings are consistent with nearby lanes. This supports that cross-type relational modeling is addressing a targeted geometric constraint (agent–lane alignment), not merely improving perceptual FD. The concurrent reduction in collision rate is expected because heading and lane alignment affect feasible packing and relative motion at initialization. 
+
+Global fusion improves scene-level calibration. Finally, global context fusion improves FD, route length, endpoint distance, and route validity simultaneously. This indicates that a lightweight global pathway helps calibrate scene-wide statistics that are otherwise difficult to infer from purely local attention, which is consistent with the reach/convenience topology objectives and with preventing density drift over repeated outpainting. 
+
+Implication for streaming outpainting. Because streaming repeatedly performs masked completion at the frontier, relation-aware attention reduces the probability of generating a single locally plausible but globally inconsistent edge transition, which would otherwise compound into topology breakage and failure to maintain long routes. 23 VectorWorld: Efficient Streaming World Model via Diffusion Flow on Vector Graphs 
+
+Table 10. Ablation of relation-aware components in edge-gated relational DiT (Waymo). We incrementally add relational modules to the factorized DiT backbone. Relational bias is critical for graph connectivity (Conn/Reach). Cross-type bias improves agent–lane geometric consistency (e.g., Ang. JSD) under the same map. Relational bias and value gating improve structural validity (e.g., route validity and endpoint distance) under large-step sampling. Our full model achieves the best structural integrity and safety. 
+
+Variant Relation-aware modules Perceptual Map structure Safety Agent distributional JSD ↓
+
+Rel. bias Value gate Cross-type bias Global fusion FD 
+
+↓
+
+RouteLen. 
+
+(m) ↑
+
+Endpt. dist. 
+
+(m) ↓
+
+Route valid. 
+
+(%) ↑
+
+Coll. rate 
+
+(%) ↓
+
+Near. Ang. Len. Wid. Speed 
+
+Factorized DiT (Base) ✗ ✗ ✗ ✗ 1.53 35.26 0.301 87.36 6.53 0.12 0.09 0.51 0.29 0.39 + Relational logit bias ✓ ✗ ✗ ✗ 1.35 37.10 0.185 92.10 5.80 0.11 0.09 0.42 0.25 0.35 + Edge-gated values ✓ ✓ ✗ ✗ 1.20 37.85 0.142 94.50 5.12 0.10 0.08 0.30 0.18 0.28 + Cross-type rel. bias ✓ ✓ ✓ ✗ 1.05 38.40 0.110 96.20 4.88 0.08 0.06 0.18 0.14 0.20 + Global context (Ours) ✓ ✓ ✓ ✓ 0.94 39.03 0.094 98.10 4.69 0.07 0.06 0.13 0.11 0.15 
+
+Table 11. Impact of the meanflow (Geng et al., 2025) objective on solver-free sampling. We compare different training objectives under a fixed step budget. Training Cost is measured in GPU hours on 8 ×H20. Standard Flow Matching (FM) fails completely at 1-step (EPD 8.52m). Distillation is fast but blurs details (High Agent JSD). Our MeanFlow (JVP+2-time) incurs higher training cost (+50%) but enables the only viable 1-step generation (EPD 0.269m) that preserves agent statistics (JSD 0.136), enabling real-time streaming. 
+
+Training recipe Key design Train GPU-h ↓
+
+Steps at test Waymo (same decoder) MeanFlow 
+
+(uθ )
+
+JVP 
+
+(∂tu)
+
+Two-time 
+
+(t, ∆)
+
+Distill 
+
+(1-step) 
+
+EPD 
+
+(m) ↓
+
+Agent JSD ↓
+
+Time 
+
+(ms) ↓
+
+Valid 
+
+(%) ↑
+
+Flow matching ✗ ✗ ✗ ✗ 320 1-step 8.520 4.250 5.6 9.3 
+
+✗ ✗ ✗ ✗ 320 12-step 0.150 0.120 31.0 95.0 
+
+MeanFlow (Identity) ✓ ✗ ✗ ✗ 300 1-step 0.554 0.499 5.6 63.2 
+
+✓ ✗ ✗ ✗ 300 12-step 0.120 0.110 31.0 96.5 MeanFlow (Id + JVP) ✓ ✓ ✗ ✗ 400 1-step 0.293 0.312 5.6 68.0 
+
+✓ ✓ ✗ ✗ 400 12-step 0.125 0.131 31.0 84.2 Shortcut (Frans et al., 2024) ✗ ✗ ✗ ✓ 960 1-step 0.350 0.469 5.6 47.3 Ours (JVP + 2-time) ✓ ✓ ✓ ✗ 480 1-step 0.269 0.136 5.6 87.5 
+
+✓ ✓ ✓ ✗ 480 12-step 0.110 0.097 31.0 93.1 
+
+A.14.4. L ATENT GENERATIVE OBJECTIVE 
+
+MeanFlow identity improves one-step, but remains under-calibrated. MeanFlow identity substantially improves the one-step regime (endpoint distance 0.554; validity 63.2%), indicating that interval-conditioned learning already reduces the extrapolation gap. However, the remaining quality gap suggests that predicting an average velocity alone is insufficient when the model must faithfully approximate boundary behavior at large step sizes. 
+
+JVP correction targets boundary mismatch directly. Adding the identity+JVP correction improves one-step quality (0.554 → 0.293) at the same inference time. This is consistent with the role of JVP: it provides a first-order correction that aligns the learned mean velocity with the boundary velocity required for a large-step update. Crucially, this reduces catastrophic structural errors without requiring additional solver steps at inference. 
+
+Two-time conditioning is necessary for general large-step transport. Our full recipe (JVP + two-time channels) further improves one-step quality and validity (endpoint distance 0.269; validity 87.5%) and also improves agent statistics. This indicates that explicitly conditioning on both the current time and the interval size is required to prevent step-size ambiguity: without the interval channel, the model must infer the effective step size implicitly from noise level alone, which is not identifiable under masking and mixed lane/agent latents. 
+
+Training cost versus deployment value. The full recipe increases training cost, but it is the only configuration that generates a usable one-step operating point while maintaining high validity. This trade-off is aligned with the streaming deployment constraint: training is amortized once, whereas inference is invoked at every outpainting trigger during rollouts. 24 VectorWorld: Efficient Streaming World Model via Diffusion Flow on Vector Graphs 
+
+Step-budget sensitivity and deployment operating points. Table 12 shows that meanflow provides a controllable quality–latency spectrum: one-step enables ultra-low latency streaming, while 3–5 steps recover much of the multi-step quality at a small additional cost. In contrast, DDPM reaches the best endpoint distance only at substantially higher latency, making it unsuitable for online outpainting. These results support our design choice to train for the large-step regime rather than relying on post-hoc acceleration of a diffusion-trained model. 
+
+Table 12. Step-budget sensitivity of our latent generator (numeric companion). Detailed metrics for Figure 6. While DDPM (100 steps) achieves the lowest EPD (Waymo: 0.080m; nuPlan: 0.072m), its latency (158ms) is the highest and limits online use. Our 
+
+MeanFlow-5 provides a favorable balance between fidelity and latency, while MeanFlow-1 enables ultra-low latency streaming. 
+
+Dynamics Sampler / steps Waymo nuPlan EPD 
+
+(m) ↓
+
+Agent JSD ↓
+
+Time 
+
+(ms) ↓
+
+EPD 
+
+(m) ↓
+
+Agent JSD ↓
+
+Time 
+
+(ms) ↓
+
+Flow (Rectified) Flow-12 0.150 0.120 28 0.125 0.155 31 Flow-24 0.110 0.105 55 0.095 0.140 55 Flow-32 0.098 0.091 73 0.088 0.135 73 Flow-48 0.089 0.084 110 0.082 0.130 110 MeanFlow MeanFlow-1 0.269 0.136 5.6 0.224 0.171 6
+
+MeanFlow-3 0.153 0.108 10 0.128 0.143 10 MeanFlow-5 0.130 0.102 14 0.109 0.137 14 MeanFlow-12 0.110 0.097 31 0.092 0.132 29 DDPM DDPM-100 0.080 0.092 158 0.072 0.185 158 
+
+Takeaways for deployment. Table 12 provides the numeric companion to Figure 6 and is intended as an operating-point guide rather than a second copy of the objective analysis. Across datasets, increasing MeanFlow steps generates a smooth quality–latency trade-off: 1 step enables streaming ( ≤ 30 ms/tile), 3–5 steps recover much of the multi-step fidelity at modest cost, and 12 steps approaches the best offline quality. In contrast, DDPM reaches its best endpoint distance only at substantially higher latency, making it unsuitable for online outpainting where generation is invoked repeatedly during rollout. 
+
+Why one-step is non-trivial. As discussed above (Table 11), objectives that only constrain instantaneous velocities are not explicitly trained for single large-step transport, which explains the failure mode of one-step flow matching. A.14.5. ∆SIM : FEASIBILITY –CONTROLLABILITY TRADE -OFFS 
+
+Table 13. ∆Sim component analysis on accuracy, controllability, and feasibility (Waymo). We evaluate the impact of Hybrid Action Head (A+R) and Differentiable Kinematic Alignment Loss (DKAL). Ctrl-Sim baseline suffers from poor controllability ( ρ = −0.25 ) and high latency. Our full ∆Sim achieves the lowest ADE (1.72m) and highest controllability ( ρ = 0 .53 ). Crucially, DKAL significantly reduces closed-loop physical violations (e.g., Lat. Acc. 12.5% → 2.1%), ensuring stable long-horizon rollouts. 
+
+Method Design toggles Open-loop Closed-loop feasibility (%) ↓ Efficiency RTG (1-pass) Hybrid A+R Logit shaping DKAL loss ADE 
+
+(m) ↓ ρ↑ Coll. Yaw rate Lat. acc. Lon. jerk Lat. 
+
+(ms) ↓
+
+Fwd 
+
+↓
+
+Ctrl-Sim (Rowe et al., 2024) ✗ ✗ ✗ ✗ 2.80 -0.25 15.2 8.5 14.2 10.5 36.9 2.0 
+
+∆Sim (discrete-only) ✓ ✗ ✓ ✓ 2.62 0.39 8.5 4.2 5.5 6.2 21.7 1.0 
+
+∆Sim (hybrid A+R, no DKAL) ✓ ✓ ✓ ✗ 2.10 0.24 10.1 6.8 12.5 8.9 26.1 1.0 
+
+∆Sim (hybrid A+R, no shaping) ✓ ✓ ✗ ✓ 1.95 0.45 5.2 2.5 3.1 4.5 26.1 1.0 
+
+∆Sim (Ours) ✓ ✓ ✓ ✓ 1.72 0.53 2.9 1.2 2.1 3.2 26.1 1.0 
+
+What this ablation isolates. Table 13 decomposes the behavior model into four mechanisms: single-pass return condition-ing, hybrid discrete–continuous actions, inference-time logit shaping, and differentiable kinematic alignment. We report three axes that matter specifically for long-horizon closed-loop simulation: trajectory accuracy (ADE), controllability ( ρ), and feasibility under rollout (violation rates; definitions in Section A.11). 25 VectorWorld: Efficient Streaming World Model via Diffusion Flow on Vector Graphs 
+
+Table 14. Policy training value with cross-backend evaluation (Waymo). To reduce the risk of simulator overfitting, we evaluate policies across different backends under matched horizons. A policy retrained in VectorWorld improves success not only in VectorWorld but also transfers to log replay and ScenDream backends (see Panel A). Panel B further evaluates long-horizon performance ( 1 km+ ) in VectorWorld. 
+
+Panel A: Fixed-horizon cross-backend evaluation (200 m). 
+
+Policy Train backend Train data Train GPU-h Eval: Log Replay Eval: ScenDream-L (neg.) Eval: VectorWorld (neg.) 
+
+(#eps) C/O/Succ 
+
+(%) 
+
+Time 
+
+(h) 
+
+C/O/Succ 
+
+(%) 
+
+Time 
+
+(h) 
+
+C/O/Succ 
+
+(%) 
+
+Time 
+
+(h) PPO Waymo Log 100k 64 29.3 / 6.9 / 63.8 0.4 59.0 / 9.0 / 32.1 5.8 65.5 / 9.5 / 25.0 1.2 PPO ScenDream-L 100k 480 19.3 / 5.9 / 74.8 0.4 45.2 / 8.5 / 46.3 5.8 40.9 / 7.6 / 48.5 1.2 PPO VectorWorld 100k 160 18.1 / 6.2 / 75.7 0.4 38.5 / 5.6 / 56.3 5.8 27.1 / 5.0 / 66.9 1.2 
+
+Panel B: Long-horizon evaluation (1 km +; VectorWorld only). 
+
+Policy (Eval: VectorWorld neg.) Eval time (h) Coll. (%) ↓ Offroad (%) ↓ Succ. (%) ↑
+
+Pretrained PPO (Baseline) 1.0 65.1 9.2 25.7 PPO retrained in VectorWorld (Ours) 1.0 35.1 7.9 56.0 
+
+C/O/Succ : Collision Rate / Offroad Rate / Success Rate. 
+
+Time : Wall-clock hours for evaluating 1000 episodes. Note VectorWorld’s efficiency (1.2h) vs ScenDream (5.8h). 
+
+Table 15. Failure reproduction across backends. We verify if failures discovered in simulation correspond to realistic crash types. We match generated failure scenarios to the nearest log scenarios based on map and agent topology. VectorWorld failures show high Type Agreement (78.5%) with log data, indicating that our simulator exposes realistic safety-critical events rather than simulation artifacts. 
+
+Source of failures Matching and reproduction diagnostics Outcome agreement #Fail episodes Log match (%) Init. state dist. (L2) ↓
+
+Route match (%) Fail repro. (%) Type agreement (%) 
+
+Log replay (reference) 100 100.0 0.00 100.0 100.0 100.0 ScenDream-L (neg. tilt) 528 65.2 1.42 82.5 45.2 52.1 VectorWorld (neg. tilt) 655 88.5 0.92 95.4 72.0 78.5 
+
+Single-pass return conditioning improves efficiency without sacrificing control. The baseline requires two forward passes and has poor controllability ( ρ = −0.25 ). Our single-pass return conditioning reduces forward passes to one and improves controllability ( ρ = 0 .39 in the discrete-only variant), indicating that the control signal is injected into the same computation that produces actions, rather than being used as an auxiliary prediction that is later re-fed. 
+
+Hybrid action heads remove the vocabulary-resolution bottleneck. The discrete-only variant has higher ADE (2.62), consistent with quantization error from a finite k-disks vocabulary. Introducing the residual refinement head reduces ADE (2.62 → 2.10 and below), confirming that continuous refinement improves precision without requiring a larger discrete vocabulary (which would increase both memory and sampling entropy). A.14.6. C LOSED -LOOP VALIDATION BEYOND SELF -CONSISTENCY 
+
+Why hybrid actions require physics-aligned training. A hybrid head increases expressivity; without a feasibility-aligned learning signal, the model can allocate probability mass to precise but physically implausible transitions (e.g., high lateral acceleration) that are weakly penalized by pure imitation losses. This is visible in the hybrid-no-DKAL row, where feasibility violations increase sharply (e.g., lateral acceleration 12.5%) even though ADE improves. This pattern indicates that expressivity alone is insufficient; it must be paired with an inductive bias that matches the closed-loop feasibility objective. 
+
+DKAL provides train–infer alignment for feasibility. Adding DKAL substantially reduces feasibility violations and improves overall stability of rollouts. Notably, DKAL reduces violations even when logit shaping is disabled, indicating that the model learns to rank actions in a feasibility-consistent way, rather than relying on inference-only heuristics. When both 26 VectorWorld: Efficient Streaming World Model via Diffusion Flow on Vector Graphs ScenDream -L    
+
+> (Rowe et al.,
+> 2025 )
+> DriveScene
+> Gen ( Sun et
+> al., 2024 )
+> VectorWorld
+> (Ours)
+> Waymo
+> Figure 8. Waymo qualitative comparison for initial scene generation (64m ×64m). We compare VectorWorld against representative vectorized scene generators and the Waymo reference. The visualization highlights lane connectivity at intersections, agent–lane geometric consistency, and the plausibility of the initialized interaction state (including short motion history when available).
+
+DKAL and shaping are enabled, the model achieves the best combined operating point: lowest ADE, highest controllability, and lowest violation rates. 
+
+Implication for long-horizon stability. Feasibility violations are a compounding-error mechanism: small rates per step become dominant over kilometer-scale horizons. The reductions in yaw-rate and lateral-acceleration violations therefore directly explain the improved stability observed in the long-horizon closed-loop results. 
+
+Cross-backend evaluation addresses self-consistency. A common threat to validity for learned simulators is self-consistency: a policy might appear strong only because it exploits simulator-specific artifacts. Table 14 evaluates the same policies across multiple backends under matched horizons. A policy retrained in VectorWorld improves success not only in VectorWorld but also transfers to log replay and ScenDream backends, indicating that the learned improvements are not tied to a single simulator implementation. 
+
+Why transfer is expected in our design. VectorWorld reduces two major sources of simulator-specific bias: (i) initial-ization mismatch, by providing motion-history warm starts consistent with the behavior-model context, and (ii) structural drift, by enforcing relational consistency in generation and feasibility alignment in behavior. These design choices reduce the incentive for policies to overfit to artifacts (e.g., unrealistic transient dynamics or topology breakage), which in turn improves transfer. 
+
+Long-horizon evaluation is a differentiator, not a cosmetic extension. Panel B of Table 14 shows that the retrained policy maintains substantially higher success over a 1 km scale horizon. This regime is precisely where compounding errors become dominant and where a simulator must be evaluated as a system rather than as a static generator. 
+
+Failure realism diagnostics. Table 15 provides a failure-reproduction diagnostic: we match simulator-discovered failures to the nearest logged scenarios under map and agent-topology similarity, and measure agreement in failure type. VectorWorld achieves higher matching rates and higher type agreement than the baseline generator, indicating that the discovered failures are structurally similar to real-world events rather than being dominated by simulator-specific artifacts. This supports using 27 VectorWorld: Efficient Streaming World Model via Diffusion Flow on Vector Graphs nuPlan   
+
+> SLEDGE -XL
+> (Chitta et al.,
+> 2024 )
+> VectorWorld
+> (Ours)
+> ScenDream -L
+> (Rowe et al.,
+> 2025 )
+> Figure 9. nuPlan qualitative comparison with traffic-light semantics. Lane centerlines are colored by traffic-light state (green vs. red) to visualize control-relevant map semantics. We compare VectorWorld with strong baselines under the same vectorized rendering.
+
+VectorWorld as a stress-test backend for policy improvement rather than only as a diversity tool. 
+
+A.15. Qualitative Results and Visual Analysis 
+
+This section provides qualitative visualizations that complement the quantitative metrics in Tables 1, 2 and 8. We organize the analysis around the same deployment constraints that motivate VectorWorld: (i) topology-consistent initialization, (ii) controllability under fixed map conditions, (iii) real-time end-to-end latency for online generation, and (iv) long-horizon stability under repeated streaming outpainting. 
+
+Rendering protocol (common to all figures). Unless otherwise stated, all panels are rendered from the decoded vector-graph representation: lanes are shown as centerline polylines, agents are shown as oriented boxes, and (when available) short motion histories are shown as agent-frame polylines re-projected to the ego frame at initialization. Importantly, the visualizations do not rely on manual editing; they reflect the decoded simulator state after the same deterministic validity filters described in Section A.10. This makes the qualitative observations directly comparable to the offline validity and topology metrics. A.15.1. W AYMO : INITIAL -SCENE GENERATION COMPARISONS 
+
+Topology consistency at intersections is an edge-level property. The Waymo panels in Figure 8 illustrate a recurrent failure mode of vector-graph generation: local lane geometry can appear plausible, yet successor transitions become discontinuous or inconsistent at intersections and merges. This is precisely an edge-defined constraint: connectivity is encoded by EL2L , not by marginal lane-node appearance. VectorWorld reduces such discontinuities by explicitly modulating attention with typed edge attributes (Section 3.3 and Equation (2)), which is consistent with the improvements in endpoint distance and route validity in Tables 1 and 8. Qualitatively, this generates lane graphs that remain traversable across junctions without relying on heuristic stitching. 
+
+Agent–lane alignment and initialization feasibility co-vary in closed loop. The same figure also reveals that agent placement and orientation errors are not isolated artifacts: misalignment to nearby lane tangents (e.g., heading inconsistent 28 VectorWorld: Efficient Streaming World Model via Diffusion Flow on Vector Graphs Agent Controllability (Same Map As Condition)   
+
+> Figure 10. Agent controllability under fixed map conditioning. The map (lane graph) is held fixed as a condition, while the agent configuration is generated under different controllability settings. This visualization isolates controllability from map diversity by using the same conditioned lanes across all panels.
+
+with centerline direction) increases the probability of overlaps and early collisions after the first few simulator steps. VectorWorld’s generator benefits from cross-type relational modeling, which conditions agent tokens on lane context and vice versa, making agent orientation and lane assignment more consistent at initialization. This qualitative pattern matches the lower initialization collision rate in Table 1 and the improved angular/size/speed distribution alignment in Table 8 (Waymo). 
+
+Why interaction-state initialization is visually diagnostic (beyond FD). A key difference between VectorWorld and snapshot-only generators is that VectorWorld instantiates each agent with a compact motion-history code (Section 3.2). While FD primarily measures distribution alignment in an embedding space, the interaction-state interface determines whether the downstream behavior model receives in-distribution temporal context at t = 0 . In Figure 8, VectorWorld’s initialized agents exhibit consistent short-horizon motion cues, which reduces the “zero-history” prior implicitly assumed by history-conditioned policies. This mechanism is causally linked to the reduced jerk and improved closed-loop success when WarmStart is enabled (Table 2, Section I). A.15.2. NU PLAN : TRAFFIC -LIGHT SEMANTICS AND LANE –AGENT CONSISTENCY 
+
+Traffic-light semantics create structured conditional dependencies. Traffic signals in nuPlan induce a constraint that couples distant elements: the lane state (red/green) constrains which lane segments are currently traversable, which in turn constrains feasible agent intent and placement (e.g., queue formation at red lights vs. flowing traffic on green). This dependency is not captured by purely local appearance matching, and is particularly brittle under repeated generation because a single inconsistent lane state can propagate into unrealistic agent motion in closed loop. 
+
+VectorWorld preserves signal-conditioned lane structure and its downstream implications. In Figure 9, VectorWorld produces lane centerlines whose traffic-light coloring is consistent across the intersection structure, and the resulting agent configurations remain compatible with the implied right-of-way constraints. Mechanistically, this is expected from two design choices: (i) the heterogeneous graph representation makes lane semantics explicit at the node/edge level (Section 3.1), 29 VectorWorld: Efficient Streaming World Model via Diffusion Flow on Vector Graphs ScenDream -L              
+
+> (Rowe et al.,
+> 2025 )
+> 0ms 6ms 60ms 12 0ms 16 0ms
+> VectorWorld
+> (Ours)
+> Gen. Time
+> (ms )
+> Figure 11. End-to-end generation latency (timeline view). Qualitative snapshots under increasing time budgets for a 64 m ×64 m
+> tile. VectorWorld reaches the final lane–agent vector scene with one solver-free MeanFlow step plus one VAE decode ( ≈6ms), whereas multi-step diffusion baselines only converge at substantially higher budgets (e.g., ∼160 ms).
+
+and (ii) edge-gated relational attention provides a controlled pathway for propagating lane semantics into cross-type interactions (Section 3.3). Qualitatively, this generates fewer cases where agents are initialized with headings or lane assignments that contradict the current signal state. 
+
+Why this matters for closed-loop evaluation. Signal-conditioned inconsistencies can appear benign in single-frame offline metrics, yet they directly affect closed-loop behavior: a history-conditioned planner reacts strongly to right-of-way cues, and inconsistent initialization can trigger abrupt braking or unsafe merges. The traffic-light visualization therefore serves as a targeted diagnostic for “control-relevant realism,” complementing FD/topology metrics. It also explains why we emphasize structure and safety metrics alongside perceptual alignment in Table 1. A.15.3. M AP -CONDITIONED CONTROLLABILITY OF AGENT GENERATION 
+
+Controllability should be evaluated under a fixed map to avoid confounding. A common confound in scenario generation is that apparent “control” can be explained by changes in the generated map itself (e.g., different lane topology induces different feasible behaviors). Figure 10 fixes the lane graph as a condition and varies only the controllability input that affects agent generation. This isolates whether the model can modulate agent intent and configuration while maintaining compatibility with the same geometric constraints. 
+
+Why VectorWorld supports map-conditioned control. VectorWorld’s interface separates (i) conditioned structure (clamped lane tokens) from (ii) sampled content (agent tokens), and uses a unified masked-completion mechanism in latent space (Sections 3.1 and 3.5). As a result, the generator can keep lane topology invariant while sampling alternative agent sets that remain aligned with lane geometry. The motion-aware gated VAE further stabilizes the controllability effect by representing agent initialization as an interaction state: changing the control input modifies not only the instantaneous pose distribution, but also the implied short-horizon momentum at t = 0 , which is the quantity that reactive NPC policies and ego planners are most sensitive to. 
+
+Feasibility is a necessary complement to controllability. Controllability is only useful if the resulting agent configurations remain feasible under rollout. In VectorWorld, feasibility is enforced at two levels: (i) the generator improves initialization validity (lower static collision rate), and (ii) ∆Sim suppresses kinematically infeasible actions over long horizons via physics-aligned learning and logit shaping (Section 3.6 and Equations (9) and (10)). This is consistent with the fact that control sweeps in Table 2 can systematically modulate failure rates without requiring shorter rollouts or early termination due to simulator instability. 30 VectorWorld: Efficient Streaming World Model via Diffusion Flow on Vector Graphs ScenDream -L             
+
+> (Rowe et al.,
+> 2025 )
+> 0ms 6ms 60ms 12 0ms 16 0ms
+> VectorWorld
+> (Ours)
+> Figure 12. End-to-end generation latency. A different scene instance rendered with the same timing protocol (latent sampling + one VAE decode). The result is consistent: VectorWorld completes a full 64 m ×64 m lane–agent tile in ≈6ms via a single MeanFlow update, while solver-based diffusion requires many iterative denoising calls.
+
+A.15.4. E ND -TO -END LATENCY COMPARISONS (64 M × 64 M SCENES )
+
+Measurement protocol. We report wall-clock latency per 64 m × 64 m scene with GPU synchronization. The timing includes (i) latent sampling and (ii) exactly one VAE decode into the vector-graph representation; it excludes data loading and any optional deterministic filtering so the reported numbers isolate model inference cost. 
+
+Key result. As shown in Figures 11 and 12, VectorWorld operates in the single-digit millisecond regime: one MeanFlow update at (t, ∆) = (1 , 1) followed by one decode yields a complete lane–agent tile in ≈ 6 ms, (Section A.15.4). 
+
+Why the speedup is structural (not an implementation artifact). Our generator is explicitly trained for solver-free large-step transport and deployed with the one-step update z0 = z1 − ucfg  
+
+> θ
+
+(z1; t=1 , ∆=1 , c ) (Equation (7)), so inference cost is essentially one DiT forward pass plus one decode. In contrast, diffusion-style baselines must iterate many denoising steps, each invoking a comparable backbone; therefore, latency scales roughly linearly with the solver step budget even when the decoder and output representation are matched. This end-to-end latency is the binding constraint in streaming outpainting, where generation is invoked repeatedly during closed-loop rollout. A.15.5. R EAL -TIME STREAMING OUTPAINTING CASE STUDIES (1 KM +) 
+
+Challenging scenarios mined from VectorWorld generation. Figure 13 shows representative scenarios selected from VectorWorld-generated environments. These cases feature dense interactions, complex intersection topology, and/or tight spatiotemporal gaps that empirically stress a fixed PPO ego planner. They complement the system-level statistics in Table 2 by visualizing the kinds of planner-relevant edge cases enabled by streaming outpainting. 
+
+Streaming exposes failure modes that single-tile generation cannot reveal. A single generated tile (e.g., 200m) can look plausible even if small structural errors exist. Streaming outpainting amplifies these errors because the system repeatedly conditions on previously generated content. This makes seam consistency, topology preservation, and long-horizon feasibility the dominant factors, rather than single-frame perceptual alignment. 
+
+Why clamping + constant-path conditioning reduces structural drift. VectorWorld’s outpainting clamps previously observed latents and enforces a constant probability path for conditioned tokens (Section 3.4 and Equation (4) and the masked-token construction). This mechanism prevents conditioned structures from drifting over repeated updates. In Figures 14 and 15, the lane graph remains continuous across tile boundaries, which is consistent with the strong endpoint-distance and route-length metrics reported in the main paper. 31 VectorWorld: Efficient Streaming World Model via Diffusion Flow on Vector Graphs   
+
+> Figure 13. Planner-relevant challenging scenarios sampled from VectorWorld. We render a subset of VectorWorld-generated scenes using the protocol in Section A.15. These scenarios illustrate diverse intersection geometries, dense multi-agent interactions, and tight gaps that are valuable for stress testing and training an ego PPO planner in closed loop.
+
+Dynamic agent management and intent control require an interaction-state interface. In long-horizon rollouts, the active agent set must change: agents behind the ego should be removed, and new agents should appear ahead. However, naive insertion based on static states tends to introduce cold-start artifacts (non-physical jerks) that destabilize interactions. VectorWorld mitigates this by generating agents as interaction states with motion-history codes (Section 3.2), so newly inserted agents can be warm-started with implicit momentum consistent with the behavior model’s context window. This is qualitatively visible as stable agent motion around insertion events, and quantitatively reflected by reduced jerk with WarmStart (Table 2). 
+
+Why long-horizon stability depends on feasibility-aligned behavior modeling. Even if maps are outpainted consistently, long-horizon stability is ultimately limited by the compounding rate of kinematic violations in NPC actions. ∆Sim reduces these compounding errors via hybrid action tokenization and feasibility-aligned learning (Section 3.6). The streaming case studies therefore serve as a system-level validation: they demonstrate that the generator ( ∼ms latency), the interface (warm-started interaction states), and the behavior model ( ∆Sim) jointly satisfy the constraints required for kilometer-scale closed-loop simulation. 32 VectorWorld: Efficient Streaming World Model via Diffusion Flow on Vector Graphs   
+
+> Figure 14. Streaming outpainting in closed-loop rollout (case study 1). The simulator repeatedly outpaints new lane–agent tiles near the frontier while clamping the observed region. The visualization highlights seam consistency and stable long-horizon progression.
+
+A.16. Limitations and Safety Considerations Representation coverage. VectorWorld currently operates on a compact centerline-based map representation and does not model all map elements (e.g., detailed road boundaries, curb geometry, and some fine-grained traffic control semantics). As a result, certain planner-relevant constraints may be under-specified in the generated environment, especially in dense urban layouts. 
+
+One-step streaming trade-offs. Our design prioritizes solver-free large-step sampling for streaming outpainting. While this enables real-time deployment, it can leave residual gaps in fine-grained distribution matching. For example, VectorWorld does not minimize every marginal agent JSD term on nuPlan (e.g., Near./Lat. in Table 8), and the Conve. topology discrepancy can remain higher than some baselines. These gaps motivate improving fine-grained alignment under the same streaming constraint, rather than relaxing latency via multi-step solvers. 
+
+Behavior-model fidelity under extreme maneuvers. ∆Sim uses delta-based updates and feasibility-aligned shaping to reduce kinematic violations, but it does not guarantee strict physical feasibility under all extreme conditions (e.g., rare high-speed evasive maneuvers). Closed-loop results should therefore be interpreted as the fidelity of the proposed generative-simulation pipeline under the stated assumptions and thresholds. 
+
+Safety considerations and intended use. VectorWorld is designed for research on simulation-based evaluation and training, not for direct deployment in real vehicles. Generated scenarios may contain rare, safety-critical interactions; this is useful for stress testing but also creates a misuse risk if employed to design adversarial traffic behaviors outside a controlled research context. We recommend (i) using VectorWorld-generated scenarios only within sandboxed simulation, (ii) reporting configured feasibility thresholds and filtering rules, and (iii) validating any learned policy improvements with cross-backend or log-replay evaluation (e.g., Appendix A.14.6) to reduce simulator-specific overfitting. 33 VectorWorld: Efficient Streaming World Model via Diffusion Flow on Vector Graphs 
+
+Figure 15. Streaming outpainting with dynamic agent set and per-agent intent control (case study 2). The visualization illustrates stable long-horizon expansion with agent insertion/removal and controllable behaviors, enabled by the interaction-state interface . 
+
+34

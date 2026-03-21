@@ -1,0 +1,607 @@
+Title: AutoMoT: A Unified Vision-Language-Action Model with Asynchronous Mixture-of-Transformers for End-to-End Autonomous Driving
+
+URL Source: https://arxiv.org/pdf/2603.14851v1
+
+Published Time: Tue, 17 Mar 2026 03:58:59 GMT
+
+Number of Pages: 14
+
+Markdown Content:
+# AutoMoT: A Unified Vision-Language-Action Model with Asynchronous Mixture-of-Transformers for End-to-End Autonomous Driving 
+
+Wenhui Huang * † 1 Songyan Zhang * 2 3 Qihang Huang * 2 Zhidong Wang 2 Zhiqi Mao 2 Collister Chua 2
+
+Zhan Chen 2 Long Chen 3 Chen Lv 2
+
+## Abstract 
+
+Integrating vision-language models (VLMs) into end-to-end (E2E) autonomous driving (AD) sys-tems has shown promise in improving scene un-derstanding. However, existing integration strate-gies suffer from several limitations: they either struggle to resolve distribution misalignment be-tween reasoning and action spaces, underexploit the general reasoning capabilities of pretrained VLMs, or incur substantial inference latency dur-ing action policy generation, which degrades driv-ing performance. To address these challenges, we propose AutoMoT in this work, an end-to-end AD framework that unifies reasoning and action generation within a single vision-language-action (VLA) model. Our approach leverages a mixture-of-transformer (MoT) architecture with joint at-tention sharing, which preserves the general rea-soning capabilities of pre-trained VLMs while en-abling efficient fast-slow inference through asyn-chronous execution at different task frequencies. Extensive experiments on multiple benchmarks, under both open- and closed-loop settings, demon-strate that AutoMoT achieves competitive per-formance compared to state-of-the-art methods. We further investigate the functional boundary of pre-trained VLMs in AD, examining when AD-tailored fine-tuning is necessary. Our results show that pre-trained VLMs can achieve com-petitive multi-task scene understanding perfor-mance through semantic prompting alone, while fine-tuning remains essential for action-level tasks such as decision-making and trajectory planning. We refer to Project Page for the demonstration videos and qualitative results. 
+
+> *
+
+Equal contribution . †: Project Lead. 1Harvard University, US 2Nanyang Technological University, Singapore 3Xiaomi EV, China. Correspondence to: Chen Lv <lyuchen@ntu.edu.sg >.
+
+Preprint. March 17, 2026. Image  VLM  Planner       
+
+> (a) VLM as Scene Encoder
+> Image VLM:Slow
+> Planner:Fast
+> (b) VLM as Seconday System
+> Condition
+> (c) VLM/A as End-to-End Model
+> (d) Ours: Asynchronous VLA as End-to-End Model
+> VLM
+> Reasoning Action(Text/Tokenization)
+> Slow:KV Cache
+> VLM Action Joint
+> Fast: N Forward
+> Reasoning
+> Image
+> Image
+> 2026/3/7 16:33 teaser_v1.svg
+> file:///E:/OneDrive/WorkSpace_NTU/NTU/PhD/My Paper/ ⼀作论⽂/ICML-AutoMoT/pics/teaser_v1.svg 1/1
+
+Figure 1. Comparison of different paradigms for integrating VLMs into conventional end-to-end autonomous driving frameworks. Our AutoMoT framework unifies reasoning and action policy within a single vision–language–action (VLA) model via joint attention sharing, while enabling fast-slow inference through asynchronous frequencies. 
+
+## 1. Introduction 
+
+The hierarchical modular pipeline, typically comprising per-ception, prediction, and planning, has been widely adopted in end-to-end (E2E) autonomous driving (AD) systems in recent years (Hu et al., 2023; Jiang et al., 2023; Liu et al., 2025a; Jaeger et al., 2023b; Liao et al., 2025). Recent ad-vances in vision–language models (VLMs) have further benefited AD by enhancing high-level scene understanding, a capability that is often insufficient in conventional data-driven E2E systems when deployed in complex open-world scenarios. By leveraging their strong generalization and reasoning capabilities, VLMs endow AD systems with the potential to handle complex interactions and provide seman-tic explanations, thereby improving the interpretability. The integration of vision–language models (VLMs) with end-to-end (E2E) autonomous driving systems is under-going rapid development, giving rise to a diverse set of emerging design paradigms. A natural extension of the E2E framework incorporates VLMs into the upstream stages of the pipeline (Fu et al., 2025a; Li et al., 2025b), where pre-trained models provide rich scene understanding to support 1
+
+> arXiv:2603.14851v1 [cs.CV] 16 Mar 2026 A Unified VLA with Asynchronous MoT for E2E Autonomous Driving
+
+downstream planning, as illustrated in Fig. 1(a). Another line of work adopts a dual-system architecture (Fig. 1(b)), in which the VLM operates as an auxiliary module that assists conventional E2E pipelines by supplying high-level conditioning signals (Jiang et al., 2024; 2025; Tian et al., 2025). However, these approaches suffer from inherent dis-tributional misalignment between the reasoning space of VLMs and the action space of planners. Furthermore, fine-tuning VLMs to generate intermediate conditioning signals inevitably constrains them to task-specific roles, diminish-ing the general capabilities of pretrained models. More recently, as illustrated in Fig. 1c, emerging vision– language–action (VLA) architectures integrate reasoning and planning within a single pre-trained VLM backbone via autoregressive modeling (Wang et al., 2025; Zhou et al., 2025c;b). While this unified design is compact and effec-tively leverages the strong reasoning capabilities of VLMs, tightly coupling action policy execution with high-level reasoning at a synchronized temporal frequency is imprac-tical for real-world autonomous driving. This limitation becomes particularly severe in complex interactive environ-ments, where low-latency control and rapid replanning are critical. Prior vision–language models that generate actions in textual form (Zhang et al., 2024; 2025; Hwang et al., 2024) can also be viewed as instances of this paradigm. In addition to the aforementioned limitations, these approaches rely on textual token supervision, which is inherently weaker than direct supervision on numerical action representations. Taking all these limitations into consideration, we pose the following key question: How can VLA models effectively leverage the general intelligence of pre-trained VLMs while acquiring domain-specific capabilities and meeting real-time inference requirements? 
+
+In this work, we propose AutoMoT , an end-to-end au-tonomous driving framework that seamlessly unifies asyn-chronous reasoning and action within a single vision– language–action (VLA) model, while avoiding both the degradation of VLM capabilities and distributional discrep-ancies across task spaces. As illustrated in Fig. 1d, Au-toMoT adopts a mixture-of-transformers (MoT) architec-ture that bridges high-level reasoning (scene understanding) and low-level action policies (decision-making and trajec-tory planning) through joint attention in a shared latent space. This design enables asynchronous execution of tex-tual reasoning and action generation at different temporal frequencies, thereby facilitating fast–slow inference. We comprehensively evaluate AutoMoT on both simulation and real-world benchmarks under closed-loop and open-loop set-tings. Experimental results demonstrate competitive perfor-mance against state-of-the-art (SOTA) baselines, validating both the feasibility of the proposed framework and its effec-tiveness across diverse evaluation benchmarks. Moreover, through the comprehensive ablation studies, we found that pre-trained VLMs can achieve competitive multi-task scene understanding performance through semantic prompting alone, while fine-tuning remains essential for action-level tasks such as decision-making and trajectory planning. The primary contributions of this work are as follows: 1. We propose AutoMoT, an end-to-end autonomous driv-ing (AD) framework that seamlessly unifies scene un-derstanding, decision-making, and planning within a single asynchronous VLA model via layer-wise joint attention sharing, while enabling fast–slow inference across tasks through different frequencies. 2. We investigate the functional boundaries of pretrained VLMs in autonomous driving, clarifying when and to what extent AD-specific fine-tuning is necessary across different tasks. 3. Extensive experiments demonstrate competitive per-formance against state-of-the-art baselines, validating both the feasibility of the proposed framework and its effectiveness across general knowledge, open-loop, and closed-loop evaluation benchmarks. 
+
+## 2. Related Work 
+
+2.1. End-to-End Autonomous Driving 
+
+Planning-oriented methods have been widely adopted in end-to-end autonomous driving frameworks in recent years. For instance, UniAD (Hu et al., 2023) proposes a hierarchi-cal modular architecture that enables multiple tasks to be jointly learned in an end-to-end manner, mitigating error accumulation and consequently improving planning perfor-mance. The VAD series (Jiang et al., 2023; Chen et al., 2024) follows this design while introducing vectorized scene rep-resentations, which simplify the overall architecture and im-prove inference efficiency. Subsequently, Para-Drive (Weng et al., 2024) extends the hierarchical paradigm to a fully parallel formulation by unifying multiple tasks within the bird’s-eye-view (BEV) space. More recently, diffusion-based policies (Chi et al., 2025) have attracted increasing attention in autonomous driving. Existing approaches typi-cally apply diffusion models either as the core planner (Liao et al., 2025; Liu et al., 2025b) or as a trajectory refiner (Zhou et al., 2025a), leveraging their strong generative capabili-ties (Song et al.; Ho et al., 2020) to improve driving per-formance. Nevertheless, these conventional end-to-end ap-proaches still struggle with complex scene understanding, particularly when encountering long-tail and rare scenarios. 
+
+2.2. Vision-Language Models for Autonomous Driving 
+
+The strong scene understanding and semantic reasoning ca-pabilities of VLMs have motivated their rapid integration 2A Unified VLA with Asynchronous MoT for E2E Autonomous Driving Token-wise Prediction 
+
+Temporal Decision: 
+
+1s [slight right, keep] 
+
+2s [slight right, keep] 
+
+3s [slight right, accelerate] 
+
+> High
+> Frequency
+> Decision Head
+
+Next Token Prediction 
+
+A:The scene is a 
+
+straight road with 
+
+parked and driving cars. 
+
+> Low
+> Frequency
+> LM Head
+
+# AutoMoT 
+
+Layer-wise Joint Attention Sharing 
+
+Understanding Expert 4B 
+
+(Slow) 
+
+KV 
+
+KV 
+
+Pre-Trained LLM 
+
+Action Token Reasoning Token 
+
+Action Expert 1.6B 
+
+(Fast) 
+
+Domain Adaptation 
+
+Spatial & Temporal 
+
+> High
+> Frequency
+> Planning Head
+
+at at+1  at+2 
+
+at+3 at+4 at+5 
+
+Asynchronous Mixture-of-Transformers  Output 
+
+Text Tokenizer  Projector 
+
+> System Prompt
+> User Prompt
+> Ego Status
+> Action Query
+> Temporal
+> Vision Token
+> Current
+> Vision Token
+> Vision Encoder
+
+Input 
+
+Action t
+
+Forward 
+
+KV Cache Forward  KV Cache 
+
+Asynchronous Inference 
+
+Forward Forward Forward 
+
+KV Cache Forward  KV Cache 
+
+Reasoning Latent States (t)  Reasoning Latent States (t+4) Update 
+
+nuScenes General VQA 
+
+(KV) Latent States 
+
+Brgidge 
+
+Vision 
+
+Action t+6 Action t+4 Action t+2 
+
+Forward 
+
+Action t+5 
+
+Forward 
+
+Action t+3 
+
+Forward 
+
+Action t+1 
+
+Action 
+
+Language   
+
+> 2026/3/5 01:01 framework_v2.svg
+> file:///E:/OneDrive/WorkSpace_NTU/NTU/PhD/My Paper/ ⼀作论⽂/ICML-AutoMoT/pics/framework_v2.svg 1/1
+
+Figure 2. As an end-to-end autonomous driving framework, AutoMoT unifies scene understanding, decision-making, and trajectory planning within a single VLA model. AutoMoT adopts a MoT architecture that connects the understanding expert and the action expert via layer-wise joint attention sharing, while enabling fast–slow inference through asynchronous execution at different frequencies. A VLA-oriented action refiner is further integrated to enhance driving performance via diffusion-based refinement. 
+
+into E2E AD systems, resulting in several emerging design paradigms. Representative works such as Orion (Fu et al., 2025a) and ReCogDrive (Li et al., 2025b) introduce VLMs as upstream modules to enhance scene understanding and interpretability. Another line of work incorporates VLMs as secondary systems through intermediate representations, where DriveVLM (Tian et al., 2025) generates initial trajec-tory proposals, while Senna (Jiang et al., 2024) and ReCog-Drive (Li et al., 2025b) provide high-level decisions to guide downstream planning. Vision–language–action (VLA) ar-chitectures, including AutoVLA (Zhou et al., 2025c), Sim-lingo (Renz et al., 2025), OpenREAD (Zhang et al., 2025), and Alpamayo-R1 (Wang et al., 2025), further unify multi-ple tasks within a single pre-trained VLM backbone. How-ever, the single-transformer design tightly couples reasoning and planning at a synchronized frequency, resulting in sub-stantial inference latency, especially when chain-of-thought (CoT) reasoning is required for complex scene understand-ing. In contrast, our MoT-based VLA architecture system-atically unifies scene understanding, decision-making, and planning in one single model through joint attention shar-ing (Deng et al., 2025; Huang et al., 2025a), while remaining functionally decomposed. This design enables fast–slow rea-soning with decoupled asynchronous inference frequencies, thereby alleviating latency bottlenecks. 
+
+## 3. AutoMoT 
+
+3.1. Network Architecture 
+
+The overall framework of AutoMoT is illustrated in Fig. 2. AutoMoT comprises two core components: a scene under-standing expert and an action expert, all implemented using transformer-based architectures. In the following sections, we detail the design of each component as well as its corre-3A Unified VLA with Asynchronous MoT for E2E Autonomous Driving O      
+
+> understanding Decision Planning
+> Language Tokens Visual Tokens Query Tokens State Tokens
+> understanding Decision
+> Planning
+> Bidirectional Attention
+> Cross-task
+> Attention
+> Attend
+> Attend
+> Legend
+> Causal Attention
+> Cross-modal Attention
+> Cross-Task Causal Mask
+> Task
+> Task  Attention
+> Element
+> 2026/3/4 23:33 attention.svg
+> file:///E:/OneDrive/WorkSpace_NTU/NTU/PhD/My Paper/ ⼀作论⽂/ICML-AutoMoT/pics/attention.svg 1/1
+
+Figure 3. Our mask coordinates understanding, decision-making, and planning within a unified attention space. It enables intra-task multi-modal aggregation and cross-task information flow while preserving task-level causal ordering. This hybrid design maintains hierarchical causality and supports rich contextual integration, enabling AutoMoT to achieve coherent multi-task reasoning and trajectory planning. 
+
+sponding training strategies. 
+
+Understanding Expert The primary role of the under-standing expert (UE) in AutoMoT is to perform scene un-derstanding and generate chain-of-thought (CoT) reasoning for complex scenarios, particularly long-tail and rare cases, while transferring its general knowledge to facilitate action policy learning. The UE adopts Qwen3-VL-4B dense model as its vision–language backbone, which takes as input multi-view and multi-frame RGB images IRGB ∈ RN ×H×W ×C
+
+captured by onboard cameras, together with textual prompts 
+
+ℓ consisting of system prompts and user instructions, and outputs semantic reasoning results. To fully leverage the general knowledge of the pretrained Qwen3-VL model and avoid catastrophic degradation of reasoning performance, we freeze the understanding expert throughout the entire training process. The rationale behind this design is further investigated and discussed in Section 4.4. 
+
+Action Expert The Action Expert (AE) in AutoMoT is responsible for decision-making and trajectory plan-ning within the unified VLA framework. At each timestep t, the AE takes the current observation ot =
+
+{I RGB t , I BEV t , Q (t)} as input and produces action-side la-tent representations. Here, I BEV t denotes the LiDAR BEV feature and Q(t) represents the action queries. From these latent representations, the layer-wise query, key, and value embeddings {Ql(t), ˜Kl(t), ˜V l(t)} are derived, where l in-dexes the l-th attention layer. Based on these latent rep-resentations, the AE generates semantic decisions for the next three consecutive frames, along with temporal and spatial trajectory proposals over the same horizon. More specifically, given the current observation ot and a set of action queries Q(t), the AE jointly produces latent rep-resentations for decision-making and trajectory planning. These representations are decoded into three outputs: (i) concrete meta-actions ˆZt = {ˆzt+h}Hh=1 , (ii) future tem-poral waypoints ˆYt = {ˆyt+m}Mm=1 , and (iii) spatial route points ¯Yt = {¯yt+n}Nn=1 . Here, H = 3 denotes a 3-second prediction horizon at 1s intervals for meta-actions, M = 6 
+
+denotes temporal waypoints sampled at 0.5s intervals over the same horizon, and N represents the number of spatial route nodes used to parameterize the reference path. No-tably, language, cross-modal, and cross-task interactions are constrained to follow causal attention, while intra-task and self-modal interactions adopt bidirectional attention. By operating in a shared attention space with the UE, the AE conditions the latent reasoning generated by the UE into the action generation process, thereby grounding decision-making and planning in high-level scene understanding and enabling knowledge transfer from the pretrained VLM to policy learning. The attention patterns are visualized in Fig. 3. As shown, understanding, decision-making, and plan-ning are regulated through cross-task causal attention, where decision representations are conditioned on understanding, and planning is further conditioned on both understanding and decision in the latent space. Within each task, latent fea-tures follow bidirectional attention across modalities, while cross-task interactions are governed by causal attention. The AE is implemented as a task-specialized transformer with approximately 1.6B parameters and is trained from scratch to capture domain-specific knowledge for autonomous driv-ing. Notably, the AE operates at a higher frequency than the UE, enabling efficient inference and supporting real-time autonomous driving in complex environments. 
+
+3.2. Training Strategy Decision Making We formulate decision-making as a token-level sequence modeling problem over meta-actions, conditioned on multi-frame driving observations. For real-world evaluation, we construct a multi-frame decision-making dataset based on nuScenes, termed NuSync .Specifically, NuSync takes four consecutive historical RGB observations along with an additional RGB-BEV pair as input. In the synchronous setting, the RGB-BEV pair shares the same timestamp as the last historical frame, i.e., Isync  
+
+> t
+
+= {IRGB t , I RGB t+1 , I RGB t+2 , I RGB t+3 , I RGB t+3 , I BEV t+3 }.In addition, we construct temporally asynchronous sam-4A Unified VLA with Asynchronous MoT for E2E Autonomous Driving 
+
+ples in which the four historical frames remain consecutive, while the RGB-BEV pair is randomly selected from 1 to 2 frames ahead (corresponding to 0.5–1 s at 2 Hz). For exam-ple, Iasync  
+
+> t
+
+= {IRGB t , I RGB t+1 , I RGB t+2 , I RGB t+3 , I RGB t+k , I BEV t+k },where k ∈ { 4, 5}. In the output space, NuSync anno-tates meta-actions over a 3-second horizon, providing up to twenty possible combinations of longitudinal and lat-eral actions at 1s, 2s, and 3s. After curation, NuSync con-tains 80.1K samples in total. More details about NuSync 
+
+and the associated decision benchmark are provided in Ap-pendix A.1. Similarly, for CARLA simulation, we construct the PDM-Meta dataset based on PDM-Lite following the same pro-tocol. Due to the ambiguous boundaries between lateral meta-actions in simulation, we only annotate longitudinal decisions. To the best of our knowledge, NuSync and PDM-Meta are the first open-source decision datasets that support asynchronous multi-frame meta-action inference. Based on the constructed meta-action datasets, given an observation sequence ot, the AE predicts a sequence of meta-action tokens ˆzt = {ˆzjt }Jj=1 , where j represents j-th token and M depicts the necessary amount of tokens to be encoded as a meta-action. Unlike the next-token prediction used by the UE, the AE adopts a token-wise prediction paradigm and optimizes the policy by minimizing the negative log-likelihood of the target decision tokens: 
+
+LDM = E(ot,z t)∼D 
+
+−
+
+> J
+
+X
+
+> j=1
+
+log pθ
+
+
+
+zjt | ot
+
+ . (1) where D denotes the corresponding dataset. 
+
+Trajectory Planning AutoMoT follows the original set-ting of nuScenes and PDM-Lite for both of AE and AR, with each sample consisting of four historical frames and predict-ing and refining of temporal and spatial trajectories over a 3-second horizon. For the AE, we optimize the trajectory planning with an ℓ1 loss: 
+
+Ltemp traj = E(ot,Y temp  
+
+> t)∼D
+
+"
+
+1
+
+M
+
+> M
+
+X
+
+> m=1
+
+ˆYt+m − Y temp  
+
+> t+m1
+
+#
+
+,
+
+Lspatial traj = E(ot,Y spatial  
+
+> t)∼D
+
+"
+
+1
+
+N
+
+> N
+
+X
+
+> n=1
+
+¯Yt+n − Y spatial  
+
+> t+n1
+
+#
+
+,
+
+(2) where Y temp  
+
+> t
+
+and Y spatial  
+
+> t
+
+denote ground-truth temporal and spatial trajectories. Notably, the decision-making and trajec-tory planning are jointly optimized within the AE, enabling AutoMoT to learn coherent action policies grounded in se-mantic representations from the UE. 
+
+3.3. Asynchronous Inference with Joint Attention 
+
+We formulate asynchronous inference as a multi-rate process in which reasoning and action inference evolve at different temporal resolutions, while both remain grounded in real-time visual observations. The interaction between these two processes is mediated by a shared key–value (KV) cache, as illustrated in Fig. 2. At an arbitrary timestep t, given the current observation ot, the AE derives layer-wise queries, keys, and values {Ql
+
+> act
+
+(t), K l
+
+> act
+
+(t), V l
+
+> act
+
+(t)} for each atten-tion layer. Correspondingly, τ (t) denotes the time index of the most recent scene representation update available at action step t, satisfying τ (t) ≤ t. At the update time τ (t),the UE produces a set of layer-wise KV representations, which are stored in a persistent KV cache: 
+
+Cτ (t) = {Klscene (τ (t)) , V lscene (τ (t)) }Ll=1 . (3) Therefore, the keys and values involved in the final attention computation are formed by combining the KV cache from the UE at time τ (t) with the KV representations derived from the AE at time t, which can be expressed as: 
+
+˜Kl(t) = [ Klscene (τ (t)) ∥ Klact (t)] ,
+
+˜V l(t) = [ V lscene (τ (t)) ∥ V lact (t)] , (4) where [·∥· ] denotes concatenation along the sequence di-mension, and all keys and values share the same embedding dimensionality d. The joint attention is then computed as 
+
+Attn l(t) = softmax Qlact (t) ˜Kl(t)⊤
+
+√d
+
+!
+
+˜V l(t) . (5) The joint attention and asynchronous inference constitute the core characteristics of AutoMoT. By allowing action inference to reuse scene representations that are updated at a different temporal frequency, the proposed framework enables decision-making and trajectory planning to operate with a higher execution frequency than scene understanding, while remaining grounded in real-time perceptual inputs. This design aligns with the real-time requirements of real-world autonomous driving. 
+
+## 4. Experiments 
+
+4.1. Experimental Setup Datasets. For the reasoning tasks, we evaluate the gen-eral performance of all models on both autonomous driving benchmarks and general-domain datasets, including Om-niDrive (Wang et al., 2024), ScienceQA, and FigureQA. For action-level tasks, AutoMoT is primarily trained on three datasets: nuSync, which is annotated and curated in this work for decision-making, nuScenes (Caesar et al., 2020), and the CARLA-Garage dataset (Jaeger et al., 2023a) for 5A Unified VLA with Asynchronous MoT for E2E Autonomous Driving                                                                                                               
+
+> Table 1. Comparison of closed-loop planning performance on the CARLA Bench2Drive leaderboard. C/L denotes camera/LiDAR input. DS and SR represent Driving Score and Success Rate, respectively.
+> Method Expert Modality VLM Generative Closed-loop Metric Planner DS ↑SR(%) ↑
+> MomAD (Song et al., 2025) Think2Drive C--44.54 16.71 UniAD-Base (Hu et al., 2023) Think2Drive C--45.81 16.36 TCP-traj (Wu et al., 2022) Think2Drive C--59.90 30.00 DriveTransformer-Large (Jia et al., 2025) Think2Drive C--63.46 35.01 DriveAdapter (Jia et al., 2023) Think2Drive C&L --64.22 33.08 Raw2Drive (Yang et al., 2025b) Think2Drive C--71.36 50.24 DiffusionDrive (Liao et al., 2025) PDM-Lite C&L -✓77.68 57.72 TransFuser++ (Jaeger et al., 2023b) PDM-Lite C&L --84.21 67.27 ReasonPlan (Liu et al., 2025c) Think2Drive C✓-64.01 34.55 Recogdrive (Li et al., 2025b) Think2Drive C✓✓71.36 45.45 DriveMoE (Yang et al., 2025a) Think2Drive C✓-74.22 48.64 ORION (Fu et al., 2025a) Think2Drive C✓✓77.74 54.62 SpaceDrive+ (Li et al., 2025a) PDM-Lite C✓-78.02 55.11 MindDrive (Fu et al., 2025b) Think2Drive C✓✓78.04 55.09 AutoVLA (Zhou et al., 2025c) PDM-Lite C✓-78.84 57.73 SimLingo (Renz et al., 2025) PDM-Lite C✓-85.07 67.27 AutoMoT (Ours) PDM-Lite C&L ✓-87.34 70.00
+
+trajectory planning. We follow the original training and eval-uation protocols provided by the trajectory planning bench-marks. Additionally, as part of our ablation study, we fine-tune the understanding expert of AutoMoT exclusively on two autonomous driving VQA datasets, LingoQA (Marcu et al., 2024) and CODA-LM (Chen et al., 2025). 
+
+Benchmarks and Metrics. Scene understanding perfor-mance is evaluated on the LingoQA (Marcu et al., 2024) benchmark using its native metric, Lingo-Judge, as well as on other AD-tailored and general VQA datasets us-ing GPT-based scores. We further evaluate the open-loop performance of AutoMoT on the nuScenes (Caesar et al., 2020) benchmark, using average accuracy (AA) for decision-making, as well as L2 distance and collision rate for trajec-tory planning. Closed-loop performance is assessed on the Bench2Drive (Jia et al., 2024) benchmark following the officially provided evaluation metrics. 
+
+Implementation Details. Each action token corresponds to 0.5 seconds of motion prediction. The AE predicts a se-quence of action tokens to decode coarse future trajectories, which are further refined by a diffusion-based planner. For action policy learning, we adopt a learning rate ranging from 
+
+1 × 10 −4 to 2 × 10 −5 and employ the Fully Sharded Data Parallel (FSDP) training strategy. The action expert predicts 6 trajectory points and 20 route points, with λ = 0 .5. The model is trained using 8 NVIDIA A100 GPUs. Additional details are provided in the Supplementary Material. 
+
+4.2. Main Results 
+
+In this section, we present detailed quantitative compar-isons between AutoMoT and representative prior and SOTA methods across both reasoning and action-level tasks. Due to space limitations, detailed decision-making results are reported in Appendix A.1. 
+
+Closed-Loop Planning Benchmark Results. We first evaluate AutoMoT on a closed-loop evaluation benchmark and report the quantitative results in Table 1. It is clear that AutoMoT outperforms all VLM-augmented baseline methods and achieves SOTA performance in terms of both driving score (DS) and the success rate (SR). It is worth noting that SimLingo employs action dreamer–based sim-ulation for data augmentation to increase the amount of training data, while AutoMoT is trained solely on the origi-nal dataset, yet dominates SimLingo (Renz et al., 2025) in terms of both main metrics. We further explored the closed-loop driving performance with diffusion policy (Chi et al., 2025) head, and reported the detailed quantitative results in Appendix A.3. 
+
+Open-Loop Planning Benchmark Results. The open-loop planning performance of AutoMoT compared with various baselines is reported in Table 2. AutoMoT achieves competitive performance in terms of L2 displacement and attains SOTA results on collision rate. Notably, most exist-ing methods adapt scene understanding to the autonomous driving domain by fine-tuning the VLM backbone, whereas only OpenEMMA and AutoMoT refrain from such domain-specific adaptation, yet exhibit a clear performance distinc-tion in terms of L2 displacement. These results indicate 6A Unified VLA with Asynchronous MoT for E2E Autonomous Driving 
+
+Table 2. Comparison of the Open-loop planning in nuScenes. The ST-P3 evaluation protocol is used by default.                                                                                                                                                                                                      
+
+> Method Ego Status Finetuning L2 (m) ↓Collision (%) ↓
+> Understanding Decision Planning 1s 2s 3s Avg. 1s 2s 3s Avg.
+> UniAD (Hu et al., 2023) Vector --✓0.44 0.67 0.96 0.69 0.04 0.08 0.23 0.12 VAD (Jiang et al., 2023) Vector --✓0.17 0.34 0.60 0.37 0.07 0.10 0.24 0.14 Ego-MLP (Li et al., 2024) Vector --✓0.15 0.32 0.59 0.35 0.00 0.27 0.85 0.37 DriveTransformer-Large (Jia et al., 2025) Vector --✓0.16 0.30 0.55 0.33 0.01 0.06 0.15 0.07 AutoVLA (Zhou et al., 2025c) Text ✓-✓0.21 0.38 0.60 0.40 0.13 0.18 0.28 0.20 ORION(Chat-B2D)(Fu et al., 2025a) -✓-✓0.17 0.31 0.55 0.34 0.05 0.25 0.80 0.37 RoboTron-Drive (Huang et al., 2025b) -✓-✓0.14 0.30 0.57 0.33 0.03 0.12 0.63 0.26 OpenDrive-VLA (Zhou et al., 2025b) Text ✓-✓0.15 0.31 0.55 0.33 0.01 0.08 0.21 0.10 OmniDrive (Wang et al., 2024) Vector ✓-✓0.14 0.29 0.55 0.33 0.00 0.13 0.78 0.30 EMMA †(Hwang et al., 2024) Text ✓-✓0.14 0.29 0.54 0.32 ----SpaceDrive (Zhou et al., 2025c) Vector ✓-✓0.15 0.29 0.51 0.32 0.04 0.18 0.49 0.23 OpenREAD (Zhang et al., 2025) Vector ✓-✓0.17 0.34 0.56 0.36 0.04 0.08 0.22 0.11 DriveVLM-Dual (Tian et al., 2025) Vector ✓-✓0.15 0.29 0.48 0.31 0.05 0.08 0.17 0.10 OpenEMMA (Xing et al., 2025) Text ---1.45 3.21 3.76 2.81 ----AutoMoT (Ours) Vector -✓✓0.14 0.29 0.54 0.32 0.01 0.06 0.15 0.07
+
+Table 3. Comparison of reasoning capabilities across both general-domain and autonomous driving–specific datasets. †: Results are reproduced using the official checkpoints and evaluation environ-ments.                          
+
+> Method LingoQA OmniDrive CODA-LM TallyQA InfoVQA
+> ReCogDrive 67.20 0.82 5.90 69.60 75.80 Robotron-Drive †59.20 0.82 6.20 63.40 42.60 OpenEMMA 48.00 0.43 4.80 80.00 71.40 AutoMoT 67.00 0.89 6.07 81.40 89.30
+
+that policy learning in VLA models plays a critical role in action-level tasks, extending beyond the inherent expertise of pre-trained VLMs. In contrast, fine-tuning the VLM back-bone on AD datasets yields only marginal improvements in planning metrics. More importantly, such minor gains (e.g., a few centimeters in L2 displacement) may come at the cost of severe degradation in scene understanding capability due to catastrophic forgetting. To examine this trade-off more comprehensively, we further evaluate AutoMoT together with other open-source methods on both AD-specific and general-domain VQA datasets to assess their scene under-standing performance. 
+
+General VQA Benchmark Results. Observations from the planning benchmarks further motivate a deeper investi-gation into whether additional domain-specific adaptation of scene understanding on top of pre-trained VLMs is indeed beneficial for overall autonomous driving performance. To clarify this question, we evaluate AutoMoT against other open-source baseline approaches on a diverse set of VQA benchmarks spanning both autonomous-driving–specific and general-domain tasks, as summarized in Table 3. Al-though both ReCogDrive and Robotron-Drive fine-tune their VLM backbones on LingoQA, OmniDrive, and CODA-LM, the resulting improvements are either marginal or even infe-rior to AutoMoT, which keeps the VLM backbone frozen. For example, ReCogDrive only marginally outperforms AutoMoT by 0.2 on the Lingo-Judge metric, while both ReCogDrive and Robotron-Drive underperform AutoMoT on the perception task of OmniDrive. More importantly, their performance on general-domain VQA benchmarks de-grades substantially after fine-tuning, falling well below that of OpenEMMA and AutoMoT. Taken together with the analysis on planning benchmarks, these results suggest that fine-tuning the VLM backbone on AD-tailored scene under-standing tasks provides only limited benefits for subsequent planning behaviors. Such gains are often marginal and ac-companied by overfitting to specific benchmarks, leading to catastrophic forgetting and degraded generalization. In the following section, we further investigate the functional boundaries of pre-trained VLMs in autonomous driving, ex-amining whether domain-specific fine-tuning is necessary across different AD tasks. 
+
+4.3. Performance Boundary of Pretrained Backbone 
+
+In this section, we aim to investigate when and to what extent AD-tailored fine-tuning is beneficial under a more controlled and fair setting, as direct comparisons with ex-isting methods are often confounded by various factors. To this end, we fine-tune the VLM backbone of AutoMoT on two autonomous driving datasets: LingoQA (Marcu et al., 2024) and the counterfactual reasoning subset of Om-niDrive (Wang et al., 2024). The former is widely used for scene understanding in the autonomous driving domain, while the latter is closely related to planning performance, as it shares the same visual inputs as the nuScenes (Caesar et al., 2020) benchmark and its question prompts explicitly contain trajectory-related information. We then evaluate the fine-tuned model on the test splits of these two datasets, together with five additional general-domain knowledge benchmarks, ScienceQA (Lu et al., 2022), FigureQA (Ka-hou et al., 2017), TallyQA (Acharya et al., 2019), Infograph-icVQA (Mathew et al., 2022), and VizWiz (Gurari et al., 2018), as summarized in Table 4. 7A Unified VLA with Asynchronous MoT for E2E Autonomous Driving 
+
+Table 4. Ablation study results of investigating the performance boundary of the pre-trained backbone. †: System prompt is pro-vided; ‡: Fine-tuned on autonomous driving datasets; L: Lingo-Judge; G:GPT-Score; A: Token Accuracy.                         
+
+> Benchmark Task Category AutoMoT †AutoMoT ‡
+> LingoQA (L) Scene Understanding 67.00 67.20
+> OmniDrive (G) Counterfactual Planning 18.20 67.80
+> ScienceQA (A) General Knowledge 88.60 87.80 FigureQA (A) General Knowledge 97.60 91.20 TallyQA (A) General Knowledge 81.40 52.40 InfographicVQA (G) General Knowledge 89.30 50.20 VizWiz (G) General Knowledge 75.60 50.20
+
+As shown by the quantitative results, fine-tuning the VLM backbone yields marginal improvements on scene under-standing performance in LingoQA, but leads to substantial gains on the counterfactual planning task. This suggests that pre-trained VLMs can already support competitive multi-task scene understanding through semantic prompt-ing alone, whereas fine-tuning remains essential for action-level tasks such as trajectory planning. Notably, the impact of fine-tuning on general-domain reasoning is highly task-dependent. On datasets with relatively simple answer spaces, such as ScienceQA and FigureQA, fine-tuning results in only minor performance changes, indicating that basic recognition and short-form reasoning capabilities are largely preserved. In contrast, for more complex VQA benchmarks that require compositional reasoning and multi-step infer-ence, such as TallyQA, InfographicVQA, and VizWiz, per-formance degrades substantially after fine-tuning. For in-stance, accuracy on TallyQA drops from 81.40 to 52.40, and on InfographicVQA from 89.30 to 50.20, corresponding to an almost 50% reduction relative to the pre-trained baseline. These results demonstrate that domain-specific fine-tuning mainly degrades high-level reasoning ability, providing clear evidence of catastrophic forgetting when VLMs are directly adapted to the autonomous driving domain. Beyond validating our design choice, these results prompt a rethinking of the role of pre-trained VLMs in autonomous driving systems. Rather than uniformly adapting VLMs across all task levels, our findings suggest a clearer func-tional boundary: pre-trained VLMs are best suited for high-level scene understanding and reasoning, while task-specific adaptation should primarily focus on action-level compo-nents that operate under domain-specific constraints. In this regard, our design preserves the general intelligence of the scene understanding expert and transfers its reason-ing knowledge to the action expert and the action refiner through joint attention sharing, enabling effective action-level learning without sacrificing general reasoning ability. 
+
+4.4. Asynchronous versus Synchronous Inference 
+
+In this ablation study, we investigate whether decoupling rea-soning and action inference at different temporal resolutions 
+
+Table 5. Trajectory planning performance under synchronized and asynchronous settings. AutoMoT refers to the proposed model with the KV cache enabled, while AutoMoT-S denotes the synchro-nized variant that runs the understanding expert (UE) and action expert (AE) at the same frequency, without introducing temporal misalignment between UE and AE. Setting L2@1s ↓ L2@2s ↓ L2@3s ↓ L2 avg ↓ Lat. (s) ↓          
+
+> AutoMoT-S 0.140 0.290 0.537 0.322 0.38 AutoMoT 0.141 0.293 0.544 0.326 0.05
+
+degrades driving performance due to stale visual observa-tions. To quantify this effect, we construct two dedicated validation sets by introducing controlled temporal offsets between the visual inputs processed by the understanding expert (UE) and the action expert (AE). The decoupled set contains asynchronous samples with one-step asynchrony (0.5 s) and two-step asynchrony (1.0 s), while the coupled 
+
+set contains synchronized samples with zero temporal offset. We then compare AutoMoT (decoupled inference with a persistent KV cache) against a coupled variant AtuoMoT-S that disables the KV cache and runs UE and AE at the same frequency, recomputing all outputs at every step. As shown in Table 5, AutoMoT (asynchronous inference with KV caching) achieves planning accuracy comparable to the synchronized variant AutoMoT-S, while substantially reducing inference latency. The performance gap between the two settings is negligible across all prediction horizons, with only a 1.24% increase in L2 avg (0.322 → 0.326 ). In contrast, AutoMoT reduces inference latency from 0.38 s to 0.05 s, corresponding to an 86.8% speedup ( 7.6× faster). These results demonstrate that the proposed asynchronous fast–slow inference mechanism significantly improves effi-ciency without meaningfully degrading planning accuracy. 
+
+## 5. Conclusion 
+
+We propose AutoMoT, an end-to-end autonomous driv-ing framework that unifies reasoning and action genera-tion within a single VLA model via a MoT architecture with joint attention sharing. AutoMoT preserves the gen-eral reasoning capability of the VLM backbone during ac-tion policy learning, while improving driving performance through a VLA-oriented diffusion-based action refiner. By executing reasoning and action asynchronously, AutoMoT enables efficient, fast–slow inference across different task components. Extensive evaluations on simulation and real-world benchmarks under both open- and closed-loop set-tings show that AutoMoT achieves competitive performance against state-of-the-art baselines, despite not fine-tuning the VLM backbone on AD-specific datasets. Moreover, experi-ments on both general-domain and AD-specific VQA bench-marks show that pre-trained VLMs already provide strong multi-task scene understanding through semantic prompting, whereas fine-tuning remains essential for action-level tasks in end-to-end autonomous driving. 8A Unified VLA with Asynchronous MoT for E2E Autonomous Driving 
+
+## References 
+
+Acharya, M., Kafle, K., and Kanan, C. Tallyqa: Answering complex counting questions. In Proceedings of the AAAI conference on artificial intelligence , volume 33, pp. 8076– 8084, 2019. 7 Caesar, H., Bankiti, V., Lang, A. H., Vora, S., Liong, V. E., Xu, Q., Krishnan, A., Pan, Y., Baldan, G., and Beijbom, O. nuscenes: A multimodal dataset for autonomous driving. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pp. 11621–11631, 2020. 5, 6, 7 Chen, K., Li, Y., Zhang, W., Liu, Y., Li, P., Gao, R., Hong, L., Tian, M., Zhao, X., Li, Z., et al. Automated evaluation of large vision-language models on self-driving corner cases. In 2025 IEEE/CVF Winter Conference on Applica-tions of Computer Vision (WACV) , pp. 7817–7826. IEEE, 2025. 6 Chen, S., Jiang, B., Gao, H., Liao, B., Xu, Q., Zhang, Q., Huang, C., Liu, W., and Wang, X. Vadv2: End-to-end vectorized autonomous driving via probabilistic planning. 
+
+arXiv preprint arXiv:2402.13243 , 2024. 2 Chi, C., Xu, Z., Feng, S., Cousineau, E., Du, Y., Burch-fiel, B., Tedrake, R., and Song, S. Diffusion policy: Visuomotor policy learning via action diffusion. The International Journal of Robotics Research , 44(10-11): 1684–1704, 2025. 2, 6, 13 Deng, C., Zhu, D., Li, K., Gou, C., Li, F., Wang, Z., Zhong, S., Yu, W., Nie, X., Song, Z., et al. Emerging proper-ties in unified multimodal pretraining. arXiv preprint arXiv:2505.14683 , 2025. 3 Fu, H., Zhang, D., Zhao, Z., Cui, J., Liang, D., Zhang, C., Zhang, D., Xie, H., Wang, B., and Bai, X. Orion: A holis-tic end-to-end autonomous driving framework by vision-language instructed action generation. arXiv preprint arXiv:2503.19755 , 2025a. 1, 3, 6, 7 Fu, H., Zhang, D., Zhao, Z., Cui, J., Xie, H., Wang, B., Chen, G., Liang, D., and Bai, X. Minddrive: A vision-language-action model for autonomous driving via online reinforcement learning. arXiv preprint arXiv:2512.13636 ,2025b. 6 Gurari, D., Li, Q., Stangl, A. J., Guo, A., Lin, C., Grauman, K., Luo, J., and Bigham, J. P. Vizwiz grand challenge: Answering visual questions from blind people. In Pro-ceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR) , June 2018. 7 Ho, J., Jain, A., and Abbeel, P. Denoising diffusion proba-bilistic models. In Larochelle, H., Ranzato, M., Hadsell, R., Balcan, M., and Lin, H. (eds.), Advances in Neural Information Processing Systems , volume 33, pp. 6840– 6851. Curran Associates, Inc., 2020. 2 Hu, Y., Yang, J., Chen, L., Li, K., Sima, C., Zhu, X., Chai, S., Du, S., Lin, T., Wang, W., et al. Planning-oriented autonomous driving. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition ,pp. 17853–17862, 2023. 1, 2, 6, 7 Huang, W., Chen, C., Qi, H., Lv, C., Du, Y., and Yang, H. Motvla: A vision-language-action model with unified fast-slow reasoning. arXiv preprint arXiv:2510.18337 ,2025a. 3 Huang, Z., Feng, C., Yan, F., Xiao, B., Jie, Z., Zhong, Y., Liang, X., and Ma, L. Robotron-drive: All-in-one large multimodal model for autonomous driving. In Pro-ceedings of the IEEE/CVF International Conference on Computer Vision , pp. 8011–8021, 2025b. 7 Hwang, J.-J., Xu, R., Lin, H., Hung, W.-C., Ji, J., Choi, K., Huang, D., He, T., Covington, P., Sapp, B., et al. Emma: End-to-end multimodal model for autonomous driving. 
+
+arXiv preprint arXiv:2410.23262 , 2024. 2, 7 Jaeger, B., Chitta, K., and Geiger, A. Hidden biases of end-to-end driving models. In Proc. of the IEEE International Conf. on Computer Vision (ICCV) , 2023a. 5 Jaeger, B., Chitta, K., and Geiger, A. Hidden biases of end-to-end driving models. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pp. 8240– 8249, 2023b. 1, 6 Jia, X., Gao, Y., Chen, L., Yan, J., Liu, P. L., and Li, H. Driveadapter: Breaking the coupling barrier of percep-tion and planning in end-to-end autonomous driving. In 
+
+Proceedings of the IEEE/CVF International Conference on Computer Vision , pp. 7953–7963, 2023. 6 Jia, X., Yang, Z., Li, Q., Zhang, Z., and Yan, J. Bench2drive: Towards multi-ability benchmarking of closed-loop end-to-end autonomous driving. Advances in Neural Informa-tion Processing Systems , 37:819–844, 2024. 6 Jia, X., You, J., Zhang, Z., and Yan, J. Drivetransformer: Unified transformer for scalable end-to-end autonomous driving. In International Conference on Learning Repre-sentations (ICLR) , 2025. 6, 7 Jiang, B., Chen, S., Xu, Q., Liao, B., Chen, J., Zhou, H., Zhang, Q., Liu, W., Huang, C., and Wang, X. Vad: Vector-ized scene representation for efficient autonomous driv-ing. In Proceedings of the IEEE/CVF International Con-ference on Computer Vision , pp. 8340–8350, 2023. 1, 2, 79A Unified VLA with Asynchronous MoT for E2E Autonomous Driving 
+
+Jiang, B., Chen, S., Liao, B., Zhang, X., Yin, W., Zhang, Q., Huang, C., Liu, W., and Wang, X. Senna: Bridging large vision-language models and end-to-end autonomous driving. arXiv preprint arXiv:2410.22313 , 2024. 2, 3, 12 Jiang, B., Chen, S., Zhang, Q., Liu, W., and Wang, X. Al-phadrive: Unleashing the power of vlms in autonomous driving via reinforcement learning and reasoning. arXiv preprint arXiv:2503.07608 , 2025. 2 Kahou, S. E., Michalski, V., Atkinson, A., K ´ad ´ar, ´A., Trischler, A., and Bengio, Y. Figureqa: An anno-tated figure dataset for visual reasoning. arXiv preprint arXiv:1710.07300 , 2017. 7 Li, P., Zhang, Z., Holtz, D., Yu, H., Yang, Y., Lai, Y., Song, R., Geiger, A., and Zell, A. Spacedrive: Infusing spatial awareness into vlm-based autonomous driving. arXiv preprint arXiv:2512.10719 , 2, 2025a. 6 Li, Y., Xiong, K., Guo, X., Li, F., Yan, S., Xu, G., Zhou, L., Chen, L., Sun, H., Wang, B., et al. Recogdrive: A rein-forced cognitive framework for end-to-end autonomous driving. arXiv preprint arXiv:2506.08052 , 2025b. 1, 3, 6, 13 Li, Z., Yu, Z., Lan, S., Li, J., Kautz, J., Lu, T., and Alvarez, J. M. Is ego status all you need for open-loop end-to-end autonomous driving? In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,pp. 14864–14873, 2024. 7 Liao, B., Chen, S., Yin, H., Jiang, B., Wang, C., Yan, S., Zhang, X., Li, X., Zhang, Y., Zhang, Q., et al. Diffu-siondrive: Truncated diffusion model for end-to-end au-tonomous driving. In Proceedings of the Computer Vision and Pattern Recognition Conference , pp. 12037–12047, 2025. 1, 2, 6, 13 Liu, H., Huang, Z., Huang, W., Yang, H., Mo, X., and Lv, C. Hybrid-prediction integrated planning for autonomous driving. IEEE Transactions on Pattern Analysis and Ma-chine Intelligence , 2025a. 1 Liu, S., Chen, W., Li, W., Wang, Z., Yang, L., Huang, J., Zhang, Y., Huang, Z., Cheng, Z., and Yang, H. Bridgedrive: Diffusion bridge policy for closed-loop tra-jectory planning in autonomous driving. arXiv preprint arXiv:2509.23589 , 2025b. 2 Liu, X., Zhong, Z., Guo, Y., Liu, Y.-F., Su, Z., Zhang, Q., Wang, J., Gao, Y., Zheng, Y., Lin, Q., et al. Rea-sonplan: Unified scene prediction and decision reason-ing for closed-loop autonomous driving. arXiv preprint arXiv:2505.20024 , 2025c. 6 Lu, P., Mishra, S., Xia, T., Qiu, L., Chang, K.-W., Zhu, S.-C., Tafjord, O., Clark, P., and Kalyan, A. Learn to explain: Multimodal reasoning via thought chains for science question answering. In The 36th Conference on Neural Information Processing Systems (NeurIPS) , 2022. 7Marcu, A.-M., Chen, L., H ¨unermann, J., Karnsund, A., Han-otte, B., Chidananda, P., Nair, S., Badrinarayanan, V., Kendall, A., Shotton, J., et al. Lingoqa: Visual question answering for autonomous driving. In European Confer-ence on Computer Vision , pp. 252–269. Springer, 2024. 6, 7 Mathew, M., Bagal, V., Tito, R., Karatzas, D., Valveny, E., and Jawahar, C. Infographicvqa. In Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision , pp. 1697–1706, 2022. 7 Renz, K., Chen, L., Arani, E., and Sinavski, O. Sim-lingo: Vision-only closed-loop autonomous driving with language-action alignment. In Proceedings of the Com-puter Vision and Pattern Recognition Conference , pp. 11993–12003, 2025. 3, 6, 14 Song, J., Meng, C., and Ermon, S. Denoising diffusion implicit models. In International Conference on Learning Representations . 2 Song, Z., Jia, C., Liu, L., Pan, H., Zhang, Y., Wang, J., Zhang, X., Xu, S., Yang, L., and Luo, Y. Don’t shake the wheel: Momentum-aware planning in end-to-end au-tonomous driving. In Proceedings of the Computer Vision and Pattern Recognition Conference , pp. 22432–22441, 2025. 6 Tian, X., Gu, J., Li, B., Liu, Y., Wang, Y., Zhao, Z., Zhan, K., Jia, P., Lang, X., and Zhao, H. Drivevlm: The conver-gence of autonomous driving and large vision-language models. In Conference on Robot Learning , pp. 4698– 4726. PMLR, 2025. 2, 3, 7 Wang, S., Yu, Z., Jiang, X., Lan, S., Shi, M., Chang, N., Kautz, J., Li, Y., and Alvarez, J. M. Omnidrive: A holistic llm-agent framework for autonomous driving with 3d perception, reasoning and planning. CoRR , 2024. 5, 7 Wang, Y., Luo, W., Bai, J., Cao, Y., Che, T., Chen, K., Chen, Y., Diamond, J., Ding, Y., Ding, W., et al. Alpamayo-r1: Bridging reasoning and action prediction for generaliz-able autonomous driving in the long tail. arXiv preprint arXiv:2511.00088 , 2025. 2, 3 Weng, X., Ivanovic, B., Wang, Y., Wang, Y., and Pavone, M. Para-drive: Parallelized architecture for real-time autonomous driving. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition ,pp. 15449–15458, 2024. 2 10 A Unified VLA with Asynchronous MoT for E2E Autonomous Driving 
+
+Wu, P., Jia, X., Chen, L., Yan, J., Li, H., and Qiao, Y. Trajectory-guided control prediction for end-to-end au-tonomous driving: A simple yet strong baseline. Ad-vances in Neural Information Processing Systems , 35: 6119–6132, 2022. 6 Xing, S., Qian, C., Wang, Y., Hua, H., Tian, K., Zhou, Y., and Tu, Z. Openemma: Open-source multimodal model for end-to-end autonomous driving. In Proceedings of the Winter Conference on Applications of Computer Vision ,pp. 1001–1009, 2025. 7 Yang, Z., Chai, Y., Jia, X., Li, Q., Shao, Y., Zhu, X., Su, H., and Yan, J. Drivemoe: Mixture-of-experts for vision-language-action model in end-to-end autonomous driving. 
+
+arXiv preprint arXiv:2505.16278 , 2025a. 6 Yang, Z., Jia, X., Li, Q., Yang, X., Yao, M., and Yan, J. Raw2drive: Reinforcement learning with aligned world models for end-to-end autonomous driving (in carla v2). 
+
+arXiv preprint arXiv:2505.16394 , 2025b. 6 Zhang, S., Huang, W., Gao, Z., Chen, H., and Lv, C. Wisead: Knowledge augmented end-to-end autonomous driving with vision-language model. arXiv preprint arXiv:2412.09951 , 2024. 2 Zhang, S., Huang, W., Chen, Z., Collister, C. J., Huang, Q., and Lv, C. Openread: Reinforced open-ended reason-ing for end-to-end autonomous driving with llm-as-critic. 
+
+arXiv preprint arXiv:2512.01830 , 2025. 2, 3, 7 Zhou, X., Chen, X., and Yang, J. Diff-refiner: Enhancing multi-agent trajectory prediction with a plug-and-play diffusion refiner. In 2025 IEEE International Conference on Robotics and Automation (ICRA) , pp. 10779–10785. IEEE, 2025a. 2 Zhou, X., Han, X., Yang, F., Ma, Y., Tresp, V., and Knoll, A. Opendrivevla: Towards end-to-end autonomous driving with large vision language action model. arXiv preprint arXiv:2503.23463 , 2025b. 2, 7 Zhou, Z., Cai, T., Zhao, S. Z., Zhang, Y., Huang, Z., Zhou, B., and Ma, J. Autovla: A vision-language-action model for end-to-end autonomous driving with adaptive rea-soning and reinforcement fine-tuning. arXiv preprint arXiv:2506.13757 , 2025c. 2, 3, 6, 7 Zou, J., Chen, S., Liao, B., Zheng, Z., Song, Y., Zhang, L., Zhang, Q., Liu, W., and Wang, X. Diffusiondrivev2: Rein-forcement learning-constrained truncated diffusion mod-eling in end-to-end autonomous driving. arXiv preprint arXiv:2512.07745 , 2025. 13 11 A Unified VLA with Asynchronous MoT for E2E Autonomous Driving 
+
+## A. Appendix for AutoMoT. 
+
+A.1. Decision-Making Benchmark Results Decision Benchmark on NuSync Dataset. In this section, we report the quantitative result of decision-making over the dataset constructed by ourselves, as mentioned in Section 3.2. The decision space consists of lateral actions, including 
+
+turn left , slight left , go straight , slight right , turn right , and longitudinal actions, including accelerate , slow , keep , and stop ,which contains consecutive meta-actions for three future time frames: 1s, 2s, 3s. Moreover, on top of this multi-frame decision-making dataset, we additionally construct an asynchronous version by decoupling the temporal alignment between semantic reasoning and action prediction. Specifically, the decoupled set contains asynchronous samples with one-step asynchrony (0.5 s) and two-step asynchrony (1.0 s). We then evaluate both AutoMoT (decoupled inference with a persistent KV cache) and a coupled variant (AutoMoT-S) that disables the KV cache and runs UE and AE at the same frequency, recomputing all outputs at every step, and the results are shown in Table 6. We observe that the accuracy gap remains negligible, indicating that KV-cache reuse preserves semantic and temporal coherence across timesteps. Importantly, this negligible loss in accuracy is accompanied by up to a 7.6 × increase in inference frequency compared to the synchronized setting, demonstrating the efficiency advantage of the proposed asynchronous VLA design.  
+
+> Table 6. Decision-making accuracy under synchronized and asynchronous settings at different time horizons.
+
+Lateral Acc. ↑ Longitudinal Acc. ↑ Joint Acc. ↑
+
+Method 1s 2s Avg 1s 2s Avg 1s 2s Avg AutoMoT-S 95.00% 83.20% 84.50% 77.38% 56.81% 62.28% 73.84% 46.77% 53.49% AutoMoT 94.06% 82.69% 83.79% 77.57% 56.85% 62.38% 73.40% 46.36% 53.10% 
+
+Decision Benchmark on Senna Dataset. In order to confirm the superiority of AutoMoT, we further evaluate decision-making performance on the meta-action benchmark constructed by Senna (Jiang et al., 2024). lAccording to the original setting, Senna defines discrete meta-action labels by analyzing future trajectories, where longitudinal actions are categorized into stop , accelerate , decelerate , and constant-speed based on velocity variations, while lateral actions are categorized into 
+
+left/right turn , left/right lane change , and straight based on lateral displacement and heading changes. We fine-tune both AutoMoT and Senna on the same dataset while keeping their original hyperparameter settings, and report the results in Table 7. AutoMoT achieves higher decision accuracy than Senna, indicating stronger action policy learning capability in our action expert.  
+
+> Table 7. Decision-making performance comparison on the Senna nuScenes benchmark.
+
+Model Fine-tuned Accuracy (%) 
+
+Senna ✓ 88.47 AutoMoT (Ours) ✓ 90.92 A.2. Impact of Scene Understanding and Decision-Making. 
+
+In this section, we conduct additional ablation studies to systematically analyze the contributions of individual components in AutoMoT, including the scene understanding and decision-making (meta-action planning), and the asynchronous inference mechanism, with respect to overall driving performance. For consistency, all experiments are performed on the nuScenes benchmark, using the official trajectory planning metrics. 12 A Unified VLA with Asynchronous MoT for E2E Autonomous Driving                      
+
+> Table 8. Ablation study on the understanding and decision-making components of AutoMoT. AutoMoT-R denotes the variant with a randomly initialized VLM backbone. AutoMoT-P denotes the planning-only variant, where the action expert is trained without the decision-making (meta-action planning) objective. Method L2@1s ↓L2@2s ↓L2@3s ↓L2 avg ↓
+> AutoMoT (Ours) 0.14 0.29 0.54 0.32 AutoMoT-R (w/o Pre-trained UE) 0.16 0.33 0.60 0.36 AutoMoT-P (w/o decision-making) 0.14 0.30 0.58 0.34
+
+Impact of the Scene Understanding. To assess the importance of preserving the general intelligence of the VLM backbone, we replace the pre-trained Qwen3-VL-4B in the understanding expert with a randomly initialized counterpart and train it E2E on the trajectory planning task. As shown in Table 8, this from-scratch variant exhibits substantial performance drops across all planning horizons, indicating that the general-purpose knowledge and reasoning capabilities provided by the pre-trained understanding expert are crucial for stable and accurate planning. Notably, the degradation becomes more pronounced at longer horizons, suggesting that long-horizon trajectory planning relies heavily on high-quality scene understanding. 
+
+Impact of the Decision-Making. Additionally, we keep all components unchanged but remove the decision-making objective from the action expert (AE), training it solely on trajectory planning to quantify the contribution of decision-making to overall driving performance. Quantitative results are reported in Table 8. Removing decision-making consistently degrades performance across all prediction horizons, with the average L2 displacement increasing to 0.34. 
+
+A.3. Discussion of Planning Head. 
+
+Recently, generative planners such as diffusion policies (Chi et al., 2025) have demonstrated strong potential for autonomous driving. In our framework, we implement the policy module as a diffusion-based policy built on the Diffusion Transformer (DiT). Instead of starting the reverse process from clustered trajectories (Zou et al., 2025) or pure white noise (Chi et al., 2025), we use the coarse trajectories predicted by the AE as informative priors and perform truncated reverse denoising to generate the final policy trajectories. This design provides a more reliable initialization and significantly accelerates inference. Concretely, the AE trajectory proposals are perturbed with multiplicative Gaussian noise, formulated as 
+
+τ ′ = (1 + ϵmul ) ⊙ τ, (6) where the longitudinal and lateral perturbations follow DiffusionDriveV2 (Zou et al., 2025). Based on the noisy trajectory samples, we construct temporal trajectory queries Qtemp ∈ RB×M ×2, and the spatial queries Qspatial ∈ RB×N ×2 , and concatenate them as: 
+
+X = [ Qtemp ∥Qspatial ], (7) and processed by a stack of N DiT decoder blocks. The conditioning signal c, which integrates the diffusion timestep, the current ego state, and lower-dimensional state history, is injected into each block through adaptive layer normalization (AdaLN). To effectively exploit heterogeneous information during denoising, the diffusion policy leverages two complementary sources: the latent decision states hde from the AE for decision-aware trajectory generation, and the BEV feature Fbev from the vision encoder for spatial guidance. Existing diffusion planners, such as encoder–decoder architectures (Li et al., 2025b) and cascading cross-attention decoders (Liao et al., 2025), usually rely on unstructured initialization and implicit attention balancing across heterogeneous modalities, which may weaken the structural guidance carried by trajectory priors. To address this issue, we introduce a Mixture-of-Attention (MoA) mechanism, as illustrated in Fig. 4, to enable more effective multi-source fusion while preserving the meaningful information provided by the anchor trajectories. Specifically, MoA adopts a main–bypass fusion design. In the main pathway, joint attention is computed over three sources: self-attention among temporal and spatial queries, cross-attention to BEV features, and cross-attention to latent decision states. In addition, the contribution of latent decision states are modulated by a learnable factor g = tanh( γ), enabling adaptive control over multi-frame meta-actions. 13 A Unified VLA with Asynchronous MoT for E2E Autonomous Driving Spatial Trajectory 
+
+Temporal Trajectory  Cross-Attention 
+
+Mixture-of 
+
+-Attention 
+
+(MoA) Block 
+
+Spatial 
+
+Temporal 
+
+> Modulation
+
+BEV Features  Latent Decision States 
+
+Sequantial Cross-Attention 
+
+> Modulation
+
+Input 
+
+from 
+
+Previous 
+
+Block 
+
+Ouput to 
+
+Next 
+
+Block 
+
+Noise  Denoise 
+
+Self 
+
+Attention 
+
+BEV Cross-
+
+Attention 
+
+Latent Cross-
+
+Attention 
+
+Parallel 
+
+Mixture-of-Attention (MoA) Block 
+
+> Refine
+
+c cCondition   
+
+> signal
+> Condition
+> signal
+> 2026/2/23 21:52 refiner_v1.svg
+> file:///E:/OneDrive/WorkSpace_NTU/NTU/PhD/My Paper/ ⼀作论⽂/ICML-AutoMoT/pics/refiner_v1.svg 1/1
+
+Figure 4. Architecture of the DiT-based diffusion policy with Mixture-of-Attention (MoA) blocks. 
+
+To further stabilize information propagation across diffusion stages, we introduce residual bypass pathways that preserve global contextual cues from different modalities. Specifically, Rbev is obtained by mean pooling over BEV features, while 
+
+Rreason is obtained by attention pooling over reasoning tokens. The final fused representation is computed as 
+
+X′ = X + α ·  Omain + σ(βb)Rbev + σ(βr )Rreason 
+
+, (8) where Omain denotes the fused output of the main pathway, α is a scaling factor derived from AdaLN conditioned on c, and 
+
+σ(βb) and σ(βr ) are learnable gating coefficients. The resulting decoder representations are used to predict both the future temporal and spatial trajectory, consistent with the formulations defined above. To train the diffusion policy, we minimize the ℓ1 prediction error between the generated trajectories and the expert ground truth: 
+
+Ltemp traj = E(ot,Y temp  
+
+> t)∼D
+
+"
+
+1
+
+M
+
+> M
+
+X
+
+> m=1
+
+ˆYt+m − Y temp  
+
+> t+m1
+
+#
+
+,
+
+Lspatial traj = E(ot,Y spatial  
+
+> t)∼D
+
+"
+
+1
+
+N
+
+> N
+
+X
+
+> n=1
+
+¯Yt+n − Y spatial  
+
+> t+n1
+
+#
+
+.
+
+(9) 
+
+Table 9. Comparison of different policy heads on the CARLA Bench2Drive leaderboard. DS and SR denote Driving Score and Success Rate, respectively. For the diffusion head, we report both the best run ( ∗) and the average performance ( †) over multiple runs. 
+
+Method DS ↑ SR(%) ↑
+
+SimLingo (Renz et al., 2025) 85.07 67.27 AutoMoT (MLP head) 87.34 70.00 AutoMoT ∗ (Diffusion head, Best) 88.75 71.36 
+
+AutoMoT † (Diffusion head, Avg.) 85.84 66.21 
+
+We report a quantitative comparison of different policy heads on Bench2Drive in Table 9. When equipped with a diffusion head, AutoMoT achieves the highest peak performance, reaching a Driving Score of 88.75 and a Success Rate of 71.36% in the best run, outperforming both SimLingo and default setting of AutoMoT. However, its average performance across multiple runs drops to 85.84 DS and 66.21% SR, indicating substantially higher variance in closed-loop evaluation. We attribute this performance gap to the stochastic nature of diffusion-based action generation. While diffusion policies may achieve higher peak performance, their inherent randomness can be amplified in closed-loop driving, where small trajectory deviations accumulate over time and lead to markedly different outcomes. Consequently, the diffusion head demonstrates a higher performance ceiling but reduced stability. In contrast, the MLP head produces more consistent closed-loop behavior, achieving 87.34 DS and 70.00% SR with stronger robustness across runs. Therefore, despite the higher peak performance of the diffusion head, we adopt the MLP head as the default policy head in our final design to ensure stable reproducibility. 14

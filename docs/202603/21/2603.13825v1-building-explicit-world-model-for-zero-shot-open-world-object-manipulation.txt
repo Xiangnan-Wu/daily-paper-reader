@@ -1,0 +1,425 @@
+Title: Building Explicit World Model for Zero-Shot Open-World Object Manipulation
+
+URL Source: https://arxiv.org/pdf/2603.13825v1
+
+Published Time: Tue, 17 Mar 2026 01:53:59 GMT
+
+Number of Pages: 9
+
+Markdown Content:
+# Building Explicit World Model for Zero-Shot Open-World Object Manipulation 
+
+Xiaotong Li, Gang Chen, and Javier Alonso-Mora 
+
+Abstract — Open-world object manipulation remains a fun-damental challenge in robotics. While Vision–Language–Action (VLA) models have demonstrated promising results, they rely heavily on large-scale robot action demonstrations, which are costly to collect and can hinder out-of-distribution general-ization. In this paper, we propose an explicit-world-model-based framework for open-world manipulation that achieves zero-shot generalization by constructing a physically grounded digital twin of the environment. The framework integrates open-set perception, digital-twin reconstruction, sampling and evaluation of interaction strategies. By constructing a digital twin of the environment, our approach efficiently explores and evaluates manipulation strategies in physic-enabled simulator and reliably deploys the chosen strategy to the real world. Experimentally, the proposed framework is able to perform multiple open-set manipulation tasks without any task-specific action demonstrations, proving strong zero-shot generalization on both the task and object levels. Project Page: https://bojack-bj.github.io/projects/thesis/ 
+
+I. I NTRODUCTION 
+
+Open-world manipulation has recently become a popular research frontier in robotics, aiming to enable robots to perform diverse tasks commanded by humans in unstructured environments. In such settings, robots must have the ability to infer task goals from natural language, perceive and interact physically with previously unseen objects. This open-ended nature introduces fundamental challenges in semantic and physical understanding. Recent works have explored Vision–Language–Action (VLA) models [1]–[4], which leverage large-scale vi-sion–language backbones plus an action head to predict robot actions for diverse tasks. Despite strong performance on manipulation benchmarks, VLAs often struggle to gen-eralize beyond the training distribution and rely on large amounts of costly robot demonstration data for supervision. Another line of research investigates world models, which predict the consequences of actions rather than directly imitating demonstrations, either through implicit dynamics modeling [5] or explicit world construction [6]. By reasoning over action outcomes, world-model-based approaches offer improved generalization to unseen objects and tasks. Most existing world models are image- or video-based [7]–[9]. While these 2D models can generate visu-ally compelling predictions, they typically lack explicit 3D structure and physical constraints, which limits their ability to faithfully capture real-world dynamics and physical laws.                 
+
+> All authors are with the Department of Cognitive Robotics (CoR), Delft University of Technology, 2628CD Delft, The Netherlands.
+
+X.Li-89@student.tudelft.nl; {g.chen-5; j.alonsomora }@tudelft.nl 
+
+In contrast, explicit world models represent the environment with geometrically and physically meaningful digital-twin assets [10]. However, prior explicit-world-model approaches either target specialized problem settings, such as articulated-object manipulation toward desired joint configurations [6], or still rely on task-specific demonstrations to train poli-cies [10]. As a result, a method that can generalize zero-shot to both novel objects and novel tasks remains needed. In this paper, we propose an explicit world-model-based framework for object manipulation in open-world environ-ments. In such settings, target objects are not predefined, and the robot must operate on previously unseen, open-set objects. A central challenge is therefore to accurately reconstruct a digital twin from onboard 2D observations, which are inherently partial and can be further degraded by occlusions, e.g., from the gripper during grasping. To address this challenge, our framework combines modern generative and visual foundation models with classical point-cloud registration techniques to reconstruct digital twins that are both geometrically accurate and semantically consistent. Given a high-level task specification, we then sample diverse interaction strategies within the reconstructed world model. A physics engine is used to simulate the outcomes of these candidate strategies, and a large vision–language model (VLM) evaluates their consistency with the task prompts to select the most promising action sequence. The entire pipeline operates without any task-specific training and is independent of robot embodiment, enabling zero-shot gener-alization to novel objects and tasks. The contributions of this work are listed as follows:  
+
+> •
+
+An explicit world model based manipulation framework that achieves zero-shot generalization to novel rigid objects and task specifications, without task-specific training or demonstrations.  
+
+> •
+
+A dynamic digital twin construction pipeline that re-constructs object meshes from onboard observation, and aligns scales and poses to real objects for simulation-consistent transfer.  
+
+> •
+
+A VLM-based evaluation module that evaluates the success probabilities of simulated outcomes of sampled action candidates. We validate our system by evaluating digital-twin construc-tion accuracy and conducting real-robot experiments on multiple open-set, semantically subtle manipulation tasks with previously unseen objects, reporting both qualitative and quantitative results. 
+
+> arXiv:2603.13825v1 [cs.RO] 14 Mar 2026
+
+II. RELATED WORKS 
+
+A. Open-world manipulation 
+
+Manipulation has long been a popular topic in robotics due to its substantial practical value. Traditional reinforcement learning [11] and imitation learning [12], [13] methods have achieved good performance in this domain, but they typically require training a separate policy for each task, and thus exhibit limited generalization. In contrast, open-world manipulation demands a system that can generate policies for a broad, open-ended set of tasks. In the early stage, researchers explored leveraging pre-trained vision–language foundation models to achieve strong generalization. A common paradigm is to use a foundation model to infer task-specific affordances [14] or a coarse trajectory/keypoints [15] for open-ended instructions. In [16], [17], the authors both choose to use VLM to predict 2D keypoints, and lift to 3D trajectories. While this approach can generalize well, the task success depends heavily on the accuracy of the model predictions. It typically lacks closed-loop verification and real-time reaction to ensure that the desired outcome is achieved. Thus, in more complete scenarios, this purely feedforward fashion can break down. Motivated by these limitations, subsequent work has moved toward Vision–Language–Action (VLA) models. VLA models typically adopt a pretrained VLM as the backbone to encode observations and natural-language task instructions, with additionally an action head to produce executable control commands or policies. This design is ar-chitecturally concise and can directly inherit strong semantic priors from large pretrained VLMs. However, action data is a fundamentally different modality from language and vision, and a backbone pretrained primarily on discrete tokens of 2D vision and language does not naturally handle this continuous data representation. As a result, VLA performance and robustness remain strongly bottlenecked by the scale and quality of action supervision. Recently, the emergence of models such as Pi [4] and the release of large-scale Open X-Embodiment [18] datasets have signaled a community-wide effort to scale up VLA training data and push toward an actionable scaling law. Nevertheless, collecting diverse, high-quality robot action trajectories remains expensive and difficult to standardize across embodiments and sensing configurations. Fully real-izing the benefits of scaling-up will likely take time. 
+
+B. World Models 
+
+World models were originally introduced in reinforcement learning to improve sample efficiency by enabling agents to imagine the consequences of interactions in a learned latent space [7], [19], [20]. By encapsulating the environ-ment dynamics, a world model allows an agent to roll out hypothetical futures, support planning, and make informed decisions without executing every action in the real world. With the recent surge of video diffusion models, much of the progress has focused on image- or video-based world models [8], [9]. Despite producing visually compelling pre-dictions, such 2D world models often struggle to provide explicit 3D structure and physical consistency, due to their 2D training data and underlying 2D representations. This limitation makes it difficult to faithfully reason about geom-etry, contact, and dynamics required for manipulation. In parallel, another line of research constructs explicit 
+
+world models by leveraging 3D reconstruction or generation techniques, typically focusing on object-centric reconstruc-tions of the entities involved in the task. In [10], authors propose an explicit-world-model framework that reconstructs a sim-ready digital twin from visual observations and lever-ages physics-based simulation to train imitation learning policy. Jiang et al. [6] construct explicit world models for articulated objects and plan trajectories via sampling-based model predictive control within a physics simulator, without requiring demonstrations or reinforcement learning. Although these approaches also leverage explicit world models, our focus is different. Compared with [6], which focuses on articulated-object manipulation toward target joint configurations, our framework supports a wider range of open-set manipulation tasks beyond articulated joint-angle goals. In contrast to [10], which still relies on task demon-strations to train imitation-learning policies, our method enables zero-shot generalization to previously unseen tasks, without requiring any task-specific demonstrations. III. M ETHODS 
+
+A. Problem Statement 
+
+Formally, given the visual observations I of the scene (e.g., RGB-D images), and a natural language task instruction C,the objective is to build a world model W , and find an a
+
+that successfully achieves the goal described by C in the real world. That is, we first build a world model WW : pW (τ | I, a ), (1) where τ = ( s, o ) is the future states and observations generated by world model W , given the current observation 
+
+I and sampled action a. Then, 
+
+a∗ = arg max  
+
+> a∈A (I)
+
+Eτ ∼pW (·| I,a )[R(C, τ )] ,
+
+A = {ai} ∼ π(· | I, C ), i = 1 , . . . , N 
+
+(2) where A denotes the space of sampled candidate actions from a sample policy π(· | I, C ), parameterized by end-effector poses, a∗ is the selected best action and R(C, τ )
+
+is a score function that measures the score of τ given the natural language task instruction C.In this paper, we aim to build an explicit world model that can generate plausible future states and observations τ . We also designed a prior-based sample policy π and a VLM-based result checker to measure the success score of τ . We focus on rigid objects. Handling deformable and articulated objects would require incorporating elasticity modeling, joint constraints, and contact deformation into the world model. We leave these extensions to future research. Task instruction: Put the blue cup 
+
+> standing with its opening upside on
+> the right wooden block
+
++              
+
+> LLM + Promptable open -set segmentation
+> Open -set object grasping
+> Non -grasping objects Objects to grasp
+> Grasp pose prediction
+> Grasp pose selection
+> Manipulation strategy sampling
+> Real world execution
+> Rendering from
+> hypothesis poses
+> RGB and depth image
+> best match the observation
+> Initial pose from
+> coarse stage
+> Final alignment with
+> RANSAC and ICP
+> Coarse alignment Fine alignment
+> Mesh alignment
+> Real -world observation
+> Generated mesh
+> Mesh generation
+> Explicit World Model
+> A. B.
+> C. D.
+> Open -set segm entation
+> Object grasping
+> RGB -Dimage
+> Static objects
+> Grasped objects
+> Digital twin construction
+> +
+> Interaction area segmentation
+> Result checking
+> [0,6,7,8] successfully complete
+> the task described in the
+> prompt.
+> Interaction strategy sampling
+> Sampling around
+> the segmented area
+
+Fig. 1. Overview of our manipulation task framework with explicit world model construction. The system takes an RGB-D observation I and a natural language task instruction C as input and proceeds through four main stages: (A) Open-set segmentation , (B) Open-set object grasping , (C) Digital twin reconstruction , (D) Manipulation strategy sampling . The outcome is the most promising manipulation strategy, which is then executed on the real robot. 
+
+B. System Overview 
+
+An overview of the full framework is illustrated in Fig-ure 1. Given an RGB-D image of the scene and a text instruction (e.g., “put the blue cup standing with its opening upside on the right wooden block”), the system outputs a complete manipulation plan and executes it on a real-world manipulator. To achieve our goal, the framework consists of four main components: Open-set Segmentation and Grasping 
+
+(Section III-C), Digital Twin Construction (Section III-D), and Manipulation Strategy Sampling (Section III-E). 
+
+C. Open-set Segmentation and Grasping 
+
+In this module, we first employ GPT-4o [21] and Grounded-SAM [22] to segment any objects related to the given task prompt. Specifically, we query the GPT-4o with the RGB image and a prompt question (e.g., “What objects in the picture are involved in the task ‘put the blue cup standing with its opening upside on the right wooden block’? Return their names in two categories as directly manipulated objects and other interactive objects.”). The VLM here allows our method to generalize to arbitrary objects beyond a closed set of predefined classes. Once the object are identified, we use Grounded-SAM to segment the target objects from the input image. This gives us accurate 2D segmentation masks 
+
+˜Mobj for both directly manipulated objects (e.g., cup) and other interactive objects involved in interaction (e.g., right wooden block). For object grasping, we adopt AnyGrasp [23] as our grasp pose prediction module, which is trained on a large number of real-world grasping data and has demonstrated strong robustness in open-set, general-purpose grasping tasks. The grasp pose predictor, denoted as fg (·), takes an input RGB-D image I and outputs a set of grasp pose candidates 
+
+˜g = fg (I). The predicted grasp candidates ˜g are densely distributed among all graspable objects in the scene. To reduce computational overhead, we first retain only the top 1000 predictions ranked by confidence. For instance-level grasping, we reuse the masks ˜Mobj of the target objects obtained from the open-set segmentation module, retaining only those associated with the object of interest. Given the 
+
+˜Mobj of the target objects, we perform back-projection on the masked RGB-D image Iobj to obtain the corresponding partial 3D point cloud Pobj . Each grasp candidate in ˜g is then evaluated based on its spatial proximity to the surface of Pobj . Specifically, we retain only those grasp poses which lie within a predefined distance threshold from the segmented object’s surface points, 
+
+s(g) = 
+
+(1, if d(g) ≤ τ (select )0, if d(g) > τ (discard ) (3) 
+
+d(g) ≜ min 
+
+p∈P obj 
+
+x(g) − p 2 (4) To improve the robustness of the grasping, we also add a grasp result checker. After the execution of grasping, we inquire the GPT-4o with the observation from the bottom camera if the gripper successfully grasped the target object, and if the answer is no (the grasping fails or someone deliberately takes the object off), the system will keep trying to find the object and grasp it. RGB and depth image   
+
+> best match the observation
+> Initial pose from
+> coarse stage
+> Final alignment with
+> RANSAC and ICP
+> Real -world observation
+> Generated mesh
+> DINOv2
+> Hunyuan 3D
+> 2.0
+> Renderings from 48 hypothesis poses
+> Fine alignment Coarse alignment Mesh generation
+> Similarity
+> comparison
+> Aligned mesh in real -world
+> observation Fig. 2. The proposed digital twin construction module, containing the mesh generation and two-stage pose alignment. We first generate a textured mesh from the masked RGB image via Hunyuan3D 2.0 [24]. During coarse alignment, we render RGB and depth images from a set of hypopaper poses and compare their similarities with real-world observation in DINO [25] feature space, and select the one that best matches the real-world observation. The resulting coarse pose is then refined using RANSAC and ICP on the partial point cloud back-projected from the depth image.
+
+D. Digital Twin Construction 
+
+The objective of this module is to construct accurate 3D meshes of the target objects, align them with real-world observations, and predict their material properties, enabling reliable use in simulation-based interaction and planning. This project adopts Hunyuan 3D 2.0 [24] as the 3D generation module. However, the mesh generated by the 3D generation module is in unit scale and canonical pose. Therefore, it is necessary to align the generated mesh with the real-world observation by estimating the appropriate scale and 6-DoF pose. Since only partial object geometry is observed (often limited to a single visible side) and additional occlusions may be introduced by the gripper, classical point cloud based alignment methods tend to perform poorly in this scenario. To address this, we proposed two-stage pose alignment pipeline, performs mesh-observation matching in a coarse-to-fine manner, as shown in Fig 2. Let ˜P denote the set of hypothesized coarse object poses sampled in 6D space (translation and rotation). For each hypothesized pose ˜p ∈ ˜P , the corresponding textured 3D mesh is rendered to obtain both the RGB image ˜Irgb and the depth image ˜Idepth. The following equation describes this rendering process: 
+
+˜Irgb , ˜Idepth = Render ˜P (Mesh ). (5) Then, we compare the similarities of these rendered views with the real-world observation Iobs to select the most promising hypothesis as an initial coarse pose estimate. Here we use DINOv2 [25] as the feature extractor and compute the cosine similarities, 
+
+˜Frender = DINO ( ˜Irgb ) (6) 
+
+Fobs = DINO (Iobs ) (7) 
+
+˜S = cosine ( ˜Frender , F obs ), (8) We then select the hypothesized pose with the highest similarity to the real-world observation as the coarse pose estimate. Using this pose, we render a depth image of the generated mesh and back-project it to obtain a partial point cloud that corresponds to the observed view. This transformation effectively converts the challenging partial-to-complete alignment problem into a partial-to-partial align-ment problem, thereby enabling the use of conventional point cloud registration methods, such as RANSAC and ICP, for further fine alignment. The coarse alignment produces two roughly aligned point clouds that still differ in scale. To estimate the scale factor, we compare the dimensions of the 3D bounding boxes de-rived from the partial point clouds of both the rendered mesh and the real observation, and adjust the mesh dimensions to match the real-world object. Following this, we refine the transformation using a combination of RANSAC and ICP, yielding an accurate alignment between the generated mesh and the real object. We examined our mesh alignment pipeline and the results are in Sec. IV-B. Moreover, Inspired by Xu et al. [26], who leveraged an LLM together with a curated material library to infer the material and physical properties of an object from its masked image, we utilize the reasoning capability of GPT-4o to predict the material of the object. The predicted material can then be used to assign corresponding physical properties in the simulation environment. 
+
+E. Manipulation Strategy Sampling 
+
+Once the digital twin of the environment is constructed, we integrate it into a physics-enabled simulation environment to perform manipulation strategy sampling. In this work, we adopt NVIDIA Isaac Sim as the simulation platform. We then sample 6-DoF poses for the grasped object, representing candidate manipulation goals. The simulated outcome of each sample is then evaluated to determine whether the +
+
+Interaction area segmentation 
+
+Interaction strategy sampling   
+
+> Sampling around
+> the segmented area
+
+Result checking   
+
+> [0,6,7,8] successfully
+> complete the task
+> described in the prompt.
+> Gaussian
+> Process
+> [0.7, 0.2, 0.25,…0.82, 0.81]
+> [yes, no, no,…yes, no]
+
+## a. b.
+
+## c.Fig. 3. Our manipulation strategy sampling module. (a) Interaction area segmentation : We use GPT-4o and Grounded-SAM to segment the interaction area to constrain the sample space of translation. (b) Interaction strategy sampling : Different rotations of the dynamic object are sampled. The outcomes are simulated in the Isaac Sim. (c) Result checking : The results are rendered in the simulator. We query the GPT-4o again to check which samples fulfill the task requirements, and feed the results to a Gaussian Process classifier to get the success probabilities. 
+
+manipulation strategy successfully completes the task. This process allows us to test diverse candidate strategies without executing them on the real robot. To improve sampling efficiency and reduce the size of the search space, the translation component of the dynamic object’s pose is constrained to be near the most proba-ble interaction region, which is predicted by GPT-4o plus Grounded-SAM, as illustrated in Fig. 3a. The segmented region is back-projected into 3D space to obtain a point cloud, from which we compute the centroid as reference for the initial estimate of the translation component. After constraining the translation around the interaction area, we sample different rotation angles, which are reach-able by the robot arm, to generate diverse 6-DoF pose hypotheses. For each sample, we spawn the non-directly manipulated object at its real-world pose and the grasped object at the sampled pose, and the Kinova arm with proper joint values computed by an inverse kinematics solver. For each simulated strategy sample, we render an RGB image as the observation for each candidate from a fixed, front-facing viewpoint with a −60 ◦ tilt, shown in Fig 3 b on the left. We then query GPT-4o with the rendered image and the natural language task instruction to determine whether the observed outcome satisfies the instruction. This yields weak binary labels yi ∈ { 0, 1} for each end-effector pose (ti, qi), where ti ∈ R3 is translation and qi = [ w x y z ]⊤ is a unit quaternion. The strategies deemed successful by the GPT-4o are prioritized for real-robot execution. To obtain calibrated success probabilities, we train a Gaus-sian Process (GP) classifier over SE(3) on the LLM-provided labels {(ti, qi), y i}. At test time, the GP outputs calibrated success probabilities. We use the predicted probabilities to rank all candidate strategies and select the one with the highest likelihood of success for real-robot execution. IV. RESULTS 
+
+A. Experiments Setup 
+
+Our experiments contain two parts. First, we tested the digital twin alignment accuracy. The second part was nine different real-world manipulation tasks. The selected tasks are designed to validate the system’s ability to understand both semantic instructions and spatial relations, and also the ability to complete various open-world manipulation tasks without seeing the objects or demonstrations before. We used the 7-DoF Kinova Gen3 Lite robotic arm.Two Intel RealSense D405 stereo cameras were mounted on the gripper and the front bottom on the mobile base, respectively. The bottom camera has a 25 degree elevation angle to better observe the grasped object. For computational resources, we have an NVIDIA RTX 2070 GPU with 6GB RAM on a laptop for Isaac Sim simulation, and an NVIDIA RTX TABLE I COMPARISON OF MESH ALIGNMENT PERFORMANCE BETWEEN OUR TWO -STAGE ALIGNMENT PIPELINE AND DIRECT ALIGNMENT .
+
+objects valid sample our method direct alignment 
+
+success rate ↑ RMSE ↓ success rate RMSE 
+
+without grasp in the gripper 
+
+mug 11 90.91% 0.00457 27.27% 0.00390 
+
+box 5 100.00% 0.00564 100.00% 0.00684 foam box container 5 40.00% 0.00665 20.00% 0.00745 bottle 8 100.00% 0.00432 62.50% 0.00367 
+
+laptop 11 90.91% 0.00408 45.45% 0.00453 
+
+grasped in the gripper 
+
+mug 9 88.89% 0.00443 11.11% 0.00450 banana 8 100.00% 0.00505 100.00% 0.00460 
+
+fish 4 100.00% 0.00400 100.00% 0.00317 
+
+cup 3 66.67% 0.00412 33.33% 0.00474  
+
+> Fig. 4. Qualitative results of the proposed two-stage mesh alignment method. The left image shows the aligned meshes overlaid with the RGB-D observation. The right image illustrates the corresponding real-world setup.
+
+3090 GPU workstation with 24GB RAM for computer vision models like Grounded-SAM and Hunyuan 3D 2.0. 
+
+B. Digital Twin Alignment Accuracy 
+
+In this experiment, we compare our proposed two-stage mesh alignment pipeline with a direct alignment baseline, which applies RANSAC and ICP directly to the generated mesh. Ideally, the pose error of each object would serve as a more informative metric for evaluating alignment perfor-mance; however, ground-truth object poses are unavailable in the real-world setup, and coordinate frames are not consis-tently fixed for each generated mesh. Therefore, we evaluate alignment performance using two complementary metrics: alignment success rate, which measures the correctness of the estimated object pose, and root mean square error (RMSE), which assesses the geometric precision of the alignment. We conduct experiments across multiple object categories, both being placed freely and under grasping scenarios. Since ground-truth meshes are also unavailable, we use Hunyuan 3D to generate meshes for all samples. Both the proposed and baseline alignment pipelines use the same generated meshes for a fair comparison. The qualitative results are shown in Fig. 4, and quantitative results are summarized in Table I. The results demonstrate that our proposed two-stage mesh alignment method substantially improves the alignment suc-cess rate compared with direct alignment using RANSAC and ICP. The direct alignment baseline relies solely on minimizing point-to-point distances without a reliable ini-tialization, which often leads to convergence to local min-ima or incorrect correspondences. In contrast, our method leverages an initial coarse alignment stage guided by ap-pearance similarity, effectively narrowing the search space for fine alignment and improving robustness to noise and scale differences. Overall, our method achieves a much higher alignment success rate while maintaining comparable geometric accuracy, validating the effectiveness of the two-stage pipeline for robust and generalizable mesh-to-scene alignment. 
+
+C. Real Robot Task Performance 
+
+We performed 9 real robot experiments for a total 96 at-tempts on our system, as shown in Fig. 5. The selected tasks are designed to validate the system’s ability to understand both semantic instructions and spatial relations, and also the ability to complete various open-world tasks without seeing the objects before or fine-tuning on these tasks. Relying on these properties, our system shows the potential to tackle the open-world object manipulation problem in a novel way. The success rates for the selected tasks are reported in Table II. We observe that six of the nine tasks reach a success rate of at least 75%. The other three tasks perform less reliably, and we discuss possible reasons in the later failure analysis. To provide a comprehensive evaluation of the entire sys-tem, we record the success/failure results of all major compo-Fig. 5. Representative tasks used for experimental validation. Frames with the same color represent the same task, where the top one denotes the initial scene and the bottom one denotes the final scene. TABLE II TASK SUCCESS RATE OF DIFFERENT MANIPULATION SCENARIOS .
+
+Task Success Rate 
+
+Put the banana into the basket 83.3% (10/12) Put the lemon into the white cup 75.0% (9/12) Put the yellow cube into the white box 91.7% (11/12) Put the yellow cube into the blue can 75.0% (9/12) Stack the green cube onto the yellow cube 50.0% (6/12) Put the long cutlery box on the two boxes, like a bridge 75.0% (9/12) Put the long cutlery box into the gap between two boxes 83.3% (10/12) Put the blue cup upside on the wooden box 33.3% (2/6) Put the blue cup upside down on the wooden box 33.3% (2/6) 2026/3/5, 23 :42 
+
+96 96 96 
+
+96 
+
+> Total Total Total
+> Total
+> Trials Trials Trials
+> Trials
+
+93 93 93 
+
+93 
+
+> Grasping Grasping Grasping
+> Grasping
+> Success Success Success
+> Success
+
+333
+
+3
+
+> Grasping Grasping Grasping
+> Grasping
+> failure failure failure
+> failure
+
+93 93 93 
+
+93 
+
+> Mesh Mesh Mesh
+> Mesh
+> Alignment Alignment Alignment
+> Alignment
+> Success Success Success
+> Success
+
+93 93 93 
+
+93 
+
+> Interaction Interaction Interaction
+> Interaction
+> Area Area Area
+> Area
+> Segmentation Segmentation Segmentation
+> Segmentation
+> Success Success Success
+> Success
+
+92 92 92 
+
+92 
+
+> Simulation Simulation Simulation
+> Simulation
+> Strategy Strategy Strategy
+> Strategy
+> Sampling Sampling Sampling
+> Sampling
+> Success Success Success
+> Success
+
+81 81 81 
+
+81 
+
+> Sampling Sampling Sampling
+> Sampling
+> Result Result Result
+> Result
+> Checker Checker Checker
+> Checker
+> Success Success Success
+> Success
+
+68 68 68 
+
+68 
+
+> Real Real Real
+> Real
+> Robot Robot Robot
+> Robot
+> Execution Execution Execution
+> Execution
+> Success Success Success
+> Success
+
+13 13 13 
+
+13 
+
+> Real Real Real
+> Real
+> Robot Robot Robot
+> Robot
+> Execution Execution Execution
+> Execution
+> Failure Failure Failure
+> Failure
+
+11 11 11 
+
+11 
+
+> Sampling Sampling Sampling
+> Sampling
+> Result Result Result
+> Result
+> Checker Checker Checker
+> Checker
+> Failure Failure Failure
+> Failure
+
+111
+
+1
+
+> Simulation Simulation Simulation
+> Simulation
+> Strategy Strategy Strategy
+> Strategy
+> Sampling Sampling Sampling
+> Sampling
+> Failure Failure Failure
+> Failure
+> Task Success & Failure Flow
+
+Fig. 6. Sankey diagram illustrating the stage-wise success and failure flow across all 96 real-world trials. Each block represents one functional module in the proposed framework. 
+
+nents, including object grasping, mesh alignment, interaction area segmentation, strategy sampling in simulation, sampling result checking, and real robot execution. The results are visualized as a Sankey diagram as shown in Fig 6. Most of the failures came up from the result checker and final execution stage. The result checker failure denotes that the visual information were not clear enough, at least for an LLM, to make correct judgments. We also conducted a task-level failure analysis as illustrated in Fig.7, and it shows that most of the result checker failures happened in the ”cup on/upside down on the boxes”, since the visual features of a cup standing upside and upside down were ambiguous. Overall, the LLM-based checker did demonstrate strong generalization and semantic understanding across dif-ferent object configurations. However, its sensitivity to visual ambiguity suggests that incorporating multimodal feedback (e.g., depth or contact information) could further improve its robustness. 2026/3/6, 10 :42 
+
+> Page 1 of 1 http://127.0.0.1 :52881/
+
+1 0 0 0 0 1
+
+0 0 0 0 0 2
+
+0 0 0 0 0 1
+
+1 0 0 1 0 1
+
+0 0 0 0 2 5
+
+0 0 0 0 0 3
+
+1 0 0 0 1 0
+
+0 0 0 0 4 0
+
+0 0 0 0 4 0     
+
+> Grasp Fail Align Fail Area Seg Fail Sim Sampling Fail Res Check Fail Robo Exec Fail
+> 0
+> 1
+> 2
+> 3
+> 4
+> 5
+> Count
+
+Failure Counts per Task 
+
+Failure Type 
+
+> banana→basket
+> lemon→cup
+> cube→box
+> cube→can
+> stack cube
+> cutlery box
+> on boxes
+> cutlery box
+> between boxes
+> cup upside
+> on boxes
+> cup upside-down
+> on boxes
+
+Fig. 7. Failure type distribution across all 9 tasks. Each cell represents the number of occurrences of a specific failure type for a given task. 
+
+The real robot execution failure means that although the action candidates were successful in the simulator, the real robot execution still failed, indicating the sim-to-real gap was nontrivial. Several factors contribute to this discrepancy. First, the physics engine of Isaac Sim, though highly realistic, cannot perfectly replicate real-world contact dynamics. In an attempt to mitigate this gap, we incorporated material property estimation to better parameterize physical attributes in Isaac Sim. However, the range of adjustable parame-ters remains limited for rigid body objects. In particular, hollow or deformable structures, such as plastic cubes in the ’Stack cubes’ task, cannot yet be accurately modeled or detected based solely on visual appearance, leading to further inconsistencies between simulated and real inter-actions. Second, the robot hardware precision and control latency introduce minor pose and timing errors that can accumulate during execution, especially for tasks with tight spatial constraints. Third, sensor noise and calibration errors (e.g., camera extrinsics and depth inaccuracies) can cause small misalignment between the reconstructed scene and the actual setup. V. C ONCLUSION 
+
+This work presented a novel framework that constructs a mesh-based explicit world model to enable action sam-pling and evaluation for open-world manipulation tasks. Our approach leverages VLMs and a simulator to reason about object dynamics and choose successful actions without any demonstrations. Experimental results demonstrate that the proposed two-stage mesh alignment pipeline is able to sup-port the accuracy and robustness of digital twin reconstruc-tion, providing more reliable object pose estimation. With the constructed explicit world model, the system is capable of performing dynamic reasoning and strategy evaluation across diverse manipulation tasks, and achieves successful transfer from simulation to real-world execution, proven by real robot experiments. While the proposed framework demonstrates promising results, the simulation-based strategy sampling process re-mains computationally demanding, which currently prevents real-time deployment. Future work will focus on improving computational efficiency to facilitate efficient real-world de-ployment. REFERENCES [1] M. J. Kim, K. Pertsch, S. Karamcheti, T. Xiao, A. Balakrishna, S. Nair, R. Rafailov, E. Foster, G. Lam, P. Sanketi, Q. Vuong, T. Kollar, B. Burchfiel, R. Tedrake, D. Sadigh, S. Levine, P. Liang, and C. Finn, “Openvla: An open-source vision-language-action model,” 2024. [Online]. Available: https://arxiv.org/abs/2406.09246 [2] D. Ghosh, H. R. Walke, K. Pertsch, K. Black, O. Mees, S. Dasari, J. Hejna, T. Kreiman, C. Xu, J. Luo et al. , “Octo: An open-source generalist robot policy,” in Robotics: Science and Systems , 2024. [3] B. Zitkovich, T. Yu, S. Xu, P. Xu, T. Xiao, F. Xia, J. Wu, P. Wohlhart, S. Welker, A. Wahid et al. , “Rt-2: Vision-language-action models transfer web knowledge to robotic control,” in Conference on Robot Learning (CoRL) . PMLR, 2023. [4] K. Black, N. Brown, D. Driess, A. Esmail, M. Equi, C. Finn, N. Fusai, L. Groom, K. Hausman, B. Ichter, S. Jakubczak, T. Jones, L. Ke, S. Levine, A. Li-Bell, M. Mothukuri, S. Nair, K. Pertsch, L. X. Shi, J. Tanner, Q. Vuong, A. Walling, H. Wang, and U. Zhilinsky, “ π: A vision-language-action flow model for general robot control,” CoRR ,2024. [5] Y. Liao, P. Zhou, S. Huang, D. Yang, S. Chen, Y. Jiang, Y. Hu, J. Cai, S. Liu, J. Luo et al. , “Genie envisioner: A unified world foundation platform for robotic manipulation,” arXiv preprint arXiv:2508.05635 ,2025. [6] T. Jiang, Y. Guan, L. Ma, J. Xu, J. Meng, W. Chen, Z. Zeng, L. Li, D. Wu, and R. Chen, “Dexsim2real 2: Building explicit world model for precise articulated object dexterous manipulation,” IEEE Transactions on Robotics , 2025. [7] D. Hafner, T. P. Lillicrap, M. Norouzi, and J. Ba, “Mastering atari with discrete world models,” in International Conference on Learning Representations (ICLR) , 2021. [8] M. Yang, Y. Du, K. Ghasemipour, J. Tompson, D. Schuurmans, and P. Abbeel, “Learning interactive real-world simulators,” CoRR , 2023. [9] J. Bruce, M. D. Dennis, A. Edwards, J. Parker-Holder, Y. Shi, E. Hughes, M. Lai, A. Mavalankar, R. Steigerwald, C. Apps, Y. Aytar, S. M. E. Bechtle, F. Behbahani, S. C. Chan, N. Heess, L. Gonzalez, S. Osindero, S. Ozair, S. Reed, J. Zhang, K. Zolna, J. Clune, N. de Fre-itas, S. Singh, and T. Rockt¨ aschel, “Genie: Generative interactive environments,” in Forty-first International Conference on Machine Learning (ICML) , 2024. [10] L. Barcellona, A. Zadaianchuk, D. Allegro, S. Papa, S. Ghidoni, and E. Gavves, “Dream to manipulate: Compositional world models empowering robot imitation learning with imagination,” arXiv preprint arXiv:2412.14957 , 2024. [11] S. Levine, C. Finn, T. Darrell, and P. Abbeel, “End-to-end training of deep visuomotor policies,” Journal of Machine Learning Research ,vol. 17, no. 39, pp. 1–40, 2016. [12] C. Chi, Z. Xu, S. Feng, E. Cousineau, Y. Du, B. Burchfiel, R. Tedrake, and S. Song, “Diffusion policy: Visuomotor policy learning via action diffusion,” The International Journal of Robotics Research , vol. 44, no. 10-11, pp. 1684–1704, 2025. [13] T. Zhao, V. Kumar, S. Levine, and C. Finn, “Learning fine-grained bimanual manipulation with low-cost hardware,” Robotics: Science and Systems XIX , 2023. [14] Y. Tang, W. Huang, Y. Wang, C. Li, R. Yuan, R. Zhang, J. Wu, and L. Fei-Fei, “Uad: Unsupervised affordance distillation for generaliza-tion in robotic manipulation,” in CoRL 2024 Workshop on Mastering Robot Manipulation in a World of Abundant Data , 2025. [15] W. Yuan, J. Duan, V. Blukis, W. Pumacay, R. Krishna, A. Murali, A. Mousavian, and D. Fox, “Robopoint: A vision-language model for spatial affordance prediction in robotics,” in Conference on Robot Learning . PMLR, 2025, pp. 4005–4020. [16] W. Huang, C. Wang, Y. Li, R. Zhang, and L. Fei-Fei, “Rekep: Spatio-temporal reasoning of relational keypoint constraints for robotic manipulation,” in Conference on Robot Learning . PMLR, 2025, pp. 4573–4602. [17] F. Liu, K. Fang, P. Abbeel, and S. Levine, “Moka: Open-vocabulary robotic manipulation through mark-based visual prompting,” Robotics: Science and Systems XIX , 2024. [18] A. O’Neill, A. Rehman, A. Maddukuri, A. Gupta, A. Padalkar, A. Lee, A. Pooley, A. Gupta, A. Mandlekar, A. Jain et al. , “Open x-embodiment: Robotic learning datasets and rt-x models: Open x-embodiment collaboration 0,” in 2024 IEEE International Conference on Robotics and Automation (ICRA) . IEEE, 2024, pp. 6892–6903. [19] D. Hafner, T. Lillicrap, J. Ba, and M. Norouzi, “Dream to control: Learning behaviors by latent imagination,” in International Conference on Learning Representations (ICLR) , 2020. [20] P. Wu, A. Escontrela, D. Hafner, P. Abbeel, and K. Goldberg, “Day-dreamer: World models for physical robot learning,” in Conference on robot learning (CoRL) . PMLR, 2023. [21] OpenAI, “Gpt-4o system card,” 2024. [22] T. Ren, S. Liu, A. Zeng, J. Lin, K. Li, H. Cao, J. Chen, X. Huang, Y. Chen, F. Yan, Z. Zeng, H. Zhang, F. Li, J. Yang, H. Li, Q. Jiang, and L. Zhang, “Grounded sam: Assembling open-world models for diverse visual tasks,” 2024. [23] H. Fang, C. Wang, H. Fang, M. Gou, J. Liu, H. Yan, W. Liu, Y. Xie, and C. Lu, “Anygrasp: Robust and efficient grasp perception in spatial and temporal domains,” IEEE Trans. Robotics , October 2023. [24] Z. Zhao, Z. Lai, Q. Lin, Y. Zhao, H. Liu, S. Yang, Y. Feng, M. Yang, S. Zhang, X. Yang et al. , “Hunyuan3d 2.0: Scaling diffusion models for high resolution textured 3d assets generation,” CoRR , 2025. [25] M. Oquab, T. Darcet, T. Moutakanni, H. V. Vo, M. Szafraniec, V. Khalidov, P. Fernandez, D. HAZIZA, F. Massa, A. El-Nouby, M. Assran, N. Ballas, W. Galuba, R. Howes, P.-Y. Huang, S.-W. Li, I. Misra, M. Rabbat, V. Sharma, G. Synnaeve, H. Xu, H. Je-gou, J. Mairal, P. Labatut, A. Joulin, and P. Bojanowski, “DINOv2: Learning robust visual features without supervision,” Transactions on Machine Learning Research , 2024. [26] X. Xu, W. Ge, D. Qiu, Z. Chen, D. Yan, Z. Liu, H. Zhao, H. Zhao, S. Zhang, J. Liang, and Y.-C. Chen, “Gaussianproperty: Integrat-ing physical properties to 3d gaussians with lmms,” arXiv preprint arXiv:2412.11258 , 2024.

@@ -6,233 +6,100 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-02-20 ~ 2026-03-21
-- 运行时间：2026-03-21 16:22:16 UTC
+- 最新运行日期：2026-03-21
+- 运行时间：2026-03-21 19:17:59 UTC
 - 运行状态：成功
-- 本次总论文数：70
-- 精读区：0
-- 速读区：70
+- 本次总论文数：26
+- 精读区：22
+- 速读区：4
 
 ### 今日简报（AI）
-今日深度速览 70 篇前沿论文，具身智能 VLA 模型正全面迈向“世界模型”驱动的在线自适应新阶段。
-AdaWorldPolicy 与 StemVLA 等满分作通过 4D 时空感知与稀疏想象技术，实现了机器人操作的精准纠错与实时进化。
-建议重点关注“世界模型”如何赋能机器人决策，这是理解具身智能从感知走向认知演进的核心切入点。
-- 详情：[/20260220-20260321/README](/20260220-20260321/README)
+今日精选 26 篇前沿论文，深度探索 4D 时空 VLA 模型与零样本开放世界机器人操控。
+重点推荐 AnchorVLA4D 架构及显式世界模型，它们分别在时空表征与跨场景泛化上取得了满分突破。
+建议优先研读两篇满分论文，掌握大模型驱动下机器人从感知到决策的闭环演进。
+- 详情：[/202603/21/README](/202603/21/README)
 
 ### 精读区论文标签
-- 本次无精读推荐。
+1. [AnchorVLA4D: an Anchor-Based Spatial-Temporal Vision-Language-Action Model for Robotic Manipulation](/202603/21/2603.12730v1-anchorvla4d-an-anchor-based-spatial-temporal-vision-language-action-model-for-robotic-manipulation)  
+   标签：评分：10.0/10、query:robot
+   evidence：用于机器人操纵的时空视觉-语言-动作模型
+2. [Building Explicit World Model for Zero-Shot Open-World Object Manipulation](/202603/21/2603.13825v1-building-explicit-world-model-for-zero-shot-open-world-object-manipulation)  
+   标签：评分：10.0/10、query:robot
+   evidence：用于零样本开放世界物体操作的显式世界模型
+3. [SmoothVLA: Aligning Vision-Language-Action Models with Physical Constraints via Intrinsic Smoothness Optimization](/202603/21/2603.13925v1-smoothvla-aligning-vision-language-action-models-with-physical-constraints-via-intrinsic-smoothness-optimization)  
+   标签：评分：10.0/10、query:robot
+   evidence：针对机器人操作和物理约束优化视觉-语言-动作 (VLA) 模型
+4. [AerialVLA: A Vision-Language-Action Model for UAV Navigation via Minimalist End-to-End Control](/202603/21/2603.14363v1-aerialvla-a-vision-language-action-model-for-uav-navigation-via-minimalist-end-to-end-control)  
+   标签：评分：10.0/10、query:robot
+   evidence：通过端到端控制实现无人机导航的VLA模型
+5. [VLA-Thinker: Boosting Vision-Language-Action Models through Thinking-with-Image Reasoning](/202603/21/2603.14523v1-vla-thinker-boosting-vision-language-action-models-through-thinking-with-image-reasoning)  
+   标签：评分：10.0/10、query:robot
+   evidence：通过图像思考推理增强VLA模型
+6. [Bridging Scene Generation and Planning: Driving with World Model via Unifying Vision and Motion Representation](/202603/21/2603.14948v1-bridging-scene-generation-and-planning-driving-with-world-model-via-unifying-vision-and-motion-representation)  
+   标签：评分：10.0/10、query:robot
+   evidence：统一视觉和运动表示的驾驶世界模型用于规划
+7. [AnoleVLA: Lightweight Vision-Language-Action Model with Deep State Space Models for Mobile Manipulation](/202603/21/2603.15046v1-anolevla-lightweight-vision-language-action-model-with-deep-state-space-models-for-mobile-manipulation)  
+   标签：评分：10.0/10、query:robot
+   evidence：用于操作的基于深度状态空间模型的轻量级VLA模型
+8. [Simulation Distillation: Pretraining World Models in Simulation for Rapid Real-World Adaptation](/202603/21/2603.15759v1-simulation-distillation-pretraining-world-models-in-simulation-for-rapid-real-world-adaptation)  
+   标签：评分：10.0/10、query:robot
+   evidence：为自主智能体适配预训练世界模型
+9. [AcceRL: A Distributed Asynchronous Reinforcement Learning and World Model Framework for Vision-Language-Action Models](/202603/21/2603.18464v1-accerl-a-distributed-asynchronous-reinforcement-learning-and-world-model-framework-for-vision-language-action-models)  
+   标签：评分：10.0/10、query:robot
+   evidence：将可训练的世界模型集成到 VLA 模型的强化学习中
+10. [Scaling Sim-to-Real Reinforcement Learning for Robot VLAs with Generative 3D Worlds](/202603/21/2603.18532v1-scaling-sim-to-real-reinforcement-learning-for-robot-vlas-with-generative-3d-worlds)  
+   标签：评分：10.0/10、query:robot
+   evidence：利用生成式世界模型扩展机器人VLA
+11. [VGGT-World: Transforming VGGT into an Autoregressive Geometry World Model](/202603/21/2603.12655v1-vggt-world-transforming-vggt-into-an-autoregressive-geometry-world-model)  
+   标签：评分：9.0/10、query:robot
+   evidence：用于预测的自回归几何世界模型
+12. [SAW: Toward a Surgical Action World Model via Controllable and Scalable Video Generation](/202603/21/2603.13024v1-saw-toward-a-surgical-action-world-model-via-controllable-and-scalable-video-generation)  
+   标签：评分：9.0/10、query:robot
+   evidence：用于可控视频生成和模拟的手术动作世界模型
+13. [AutoMoT: A Unified Vision-Language-Action Model with Asynchronous Mixture-of-Transformers for End-to-End Autonomous Driving](/202603/21/2603.14851v1-automot-a-unified-vision-language-action-model-with-asynchronous-mixture-of-transformers-for-end-to-end-autonomous-driving)  
+   标签：评分：9.0/10、query:robot
+   evidence：用于端到端自动驾驶的VLA模型
+14. [Towards Generalizable Robotic Manipulation in Dynamic Environments](/202603/21/2603.15620v1-towards-generalizable-robotic-manipulation-in-dynamic-environments)  
+   标签：评分：9.0/10、query:robot
+   evidence：评估并改进用于动态机器人操作的 VLA 模型
+15. [Safety Case Patterns for VLA-based driving systems: Insights from SimLingo](/202603/21/2603.16013v2-safety-case-patterns-for-vla-based-driving-systems-insights-from-simlingo)  
+   标签：评分：9.0/10、query:robot
+   evidence：基于VLA的驾驶系统的安全案例模式
+16. [Enhancing Linguistic Generalization of VLA: Fine-Tuning OpenVLA via Synthetic Instruction Augmentation](/202603/21/2603.16044v1-enhancing-linguistic-generalization-of-vla-fine-tuning-openvla-via-synthetic-instruction-augmentation)  
+   标签：评分：9.0/10、query:robot
+   evidence：微调OpenVLA以增强语言泛化能力
+17. [DreamPlan: Efficient Reinforcement Fine-Tuning of Vision-Language Planners via Video World Models](/202603/21/2603.16860v1-dreamplan-efficient-reinforcement-fine-tuning-of-vision-language-planners-via-video-world-models)  
+   标签：评分：9.0/10、query:robot
+   evidence：通过视频世界模型对VLM规划器进行微调
+18. [HeiSD: Hybrid Speculative Decoding for Embodied Vision-Language-Action Models with Kinematic Awareness](/202603/21/2603.17573v1-heisd-hybrid-speculative-decoding-for-embodied-vision-language-action-models-with-kinematic-awareness)  
+   标签：评分：9.0/10、query:robot
+   evidence：用于机器人控制的视觉-语言-动作（VLA）模型的推理加速
+19. [VectorWorld: Efficient Streaming World Model via Diffusion Flow on Vector Graphs](/202603/21/2603.17652v1-vectorworld-efficient-streaming-world-model-via-diffusion-flow-on-vector-graphs)  
+   标签：评分：9.0/10、query:robot
+   evidence：用于自动驾驶智能体的生成式世界模型
+20. [From Inference Efficiency to Embodied Efficiency: Revisiting Efficiency Metrics for Vision-Language-Action Models](/202603/21/2603.19131v1-from-inference-efficiency-to-embodied-efficiency-revisiting-efficiency-metrics-for-vision-language-action-models)  
+   标签：评分：9.0/10、query:robot
+   evidence：重新审视VLA模型在真实机器人执行中的效率指标
+21. [FASTER: Rethinking Real-Time Flow VLAs](/202603/21/2603.19199v1-faster-rethinking-real-time-flow-vlas)  
+   标签：评分：9.0/10、query:robot
+   evidence：优化基于流的VLA模型的实时执行性能
+22. [Not All Features Are Created Equal: A Mechanistic Study of Vision-Language-Action Models](/202603/21/2603.19233v1-not-all-features-are-created-equal-a-mechanistic-study-of-vision-language-action-models)  
+   标签：评分：9.0/10、query:robot
+   evidence：对VLA模型如何将多模态输入转化为动作的机理性研究
 
 ### 速读区论文标签
-1. [AdaWorldPolicy: World-Model-Driven Diffusion Policy with Online Adaptive Learning for Robotic Manipulation](/20260220-20260321/2602.20057v1-adaworldpolicy-world-model-driven-diffusion-policy-with-online-adaptive-learning-for-robotic-manipulation)  
-   标签：评分：10.0/10、query:robot
-   evidence：世界模型驱动的机器人操作扩散策略
-2. [Self-Correcting VLA: Online Action Refinement via Sparse World Imagination](/20260220-20260321/2602.21633v1-self-correcting-vla-online-action-refinement-via-sparse-world-imagination)  
-   标签：评分：10.0/10、query:robot
-   evidence：将VLA与世界动作模型结合，用于预测性规划和自我修正
-3. [StemVLA:An Open-Source Vision-Language-Action Model with Future 3D Spatial Geometry Knowledge and 4D Historical Representation](/20260220-20260321/2602.23721v1-stemvlaan-open-source-vision-language-action-model-with-future-3d-spatial-geometry-knowledge-and-4d-historical-representation)  
-   标签：评分：10.0/10、query:robot
-   evidence：结合3D空间和4D时空表示的VLA模型
-4. [DAM-VLA: A Dynamic Action Model-Based Vision-Language-Action Framework for Robot Manipulation](/20260220-20260321/2603.00926v1-dam-vla-a-dynamic-action-model-based-vision-language-action-framework-for-robot-manipulation)  
-   标签：评分：10.0/10、query:robot
-   evidence：基于动态动作模型的机器人操作VLA框架
-5. [Pri4R: Learning World Dynamics for Vision-Language-Action Models with Privileged 4D Representation](/20260220-20260321/2603.01549v1-pri4r-learning-world-dynamics-for-vision-language-action-models-with-privileged-4d-representation)  
-   标签：评分：10.0/10、query:robot
-   evidence：利用4D表示学习VLA模型的世界动力学
-6. [Chain of World: World Model Thinking in Latent Motion](/20260220-20260321/2603.03195v1-chain-of-world-world-model-thinking-in-latent-motion)  
-   标签：评分：10.0/10、query:robot
-   evidence：通过潜动作将世界模型推理与 VLA 统一
-7. [Critic in the Loop: A Tri-System VLA Framework for Robust Long-Horizon Manipulation](/20260220-20260321/2603.05185v1-critic-in-the-loop-a-tri-system-vla-framework-for-robust-long-horizon-manipulation)  
-   标签：评分：10.0/10、query:robot
-   evidence：用于长程操作的三系统 VLA 框架
-8. [Planning in 8 Tokens: A Compact Discrete Tokenizer for Latent World Model](/20260220-20260321/2603.05438v1-planning-in-8-tokens-a-compact-discrete-tokenizer-for-latent-world-model)  
-   标签：评分：10.0/10、query:robot
-   evidence：用于潜世界模型规划的紧凑离散分词器
-9. [$Δ$VLA: Prior-Guided Vision-Language-Action Models via World Knowledge Variation](/20260220-20260321/2603.08361v1-vla-prior-guided-vision-language-action-models-via-world-knowledge-variation)  
-   标签：评分：10.0/10、query:robot
-   evidence：利用世界知识变化的先验引导VLA模型
-10. [SPIRAL: A Closed-Loop Framework for Self-Improving Action World Models via Reflective Planning Agents](/20260220-20260321/2603.08403v1-spiral-a-closed-loop-framework-for-self-improving-action-world-models-via-reflective-planning-agents)  
-   标签：评分：10.0/10、query:robot
-   evidence：通过反思规划智能体构建动作世界模型
-11. [SPIRAL: A Closed-Loop Framework for Self-Improving Action World Models via Reflective Planning Agents](/20260220-20260321/2603.08403v2-spiral-a-closed-loop-framework-for-self-improving-action-world-models-via-reflective-planning-agents)  
-   标签：评分：10.0/10、query:robot
-   evidence：动作世界模型与反思规划智能体的闭环框架
-12. [AtomVLA: Scalable Post-Training for Robotic Manipulation via Predictive Latent World Models](/20260220-20260321/2603.08519v1-atomvla-scalable-post-training-for-robotic-manipulation-via-predictive-latent-world-models)  
-   标签：评分：10.0/10、query:robot
-   evidence：集成预测性潜空间世界模型的VLA框架
-13. [PlayWorld: Learning Robot World Models from Autonomous Play](/20260220-20260321/2603.09030v1-playworld-learning-robot-world-models-from-autonomous-play)  
-   标签：评分：10.0/10、query:robot
-   evidence：通过自主自博弈学习机器人世界模型
-14. [PlayWorld: Learning Robot World Models from Autonomous Play](/20260220-20260321/2603.09030v2-playworld-learning-robot-world-models-from-autonomous-play)  
-   标签：评分：10.0/10、query:robot
-   evidence：从自主游玩中学习机器人世界模型
-15. [NS-VLA: Towards Neuro-Symbolic Vision-Language-Action Models](/20260220-20260321/2603.09542v1-ns-vla-towards-neuro-symbolic-vision-language-action-models)  
-   标签：评分：10.0/10、query:robot
-   evidence：通过强化学习的 VLA 模型神经符号框架
-16. [Cross-Hand Latent Representation for Vision-Language-Action Models](/20260220-20260321/2603.10158v1-cross-hand-latent-representation-for-vision-language-action-models)  
-   标签：评分：10.0/10、query:robot
-   evidence：用于灵巧操作的视觉-语言-动作 (VLA) 框架
-17. [World2Act: Latent Action Post-Training via Skill-Compositional World Models](/20260220-20260321/2603.10422v1-world2act-latent-action-post-training-via-skill-compositional-world-models)  
-   标签：评分：10.0/10、query:robot
-   evidence：使用技能组合世界模型对VLA策略进行后训练
-18. [ResWM: Residual-Action World Model for Visual RL](/20260220-20260321/2603.11110v1-reswm-residual-action-world-model-for-visual-rl)  
-   标签：评分：10.0/10、query:robot
-   evidence：用于视觉强化学习的残差动作预测世界模型
-19. [RoboClaw: An Agentic Framework for Scalable Long-Horizon Robotic Tasks](/20260220-20260321/2603.11558v1-roboclaw-an-agentic-framework-for-scalable-long-horizon-robotic-tasks)  
-   标签：评分：10.0/10、query:robot
-   evidence：用于机器人操作的 VLA 系统代理框架
-20. [Beyond Dense Futures: World Models as Structured Planners for Robotic Manipulation](/20260220-20260321/2603.12553v1-beyond-dense-futures-world-models-as-structured-planners-for-robotic-manipulation)  
-   标签：评分：10.0/10、query:robot
-   evidence：用于机器人操作的生成式世界模型VLA架构
-21. [ST-VLA: Enabling 4D-Aware Spatiotemporal Understanding for General Robot Manipulation](/20260220-20260321/2603.13788v1-st-vla-enabling-4d-aware-spatiotemporal-understanding-for-general-robot-manipulation)  
-   标签：评分：10.0/10、query:robot
-   evidence：具有 3D-4D 表示的分层视觉-语言-动作 (VLA) 框架
-22. [WestWorld: A Knowledge-Encoded Scalable Trajectory World Model for Diverse Robotic Systems](/20260220-20260321/2603.14392v1-westworld-a-knowledge-encoded-scalable-trajectory-world-model-for-diverse-robotic-systems)  
-   标签：评分：10.0/10、query:robot
-   evidence：用于机器人动力学与规划的可扩展轨迹世界模型
-23. [NavThinker: Action-Conditioned World Models for Coupled Prediction and Planning in Social Navigation](/20260220-20260321/2603.15359v2-navthinker-action-conditioned-world-models-for-coupled-prediction-and-planning-in-social-navigation)  
-   标签：评分：10.0/10、query:robot
-   evidence：用于导航预测与规划的动作条件世界模型
-24. [Fast-WAM: Do World Action Models Need Test-time Future Imagination?](/20260220-20260321/2603.16666v1-fast-wam-do-world-action-models-need-test-time-future-imagination)  
-   标签：评分：10.0/10、query:robot
-   evidence：用于具身控制和想象的世界动作模型 (WAM)
-25. [GigaWorld-Policy: An Efficient Action-Centered World--Action Model](/20260220-20260321/2603.17240v1-gigaworld-policy-an-efficient-action-centered-world--action-model)  
-   标签：评分：10.0/10、query:robot
-   evidence：用于机器人策略学习的以动作为中心的世界动作模型
-26. [EVA: Aligning Video World Models with Executable Robot Actions via Inverse Dynamics Rewards](/20260220-20260321/2603.17808v1-eva-aligning-video-world-models-with-executable-robot-actions-via-inverse-dynamics-rewards)  
-   标签：评分：10.0/10、query:robot
-   evidence：将视频世界模型与可执行机器人动作对齐
-27. [UAOR: Uncertainty-aware Observation Reinjection for Vision-Language-Action Models](/20260220-20260321/2602.18020v1-uaor-uncertainty-aware-observation-reinjection-for-vision-language-action-models)  
-   标签：评分：9.0/10、query:robot
-   evidence：VLA模型的不确定性感知观测重注入
-28. [How Fast Can I Run My VLA? Demystifying VLA Inference Performance with VLA-Perf](/20260220-20260321/2602.18397v1-how-fast-can-i-run-my-vla-demystifying-vla-inference-performance-with-vla-perf)  
-   标签：评分：9.0/10、query:robot
-   evidence：VLA 模型的性能分析与推理优化
-29. [VLANeXt: Recipes for Building Strong VLA Models](/20260220-20260321/2602.18532v1-vlanext-recipes-for-building-strong-vla-models)  
-   标签：评分：9.0/10、query:robot
-   evidence：系统剖析VLA设计选择和基础组件
-30. [Compositional Planning with Jumpy World Models](/20260220-20260321/2602.19634v1-compositional-planning-with-jumpy-world-models)  
-   标签：评分：9.0/10、query:robot
-   evidence：用于具有时间抽象的组合规划的跳跃世界模型
-31. [Universal Pose Pretraining for Generalizable Vision-Language-Action Policies](/20260220-20260321/2602.19710v1-universal-pose-pretraining-for-generalizable-vision-language-action-policies)  
-   标签：评分：9.0/10、query:robot
-   evidence：具有3D空间先验的可泛化视觉-语言-动作策略
-32. [Global Prior Meets Local Consistency: Dual-Memory Augmented Vision-Language-Action Model for Efficient Robotic Manipulation](/20260220-20260321/2602.20200v1-global-prior-meets-local-consistency-dual-memory-augmented-vision-language-action-model-for-efficient-robotic-manipulation)  
-   标签：评分：9.0/10、query:robot
-   evidence：双记忆增强的VLA模型用于高效机器人操作
-33. [IG-RFT: An Interaction-Guided RL Framework for VLA Models in Long-Horizon Robotic Manipulation](/20260220-20260321/2602.20715v1-ig-rft-an-interaction-guided-rl-framework-for-vla-models-in-long-horizon-robotic-manipulation)  
-   标签：评分：9.0/10、query:robot
-   evidence：用于长程机器人操作的VLA强化学习框架
-34. [Metamorphic Testing of Vision-Language Action-Enabled Robots](/20260220-20260321/2602.22579v1-metamorphic-testing-of-vision-language-action-enabled-robots)  
-   标签：评分：9.0/10、query:robot
-   evidence：视觉-语言-动作驱动机器人的测试与评估
-35. [Rethinking the Practicality of Vision-language-action Model: A Comprehensive Benchmark and An Improved Baseline](/20260220-20260321/2602.22663v1-rethinking-the-practicality-of-vision-language-action-model-a-comprehensive-benchmark-and-an-improved-baseline)  
-   标签：评分：9.0/10、query:robot
-   evidence：VLA 实用性的全面基准和改进基线
-36. [DySL-VLA: Efficient Vision-Language-Action Model Inference via Dynamic-Static Layer-Skipping for Robot Manipulation](/20260220-20260321/2602.22896v1-dysl-vla-efficient-vision-language-action-model-inference-via-dynamic-static-layer-skipping-for-robot-manipulation)  
-   标签：评分：9.0/10、query:robot
-   evidence：用于操作中高效 VLA 推理的动态层跳过
-37. [DySL-VLA: Efficient Vision-Language-Action Model Inference via Dynamic-Static Layer-Skipping for Robot Manipulation](/20260220-20260321/2602.22896v2-dysl-vla-efficient-vision-language-action-model-inference-via-dynamic-static-layer-skipping-for-robot-manipulation)  
-   标签：评分：9.0/10、query:robot
-   evidence：机器人操作中高效的VLA模型推理
-38. [Foundation World Models for Agents that Learn, Verify, and Adapt Reliably Beyond Static Environments](/20260220-20260321/2602.23997v1-foundation-world-models-for-agents-that-learn-verify-and-adapt-reliably-beyond-static-environments)  
-   标签：评分：9.0/10、query:robot
-   evidence：开放世界中自主智能体基础世界模型的愿景
-39. [Mean-Flow based One-Step Vision-Language-Action](/20260220-20260321/2603.01469v1-mean-flow-based-one-step-vision-language-action)  
-   标签：评分：9.0/10、query:robot
-   evidence：使用Mean-Flow实现VLA模型的一步动作生成
-40. [Observing and Controlling Features in Vision-Language-Action Models](/20260220-20260321/2603.05487v1-observing-and-controlling-features-in-vision-language-action-models)  
-   标签：评分：9.0/10、query:robot
-   evidence：分析VLA模型中特征的可观测性与可控性
-41. [MWM: Mobile World Models for Action-Conditioned Consistent Prediction](/20260220-20260321/2603.07799v1-mwm-mobile-world-models-for-action-conditioned-consistent-prediction)  
-   标签：评分：9.0/10、query:robot
-   evidence：用于动作条件一致性预测的移动世界模型
-42. [Towards Human-Like Manipulation through RL-Augmented Teleoperation and Mixture-of-Dexterous-Experts VLA](/20260220-20260321/2603.08122v1-towards-human-like-manipulation-through-rl-augmented-teleoperation-and-mixture-of-dexterous-experts-vla)  
-   标签：评分：9.0/10、query:robot
-   evidence：用于复杂操作的多专家混合VLA模型
-43. [Interactive World Simulator for Robot Policy Training and Evaluation](/20260220-20260321/2603.08546v1-interactive-world-simulator-for-robot-policy-training-and-evaluation)  
-   标签：评分：9.0/10、query:robot
-   evidence：用于机器人策略训练与评估的交互式世界模拟器
-44. [APPLV: Adaptive Planner Parameter Learning from Vision-Language-Action Model](/20260220-20260321/2603.08862v1-applv-adaptive-planner-parameter-learning-from-vision-language-action-model)  
-   标签：评分：9.0/10、query:robot
-   evidence：从VLA模型中学习导航规划器参数
-45. [RAE-NWM: Navigation World Model in Dense Visual Representation Space](/20260220-20260321/2603.09241v1-rae-nwm-navigation-world-model-in-dense-visual-representation-space)  
-   标签：评分：9.0/10、query:robot
-   evidence：模拟动作条件状态转移的导航世界模型
-46. [See, Plan, Rewind: Progress-Aware Vision-Language-Action Models for Robust Robotic Manipulation](/20260220-20260321/2603.09292v1-see-plan-rewind-progress-aware-vision-language-action-models-for-robust-robotic-manipulation)  
-   标签：评分：9.0/10、query:robot
-   evidence：用于鲁棒操作的进度感知VLA模型
-47. [CORAL: Scalable Multi-Task Robot Learning via LoRA Experts](/20260220-20260321/2603.09298v1-coral-scalable-multi-task-robot-learning-via-lora-experts)  
-   标签：评分：9.0/10、query:robot
-   evidence：使用LoRA专家的VLA模型可扩展多任务学习
-48. [OmniGuide: Universal Guidance Fields for Enhancing Generalist Robot Policies](/20260220-20260321/2603.10052v1-omniguide-universal-guidance-fields-for-enhancing-generalist-robot-policies)  
-   标签：评分：9.0/10、query:robot
-   evidence：通过通用引导场提升 VLA 性能
-49. [AR-VLA: True Autoregressive Action Expert for Vision-Language-Action Models](/20260220-20260321/2603.10126v1-ar-vla-true-autoregressive-action-expert-for-vision-language-action-models)  
-   标签：评分：9.0/10、query:robot
-   evidence：具有长效记忆的VLA模型自回归动作专家
-50. [Overcoming Visual Clutter in Vision Language Action Models via Concept-Gated Visual Distillation](/20260220-20260321/2603.10340v1-overcoming-visual-clutter-in-vision-language-action-models-via-concept-gated-visual-distillation)  
-   标签：评分：9.0/10、query:robot
-   evidence：在杂乱环境中稳定 VLA 策略
-51. [DepthCache: Depth-Guided Training-Free Visual Token Merging for Vision-Language-Action Model Inference](/20260220-20260321/2603.10469v1-depthcache-depth-guided-training-free-visual-token-merging-for-vision-language-action-model-inference)  
-   标签：评分：9.0/10、query:robot
-   evidence：高效 VLA 模型推理的视觉令牌合并
-52. [RoboClaw: An Agentic Framework for Scalable Long-Horizon Robotic Tasks](/20260220-20260321/2603.11558v2-roboclaw-an-agentic-framework-for-scalable-long-horizon-robotic-tasks)  
-   标签：评分：9.0/10、query:robot
-   evidence：使用VLA系统的长程任务智能体框架
-53. [SaPaVe: Towards Active Perception and Manipulation in Vision-Language-Action Models for Robotics](/20260220-20260321/2603.12193v1-sapave-towards-active-perception-and-manipulation-in-vision-language-action-models-for-robotics)  
-   标签：评分：9.0/10、query:robot
-   evidence：机器人VLA模型中的主动感知与操作
-54. [Red-Teaming Vision-Language-Action Models via Quality Diversity Prompt Generation for Robust Robot Policies](/20260220-20260321/2603.12510v1-red-teaming-vision-language-action-models-via-quality-diversity-prompt-generation-for-robust-robot-policies)  
-   标签：评分：9.0/10、query:robot
-   evidence：针对视觉-语言-动作（VLA）模型的红队测试以增强机器人策略鲁棒性
-55. [ReMem-VLA: Empowering Vision-Language-Action Model with Memory via Dual-Level Recurrent Queries](/20260220-20260321/2603.12942v1-remem-vla-empowering-vision-language-action-model-with-memory-via-dual-level-recurrent-queries)  
-   标签：评分：9.0/10、query:robot
-   evidence：VLA模型中用于长期上下文的循环记忆查询
-56. [NavThinker: Action-Conditioned World Models for Coupled Prediction and Planning in Social Navigation](/20260220-20260321/2603.15359v1-navthinker-action-conditioned-world-models-for-coupled-prediction-and-planning-in-social-navigation)  
-   标签：评分：9.0/10、query:robot
-   evidence：用于机器人社交导航的动作条件世界模型
-57. [Look Before Acting: Enhancing Vision Foundation Representations for Vision-Language-Action Models](/20260220-20260321/2603.15618v1-look-before-acting-enhancing-vision-foundation-representations-for-vision-language-action-models)  
-   标签：评分：9.0/10、query:robot
-   evidence：增强 VLA 模型的视觉基础表示
-58. [Look Before Acting: Enhancing Vision Foundation Representations for Vision-Language-Action Models](/20260220-20260321/2603.15618v2-look-before-acting-enhancing-vision-foundation-representations-for-vision-language-action-models)  
-   标签：评分：9.0/10、query:robot
-   evidence：增强VLA动作预测的视觉表示
-59. [Enabling Dynamic Tracking in Vision-Language-Action Models via Time-Discrete and Time-Continuous Velocity Feedforward](/20260220-20260321/2603.16218v1-enabling-dynamic-tracking-in-vision-language-action-models-via-time-discrete-and-time-continuous-velocity-feedforward)  
-   标签：评分：9.0/10、query:robot
-   evidence：将速度前馈集成到机器人控制的 VLA 策略中
-60. [KineVLA: Towards Kinematics-Aware Vision-Language-Action Models with Bi-Level Action Decomposition](/20260220-20260321/2603.17524v1-kinevla-towards-kinematics-aware-vision-language-action-models-with-bi-level-action-decomposition)  
-   标签：评分：9.0/10、query:robot
-   evidence：具有双层动作分解的运动学感知VLA模型
-61. [ProbeFlow: Training-Free Adaptive Flow Matching for Vision-Language-Action Models](/20260220-20260321/2603.17850v1-probeflow-training-free-adaptive-flow-matching-for-vision-language-action-models)  
-   标签：评分：9.0/10、query:robot
-   evidence：用于高效VLA模型推理的自适应流匹配
-62. [Sparse Autoencoders Reveal Interpretable and Steerable Features in VLA Models](/20260220-20260321/2603.19183v1-sparse-autoencoders-reveal-interpretable-and-steerable-features-in-vla-models)  
-   标签：评分：9.0/10、query:robot
-   evidence：视觉-语言-动作（VLA）模型的机理性可解释性研究
-63. [ActionReasoning: Robot Action Reasoning in 3D Space with LLM for Robotic Brick Stacking](/20260220-20260321/2602.21161v1-actionreasoning-robot-action-reasoning-in-3d-space-with-llm-for-robotic-brick-stacking)  
-   标签：评分：8.0/10、query:robot
-   evidence：VLA背景下基于LLM的显式动作推理框架
-64. [The Trinity of Consistency as a Defining Principle for General World Models](/20260220-20260321/2602.23152v1-the-trinity-of-consistency-as-a-defining-principle-for-general-world-models)  
-   标签：评分：8.0/10、query:robot
-   evidence：通用世界模型的理论框架
-65. [Planning from Observation and Interaction](/20260220-20260321/2602.24121v1-planning-from-observation-and-interaction)  
-   标签：评分：8.0/10、query:robot
-   evidence：基于观测和交互的规划式世界建模
-66. [Discrete World Models via Regularization](/20260220-20260321/2603.01748v1-discrete-world-models-via-regularization)  
-   标签：评分：8.0/10、query:robot
-   evidence：用于符号推理与规划的离散世界模型
-67. [Agentic Self-Evolutionary Replanning for Embodied Navigation](/20260220-20260321/2603.02772v1-agentic-self-evolutionary-replanning-for-embodied-navigation)  
-   标签：评分：8.0/10、query:robot
-   evidence：用于具身导航重规划的智能体自进化动作模型
-68. [Specification-Driven Generation and Evaluation of Discrete-Event World Models via the DEVS Formalism](/20260220-20260321/2603.03784v1-specification-driven-generation-and-evaluation-of-discrete-event-world-models-via-the-devs-formalism)  
-   标签：评分：8.0/10、query:robot
-   evidence：用于具身任务规划的离散事件世界模型
-69. [Spatially Grounded Long-Horizon Task Planning in the Wild](/20260220-20260321/2603.13433v1-spatially-grounded-long-horizon-task-planning-in-the-wild)  
-   标签：评分：8.0/10、query:robot
-   evidence：机器人操作的空间对齐长程动作规划
-70. [Shifting Uncertainty to Critical Moments: Towards Reliable Uncertainty Quantification for VLA Model](/20260220-20260321/2603.18342v1-shifting-uncertainty-to-critical-moments-towards-reliable-uncertainty-quantification-for-vla-model)  
-   标签：评分：8.0/10、query:robot
-   evidence：连续控制中VLA模型的不确定性量化
+1. [Evaluating VLMs' Spatial Reasoning Over Robot Motion: A Step Towards Robot Planning with Motion Preferences](/202603/21/2603.13100v1-evaluating-vlms-spatial-reasoning-over-robot-motion-a-step-towards-robot-planning-with-motion-preferences)  
+   标签：评分：7.0/10、query:robot
+   evidence：评估 VLM 在机器人规划和运动偏好中的空间推理能力
+2. [CABTO: Context-Aware Behavior Tree Grounding for Robot Manipulation](/202603/21/2603.16809v1-cabto-context-aware-behavior-tree-grounding-for-robot-manipulation)  
+   标签：评分：7.0/10、query:robot
+   evidence：机器人规划中高级动作模型的自动构建
+3. [Interpreting Context-Aware Human Preferences for Multi-Objective Robot Navigation](/202603/21/2603.17510v1-interpreting-context-aware-human-preferences-for-multi-objective-robot-navigation)  
+   标签：评分：7.0/10、query:robot
+   evidence：将VLM与底层机器人控制策略相结合
+4. [Meanings and Measurements: Multi-Agent Probabilistic Grounding for Vision-Language Navigation](/202603/21/2603.19166v1-meanings-and-measurements-multi-agent-probabilistic-grounding-for-vision-language-navigation)  
+   标签：评分：7.0/10、query:robot
+   evidence：机器人视觉语言导航的概率接地
 
 
 <div class="dpr-home-promo-card">

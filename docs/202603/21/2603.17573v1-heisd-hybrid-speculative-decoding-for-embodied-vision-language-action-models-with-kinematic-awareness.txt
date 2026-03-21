@@ -1,0 +1,1267 @@
+Title: HeiSD: Hybrid Speculative Decoding for Embodied Vision-Language-Action Models with Kinematic Awareness
+
+URL Source: https://arxiv.org/pdf/2603.17573v1
+
+Published Time: Thu, 19 Mar 2026 01:07:14 GMT
+
+Number of Pages: 20
+
+Markdown Content:
+# HeiSD : Hybrid Speculative Decoding for Embodied Vision-Language-Action Models with Kinematic Awareness 
+
+Zihao Zheng 1 Zhihao Mao 2 Sicheng Tian 3 Jiayu Chen 1 Maoliang Li 1 Xinhao Sun 4 Zhaobo Zhang 1
+
+Xuanzhe Liu 1 Donggang Cao 1 Hong Mei 1 †Xiang Chen 1
+
+Abstract 
+
+Vision-Language-Action (VLA) Models have be-come the mainstream solution for robot control, but suffer from slow inference speeds. Specula-tive Decoding (SD) is a promising acceleration method which can be divided into two categories: drafter-based SD and retrieval-based SD. Exist-ing methods fail to analyze the advantages and disadvantages of these two types of SD in VLA models, leading to their sole application or op-timization. In this paper, we analyze the trajec-tory patterns of robots controlled by the VLA model and derive a key insight: the two types of SD should be used in a hybrid manner. How-ever, achieving hybrid SD in VLA models poses several challenges: (1) draft rejection and per-sistent errors in retrieval-based SD; (2) difficulty in determining the hybrid boundary. To address these, we propose the HeiSD framework. We pro-pose a retrieval-based SD optimization method in 
+
+HeiSD ,which contains a verify-skip mechanism and a sequence-wise relaxed acceptance strategy. Moreover, we proposed a kinematic-based fused metric in HeiSD to automatically determine the hybrid boundary. Experimental results demon-strate that HeiSD attains a speedup of up to 2.45 ×
+
+in simulation benchmarks and 2.06 ×∼ 2.41 × in real-world scenarios, while sustaining a high task success rate. 
+
+1. Introduction 
+
+Vision-Language-Action (VLA) models have emerged as the mainstream solution for Embodied Intelligence (Ma 
+
+> 1
+
+School of Computer Science, Peking University, Beijing, China 2School of Computer Science, China University of Geo-sciences, Wuhan, China 3School of Artificial Intelligence, Bei-jing Normal University, Beijing, China 4School of EECS, Peking University, Beijing, China. Correspondence to: Xiang Chen <xi-ang.chen@pku.edu.cn >.
+
+Preprint. March 19, 2026. 
+
+et al., 2024; Zhang et al., 2024). Despite their impressive per-formance, the heavy computational demands of VLA mod-els limit their inference speed, preventing them from meet-ing real-time requirements (Wen et al., 2025; Budzianowski et al., 2025). To boost the inference speed of VLA models, existing work has integrated large-model inference optimiza-tion techniques into VLAs, covering: model architecture in-novation (Liu et al., 2024a; Wen et al., 2025; Budzianowski et al., 2025; Pertsch et al., 2025), model compression (Zheng et al., 2025; 2026a; Park et al., 2024; Li et al., 2025), run-time optimization (Zhang et al., 2025; Song et al., 2025; Yue et al., 2024) and deployment design (Zheng et al., 2026c). In such runtime optimization methods, Speculative Decoding (SD) (Wang et al., 2025; Zheng et al., 2026b) is a promising method that can accelerate inference. The essence of SD lies in employing low-cost methods to rapidly generate token sequences. These sequences then undergo parallel verification and selective acceptance by Large Language Models (LLMs), thereby enhancing infer-ence speed. Existing SD methods can be categorized into two types: drafter-based SD (Wen et al., 2024; Yan et al., 2025) and retrieval-based SD (Cho et al., 2025; He et al., 2024; Lee et al., 2025). Drafter-based SD leverages a small model (trained from scratch or fine-tuned) to generate draft token sequences. In contrast, retrieval-based SD does not rely on a dedicated draft model; instead, it uses a prebuilt vector database and retrieves relevant content from it to obtain draft token sequences. When being adapted for VLA models, both drafter-based and retrieval-based SD approaches exhibit distinct advan-tages and limitations. As Fig. 1 (a) shows, drafter-based SD can provide high-quality drafts with a high probability of passing verification. But it needs to bear the inference overhead of the draft model. Retrieval-based SD eliminates the overhead of the draft model and has a higher theoretical speedup, but suffers from low draft quality. In this study, we first construct a database and develop an analysis of retrieval drafts. Our analysis reveals that some trajectory segments guided by retrieval drafts highly align with VLA inference, while others exhibit deviations. Based on this observation, we derive a key insight: employing 1
+
+> arXiv:2603.17573v1 [cs.RO] 18 Mar 2026
+
+Submission and Formatting Instructions for ICML 2026 Generation                                         
+
+> Draft Quality Theoretical Speed Overhead
+> Draft -Based SD High Low High
+> Retrieval -Based SD Low High Low
+> (b)
+> VLA Model
+> a1a2a3a4
+> a' 2a' 3a' 4a' 1a'0
+> Draft Model
+> Drafter
+> Input
+> Draft -Based SD
+> VLA Model
+> a1a2a3a4
+> a' 2a' 3a' 4a' 1a'0
+> Database
+> No
+> Drafter
+> Retrieval
+> Input
+> Retrieval -Based SD
+> Step
+> (a)
+> Step Step Step Step Step
+> Robot
+> Control
+> Multi -Step Inference of VLA Models
+> Retrieval -Based SD Draft -Based SD Retrieval -Based SD
+> Retrieval -Based SD
+> Needs Optimization
+> Challenge 1
+> Hard to Determine
+> Hybrid Boundary
+> Challenge 2
+
+HeiSD 
+
+Framewor k
+
+> Hybrid
+> SD
+> Embodied
+> Intelligence
+> =
+
+# +       
+
+> Solution 1Solution 2
+> Adaptive
+> Verify -Skip
+> Seq -Wise
+> Relaxed Accept
+> Kinematic -Based
+> Fused Metric for
+> Determine Boundary
+
+Figure 1. Overview of the Proposed HeiSD Framework 
+
+retrieval-based SD for the overlapping segments and drafter-based SD for the non-overlapping segments enables leverag-ing the advantages of both SD approaches simultaneously. However, achieving this kind of hybrid SD in VLA mod-els faces challenges. First, retrieval-based SD suffers from low-quality drafts, which are hard to pass the verification process and cause persistent errors. Thus, specific optimiza-tion is needed for retrieval-based SD. Second, it is hard to determine the hybrid boundary, i.e., identifying which step should employ drafter-based SD and which should use retrieval-based SD. To address these challenges, we first propose an optimiza-tion method for retrieval-based SD. We propose an adaptive verify-skip mechanism that selectively skips the verification process for certain drafts to avoid strict rejection. Further-more, we propose a sequence-wise relaxed acceptance strat-egy to enhance the diversity of drafts during verification and accept drafts with minor bias without compromising accuracy, to avoid persistent errors. After that, we developed a kinematic-based fused metric to automatically determine the hybrid boundary, enabling automatic decision and automatic switching during VLA multi-step inference. These designs form an end-to-end hybrid SD framework for VLA models, called HeiSD . We believe HeiSD will play a role in the future development of embodied intelligence and community building. In sum-mary, our contributions are below: • We conducted a detailed analysis and gained key in-sights: hybrid using drafter-based SD and retrieval-based SD in VLA models leads to better performance. • We optimize retrieval-based SD and propose an adap-tive verify-skip mechanism along with a sequence-wise relaxed acceptance strategy. • We developed a kinematic-based fused metric to auto-matically determine the hybrid boundary, thus forming the HeiSD framework. Experimental results demonstrate that HeiSD attains a speedup of up to 2.45 × in simulation benchmarks and 2.06 ×∼ 2.41 × in real-world scenarios, while sustaining a high task success rate. 
+
+2. Preliminary 
+
+2.1. Vision-Language-Action Models 
+
+VLA models usually comprise three core components (Kim et al., 2024; Zitkovich et al., 2023): vision encoders (convert-ing visual modality into tokens), an LLM backbone (fusing multi-modal information and enabling reasoning), and an action de-tokenizer (decoding output tokens into actions). 
+
+aj = arg max 
+
+> aj
+
+P (aj | a0: j−1, O, P, W). (1) Each VLA generation outputs an action slice, which is a 7-dimensional vector representing 7 Degrees of Freedom (DoF): position X, Y, Z of the end gripper, joint rotation an-gles rX , r Y , r Z , and a binary gripper control signal G. Each DoF is encoded as a token aj . VLA models autoregressively predict the most probable token aj based on the previously tokens a0: j−1, visual observations O, language prompts P,and the learnable model parameters W, as Eq. (1) shown. 
+
+2.2. Speculative Decoding 
+
+The core idea of SD is to use low-cost methods for rapid to-ken sequence acquisition and employ LLMs for parallel ver-ification of these tokens, thus avoiding slow autoregressive generation. Existing SD falls into two categories: drafter-based and retrieval-based. The former leverages a small draft model MD to generate token sequences, and uses the LLM as a verification model MV . This process can be writ-ten as Eq. (2) , in which aj means the tokens, ft means the hidden features, and et means the token embeddings. Draft: aj = MD(f1: t, e 0: t, a t+1: j−1).
+
+Verify: ˆaj = MV(a0: j−1, P, W),
+
+(
+
+ˆaj = aj , Acpt. 
+
+ˆaj̸ = aj , Disc .
+
+(2) 2Submission and Formatting Instructions for ICML 2026 Trajectory   
+
+> Overlap
+> Y-Dim
+> Z-Dim
+> Small Trajectory
+> Deviation
+> End Point
+> Match
+> VLA Inference
+> DB Retrieval
+> Trajectory of Failed Case
+
+(a)  
+
+> X-Dim Y-Dim
+> Z-Dim
+> Trajectory of Successful Case
+> Trajectory
+> Overlap
+> Environment: LIBERO -Goal
+> Task: Push Plate to the Front of the Stove
+
+(b)            
+
+> VLA Inference
+> DB Retrieval
+> Environment: LIBERO -Goal
+> Task: Push Plate to the Front of the Stove
+> VLA Inference: Success
+> DB Retrieval: Success
+> Large Trajectory
+> Deviation
+> End Point
+> Mismatch
+> X-Dim
+> VLA Inference: Success
+> DB Retrieval: Failure
+> In Real -World
+> Trajectory
+> Trajectory
+> Trajectory
+> Fragment
+> In Simulation
+> Trajectory
+> Trajectory
+> Action
+> ViT
+> LLM
+> De -Token
+> In Real -World In Simulation
+> Retrieval
+> Vector DB
+> Action
+> High Similarity !
+
+(c) 
+
+> Trajectory
+> Fragment
+
+Figure 2. Kinematic-Based Trajectory Analysis and Real-world/Simulation Validation for both VLA Inference and Database Retrieval 
+
+Draft: aj = Retri (f1: t, e 0: t, a t+1: j−1) ∈ DB . (3) In contrast, retrieval-based SD does not need a draft model; instead, it uses a database to retrieve draft token sequences. Its draft process can be written as Eq. (3) , where DB means the prebuilt database. When applied to VLA models, the two types of SD each have distinct advantages and draw-backs. Drafter-based SD necessitates online maintenance of a draft model: while smaller than a VLA model, this drafter still incurs memory consumption and additional com-putational overhead/latency, though its high-quality drafts support longer acceptable sequences and achieve actual ac-celeration. In contrast, retrieval-based SD eliminates the overhead associated with the drafter model and offers theo-retical performance benefits; however, the retrieved drafts suffer from distribution mismatch, which hinders verifica-tion and restricts the theoretical acceleration. 
+
+3. Observation and Motivation 
+
+This section first details the construction of the database and its performance test, then presents a database retrieval trajectory analysis. Based on analysis results, we derive insights into achieving hybrid SD in VLA inference and outline the corresponding challenges. 
+
+3.1. Database Construction and Performance Test 
+
+Based on the common LIBERO datasets (Liu et al., 2023) (details in Appendix B), we first construct a robust vector database. Leveraging the Qdrant (Qdrant Team, 2023) in-frastructure, we define key components including vector representation, database structure, and sharding strategy, with details provided in Appendix C. To maximize retrieval 
+
+Table 1. Database Performance on LIBERO Benchmark                       
+
+> Model Environment VLA Inference Database Retrieval SR Speed SR Speed
+> OpenVLA LIBERO-Goal 77.0% 1.00 ×62.0% 4.17 ×
+> LIBERO-Object 71.2% 1.00 ×68.0% 4.83 ×
+> LIBERO-Spatial 82.8% 1.00 ×53.0% 3.98 ×
+> LIBERO-Long 54.4% 1.00 ×18.0% 3.74 ×
+
+accuracy, all data from the LIBERO dataset are incorpo-rated into the database. Necessary vector data statistics, retrieval tests, retrieval latency and confidence analysis of the database are conducted in Appendix C.2. Furthermore, we only use database retrieval to finish various tasks in the LIBERO (Liu et al., 2023) benchmark. For comparison, we report the Success Rate (SR) and speed of the OpenVLA model (Kim et al., 2024) inference. As shown in Tab. 1,models relying solely on database retrieval can still complete certain tasks (e.g., 68.0% in simple task suite like Goal) with high speed (3.74 ×∼ 4.83 ×). Moreover, the database remains effective even on challenging task suites (e.g., Spatial and Long). Overall, the task completion rate of database retrieval is lower than that of VLA model inference. We also evaluate the performance of database scaling and find that scale expansion does not improve the SR.(Appendix C.2). 
+
+3.2. Database Retrieval Trajectory Analysis 
+
+We further compare the kinematic trajectories (in both Sim-ulation and real-world environments) comes from database retrieval and VLA inference. In Fig. 2 (a) (where both retrieval and inference succeed), numerous trajectory seg-ments from the database and VLA inference overlap signifi-cantly (green region), confirming the precision of retrieved results in these segments. Though some segments occur biased with the trajectory of VLA inference (red region), since most segments are accurate, the final endpoints can be matched (i.e. task success). In Fig. 2 (b) (where retrieval failed but inference succeeded), such overlaps are scarce, resulting in endpoint mismatch. 
+
+Table 2. Performance Comparison of Two Types of SD                                
+
+> Dataset VLA+SD (SpecVLA) Retrieval-Based SD SR AL Speed SR AL Speed
+> LIBERO-Goal 71.0% 2.97 1.00 ×77.0% 1.03 0.94 ×
+> LIBERO-Object 62.4% 3.25 1.00 ×76.0% 0.93 0.92 ×
+> LIBERO-Spatial 80.4% 3.27 1.00 ×78.0% 0.81 0.78 ×
+> LIBERO-Long 46.2% 2.82 1.00 ×50.2% 0.82 0.97 ×
+
+3Submission and Formatting Instructions for ICML 2026 Action                    
+
+> VLA Model
+> ViT
+> LLM
+> De -Token
+> Historical
+> Trajectory
+> Segments
+> LLM Block
+> Hook Feature for Each Trajectory Point
+> ①
+> 0.42
+> 0.98  0.89  0.61
+> Feature of ①
+> Feature of ②
+> Feature of ③
+> Feature of ④
+> Feature of ⑤
+> ②
+> ③
+> ④
+> ⑤
+> Attn
+> FFN
+> lm_head
+> De -Token Feature Similarity
+> High Low
+> Feature similarity  related to
+> the  point distance
+> 0.97  0. 92
+> Feature of ③
+> Feature of ④
+> Feature of ⑤
+
+…  
+
+> When Facing
+> New Task
+
+(a) 
+
+(b)     
+
+> Historical Feature Similarity
+> of Trajectory Points
+> Verify
+> Verify
+> Skip
+> Verify
+> Skip
+> Skip
+> Verify
+> Skip
+> Skip
+> Verify
+> Verify
+> Skip
+> Skip
+> Verify
+> Skip
+
+…        
+
+> Adaptive
+> Verify -Skip
+> Verify
+> Skip Verify
+> 1～n2～n3～n4～n
+> On Historical
+> Trajectories in DB
+> ①
+> ②
+> ③
+> ④
+> ⑤
+> Adaptive Algorithm
+> Indicators
+
+…
+
+Figure 3. Adaptive Verify-Skip Mechanism 
+
+Thus, we argue that database retrieval should be employed for overlapping trajectory segments, while VLA inference is suitable for non-overlapping parts. The effectiveness of database retrieval for overlapping segments is validated in both simulated and real-world environments. As shown in Fig. 2 (c), database retrieval results for overlapping segments exhibit high similarity to those from VLA inference in terms of start points, end points, and motion trajectories, but with higher speed. Guided by this conclusion, implementing hybrid SD in VLA inference is a promising approach: it employs retrieval-based SD in green regions and drafter-based SD in red regions, thereby preserving accuracy while further enhancing speed to achieve a new Pareto Frontier. 
+
+3.3. Challenges of Achieving Hybrid SD 
+
+However, achieving hybrid SD in VLA inference is non-trivial, facing several challenges. First, as shown in Tab. 2, achieving theoretical acceleration with retrieval-based SD for VLA models is hard, due to the following reasons: (1) The distribution of retrieved drafts mismatches that of VLA inference results; thus, even if the trajectories overlap, re-trieved drafts rarely pass strict verification, leading to low accept length (AL) and poor speedup. (2) Furthermore, due to the absence of a drafter, the system repeatedly retrieves identical results from the database, leading to persistent re-jects. Second, automatically determining the boundary of hybrid SD remains challenging. Although trajectory seg-mentation is highly effective, the inability to predict the complete trajectory during inference complicates the deter-mination of segmentation boundaries. 
+
+4. Retrieval-Based SD Optimization 
+
+In this section, we propose a novel verify-skip mechanism and a seq-wise relax acceptance strategy, aiming to boost retrieval-based SD to its theoretical speed. 
+
+4.1. Adaptive Verify-Skip Mechanism 
+
+Due to distributional misalignment with VLA inference outputs, retrieved drafts often fail verification. Given the in-herent multi-solution nature of embodied tasks, we propose omitting specific verification processes when such drafts are sufficiently accurate. Therefore, a model-free selection strat-egy is required in retrieval-based SD to identify which steps’ verification should be skipped. To achieve this, we capture the input features of the final layer (denoted as lm head )during the verification process of each retrieved draft. Exist-ing work (Zhang et al., 2025) proves that the input features of the final layer in VLA models are the most critical and most relevant to downstream robotic tasks. As shown in Fig. 3 (a), the feature similarity of trajectory points correlates with their distance: closer trajectory points exhibit higher feature similarity and should theoretically be directly accepted without verification, whereas farther trajectory points show lower similarity and should be less likely to skip verification. Inspired by these, we conduct a verify-skip mechanism based on the feature similarity patterns of trajectory points. Specifically, we calculate the feature similarity for each track point based on the historical tracks in the database. During this process, we collect the minimum acceptable similarity and its corresponding point distance, as illustrated in the offline stage of Alg. 1. When confronting a new task, we reuse the minimum accept-able similarity and point distance from historical informa-tion to automatically determine which trajectory points in the new task are excessively similar and thus can be skipped. Meanwhile, feedback signals are incorporated based on task completion performance. Using these signals, the algorithm 
+
+Algorithm 1 Adaptive Verify-Skip Mechanism 
+
+① Offline Stage: Input: Historical Trajectory Point P hi , Number of Trajectory Point n, Distance d, Input Feature of lm head Layer F eat P hi ,Pre-Sampling Similarity Boundary T .
+
+Init: F eat phi ← Hook (lm head ) after Inf er (P hi |P h
+
+> 1∼i−1
+
+);Initialize S(·, ·) = 0 , min S = 0 and Odist = 0 .
+
+for i = 1 to n − 1
+
+for d = i to n − 1
+
+Compute S(F eat P hi , F eat P hi+d
+
+).
+
+if min S > S (F eat P hi , F eat P hi+d
+
+) > T then 
+
+min S , O dist ← S(F eat P hi , F eat P hi+d
+
+), d 
+
+② Online Stage: Input: Total Task Trials ttotal , Trajectory Points of Current Task P ci , Number of Trajectory Points n, Last Task Feedback Bool Signal Bt
+
+Init: Initialize Bn = T rue , Get min S and Odist from ①
+
+repeat for i = 1 to n − 1
+
+for d = i to n − 1
+
+Compute S(F eat P ci , F eat P ci+d ).
+
+if Bt = T rue then min S += ∆|Sc − min (Sh)|, O dist ↑
+
+else Bt = T rue then min S -= ∆|Sc − min (Sh)|, O dist ↓
+
+t++ until t = ttotal 
+
+4Submission and Formatting Instructions for ICML 2026 ID :72 ID :45 ID :37                                                           
+
+> Draft
+> Token
+> Verify
+> Token
+> Top -K
+> Retrieval
+> Action
+> Vector
+> DB
+> a1a2a3a4a5a6a7
+> Define
+> XYZRXRYRZG
+> a1a2a3a4a5a6a7
+> Seq 1 Seq 2 Seq 3
+> XYZRXRYRZG
+> Seq 1
+> Top -1
+> Position -Related Angle -Related Gripper
+> KDetail Seq 1
+> Top -2
+> Seq 2
+> Top -1
+> Seq 2
+> Top -2
+> Seq 2
+> Top -3
+> Seq 2
+> Top -1
+> Seq 2
+> Top -2
+> Seq 2
+> Top -3
+> Seq 3
+> Top -1
+> Seq 3
+> Top -2
+> Seq 3
+> Top -3
+> Seq 3
+> Top -1
+> Seq 3
+> Top -2
+> Seq 3
+> Top -3
+> Root
+> Seq -Wise Tree Decoding
+> Use Top -KSeq
+> to build the Tree
+> Seq 1
+> Top -1
+> Seq 1
+> Top -2
+> Seq 2
+> Top -1
+> Seq 2
+> Top -2
+> Seq 2
+> Top -3
+> Seq 2
+> Top -1
+> Seq 2
+> Top -2
+> Seq 2
+> Top -3
+> Seq 3
+> Top -1
+> Seq 3
+> Top -2
+> Seq 3
+> Top -3
+> Seq 3
+> Top -1
+> Seq 3
+> Top -2
+> Seq 3
+> Top -3
+> Root Decoding of a Chain
+> a1a2a3a4a5a6a7
+> Seq 1 Top -1Seq 2 Top -1
+> Var: 0
+> a'1a'2a' 3a'4a'5a'6a'7
+> ID:150 ID :55 ID:160
+> ID :148 ID :40 ID:180 ID :72 ID :35 ID :39
+
+…         
+
+> ID :60
+> Seq -Wise  Relax
+> Acceptance
+> Depth -First Decoding
+> Var:10
+> ID :9 1
+> Var:2 Var:2 Var:15 Var:20 Var:31
+> Small Token Var.
+> Small Seq Var .
+> High Token Var.
+> Hig hSeq Var .
+
+Figure 4. Sequence-Wise Relaxed Acceptance Strategy 
+
+automatically updates the minimum acceptable similarity and point distance after each task to enhance its performance in subsequent tasks, as shown in the online stage of Alg. 1. This adaptive adjustment mechanism enables the skipping of some trajectory point verification while allowing dynamic adjustments, thereby achieving minimal accuracy loss. 
+
+4.2. Sequence-Wise Relaxed Acceptance Strategy 
+
+Merely addressing the issue that drafts fail to pass verifi-cation is insufficient; retrieval-based SD also confronts the problem of persistent errors. If errors arise in the retrieved drafts, the database lacks correction capability, resulting in repeated retrieval of the same erroneous drafts. Conse-quently, the VLA model necessitates repeated verification, failing to achieve acceleration effects. To solve this problem, we propose a sequence-wise relaxed acceptance strategy. Specifically, we first expand the retrieval draft by modify-ing the original Top-1 retrieval to Top-K matching. This approach can enhance the diversity of retrieved drafts. Fur-thermore, we define sequences in the draft as a group that contains tokens with strong kinematic correlation. As shown in Fig. 4, X, Y and Z denote the end-gripper positions (all position-related) and are thus grouped into a sequence; sim-ilarly, rX , rY and rZ represent the joint rotation angles (all angle-related) and are also packed into a sequence. For G,which means the binary control signal of the gripper, we treat it as a separate sequence. After that, we inherit the tree decoding backbone from Eagle-2 (Li et al., 2024b). The key difference is that we construct the tree in a sequence-wise rather than a token-wise man-ner. Furthermore, when constructing the tree, we allow se-quences from different retrieval results to connect with each other to maximize the potential for draft generation, except for the sequence represented by the gripper. This exception is justified by the strong correlation between the gripper state and task success rate. We verify each chain starting from the root node in a depth-first manner. In this process, a sequence-wise relaxed acceptance strategy is adopted to increase the probability of accepting diverse drafts, thereby Large                  
+
+> Radius
+> Y-Dim
+> Z-Dim
+> X-Dim
+> ①
+> ①
+> ②
+> ③
+> ④
+> ②
+> ③
+> ④
+> ⑤
+> ⑤
+> ①
+> ②
+> ③
+> ④⑤
+> VLA Inference
+> DB Retrieval
+> Small
+> Radius
+> Large
+> Displacement
+> Small
+> Displacement
+> Fusion
+> R[w]
+> D[w] D[w]
+> R[w]
+> Retrieval -Based SD
+> Drafter -Based SD
+> Large
+> Radius
+> Small
+> Radius
+> Threshold
+> Large
+> Radius
+> Small
+> Radius
+> Fusion
+> VLA Inference –Curvature Radius
+> DB Retrieval –Curvature Radius
+> Large
+> Displacement Large
+> Displacement
+> Small
+> Displacement
+> VLA Inference –Cumulative Displacement
+> DB Retrieval –Cumulative Displacement
+> VLA Inference –Fused Metric
+> DB Retrieval –Fused Metric
+> Small
+> Displacement
+> End -
+> point
+> End -
+> point
+
+Figure 5. Kinematic-Based Metric for Achieving Hybrid SD 
+
+reducing persistent errors. As shown in Fig. 4, we calculate the index bias bias of each draft token and each verify token. When the deviation of the entire sequence bias seq and that of individual tokens bias aj are maintained within a specific range, the entire sequence is accepted by enforcement. Note that we allow bias aj > bias seq , meaning a single token may exhibit a larger bias provided that the overall bias of the sequence remains small, which differs distinctly from ex-isting token-level relaxed acceptance. After multiple trials, we select bias seq = 30 and bias aj = 15 , which achieves the optimal trade-off between accuracy and speed. After all chains are validated, if all candidates for a given sequence are rejected, the VLA model is directly activated to generate subsequent tokens. This strategy, which combines top-K retrieval with sequence-wise relaxed acceptance, effectively mitigates the issue of persistent errors. In particular, no deviation is allowed for binary grippers, as the correctness of the gripper is critical to task success. 
+
+5. Metric for Determining Hybrid Boundary 
+
+After optimizing retrieval-based SD, this section proposes a novel kinematic-based metric to achieve hybrid SD and automatically determine its boundary during step-by-step VLA model inference. 
+
+5.1. Issue Definition and Design Insights 
+
+Aforementioned analysis in Section 3 shows that trajec-tories from successful database retrievals exhibit greater overlap with VLA model inference trajectories, whereas those from failed retrievals show less overlap. However, trajectory points are generated incrementally, and the com-plete trajectory cannot be obtained during the multi-step inference process. Therefore, a method is required to de-termine the hybrid boundary, i.e., which steps should adopt retrieval-based SD and which should use drafter-based SD. Through in-depth analysis, we identify that these trajectory segments exhibit inherent kinematic characteristics (shown in Fig. 5): Overlapping trajectory segments (green region) exhibit a larger curvature radius and cumulative displace-5Submission and Formatting Instructions for ICML 2026 
+
+ment, whereas biased segments (red region) show a smaller one. Therefore, we decided to use these two characteristics to design a metric to help determine the hybrid boundary. 
+
+5.2. Kinematic Characteristics of Trajectory Segments 
+
+Assuming that the trajectory context sliding window is w,each trajectory point in the coordinate system T (λ; Oγ ) con-tains spatial position x, y, z , where λ represents the distance scale and Oγ represents the origin point. First, we calculate the geometric center C = ( uc, v c) of trajectory segments and project it into 2-dimensional space to obtain the ba-sis vector (u[w] 
+
+> i
+
+, v [w] 
+
+> i
+
+), shown in Eq. (4) . We use Eq. (5) to iteratively update the optimal geometric center, which 
+
+Euclid  
+
+> 2-dim
+
+(·; ·) means 2-dimensional euclidean distance, and μ
+
+represents the mean. After that, we use Eq. (6) to calculate the curvature radius R[w] 
+
+> i
+
+. In this way, we can scan the change of R[w] 
+
+> i
+
+in a sliding window w.
+
+(u[w] 
+
+> i
+
+, v [w] 
+
+> i
+
+) = P roj  P ix,y,z − 1
+
+w
+
+> w−1
+
+X
+
+> i
+
+P ix,y,z ∈ T . (4) 
+
+(ˆ uc, ˆvc) = min 
+
+> C
+> w−1
+
+X
+
+> i
+
+
+
+Euclid 
+
+> 2-dim
+
+ (u[w] 
+
+> i
+
+, v [w] 
+
+> i
+
+); C − μ
+
+2
+
+. (5) 
+
+R[w] = 1
+
+w
+
+> w−1
+
+X
+
+> i
+
+Euclid 
+
+> 2-dim
+
+
+
+(u[w] 
+
+> i
+
+, v [w] 
+
+> i
+
+); (ˆ uc, ˆvc)
+
+
+
+. (6) Assume D[w] means the cumulative displacement in the slid-ing window w. We use Euclid  
+
+> 3-dim
+
+(·; ·) to calculate the displace-ment between two adjacent points. Then, we summarize all the displacements to obtain D[w] (Eq. 7). Considering that the robot sometimes performs round-trip or circular motion, 
+
+D[w] does not consider the displacement direction. 
+
+D[w] =
+
+> w−1
+
+X
+
+> i
+
+Euclid 
+
+> 3-dim
+
+
+
+(P ix,y,z ∈ T );  P i+1  
+
+> x,y,z
+
+∈ T )
+
+
+
+. (7) 
+
+5.3. Kinematic-Based Fused Metric 
+
+We fuse R[w] and D[w] based on Eq. (8) to obtain a fused metric F[w]. N orm (·) means the normalization operation, which is detailed in Appendix D. Conceptually, a larger 
+
+F[w] means faster movement and a trajectory closer to a straight line (representing coarse-grained action); a smaller 
+
+F[w] results in slower movement, a more curved trajectory, and fine-grained operation. 
+
+F[w] = α · N orm  R[w]
+
+> i
+
+ + (1 − α) · N orm  D[w]
+
+> i
+
+. (8) As shown in Fig. 5, F[w] integrates R[w] 
+
+> i
+
+and D[w] 
+
+> i
+
+to com-prehensively characterize the trajectory. We identify a Metric Database ViT                                               
+
+> Draft
+> LLM
+> Embed
+> ViT
+> Forward()
+> Retri
+> Similarity()
+> Top -K()
+> Action
+> Verify
+> LLM
+> Forward()
+> CPU GPU Robot
+> Exe
+> De -Token()
+> Control()
+> Vision Info.
+> Gen
+> Drafter
+> Forward()
+> VLA Peak DB Peak GPU Type GPU GMEM Result
+> 16.6GB 8.8GB
+> RTX 3090 24GB OOM ❌
+> RTX 4090 24GB OOM ❌
+> RTX 5090 24GB/32GB OOM ❌
+> A100 40GB/80GB OK ✅
+> H100 80GB/94GB OK ✅
+> Offloading  the
+> Database  to  CPU
+> HeiSD Framework
+> Computation Flow
+> Embeddings ｜from GPU to CPU:
+> Embed -dim = 4352 -dim Vec @FP16
+> Latency = 0.25ms (BW 32GB/s)
+> Retrieved Draft ｜from CPU to GPU:
+> Draft -dim = 7 -dim Vec @FP16
+> Latency: Negligible (BW 32GB/s)
+> Data Movement –ACase
+> Seq -Wise
+> Relaxed Accept
+> Dafter
+> If R-SD
+> Else S -SD Draft LLM Verify
+> LLM
+> Forward()
+> If Verify -Skip
+> Else
+
+Figure 6. System Implementation of HeiSD Framework 
+
+threshold to serve as the demarcation between retrieval-based SD and drafter-based SD. Specifically, when F[w] at the current step exceeds the threshold, retrieval-based SD is selected, as both R[w] 
+
+> i
+
+and D[w] 
+
+> i
+
+at this step are relatively large, which should align with the trajectory inferred by VLA; otherwise, drafter-based SD is chosen. 
+
+6. HeiSD Framework Implementation 
+
+This section outlines key considerations for HeiSD frame-work implementation, covering cost accounting, hardware mapping and overall computation flow. 
+
+6.1. Cost Accounting and Hardware Mapping 
+
+We develop pre-implementation cost accounting (Fig. 6) to reveal that most consumer GPUs encounter Out-of-Memory (OOM) issues when hosting both the database component and the VLA model; thus, to ensure compatibility with mainstream hardware, the database is deployed in CPU memory to reduce GPU memory overhead. This hetero-geneous collaborative deployment necessitates GPU-CPU communications, whose detailed costing (Fig. 6) shows neg-ligible overhead ( >100 ms) in a single inference process, far below that of model inference, validating the feasibility and effectiveness of this deployment strategy. 
+
+6.2. Overall Computation Flow 
+
+We use 5000 lines of code to implement the HeiSD frame-work. Its overall computation flow is shown in Fig. 6. First, visual information is encoded into embeddings using a ViT on the GPU. Then, based on the prior trajectory, our fused metric determines the type of SD to be adopted. If the retrieval-based SD is used, the embeddings are transmitted to the CPU for retrieval, which includes similarity com-putation and Top-K selection. When drafter-based SD is employed, the embeddings remain on the GPU and are input to the drafter for draft generation. For the retrieved drafts, they are first moved back to the GPU. Then the adaptive 6Submission and Formatting Instructions for ICML 2026 
+
+verify-skip mechanism determines whether a draft should skip verification. If skipped, the draft is executed directly; otherwise, verification is performed under our sequence-wise relaxed acceptance strategy. For drafts generated by the drafter, since they already reside on the GPU, we directly perform verification. All verification processes occur on the GPU. We will show that this CPU+GPU implementation offers advantages over the GPU-only deployment below. 
+
+7. Experiments 
+
+7.1. Setup 
+
+We test HeiSD based on OpenVLA (Kim et al., 2024) model clusters in LIBERO (Liu et al., 2023) simulation benchmark and real-world environment. We build a single LLaMA block (Touvron et al., 2023) as a draft model to build drafter-based SD. We train the draft models based on the Deep-Speed (Rasley et al., 2020) framework, which takes 8 hours with 2*NVIDIA A100 GPUs. We build retrieval-based SD using the pre-built database. Both types of SD are appli-cable to OpenVLA as the validation model. Since there is no similar work, we choose pure drafter-based SD (Pure D-SD), pure retrieval-based SD (Pure R-SD), and SOTA work SpecVLA (Wang et al., 2025) with token-level relaxed acceptance as the baselines. We use an Nvidia A100 GPU and an Intel Xeon Silver 4410T as hardware platform. 
+
+7.2. Evaluation Results Simulation Results. We utilize four LIBERO task suites to evaluate HeiSD and each suite contains 10 tasks. For each task, we conduct 50 trials for testing. We report the results in Tab. 3. Compared with autoregressive inference, 
+
+HeiSD achieves 1.79 ×∼ 2.45 × speed up. Compared with Pure D-SD and Pure R-SD, HeiSD also delivers significant acceleration effects. This confirms that our choice to hy-bridize two types of SD during VLA reasoning is highly effective. Moreover, even compared with SOTA works like SpecVLA, HeiSD achieves 1.51 ×∼ 2.22 × speedup with bet-ter SR. This demonstrates that the hybrid use of two SD methods in the VLA reasoning process yields a superior Pareto frontier. Fig. 7 presents the proportions of two types of SD and verify-skip across four environments, explaining the source of acceleration. Moreover, HeiSD achieves an increased acceptance length (AL) of about 4.75 ∼4.96. The improvement in AL primarily stems from our optimization of retrieval-based SD. First, our verify-skip mechanism ef-fectively extends AL, as drafts with skipped verification are treated as fully accepted. Second, our proposed sequence-wise relaxed acceptance strategy allows some biased tokens to be accepted alongside the sequence. 
+
+Real-World Results. We construct a tabletop operating en-vironment (Appendix E.1), and employ the AgileX PIPER LIBERO -Goal LIBERO -Spatial LIBERO -Object LIBERO -Long      
+
+> D-SD R-SD Skip Verify R-SD w/ Verify
+
+Figure 7. Discussion of Hyper-Parameter w in HeiSD 
+
+robot arm (Appendix E.2) to test HeiSD ’s performance in real-world scenarios. We build various manipulation tasks (Appendix E.3). We collect massive human demonstration data (Appendix E.4) to rebuild the database and fine-tune the models. After that, we deploy HeiSD into the real world and test its performance. The results are shown in Tab. 4. On the three task categories we defined (with SR of 87.2%, 77.3%, and 71.7% after fine-tuning), HeiSD achieves a 2.06 ×∼ 2.41 × speedup with minor SR loss (1.2% ∼3.9%). We also represent an example real-world task completion process in Fig. 8 to show the performance. 
+
+Ablation Studies. We conduct ablation studies on the LIBERO-Goal benchmark to evaluate the effects of HeiSD ’s components, with corresponding results reported in Tab. 4. When Hybrid SD is implemented solely based on fusion met-rics, the boundaries between retrieval-based SD and drafter-based SD are defined; however, the overall performance remains suboptimal due to unresolved issues in retrieval-based SD. Specifically, it achieves an SR of 74.0% but exhibits nearly no acceleration, with an average accepted length of only 1.05. Building on this foundation, we incorpo-rate the adaptive verify-skip mechanism, which significantly enhances performance. It achieves a 2.08 × speedup with only a slight drop (1.0%) in accuracy, while the AL is also increased to 4.04. Further, after adding the sequence-wise relaxed acceptance, it achieves 2.38 × speedup (0.3 × in-creasing) and an AL of 4.50, while maintaining 73.0% SR. 
+
+Table 3. Simulation Results of HeiSD                                                                                                           
+
+> Env. Method SR Speed AL Steps HW
+> LIBERO-Goal AR w/o SD 77.0% 1.00 ×–157.6 GPU Pure R-SD 77.0% 0.96 ×1.03 152.6 CPU+GPU Pure D-SD 76.2% 0.87 ×1.68 159.2 GPU SpecVLA 71.0% 1.23 ×3.63 166.8 GPU
+> HeiSD 73.0% 2.38 ×4.75 156.3 CPU+GPU
+> LIBERO-Object AR w/o SD 71.2% 1.00 ×–191.7 GPU Pure R-SD 76.0% 0.98 ×0.93 195.4 GPU Pure D-SD 68.6% 0.96 ×1.84 195.9 GPU SpecVLA 62.4% 1.10 ×3.91 214.5 GPU
+> HeiSD 71.0% 2.45 ×4.94 189.6 CPU+GPU
+> LIBERO-Spatial AR w/o SD 82.8% 1.00 ×–126.9 GPU pure R-SD 78.0% 1.15 ×0.81 123.5 GPU Pure D-SD 82.8% 0.98 ×1.65 127.3 GPU SpecVLA 80.4% 1.26 ×3.80 128.7 GPU
+> HeiSD 78.0% 1.90 ×4.83 127.8 CPU+GPU
+> LIBERO-Long AR w/o SD 54.4% 1.00 ×–393.2 GPU Pure R-SD 50.0% 0.99 ×0.81 399.3 GPU Pure D-SD 50.2% 0.91 ×1.59 400.7 GPU SpecVLA 46.2% 1.13 ×3.63 439.6 GPU
+> HeiSD 47.0% 1.79 ×4.96 428.0 CPU+GPU
+
+7Submission and Formatting Instructions for ICML 2026 Retrieval -Based SD Drafter -Based SD 
+
+Skipping Verify 
+
+Retrieval -Based SD Drafter -Based SD 
+
+Skipping Verify 
+
+Hybrid Hybrid Hybrid HeiSD 
+
+Figure 8. A Case of HeiSD Framework Completing Real-World Tasks (Task Name: Pick up the Banana and Put It on the Plate) 
+
+Table 4. Real-World Results of HeiSD 
+
+Task Category Fine-Tune HeiSD SR HeiSD Speedup HeiSD AL 
+
+Atomic Grasping 87.2% 86.0% 2.33 × 4.47 Spatial Displacement 77.3% 75.1% 2.41 × 4.39 Composite Sequential 71.7% 67.8% 2.06 × 4.15 40.00%                  
+
+> 45.00%
+> 50.00%
+> 1.55
+> 1.60
+> 1.65
+> 0.3 0.4 0.5 0.6 0.7
+> LIBERO -Long
+> Speed
+> SR
+> 60.00%
+> 70.00%
+> 80.00%
+> 1.80
+> 2.00
+> 2.20
+> 0.3 0.4 0.5 0.6 0.7
+> LIBERO -Goal
+> Speed
+> SR
+> 60.00%
+> 70.00%
+> 80.00%
+> 1.00
+> 2.00
+> 3.00
+> 0.3 0.4 0.5 0.6 0.7
+> LIBERO -Object
+> Speed
+> SR
+> 65.00%
+> 70.00%
+> 75.00%
+> 80.00%
+> 1.60
+> 1.80
+> 2.00
+> 0.3 0.4 0.5 0.6 0.7
+> LIBERO -Spatial
+> Speed
+> SR
+> HeiSD ’s
+> Selection HeiSD ’s
+> Selection
+> HeiSD ’s
+> Selection
+> HeiSD ’s
+> Selection
+
+Figure 9. Discussion of Hyper-Parameter w in HeiSD 
+
+7.3. Discussion Hyper-Parameters. HeiSD involves two hyper-parameters: the sliding window size w for trajectory points and α in the fused metric. We evaluate HeiSD ’s performance across various hyper-parameters on the LIBERO-Goal benchmark, with the results presented in Fig. 10. As illustrated in Fig. 10, we test the results under different values of w across four simulation environments. We find that the value of w exerts a significant influence on speed and SR, as it alters the distribution of the fused metric. Considering both the SR and speed comprehensively, we select w = 15 as the default value for HeiSD . Fig. 9 shows the results under different values of α. Similarly, α also influences the SR and speed. We select α = 0 .5 to ensure equal attention is allocated to the curvature radius and cumulative displacement. 
+
+Hardware Implementation Analysis. We test HeiSD ’s end-to-end latency (50 trials) on different hardware plat-forms in both four simulation benchmarks. Results in Tab. 6 show that offload database into CPU brings a little accelera-tion (1.04 ×∼ 1.09 ×). This demonstrates that the CPU ex-hibits higher execution efficiency than the GPU for database 
+
+Table 5. Ablation Studies of HeiSD on LIBERO-Goal Benchmark 
+
+SR Speedup AL 
+
+Only Hybrid SD 74.0% 1.05 × 1.05 + Adaptive Verify-Skip 73.0% ↓1.0% 2.08 × ↑ 1.03 × 4.04 ↑2.99 + Seq-Wise Relaxed Acceptance 73.0% ↑0.0% 2.38 × ↑ 0.30 × 4.50 ↑0.46 60.00%                 
+
+> 70.00%
+> 80.00%
+> 2.10
+> 2.30
+> 2.50
+> 11 13 15 17 19
+> LIBERO -Goal
+> Speed
+> SR
+> 65.00%
+> 70.00%
+> 75.00%
+> 2.10
+> 2.30
+> 2.50
+> 11 13 15 17 19
+> LIBERO -Object
+> Speed
+> SR
+> 70.00%
+> 75.00%
+> 80.00%
+> 1.60
+> 1.80
+> 2.00
+> 11 13 15 17 19
+> LIBERO -Spatial
+> Speed
+> SR
+> 44.00%
+> 46.00%
+> 48.00%
+> 1.40
+> 1.60
+> 1.80
+> 11 13 15 17 19
+> LIBERO -Long
+> Speed
+> SR
+> HeiSD ’s
+> Selection
+> HeiSD ’s
+> Selection
+> HeiSD ’s
+> Selection
+> HeiSD ’s
+> Selection
+
+Figure 10. Discussion of Hyper-Parameter α in HeiSD 
+
+retrieval-related operations without specific optimization. More critically, offloading databases to the CPU signifi-cantly saves GPU memory and better accommodates com-puting hardware of multiple specifications. 
+
+Generality. Our work focuses exclusively on autoregressive VLAs and is not applicable to those incorporating diffusion models, as SD can only function in autoregressive models. The proposed HeiSD framework exhibits good generality and imposes no specific requirements on autoregressive VLAs, task categories, or robot platforms. 
+
+Scope. We do not design an automatic hyperparameter de-termination method, mainly because established standards for current embodied intelligence are lacking. Automatic hyper-parameter selection is therefore designated as future work, to be addressed once environmental standards are established. Additionally, the core purpose of HeiSD is to achieve acceleration while ensuring SR, rather than to guar-antee strictly homogeneous distribution of draft and infer-ence results. Thus, the impact of verify-skip and sequence-wise relaxed acceptance on the output distribution is not considered in this paper as it falls outside the scope. 
+
+8. Conclusion 
+
+In this paper, we first construct a database, design tests, iden-tify the trajectory overlapping regularity, and derive insights 
+
+Table 6. Hardware Implementation Analysis of HeiSD 
+
+Details Goal Object Spatial Long 
+
+HeiSD on GPU 7388.9 s 7731.7 s 6557.0 s 23318.5 s 
+
+HeiSD on CPU+GPU 7113.6 s 7328.4 s 6238.5 s 21352.7 s Acceleration 1.04 × 1.06 × 1.05 × 1.09 ×
+
+8Submission and Formatting Instructions for ICML 2026 
+
+for implementing hybrid SD. Then we introduce an adaptive verify-skip mechanism and a sequence-wise relaxed accep-tance strategy to address limitations in retrieval-based SD. Additionally, we develop a kinematic-based fusion metric to determine the hybrid boundary, forming HeiSD frame-work. Experiments show that HeiSD attains a speedup of up to 2.45 × in simulation benchmarks and 2.06 ×∼ 2.41 ×
+
+in real-world scenarios, while sustaining a high SR. 
+
+Impact Statement 
+
+This paper presents work whose goal is to advance the field of machine learning. There are many potential societal consequences of our work, none of which we feel must be specifically highlighted here. 
+
+References 
+
+Budzianowski, P., Maa, W., Freed, M., Mo, J., Hsiao, W., Xie, A., Młoduchowski, T., Tipnis, V., and Bolte, B. Edgevla: Efficient vision-language-action models. arXiv preprint arXiv:2507.14049 , 2025. Cho, S., Choi, S., Hwang, T., Seo, J., Jeong, S., Lee, H., Song, H., Park, J. C., and Kwon, Y. Lossless accelera-tion of large language models with hierarchical drafting based on temporal locality in speculative decoding. arXiv preprint arXiv:2502.05609 , 2025. Ding, N., Qin, Y., Yang, G., Wei, F., Yang, Z., Su, Y., Hu, S., Chen, Y., Chan, C.-M., Chen, W., et al. Parameter-efficient fine-tuning of large-scale pre-trained language models. Nature machine intelligence , 5(3):220–235, 2023. Han, Z., Gao, C., Liu, J., Zhang, J., and Zhang, S. Q. Parameter-efficient fine-tuning for large models: A com-prehensive survey. arXiv preprint arXiv:2403.14608 ,2024. He, Z., Zhong, Z., Cai, T., Lee, J., and He, D. Rest: Retrieval-based speculative decoding. In Proceedings of the 2024 conference of the North American chapter of the association for computational linguistics: Human language technologies (volume 1: long papers) , pp. 1582– 1595, 2024. Hu, E. J., Shen, Y., Wallis, P., Allen-Zhu, Z., Li, Y., Wang, S., Wang, L., Chen, W., et al. Lora: Low-rank adaptation of large language models. ICLR , 1(2):3, 2022. Kim, M. J., Pertsch, K., Karamcheti, S., Xiao, T., Balakr-ishna, A., Nair, S., Rafailov, R., Foster, E., Lam, G., San-keti, P., et al. Openvla: An open-source vision-language-action model. arXiv preprint arXiv:2406.09246 , 2024. Kwon, O., George, A., Bartsch, A., and Farimani, A. B. Rt-cache: Training-free retrieval for real-time manipula-tion. In 2025 IEEE-RAS 24th International Conference on Humanoid Robots (Humanoids) , pp. 1–8, 2025. doi: 10.1109/Humanoids65713.2025.11203198. Lee, A. C.-M., Cheng, W.-S., and Chan, C. C.-K. PROMTEC: Fast LLM inference decoding using prompt multi-lookup with template database and common se-quences. In Che, W., Nabende, J., Shutova, E., and Pilehvar, M. T. (eds.), Findings of the Asso-ciation for Computational Linguistics: ACL 2025 ,pp. 6830–6842, Vienna, Austria, July 2025. Asso-ciation for Computational Linguistics. ISBN 979-8-89176-256-5. doi: 10.18653/v1/2025.findings-acl. 355. URL https://aclanthology.org/2025. findings-acl.355/ .Li, S., Hu, Y., Ning, X., Liu, X., Hong, K., Jia, X., Li, X., Yan, Y., Ran, P., Dai, G., et al. Mbq: Modality-balanced quantization for large vision-language models. In Pro-ceedings of the Computer Vision and Pattern Recognition Conference (CVPR) , pp. 4167–4177, 2025. Li, X., Hsu, K., Gu, J., Pertsch, K., Mees, O., Walke, H. R., Fu, C., Lunawat, I., Sieh, I., Kirmani, S., Levine, S., Wu, J., Finn, C., Su, H., Vuong, Q., and Xiao, T. Evaluat-ing real-world robot manipulation policies in simulation. 
+
+arXiv preprint arXiv:2405.05941 , 2024a. Li, Y., Wei, F., Zhang, C., and Zhang, H. Eagle-2: Faster inference of language models with dynamic draft trees. 
+
+arXiv preprint arXiv:2406.16858 , 2024b. Liu, B., Zhu, Y., Gao, C., Feng, Y., Liu, Q., Zhu, Y., and Stone, P. Libero: Benchmarking knowledge transfer for lifelong robot learning. In Advances in Neural Informa-tion Processing Systems , volume 36, pp. 44776–44791, 2023. Liu, J., Liu, M., Wang, Z., Lee, L., Zhou, K., An, P., Yang, S., Zhang, R., Guo, Y., and Zhang, S. Robomamba: Multi-modal state space model for efficient robot reasoning and manipulation. arXiv preprint arXiv:2406.04339 , 2024a. Liu, S.-Y., Wang, C.-Y., Yin, H., Molchanov, P., Wang, Y.-C. F., Cheng, K.-T., and Chen, M.-H. Dora: Weight-decomposed low-rank adaptation. In Forty-first Interna-tional Conference on Machine Learning , 2024b. Ma, Y., Song, Z., Zhuang, Y., Hao, J., and King, I. A survey on vision-language-action models for embodied ai. arXiv preprint arXiv:2405.14093 , 2024. Nasiriany, S., Maddukuri, A., Zhang, L., Parikh, A., Lo, A., Joshi, A., Mandlekar, A., and Zhu, Y. Robocasa: Large-scale simulation of everyday tasks for generalist robots. 
+
+arXiv preprint arXiv:2406.02523 , 2024. 9Submission and Formatting Instructions for ICML 2026 
+
+Oquab, M., Darcet, T., Moutakanni, T., Vo, H., Szafraniec, M., Khalidov, V., Fernandez, P., Haziza, D., Massa, F., El-Nouby, A., et al. Dinov2: Learning robust visual features without supervision. arXiv preprint arXiv:2304.07193 ,2023. O’Neill, A., Rehman, A., Maddukuri, A., Gupta, A., Padalkar, A., Lee, A., Pooley, A., Gupta, A., Mandlekar, A., Jain, A., et al. Open x-embodiment: Robotic learning datasets and rt-x models: Open x-embodiment collab-oration 0. In 2024 IEEE International Conference on Robotics and Automation (ICRA) , pp. 6892–6903. IEEE, 2024. Park, S., Kim, H., Jeon, W., Yang, J., Jeon, B., Oh, Y., and Choi, J. Quantization-aware imitation learning for resource-efficient robotic control. arXiv preprint arXiv:2412.01034 , 2024. Pertsch, K., Stachowicz, K., Ichter, B., Driess, D., Nair, S., Vuong, Q., Mees, O., Finn, C., and Levine, S. Fast: Efficient action tokenization for vision-language-action models. arXiv preprint arXiv:2501.09747 , 2025. Qdrant Team. Qdrant: High-performance, massive-scale vector database and vector search engine. https:// qdrant.tech/ , 2023. Accessed: 2024-01-08. Rasley, J., Rajbhandari, S., Ruwase, O., and He, Y. Deep speed: System optimizations enable training deep learn-ing models with over 100 billion parameters. In Proceed-ings of the 26th ACM SIGKDD international conference on knowledge discovery & data mining , pp. 3505–3506, 2020. Song, W., Chen, J., Ding, P., Huang, Y., Zhao, H., Wang, D., and Li, H. Ceed-vla: Consistency vision-language-action model with early-exit decoding. arXiv preprint arXiv:2506.13725 , 2025. Todorov, E., Erez, T., and Tassa, Y. Mujoco: A physics engine for model-based control. In 2012 IEEE/RSJ Inter-national Conference on Intelligent Robots and Systems ,pp. 5026–5033. IEEE, 2012. doi: 10.1109/IROS.2012. 6386109. Touvron, H., Lavril, T., Izacard, G., Martinet, X., Lachaux, M.-A., Lacroix, T., Rozi `ere, B., Goyal, N., Hambro, E., Azhar, F., et al. Llama: Open and efficient foundation lan-guage models. arXiv preprint arXiv:2302.13971 , 2023. van der Maaten, L. and Hinton, G. Visualizing data using t-sne. Journal of Machine Learning Research , 9(86):2579– 2605, 2008. URL http://jmlr.org/papers/v9/ vandermaaten08a.html .Wang, S., Yu, R., Yuan, Z., Yu, C., Gao, F., Wang, Y., and Wong, D. F. Spec-vla: speculative decoding for vision-language-action models with relaxed acceptance. arXiv preprint arXiv:2507.22424 , 2025. Wen, J., Zhu, Y., Li, J., Zhu, M., Tang, Z., Wu, K., Xu, Z., Liu, N., Cheng, R., Shen, C., et al. Tinyvla: Towards fast, data-efficient vision-language-action models for robotic manipulation. IEEE Robotics and Automation Letters ,2025. Wen, Z., Gui, S., and Feng, Y. Speculative decoding with ctc-based draft model for llm inference acceleration. In 
+
+Advances in Neural Information Processing Systems , vol-ume 37, pp. 92082–92100, 2024. Xu, L., Xie, H., Qin, S.-Z. J., Tao, X., and Wang, F. L. Parameter-efficient fine-tuning methods for pretrained language models: A critical review and assessment. arXiv preprint arXiv:2312.12148 , 2023. Yan, M., Agarwal, S., and Venkataraman, S. Decoding spec-ulative decoding. In Proceedings of the 2025 Conference of the Nations of the Americas Chapter of the Associa-tion for Computational Linguistics: Human Language Technologies (Volume 1: Long Papers) , pp. 6460–6473, 2025. Yue, Y., Wang, Y., Kang, B., Han, Y., Wang, S., Song, S., Feng, J., and Huang, G. Deer-vla: Dynamic inference of multimodal large language models for efficient robot execution. In Advances in Neural Information Processing Systems , volume 37, pp. 56619–56643, 2024. Zhai, X., Mustafa, B., Kolesnikov, A., and Beyer, L. Sig-moid loss for language image pre-training. In Proceed-ings of the IEEE/CVF international conference on com-puter vision , pp. 11975–11986, 2023. Zhang, J., Huang, J., Jin, S., and Lu, S. Vision-language models for vision tasks: A survey. IEEE Transactions on Pattern Analysis and Machine Intelligence , 46(8):5625– 5644, 2024. Zhang, R., Dong, M., Zhang, Y., Heng, L., Chi, X., Dai, G., Du, L., Du, Y., and Zhang, S. Mole-vla: Dynamic layer skipping vision language action model via mixture-of-layers for efficient robot manipulation. arXiv preprint arXiv:2503.20384 , 2025. Zheng, Z., Cui, X., Zheng, S., Li, M., Chen, J., Chen, X., et al. Moqa: Rethinking moe quantization with multi-stage data-model distribution awareness. arXiv e-prints ,pp. arXiv–2503, 2025. 10 Submission and Formatting Instructions for ICML 2026 
+
+Zheng, Z., Cao, H., Tian, S., Chen, J., Li, M., Sun, X., Zou, H., Zhang, Z., Liu, X., Cao, D., et al. Dyq-vla: Temporal-dynamic-aware quantization for embod-ied vision-language-action models. arXiv preprint arXiv:2603.07904 , 2026a. Zheng, Z., Mao, Z., Li, M., Chen, J., Sun, X., Zhang, Z., Cao, D., Mei, H., and Chen, X. Kerv: Kinematic-rectified speculative decoding for embodied vla models. arXiv preprint arXiv:2603.01581 , 2026b. Zheng, Z., Tian, S., Cao, H., Li, C., Chen, J., Li, M., Sun, X., Zou, H., Luo, G., and Chen, X. Rapid: Redundancy-aware and compatibility-optimal edge-cloud partitioned inference for diverse vla models. arXiv preprint arXiv:2603.07949 , 2026c. Zitkovich, B., Yu, T., Xu, S., Xu, P., Xiao, T., Xia, F., Wu, J., Wohlhart, P., Welker, S., Wahid, A., et al. Rt-2: Vision-language action models transfer web knowledge to robotic control. In Conference on Robot Learning , pp. 2165–2183. PMLR, 2023. 11 Submission and Formatting Instructions for ICML 2026 
+
+A. Vision-Language-Action Models 
+
+A.1. Model Structure 
+
+Vision-Language-Action (VLA) models map visual observations and natural language instructions directly to robot actions. The canonical VLA architecture follows a three-stage pipeline: (1) a Vision Encoder (ViT-based) extracts visual features from robot observations, (2) a pre-trained Large Language Model backbone fuses visual and language tokens for cross-modal reasoning, and (3) an Action Decoder head projects the model outputs into action space. While recent works have explored diffusion-based action generation, we focus on the widely adopted autoregressive token prediction framework. To illustrate this architecture concretely, we use OpenVLA (Kim et al., 2024) as an example. OpenVLA employs a dual-encoder vision system: DINOv2-ViT-L/14 (Oquab et al., 2023) (304M parameters, self-supervised features) and SigLIP-ViT-SO400M/14 (Zhai et al., 2023) (400M parameters, vision-language aligned features) process 224 × 224 RGB images in parallel. Their 1024-dim and 1152-dim outputs are concatenated and projected through a lightweight adapter into the LLM token space, yielding 256 visual tokens per observation. The language backbone is Llama-2-7B (7B parameters), which autoregressively generates action tokens by attending to the combined vision-language context. For 7-DoF robot control, the model predicts 7 action dimension tokens through a linear head over a 256-bin vocabulary per dimension. 
+
+A.2. Generation Paradigms 
+
+At each robot control timestep, action generation proceeds sequentially: the model predicts dimension a1, appends its token to the input sequence, then predicts a2 conditioned on a1, and so forth. For a D-dimensional action ( D = 7 for OpenVLA), this requires D full forward passes through the LLM backbone, each involving causal attention over all visual tokens, language tokens, and previously generated action tokens. On an NVIDIA A100 GPU, OpenVLA’s single-timestep inference takes approximately 174ms: 8ms for dual-encoder visual feature extraction, 113ms for autoregressive action token generation (across 7 decoding steps), and ≈ 53 ms of system overheads (e.g., data transfer and CPU scheduling). This sequential decoding bottleneck—where each action dimension must wait for its predecessor—directly motivates our application of speculative decoding to VLA inference. To bridge continuous robot control and discrete language modeling, VLA models quantize action spaces into token vocabularies. Each action dimension ai ∈ [amin ,i , a max ,i ] is uniformly discretized into K bins (typically K = 256 to balance resolution and vocabulary size). The continuous-to-discrete mapping assigns each action to its nearest bin index: 
+
+bi =
+
+ ai − amin ,i 
+
+amax ,i − amin ,i 
+
+· (K − 1) 
+
+
+
+, (9) while the inverse mapping reconstructs continuous actions via linear interpolation: 
+
+ai = amin ,i + bi
+
+K − 1 (amax ,i − amin ,i ). (10) This discretization allows VLA models to apply standard cross-entropy loss over bin indices, treating action prediction as multi-class classification without architectural modifications. Tokenizer 
+
+> Input Image
+> Vision Encoders “Turn on the Stove
+> ”
+> Language Instruction
+
+# Large Language Model  
+
+> Action Detokenizer
+
+# VLA Model               
+
+> ……………
+> …
+> ……
+> ……………
+> Vision Token Text Token
+> …
+> …
+> …
+> Execute
+> [X,Y,Z, …]
+> Action
+> Slice
+> Figure 11. Common Structure of Vision-Language-Action Models.
+
+12 Submission and Formatting Instructions for ICML 2026 LIBERO -Spatial LIBERO -Object LIBERO -Goal LIBERO -Long  
+
+> Figure 12. Representative initial scenes from the four LIBERO subsets. From left to right: LIBERO-Spatial, LIBERO-Object, LIBERO-Goal, and LIBERO-Long. These MuJoCo tabletop environments, manipulated by a 7-DoF Franka Panda arm, illustrate distribution shifts across spatial configurations, object instances,and goal specifications.
+
+B. LIBERO Dataset Details 
+
+B.1. Brief Introduction of LIBERO 
+
+LIBERO (Liu et al., 2023) is a comprehensive benchmark for evaluating multitask robot learning and generalization. The dataset contains 130 tabletop manipulation tasks performed by a 7-DoF Franka Panda robot arm in simulated environments built on MuJoCo (Todorov et al., 2012) physics engine. All demonstrations are collected through human tele-operation using expert operators, ensuring high-quality trajectory data. Depending on the task environment and operands, LIBREO classifies all tasks into four categories, as follows: • LIBERO-Spatial : Tasks vary in spatial configurations and object placements while maintaining consistent manipulation primitives (e.g., “pick up the bowl on the left” and “pick up the bowl on the right”). • LIBERO-Object : Tasks involve different object instances with varying visual appearances but similar manipulation strategies (e.g., different colored plates, various shaped containers). • LIBERO-Goal : Tasks require the same set of objects but with different goal specifications, testing the agent’s ability to follow diverse instructions. • LIBERO-Long : Multi-step tasks requiring sequential execution of 3-4 sub-goals, significantly longer than single-step manipulation tasks in other suites. Each task provides multiple demonstration trajectories with randomized initial states, enabling robust policy learning and systematic evaluation of generalization capabilities across different distribution shifts. 
+
+B.2. Statistics of the LIBERO Dataset 
+
+We build our retrieval database from the official LIBERO training demonstrations (Liu et al., 2023). To guide the design of the database architecture, we profile key dataset statistics—such as episode count, length, Disk Usage, and action dimensionality—across its four task suites: LIBERO-Goal, LIBERO-Spatial, LIBERO-Object, and LIBERO-Long. As shown in Tab. 7, LIBERO-Long episodes are significantly longer due to multi-step task composition, while the others focus on single-goal primitives. These metrics directly inform our choices in sharding, payload structure, and storage allocation.                                        
+
+> Table 7. LIBERO Dataset Statistics
+> Dataset Tasks Episodes Total Steps Avg. Steps/Episode Size Files
+> LIBERO-Goal 10 428 52,042 121.59 ±37.62 1.7 GB 18 LIBERO-Spatial 10 432 52,970 122.62 ±20.75 1.8 GB 18 LIBERO-Object 10 454 66,984 147.54 ±18.53 2.6 GB 34 LIBERO-Long 10 379 101,469 267.73 ±56.74 3.4 GB 34
+
+13 Submission and Formatting Instructions for ICML 2026 LIBERO -Spatial LIBERO -Object LIBERO -Goal LIBERO -Long         
+
+> Vector Representation Payload Schema Structure Pre -Design Sharding Strategy
+> Figure 13. 3D visualization of database embedding vectors using t-SNE (van der Maaten & Hinton, 2008) dimensionality reduction. Points are colored by task identity, showing clear clustering of trajectories from the same task.
+
+C. Database Construction 
+
+This section details the design and implementation of our retrieval system, which enables fast, task-aware searching over human demonstrations. We first describe the multi-modal vector representation used to encode visual states, followed by the self-contained payload schema that associates each vector with executable action sequences and metadata. Based on scale profiling of the LIBERO dataset, we then present our database architecture—including backend selection, task-based sharding, and memory feasibility. Finally, we report the actual storage footprint and query latency of the constructed database, demonstrating its efficiency as a low-latency retrieval module. 
+
+C.1. Construction Details of the Retrieval System Vector Representation. Vision-language-action (VLA) models often incorporate multiple visual encoders or Vision Transformer (ViT) backbones to capture complementary aspects of the environment. To construct a comprehensive observation representation, we fuse the visual features from these complementary streams by concatenation. Taking OpenVLA (Kim et al., 2024) as a concrete example, its visual encoder provides two distinct feature types: • DINOv2 Features (1024-dim): A self-supervised visual representation that captures robust scene-level semantics. • SigLIP Features (1152-dim): A vision-language aligned visual representation that grounds observations to task instructions. In our setup, we employ a dual-view observation system consisting of a third-person view and an elbow-mounted camera view. Each view is independently processed by both encoders, yielding (1024 + 1152) × 2 = 4352 dimensions in total. Concatenating features from both views yields a 4352-dim joint visual embedding, which is then L2-normalized to enable cosine similarity-based retrieval. Following Qdrant’s efficient retrieval methodology, we leverage Hierarchical Navigable Small World (HNSW) graphs for approximate nearest neighbor search, which provide sub-linear query complexity while maintaining high recall rates. To validate the effectiveness of this fused representation, we perform t-SNE (van der Maaten & Hinton, 2008) dimensionality reduction over the entire demonstration database. As shown in Fig. 13, the embeddings form clear clusters by task identity, confirming that the combined representation successfully captures task-specific patterns in the high-dimensional space. 
+
+Retrieval Payload Schema. To enable self-contained retrieval, each vector point stores a lightweight JSON payload with all metadata and action information needed for speculative decoding, including: (1) dataset name (string); (2) episode idx (int); (3) step idx (int); (4) current action (float[7]); (5) next actions (float[3 ×7]); (6) 
+
+language instruction (string). This design ensures that a single query returns both the matched state and its executable 3-step action sequence, eliminating the need for external storage. The payload size is under 200 B per entry, making it highly memory-efficient. 
+
+Structure Pre-Design. Guided by our profiling of the LIBERO benchmark—comprising 273,465 timesteps across four suites (summing to fewer than 3 × 10 5 steps; see Tab. 8 for a per-suite breakdown)—we determine that the entire retrieval 14 Submission and Formatting Instructions for ICML 2026                       
+
+> Table 8. Vector Database Distribution and Storage
+> Dataset Collections Ttl. Vectors Vec. per Collection Size Ttl. Size
+> LIBERO-Goal 10 52,042 5,204 1.38 GB 6.5 GB LIBERO-Object 10 66,984 7,443 1.58 GB LIBERO-Spatial 10 52,970 5,297 1.38 GB LIBERO-Long 10 101,469 10,147 2.16 GB
+
+memory can comfortably fit in RAM. Each timestep entry requires approximately 8.69 KiB, leading to a theoretical total memory footprint of 2.27 GB. Given these constraints, we select Qdrant (Qdrant Team, 2023) as the vector database backend due to its high-speed similarity search, open-source licensing, and native support for loading full indices into memory. Qdrant employs HNSW indexing with configurable parameters (we use m=16 , ef construct=100 ) to balance index construction time, memory usage, and search accuracy. This design ensures low-latency retrieval during policy inference while maintaining simplicity in deployment. 
+
+Sharding Strategy. We partition the retrieval database into multiple independent collections to enforce logical isolation across tasks, avoiding mixing of heterogeneous demonstration data and simplifying index management. This sharding improves query efficiency through smaller search spaces, supports incremental updates and selective loading, and enhances maintainability—each collection can be inspected or replaced independently. This strategy yields 40 collections across the four LIBERO suites. Tab. 8 summarizes the distribution of vectors and storage usage per dataset. 
+
+C.2. Performance Analysis of the Retrieval System 
+
+As summarized in Tab. 8, the final database contains 273,465 vectors—one for each timestep in the LIBERO training set—distributed across 40 task-specific collections. We construct it by encoding each observation into a 4352-dim vector and storing it with its payload in the corresponding collection, ensuring complete, non-redundant coverage. The actual disk usage is 6.5 GB, comprising 1.0 GB for vector storage and 5.5 GB for indexing overhead (HNSW graphs and metadata). We measure retrieval latency on a standard server: the average query time over 100 runs is 5.13 ms , significantly faster than a single SD forward pass (13.93 ms). This confirms that our retrieval memory is both compact and efficient for real-time action drafting. 
+
+Database Scaling Analysis. We further investigate how database scaling affects retrieval performance. Since our database already incorporates all LIBERO training data (no isomorphic data could be added), we use heterogeneous data instead. We select another dataset, SimplerEnv (Li et al., 2024a), as the heterogeneous data source. Specifically, we incrementally add data from SimplerEnv to the existing LIBERO database and record the success rate (SR) of tasks that rely solely on database retrieval. As shown in Fig. 14, due to the limitation of data heterogeneity and model generalization, simply expanding the database with out-of-distribution demonstrations does not effectively improve the task completion rate, and also increases the storage overhead of the database. This finding motivates our hybrid approach that combines retrieval-based drafting with neural verification, rather than relying purely on database scaling. Database Scale               
+
+> Success Rate
+> Storage Size
+> 0.00%
+> 10.00%
+> 20.00%
+> 30.00%
+> 40.00%
+> 50.00%
+> 60.00%
+> 70.00%
+> 80.00%
+> 0
+> 1
+> 2
+> 3
+> 4
+> 5
+> 6
+> 7
+> 8
+> 9
+> 1.00x 1.25x 1.50x 1.75x 2.00x 2.25x 2.50x 2.75x 3.00x
+> DB Const Overhead
+> DB Vector Size Spatial SR
+> Long SR
+> Goal SR
+> Object SR
+> Figure 14. Effect of database scaling on retrieval-only performance. Adding heterogeneous data from SimplerEnv does not improve success rate on LIBERO tasks while increasing storage costs.
+
+15 Submission and Formatting Instructions for ICML 2026  
+
+> Figure 15. Distribution of retrieval confidence (cosine similarity scores) across the four LIBERO task suites. The consistently high scores (>0.90 for most queries) demonstrate the reliability of our constructed database for action retrieval.
+
+Retrieval Confidence Analysis. Beyond query latency, we further analyze the reliability of retrieval results through confidence measurement. In our system, retrieval confidence is quantified by the cosine similarity score between the query embedding and its nearest neighbor in the database—higher scores indicate closer matches between the current observation and stored demonstrations. As illustrated in Fig. 15, the retrieval confidence scores are consistently high across all four LIBERO task suites, with the majority of queries achieving similarity scores above 0.90. This uniformly high confidence demonstrates that our database construction effectively captures the visual-semantic patterns of demonstration trajectories, enabling reliable nearest-neighbor matching during inference. The consistently high retrieval confidence validates the quality of our fused visual embedding and the completeness of our database coverage over the LIBERO demonstration space. 
+
+C.3. Package and Application of the Retrieval System System Architecture. To support real-time integration with VLA policies, we implement the retrieval system as a lightweight 
+
+Retrieval Class that can be directly invoked by the policy agent. The retrieval class encapsulates two core components: (1) an 
+
+Embedding Module that processes dual-view input images (third-person and elbow-mounted camera) into 4352-dimensional vectors by fusing frozen DINOv2 and SigLIP features from both views via concatenation and L2 normalization, leveraging GPU acceleration for low-latency encoding; and (2) a Qdrant Database client that maintains task-specific collections indexed with HNSW graphs for efficient similarity search. Critically, each vector is paired with a self-contained JSON payload that embeds all necessary action and metadata—eliminating the need for external storage or cross-database queries, as required by systems like RT-Cache (Kwon et al., 2025). 
+
+Offline Construction Pipeline. The database is constructed in a single offline pass over the LIBERO RLDS datasets. For each timestep containing an observation, language instruction, and action sequence, we (1) generate its fused visual LIBERO -Long LIBERO -Goal LIBERO -Object LIBERO -Spatial   
+
+> Figure 16. Empirical distributions of Cumulative Spatial Displacement ( D[w]) and Radius of Curvature ( R[w]) across the four LIBERO task suites. The dashed lines indicate the 95 th percentile thresholds used for normalization.
+
+16 Submission and Formatting Instructions for ICML 2026 
+
+embedding using the same encoder configuration as at inference time, (2) construct a payload that includes metadata (dataset name , episode idx , step idx ), the current 7-DoF action, and a three-step lookahead action sequence (next actions ), and (3) insert the (embedding, payload) pair into the Qdrant collection corresponding to its task. To ensure semantic purity and simplify maintenance, we partition the database by task identity—resulting in 40 independent collections across the four LIBERO suites. After ingestion, HNSW indices are built across all collections to support fast approximate nearest neighbor search during runtime. 
+
+Online Retrieval Workflow. During policy execution, the system enables low-latency speculative drafting through direct function calls. Given a new observation and instruction from the VLA agent, the retrieval class (1) computes a query vector using the embedded encoding module with identical frozen encoders, (2) performs a top-K approximate nearest neighbor search via HNSW within the pre-specified task collection—benefiting from the smaller search space afforded by task-level sharding, (3) retrieves the payload of the nearest neighbor, and (4) extracts the next actions field to return a draft 3-step action sequence. The full retrieval pipeline achieves an average latency of 5.13 ms (see Appendix C.2), well within real-time requirements for interactive robotic control. 
+
+D. Normalization of Kinematic-Based Metric 
+
+In HeiSD , we employ two kinematic indicators— Cumulative Spatial Displacement (D[w]) and Radius of Curvature 
+
+(R[w])—to assess trajectory smoothness and guide the adaptive switching mechanism. Since these raw metrics exhibit different scales and distributions across task suites, proper normalization is essential to ensure consistent and comparable thresholding. 
+
+D.1. Profiling of Raw Indicator Distributions 
+
+To characterize the natural range of each indicator, we profile all trajectories in the LIBERO training demonstrations across the four task suites. Fig. 16 visualizes the empirical distributions of D[w] and R[w] for each suite, revealing notable differences in their ranges and tail behaviors. As shown in the Fig. 16, both indicators exhibit long-tailed distributions with occasional extreme outliers caused by sudden motions or annotation artifacts. Directly using the global maximum as the upper bound would compress the majority of valid samples into a narrow range, reducing discriminative power. 
+
+D.2. Min-Max Normalization with Percentile Clipping 
+
+To address this issue, we adopt a min-max normalization scheme with 95 th percentile clipping . Specifically, for each indicator x ∈ { D[w], R [w]} and task suite s, we compute: 
+
+x(s)min = min  
+
+> i
+
+x(s) 
+
+> i
+
+, x(s)max = P ercentile 95 
+
+
+
+{x(s) 
+
+> i
+
+}
+
+
+
+, (11) where x(s) 
+
+> i
+
+denotes the i-th sample value in suite s. The normalized indicator is then computed as: 
+
+ˆx = clip x − x(s)min 
+
+x(s)max − x(s)min 
+
+, 0, 1
+
+!
+
+, (12) where the clip (·, 0, 1) function ensures that values exceeding the 95 th percentile threshold are capped at 1, and values below the minimum are capped at 0. This design choice is motivated by two observations: (1) the 95 th percentile effectively excludes extreme outliers while preserving the dynamic range of typical trajectories, and (2) capping the normalized output to [0 , 1] provides a well-bounded input for threshold-based switching decisions. 
+
+D.3. Suite-Specific Normalization Bounds 
+
+Based on our profiling, the suite-specific normalization bounds are summarized in Tab. 9. These bounds are applied at inference time to normalize raw kinematic values before comparing them against the switching thresholds. By using suite-specific bounds, we ensure that the adaptive switching mechanism remains calibrated to the characteristic motion patterns of each task category. 17 Submission and Formatting Instructions for ICML 2026 Robot Arm Zero Point Robot Arm Extension Tabletop & Object - Side View Tabletop & Object - Top View 
+
+Figure 17. Our Tabletop Operation Environment. 
+
+E. Real-World Evaluation Details 
+
+E.1. Tabletop Operation Environment 
+
+We build a tabletop operation environment for real-world experiments, as depicted in Fig. 17. Specifically, we fix the robotic arm on a common tabletop (located at the midpoint of the tabletop), ensuring that the operating range of the robotic arm can cover the entire tabletop. We use the official tabletop fixer to lock the position of the robotic arm. Moreover, we use a variety of objects as manipulation target, including foam fruit models and kitchen utensils (e.g., a stainless steel plate). 
+
+E.2. Robot Arm 
+
+We use a popular 6-DoF AgileX PIPER robotic arm. Its accessories include a handheld teaching display device, a 1-DoF gripper, an ORBBEC DABAI camera, and a plastic camera holder, as shown in Fig. 18. There are two solutions for the assembly of the robotic arm: (1) When the Handheld Teaching Display Device is mounted on the robotic arm, it can be used for data collection. (2) When the gripper is mounted on the robotic arm, it can be used for real-world experiments. 
+
+Table 9. Normalization bounds for D[w] and R[w] across LIBERO task suites. All values are derived from the training demonstrations, with the upper bound set at the 95 th percentile. 
+
+Task Suite Dmin Dmax (95%) Rmin Rmax (95%) LIBERO-Goal 0.000009 0.123381 0.000001 0.014989 LIBERO-Spatial 0.000027 0.128629 0.000019 0.015654 LIBERO-Object 0.000098 0.116458 0.000010 0.014151 LIBERO-Long 0.000008 0.102298 0.000001 0.012479 6-DoF AgileX 
+
+PIPER Robot Arm 
+
+ORBBEC DABAI 
+
+Camera 
+
+Handheld 
+
+Teaching Display 
+
+1-DoF 
+
+Gripper 
+
+Camera 
+
+Holder 
+
+Using Handheld 
+
+Teaching Display for 
+
+Data Collection 
+
+Using 1-DoF 
+
+Gripper for 
+
+Experiments 
+
+# +
+
+(1) (2) 
+
+Figure 18. Details of the Robot Arm. 
+
+18 Submission and Formatting Instructions for ICML 2026                      
+
+> Table 10. Task Comparison with Existing Popular Datasets
+> Dataset Domain Hardware Setup Task Complexity Obj. & Env. Diversity
+> OXE (O’Neill et al., 2024) Real Heterogeneous Atomic / Short-horizon High RoboCasa (Nasiriany et al., 2024) Simulation Standardized Long-horizon High SimplerEnv (Li et al., 2024a) Sim / Real Standardized Atomic Low
+> Ours Real Standardized Hierarchical High
+
+E.3. Task Establish 
+
+We set up several tasks based on the tabletop operating environment. Considering that existing robotic arm datasets such as RoboCasa (Nasiriany et al., 2024) are confined to simulation, and while the Open X-Embodiment (OXE) dataset (O’Neill et al., 2024) offers a large scale, it suffers from hardware heterogeneity and is difficult to reproduce in a single laboratory setting, whereas the tasks in SimplerEnv (Li et al., 2024a) are overly simplistic. We integrate mainstream tasks from these datasets, such as object manipulation (grasping and moving) and placing objects into designated containers. Therefore, we introduce diverse fruit models and containers, along with environmental variations (e.g., lighting conditions and backgrounds), to facilitate the execution of diverse tasks within a real-world tabletop operation environment. A comparison between our tasks and existing datasets is presented in Table 10. Specifically, the established tasks encompass simple grasping tasks (e.g., pick up the apple/banana ), spatial displacement tasks (e.g., move the apple from point A to point B ), and specific pick-and-place tasks (e.g., 
+
+pick up the mango from the plate and place it into the bowl ). Furthermore, we include more complex composite tasks, such as removing the apple from the plate and placing it into the bowl, then placing the banana onto the plate . To account for the complexity of real-world environ-ments, we conducted operations under varying lighting conditions, fruit categories, and container styles, as detailed in Table 11. 
+
+E.4. Data Collection 
+
+We constructed the dataset using Google’s Robot Learning Dataset Specification (RLDS), encapsulating it in a hierarchical and serialized HDF5 format. The data collection platform is based on a PIPER 6-DoF robotic arm (communicating via CAN bus) and equipped with an ORBBEC DABAI camera for primary-view visual feedback. Regarding data processing and state representation, the system synchronously collects visual and proprioceptive data at 10 Hz. Visual observations are resized from the original 640 × 480 resolution to 224 × 224 pixels via bilinear interpolation and converted to the RGB color space to adapt to model inputs. The robot state vector consists of six joint angles (unified to radians) and a binary gripper state, where the open/close status is automatically determined via an adaptive threshold algorithm based on the difference between initial calibration and real-time feedback. The action space is defined as the relative increments (delta joint positions) of joint angles between adjacent time steps and the absolute state of the target gripper. Regarding the collection protocol, each session begins with the robotic arm’s automatic enabling and zero calibration. Subsequently, the operator inputs a natural language task instruction and switches to Teach Mode to complete object transport tasks by manually manipulating the arm joints and controlling the gripper via a teach pendant. Each episode contains complete sequential image, state, action, and timestamp information, with task instructions and outcome-based sparse rewards (1.0 for success, -1.0 for failure) recorded in the file metadata. To enhance data robustness, repeated trials were conducted under various lighting and background conditions to increase diversity, collecting approximately 300 episodes per task type for subsequent fine-tuning.             
+
+> Table 11. Task Categories and Examples
+> Task Category Description Instruction Examples Complexity
+> Atomic Grasping Grasping a specific target object from the table-top without interacting with other objects.
+> •“Pick up the apple.”
+> •“Pick up the banana.” Low Spatial Displacement Moving an object from a starting position to a target region or a specific container.
+> •“Move the apple from point A to point B.”
+> •“Pick up the mango from the plate and put it into the bowl.” Medium Composite Sequential Long-horizon tasks requiring multi-step plan-ning and state memory to manipulate multiple objects in sequence.
+> •“Take the apple out of the plate and put it in the bowl, then place the banana onto the plate.” High
+
+19 Submission and Formatting Instructions for ICML 2026 
+
+E.5. Model Fine-Tuning 
+
+We employed a Parameter-Efficient Fine-Tuning (PEFT) (Han et al., 2024; Ding et al., 2023; Xu et al., 2023) strategy based on the OpenVLA-7B model clusters. Specifically, utilizing Low-Rank Adaptation (LoRA) (Hu et al., 2022; Liu et al., 2024b), we trained by injecting low-rank adapters with a rank of r = 32 and a dropout rate of 0.05 while freezing the pretrained backbone parameters; during inference, task-specific statistics are dynamically loaded to achieve action space un-normalization. Regarding inference deployment, the system adopts a Client-Server (C/S) architecture, with the computing end acting as the server and the robotic arm as the client. The server loads the model using bfloat16 half-precision and the Flash Attention 2 acceleration mechanism. It encapsulates client-uploaded images and natural language instructions (e.g., ”pick up the banana”) into a Q&A prompt template, employing a greedy decoding strategy to predict a 7-dimensional action vector. Notably, addressing the multi-threading characteristics of HTTP, we introduced a synchronization and mutual exclusion mechanism based on condition variables at the inference interface. Through the cooperative control of a global status flag and a condition lock, this mechanism establishes the core inference process as a critical section, enforcing the serialized execution of requests. This design effectively eliminates risks of GPU memory overflow and resource competition caused by concurrent multi-threaded GPU calls, while maintaining high-concurrency network communication capabilities. Upon receiving the action values (relative joint increments) from the server, the client converts them into absolute target angles via an integration algorithm and determines the gripper’s open/close status. Finally, the results are mapped to SDK underlying pulse values to drive the PIPER robotic arm via the CAN bus, achieving high-precision closed-loop control. 20
