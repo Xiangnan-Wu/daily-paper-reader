@@ -1,0 +1,307 @@
+Title: X-World: Controllable Ego-Centric Multi-Camera World Models for Scalable End-to-End Driving
+
+URL Source: https://arxiv.org/pdf/2603.19979v1
+
+Published Time: Mon, 23 Mar 2026 01:02:31 GMT
+
+Number of Pages: 15
+
+Markdown Content:
+# X-World: Controllable Ego-Centric Multi-Camera World Models for Scalable End-to-End Driving 
+
+GWM Team 
+
+XPeng 
+
+## Abstract 
+
+Scalable and reliable evaluation is increasingly critical in the end-to-end era of autonomous driving, where vision–language–action (VLA) policies directly map raw sensor streams to driving actions. Yet, current evaluation pipelines still rely heavily on real-world road testing, which is costly, biased toward limited scenario coverage, and difficult to reproduce. These challenges motivate a real-world simulator that can generate realistic future observations under proposed actions, while remaining controllable and stable over long horizons. We present X-World ,an action-conditioned multi-camera generative world model that simulates future observations directly in video space. Given synchronized multi-view camera history and a future action sequence, X-World generates future multi-camera video streams that follow the commanded actions. To ensure reproducible and editable scene rollouts, X-World further supports optional controls over dynamic traffic agents and 
+
+static road elements , and retains a text-prompt interface for appearance-level control (e.g., , weather and time of day). Beyond world simulation, X-World also enables 
+
+video style transfer by conditioning on appearance prompts while preserving the underlying action and scene dynamics. At the core of X-World is a multi-view latent video generator designed to explicitly encourage cross-view geometric consistency 
+
+and temporal coherence under diverse control signals. Experiments show that X-World achieves high-quality multi-view video generation with (i) strong view consistency across cameras, (ii) stable temporal dynamics over long rollouts, and (iii) high controllability with strict action following and faithful adherence to optional scene controls. These properties make X-World a practical foundation for scalable and reproducible evaluation. Its streaming, interactive rollout interface further makes X-World well-suited for online reinforcement learning of end-to-end autonomous driving systems through closed-loop simulation. 
+
+## 1 Introduction 
+
+End-to-end autonomous driving is entering a new phase where learning-based systems directly map rich sensor streams to driving actions. Recent progress in end-to-end driving stacks—especially those powered by vision–language–action (VLA) models—suggests a promising path toward unified perception, prediction, and planning within a single scalable framework [1, 7, 8]. These models benefit from large-scale data and strong representation learning, and they increasingly demonstrate competence in complex urban interactions. However, as end-to-end systems become more capable, a central bottleneck is no longer only model capacity, but the lack of a scalable and reliable evaluation and training infrastructure that matches the pace of progress. A scalable real-world simulator is particularly critical in the end-to-end era. Unlike modular pipelines, where intermediate outputs can be unit-tested (e.g., detection AP, tracking MOTA, forecasting ADE [2, 5, 12]), end-to-end policies are typically evaluated by closed-loop driving outcomes that are sensitive to subtle distribution shifts and compounding errors. Unfortunately, current evaluations for end-to-end systems still primarily rely on real-world testing, which is costly to run and difficult to 
+
+Technical Report. 
+
+> arXiv:2603.19979v1 [cs.CV] 20 Mar 2026
+
+scale. More importantly, real-world testing is often biased and under-covered—limited by geography, weather, traffic density, and the rarity of safety-critical events—and is therefore hard to reproduce and hard to compare fairly across methods. This evaluation gap slows iteration, obscures failure modes, and makes it challenging to establish trustworthy progress for end-to-end autonomy. Beyond evaluation, an interactive real-world simulator is also a key enabler for effective online reinforcement learning (RL) for VLA systems. Online RL requires large volumes of closed-loop interactions and diverse counterfactual experiences—precisely the regimes where real-world driving is unsafe, expensive, and ethically constrained. A simulator that can faithfully model future sensor observations under proposed actions can unlock scalable training signals: policies can explore alternative maneuvers, learn recovery behaviors, and improve robustness under rare events, all while remaining in a controlled and repeatable environment. In this sense, simulation is not merely a testbed—it becomes the engine for continual improvement. However, building a simulator suitable for end-to-end autonomy is challenging. It must generate photorealistic sensor observations while maintaining strict action-following (causal consistency with ego motion), cross-view consistency (agreement among multiple cameras), and long-horizon stability (avoiding drift over extended rollouts). Moreover, it should support controllability over dynamic agents and static road elements when optional conditions are available, enabling targeted scenario synthesis and stress-testing. Existing approaches often fall short along one or more of these axes: they may produce visually plausible videos but ignore fine-grained action causality, generate per-view videos that disagree geometrically, or degrade quickly when rolled out long-term. Many high-quality video diffusion models are also designed for offline, bidirectional generation over a full clip, which limits their applicability for real-time interaction. In this work, we present X-World , a controllable multi-view generative world model for autonomous driving built upon video diffusion. Given history multi-camera video streams and a driving action (or action sequence) to be applied, our model generates the corresponding future multi-camera video streams. When available, the model additionally accepts optional conditions to control dynamic traffic agents and static road elements, enabling targeted counterfactual rollouts and scenario editing. Besides the action and scene-element control modules, we retain a text-conditioning branch to control global appearance ( e.g., , weather and time of day), enabling controllable appearance-driven style editing of the generated videos. Crucially, unlike traditional bidirectional video diffusion models, X-World operates in a streaming, autoregressive fashion, generating futures incrementally for real-time interaction. This design makes the model naturally compatible with closed-loop usage—both for scalable evaluation of end-to-end policies and for online RL training where the simulator must respond promptly to newly sampled actions. Our approach achieves high-quality multi-view video generation with (i) high view-consistency, ensuring coherent geometry and object identity across cameras; (ii) strict action following, producing futures aligned with commanded ego behavior; and (iii) long video rollout ability, enabling stable predictions over extended horizons. Together, these properties move generative world models closer to a practical “real-world simulator” abstraction—one that can support reproducible benchmarking, scalable regression testing, and interactive learning for end-to-end/VLA driving systems. 
+
+## 2 Data 
+
+2.1 Data Format 
+
+The X-World model is trained on a meticulously curated dataset comprising a large scale of high-fidelity real-world driving sequences. These sequences are characterized by their diversity, covering a wide array of external environments, heterogeneous ego-vehicle behaviors, and complex multi-agent interactions. Each data sample constitutes a 10-second temporal segment and integrates the following multimodal data streams: • Multiview Video Streams : Synchronized video feeds from seven surrounding cameras. • Dynamic Object Trajectories : Sequences of dynamic agents (e.g., vehicles, pedestrians) identified using a high-precision dynamic perception model. • Static Scene Elements : Annotations of static infrastructure (e.g., lanes, traffic signs) obtained from a high-precision static perception model. 2• Textual Scene Descriptions : Natural language descriptions of the driving scenario generated by the Vision Language Models (VLM). The video data is recorded at a rate of 12 frames per second (FPS). Each frame provides a comprehen-sive 360-degree surround-view through seven distinct, calibrated camera perspectives: front_narrow ,
+
+front_fisheye , front_left , front_right , rear_left , rear_right , and rear . The precise spatial configuration and field-of-view overlap of these cameras are designed to ensure full coverage around the vehicle, as illustrated in Figure 1(a). Front-Narrow  
+
+> Rear-Left
+> Rear-Right
+> Rear Front-Fisheye
+> Front-Left
+> Front-Right
+
+Figure 1: (a) Spatial layout of the seven camera sensors. (b) Distribution of ego longitudinal actions. 
+
+2.2 Video Captioning 
+
+To enable fine-grained control and semantic understanding in X-World, we construct a large-scale video captioning pipeline tailored for autonomous driving scenes. Unlike generic video captions, our annotations focus on driving-specific attributes that are essential for controllable scene generation and downstream evaluation. 
+
+Captioning Schema. Following our quantitative evaluation protocol, each video clip is annotated across four major dimensions: • Macro Environment: weather (sunny, cloudy, rainy, etc.), time of day (dawn, daytime, dusk, night), lighting condition, and driving environment (region type + road type). • Road Conditions: surface condition (flat/bumpy), slope (uphill/downhill), and road state (dry/wet/puddles). • Traffic Infrastructure: presence of lane markings, guardrails, traffic signs, traffic lights, buildings, vegetation, and special elements (bridges, construction zones, toll stations). • Traffic Density: five-level scale from “empty” to “congested”. 
+
+Automated Pipeline. Given the dataset, we adopt an automated approach using VLM. For each 10-second clip, we sampled a sequence of synchronized images from all 7 cameras in each 10-second fragment. The multi-view image sequence is fed into the model with a structured prompt that encodes the captioning schema. 
+
+Example. Below is a typical caption generated by our pipeline: “The video captures a sunny daytime scene on a flat urban highway with sufficient sunlight. The road is lined with tall buildings and green vegetation, marked by clear white lane lines and roadside guardrails. A pedestrian overpass spans across the road in the distance. Traffic lights and signs are visible. Traffic density is moderate.” This structured, rule-guided approach ensures that every video clip in our dataset is paired with accurate, consistent, and semantically rich textual descriptions, laying the foundation for X-World’s controllable generation capabilities. 3Multi -View  Frames     
+
+> Noised
+> Multi -View Video Tokens
+> 𝑉
+> 𝑇
+> FRONT_
+> LEFT
+> FRONT_
+> RIGHT
+> REAR_
+> LEFT REAR REAR_
+> RIGHT
+> Encoder
+> FRONT_
+> NARROW
+> FRONT_
+> FISHEYE
+> Multi -Head
+> Cross -Attention
+> Ego -Action
+> Environment
+> Decoder
+> Multi -View Video s
+> FRONT_
+> LEFT
+> FRONT_
+> RIGHT
+> REAR_
+> LEFT REAR REAR_
+> RIGHT
+> FRONT_
+> NARROW
+> FRONT_
+> FISHEYE
+> Condition
+> Injection
+> View -Temporal
+> Self -Attention
+
+Figure 2: The overall scheme of the proposed X-World. 
+
+2.3 Auto Tagging 
+
+To understand the natural distribution of data, enable more refined control over data distribution, and facilitate rapid data selection for small-scale feature validation, we developed a comprehensive, well-organized, and fine-grained three-level label taxonomy. Based on our task requirements, we defined four major categories of labels: • Environmental Labels : These describe overall scene-level characteristics and include 11 subcategories: Weather, Lighting, Road Surface Status, Road Surface Type, Road Curvature, Road Gradient, Road Structure, Road Type, Traffic Condition, Lane Clarity, and Lane Quantity Status. Each subcategory contains several fine-grained labels, resulting in a total of 50 third-level labels within the environmental category. • Static Labels : Comprising 24 third-level labels, grouped into Road Markings, Lane Lines, Road Boundaries, Traffic Signs, Signal Applies To This Lane, Traffic Lights, and Static Obstacles. • Dynamic Labels : Focus on five types describing traffic participants. • Ego-Vehicle Behavior Labels : Include 21 third-level labels, mainly divided into Longitudi-nal, Lateral, Object Interaction, Scene Interaction, and Unreasonable Behavior. The construction of this label taxonomy primarily relies on four information sources: (i) A high-precision dynamic perception network, which mainly serves static labels; (ii) A high-precision static perception network, which mainly serves dynamic labels; (iii) A robust online pose estimation system combined with vehicle pose information derived from high-precision sensors, which mainly serves ego-vehicle behavior labels; and (iv) the general-purpose VLM, which mainly serves environmental labels. 
+
+2.4 Data Distribution 
+
+We invested substantial computational resources to annotate the entire training dataset, enabling a comprehensive analysis of the natural data distribution and informed adjustments to the training set based on both statistical insights and model performance. Leveraging these labels, we conducted extensive iterative experiments, extracting valuable guidance for model training. As an example, Figure 1(b) illustrates the distribution of ego-vehicle longitudinal behaviors: the vast majority are normal driving (74.8%), followed by stationary (21.0%), while the remaining categories constitute a long tail. This analysis directly informs data collection—for instance, if the model exhibits poor performance on hard acceleration, we prioritize acquiring more such samples to enhance overall efficacy. 
+
+## 3 Method 
+
+3.1 Overview 
+
+Modern embodied agents—including autonomous driving systems—primarily perceive and reason about the world through cameras . As a result, the effective “world state” available to these agents is not a compact vector of latent variables, but a high-dimensional stream of images, i.e., , video . This motivates a world model that operates directly in the observation space most relevant to downstream policies: action-conditioned video .4We propose X-World as in Fig. 2, a generative world model formulated as an action-conditioned multi-camera video generation model . Given a short history of synchronized multi-view camera streams, the model predicts the future camera observations that would result from executing a specified future action sequence . Concretely, our model takes as input: (i) multi-camera video history 
+
+X1: Vt−L:t from V cameras, representing the recent visual context of the scene; (ii) future driving actions 
+
+At:t+H to be executed by the ego vehicle; and (iii) optional scene control conditions C, which specify controllable aspects of the environment. It then generates the corresponding multi-camera future video ˆX1: Vt+1: t+H that is (i) visually realistic, (ii) consistent across views, and (iii) faithful to the commanded actions: 
+
+ˆX1: Vt+1: t+H ∼ p X1: Vt+1: t+H | X1: Vt−L:t, At:t+H , C . (1) A key practical requirement for evaluation and training is reproducibility : we often want the simulator to produce the same future (or a controlled family of futures) under specified conditions. To this end, our model optionally supports explicit control over both dynamic traffic agents (e.g., surrounding vehicles, pedestrians) and static road elements (e.g., lane topology, road layout cues). When such conditions C are provided, the model can generate scene-consistent and reproducible futures, enabling controlled counterfactual rollouts, fair benchmarking, and systematic stress testing. 
+
+3.2 Model Design 
+
+X-World is built upon the state-of-the-art WAN 2.2 [11], following its latent video generation paradigm that couples a video VAE with a DiT-based latent denoiser [10]. In particular, consistent with WAN 2.2 5B [11], we employ a high-compression 3D causal Variational Autoencoder that achieves a 16 × spatial compression ratio and a 4× temporal compression ratio, producing latents with channel dimension 48 . Operating in this compact spatio-temporal latent space substantially reduces compute and memory overhead, which (i) enables pre-training on longer video sequences to better capture rich spatio-temporal dependencies, and (ii) facilitates faster inference for downstream deployment. To address the critical challenge of geometric consistency in multi-camera autonomous driving scenarios, we introduce a customized DiT block tailored to the multi-condition generative framework of X-World. The design has two key goals: (i) enforcing spatio-temporal modeling with strong 
+
+cross-view consistency , and (ii) enabling controllable generation under heterogeneous condition signals ( e.g., ., actions, camera parameters, dynamic agents, static road elements, and text prompts) with minimal cross-condition interference. 
+
+View-temporal self-attention. At the core of our architecture is a view-temporal self-attention 
+
+module that explicitly models interactions along both the temporal and cross-view dimensions. Con-cretely, self-attention is executed over latent tokens across multiple cameras and multiple timesteps alternately, allowing features to align and exchange information across views while maintaining temporal coherence. This mechanism encourages consistent geometry, object identity, and motion patterns among synchronized cameras. 
+
+Condition injection strategy. We employ modality-appropriate condition injection mechanisms to balance expressiveness and stability. Specifically, we use: (i) adaptive layer normalization for injecting actions and diffusion/flow timesteps ; (ii) additive embeddings for camera parameters ; and (iii) cross-attention for high-level and structured conditions, including dynamic agents , static road elements , and text prompts . Details of the conditioning design are provided in Section 3.3. 
+
+Decoupled cross-attention for heterogeneous conditions. We adopt decoupled cross-attention layers to fuse heterogeneous condition sources in a modular manner. Rather than injecting all conditions through a single shared attention pathway, we allocate separate cross-attention branches for different modalities. The original text-conditioning branch from WAN 2.2 5B is retained to support optional appearance and scene-level control, such as weather, daytime, and other global attributes. For dynamic and static controls, we introduce new cross-attention branches. This decoupling reduces mutual interference between condition types and improves controllability, enabling the model to follow each condition signal more faithfully. 53.3 Conditions 
+
+X-World provides a comprehensive set of conditional control interfaces that enable fine-grained manipulation of the driving scene generation process. These include ego-vehicle actions, dynamic agents, static road elements such as lane lines and boundaries, as well as camera intrinsic and extrinsic parameters. 
+
+Ego-vehicle Action. Controlling ego-vehicle actions in a world model enables causally consistent future simulation conditioned on planned maneuvers, which is essential for closed-loop planning and safety validation. Unlike high-level command conditioning, our model enables direct and continuous control by taking as input a sequence of future kinematic states — velocity, curvature, roll, and pitch. Given the disparate numerical scales of these four kinematic variables, we first normalize each through 
+
+symlog normalization [13]. To capture fine-grained distinctions in scalar values, we subsequently apply Fourier feature encoding. The encoded representations are then projected and aligned to the latent space dimension using an MLP. Finally, we incorporate timestamp embeddings and inject the combined conditioning signals into the diffusion blocks via adaLN-Zero [10]. 
+
+Dynamic Agents. Controlling dynamic agents in a world model enables the simulation of diverse, interactive traffic behaviors, which is essential for evaluating the robustness and safety of autonomous driving policies under realistic multi-agent scenarios. To represent dynamic agents, we first extract their semantic categories (e.g., SUV, pedestrian, bicycle) and spatial coordinates from our detection model. Each categorical attribute is encoded via umT5 encoder [4], while spatial coordinates are normalized and further processed with Fourier feature en-coding to preserve fine-grained positional details. These heterogeneous features are then concatenated and projected to a unified feature dimension through an MLP. To effectively condition the generative process, the resulting agent embeddings are injected into the latent space via cross-attention layers, allowing the model to dynamically attend to relevant agent information at each denoising step. This design enables flexible control over the behavior and placement of multiple traffic participants. 
+
+Static Elements. Controlling static road elements (e.g., lane lines, boundaries) in a world model allows for the specification of diverse road topologies and traffic rules, which is essential for generating scene-compliant and geometrically plausible future simulations under varying environmental layouts. Similarly to the encoding and injection scheme used for dynamic agents, we first extract semantic categories and positional information of static road elements via a detection model. Category labels are encoded using umT5, while normalized position coordinates are embedded through Fourier feature encoding. These representations are then projected and aligned to the target feature dimension via an MLP and subsequently injected into the diffusion latent space through cross-attention layers. Unlike dynamic agents, however, static elements require stronger condition adherence during inference to ensure geometric and semantic consistency. To this end, we employ classifier-free guidance (CFG) at test time and incorporate a random dropout strategy during training. This design ensures that the model remains robust to varying levels of conditional control and can faithfully generate scene-consistent futures under explicit static constraints. 
+
+Camera Parameters. Controlling camera intrinsic and extrinsic parameters in a world model enables the generation of future image sequences conditioned on diverse sensor configurations and viewpoints, thereby accommodating various vehicle types and camera setups. T his capability is essential for learning viewpoint-aware representations and evaluating planning models under heterogeneous sensor configurations in closed-loop simulation. Camera intrinsic and extrinsic parameters are first normalized individually, concatenated, and then transformed via an MLP for feature projection and dimension alignment. The resulting embedding is directly injected into the latent space through an additive conditioning module. 
+
+3.4 I2V/V2V/C2V Unification 
+
+X-World supports multiple generation modes by controlling the length of the history input during training. Let L denote the number of clean history frames provided to the model. When L=1 ,6Bidirectional DiT Blocks     
+
+> …
+> Stage Ⅰ: General Driving Prior
+> Goal: Full functionality acquisition
+> •View temporal consistency
+> •Scene controls and action following
+> Stage Ⅱ: Post Training
+> Goal: Real -Time and long -horizon Interaction
+> •Few -step denoising
+> •Autoregressive Self -Rollout
+> …
+> ……
+> Casual DiT Blocks
+
+Figure 3: The training pipeline of the proposed X-World. the model operates in an image-to-video (I2V) regime, where the first multi-camera frame anchors appearance and geometry and the model generates the subsequent future frames. When L> 1, the model naturally becomes video-to-video (V2V) , conditioned on a multi-frame observed history to generate future multi-view videos. When L=0 , the model generates videos purely conditioned on the provided action and other control conditions, which we refer to as condition-to-video (C2V) .
+
+Discussion on C2V. C2V is a useful training side product but is not formally a world model, since it does not condition on the current observed state and thus does not model state transitions. Nevertheless, C2V is practically valuable: it enables controllable data synthesis and appearance-driven style transfer (e.g., changing weather or time of day) under fixed actions and scene controls, complementing the primary world-model functionality. 
+
+## 4 Training 
+
+Our model is trained in two stages as shown in Figure 3. Stage-I adapts a large pretrained video generator into a fully controllable bidirectional multi-camera world model, while Stage-II transforms it into a streaming autoregressive simulator for real-time interaction and long-horizon rollouts. 
+
+4.1 Stage-I: Bidirectional I2V Training for Accurate Controllability Initialization. We initialize X-World from WAN 2.2 5B TI2V [11]. Parameters inherited from WAN are loaded directly, while newly introduced modules for our multi-camera and multi-condition setting are randomly initialized. 
+
+Training data. Stage-I is trained on synchronized multi-camera short clips of 81 frames . Each sample is paired with the corresponding driving actions and, when available, scenario-level text descriptions and structured dynamic/static control signals. 
+
+Rectified flow objective. Let y denote the target latent video to be generated (e.g., the latent sequence of future multi-camera frames), and let c denote the conditioning inputs, which include the history latents (when L > 0) together with actions, camera parameters, optional dynamic/static controls, and text prompts. Following rectified flow [9], we sample t ∼ U (0 , 1) and construct an interpolation between a data sample y0 ∼ pdata (y | c) and Gaussian noise y1 ∼ N (0, I):
+
+yt = (1 − t)y0 + ty1. (2) Rectified flow learns a time-dependent velocity field vθ (yt, t, c) that matches the constant target flow 
+
+y1 − y0 along this rectified path. The Stage-I training objective is: 
+
+LRF (θ) = Ey0, y1, t, c
+
+h
+
+∥vθ (yt, t, c) − (y1 − y0)∥22
+
+i
+
+. (3) 7t=0.0s t=1.2s t=2.4s t=3.6s t=4.8s t=6.0s Figure 4: Action Controllability. Each row shows a pair of logged and generated videos. The ego trajectories for the next 3s are overlaid in blue. Dynamic traffic participants are not constrained in this experiment and are generated freely by X-World. Top: Turn Right → Turn Left; Middle: Go Straight → Turn Right; Bottom: Lane Keeping → Lane Change. 
+
+Outcome and limitation. After Stage-I, we obtain a fully functional bidirectional world model that produces high-quality multi-camera futures with accurate controllability. However, similar to WAN, Stage-I relies on a bidirectional, many-step sampling procedure (typically ∼50 refinement steps for high quality) that generates an entire short clip offline, making it most suitable for short-clip synthesis rather than low-latency, long-horizon streaming rollouts. 
+
+4.2 Stage-II: Causal Few-Step Training for Streaming Long-Horizon Simulation 
+
+Stage-I yields a strong world model that is best suited for short-clip generation. However, it is not directly suitable for real-time interactive long-horizon rollouts because it relies on a many-step, bidirectional iterative procedure. To address this limitation, in Stage-II, we convert it into a causal, few-step generator. Compared to bidirectional models that generate an entire clip offline, our causal model supports streaming inference: it produces and returns future videos chunk-by-chunk, without waiting for the full sequence to finish generation. This enables low-latency interaction and naturally fits long-horizon rollouts in closed-loop settings. 
+
+Chunk-wise causal architecture. A causal generator naturally supports autoregressive inference: future chunks are generated sequentially, each conditioned only on past context (history observations, previous generated chunks, and the action/scene conditions). In this setting, a KV cache further improves efficiency by reusing attention keys/values from earlier chunks, avoiding recomputation of past-context attention at every step and substantially reducing inference compute. Following CausVid [16], we modify the Stage-I bidirectional model into a chunk-wise causal one. Concretely, we divide the latent sequence along the temporal dimension into contiguous chunks. Within each chunk, tokens still interact bidirectionally to preserve local spatiotemporal coherence and generation quality. However, we enforce chunk-level causality by preventing tokens from attending to any future chunks. As a result, the model becomes causal in time while retaining rich intra-chunk modeling capacity. This design provides a favorable trade-off: it enables online generation and low-latency rollouts, while avoiding the quality degradation often observed in strictly token-level causal video generation. 
+
+Few-Step Self-forcing Training. To train the Stage-II causal generator under realistic rollout conditions, we adopt self-forcing [6]. Instead of conditioning on ground-truth history context (teacher forcing / diffusion forcing [3]), the model is trained on its own autoregressive rollouts, 8Figure 5: Dynamic and static element controllability. Projected bounding boxes of dynamic agents and road elements are overlaid on the videos. Green denote objects. Red lines denote solid road boundaries, and cyan lines denote lane markings. which significantly reduces the train–test mismatch that commonly leads to compounding errors in long-horizon generation. Concretely, generation proceeds chunk-by-chunk with KV-cache enabled for both training and inference. For each new chunk, we initialize its latent from a standard Gaussian and perform 4-step denoising, conditioned on the previously generated clean frames (together with action and optional dynamic/static conditions). This produces a self-rollout distribution induced by the Stage-II causal model. We then optimize the model using DMD (distribution matching distillation) loss [14, 15], which minimizes the reverse KL divergence between the self-rollout distribution and a target distribution represented by our Stage-I bidirectional teacher. By matching the teacher distribution under self-generated contexts, self-forcing mitigates exposure bias and reduces compounding errors in autoregressive rollouts, leading to more stable long-horizon generation. Moreover, since each chunk is trained to be produced with a fixed, small denoising budget, the resulting model naturally becomes a few-step generator suitable for real-time streaming simulation. 
+
+Long video generation with Rolling KV Cache. Long-horizon rollouts are supported during inference using a fixed-size Rolling KV Cache. Concretely, we allocate a cache with a predetermined capacity to store the attention key/value tensors from previously generated chunks. As generation proceeds chunk-by-chunk, newly produced keys/values are appended to the cache. When the cache reaches capacity, we evict the oldest entries following a FIFO (first-in, first-out) rule, ensuring that the model always attends to a sliding window of the most recent context. This design yields bounded memory usage and stable runtime, while still providing sufficient recent temporal context for coherent long video rollouts. Overall, Stage-II produces a causal, few-step, streaming multi-view generative world model that maintains the controllability learned in Stage-I, while enabling real-time interaction and long video generation required by scalable evaluation and online RL training for end-to-end/VLA autonomous driving systems. 
+
+## 5 Results  
+
+> 1
+
+This section evaluates X-World on its core capabilities as a controllable ego-centric multi-camera world model. We organize the results to highlight fine-grained controllability and generation quality, 
+
+> 1Road signs, textual content, and license plates are intentionally blurred in the figures to comply with legal and privacy requirements. These modifications are applied for visualization purposes only and do not reflect the quality of either the logged data or the model-generated outputs.
+
+9Figure 6: Long Sequence Generation (24 s Multi-Camera Rollout). X-World produces temporally stable and view-consistent multi-camera videos over a 24 s horizon, supporting streaming long-horizon simulation without catastrophic drift. including: (i) ego action controllability, (ii) dynamic-agent and static-element controllability, (iii) long-horizon generation, (iv) multi-camera consistency, and (v) global appearance editing. 
+
+5.1 Ego Action Controllability 
+
+Ego action controllability measures whether the generated future videos faithfully reflect the conse-quences of a given ego action sequence under a fixed initial scene context. As shown in Figure 4, X-World produces photorealistic and physically plausible futures that closely follow the commanded actions. Conditioned on the same initial frame, changing the ego action sequence leads to correspond-ingly different, coherent rollouts, including smooth turns and lane changes. These results indicate that X-World internalizes a robust action-conditioned state transition in video space, enabling reactive and counterfactual rollouts for planning and policy evaluation. 
+
+5.2 Dynamic and Static Element Controllability 
+
+Beyond ego control, X-World supports fine-grained controllability over both dynamic traffic agents 
+
+and static road elements , which is crucial for reproducible simulation and targeted stress testing. Figure 5 visualizes this capability on 6 s multi-camera generations by overlaying projected conditions on the generated videos: green boxes denote dynamic objects ( e.g., , vehicles), while red and cyan lines denote road boundaries and lane markings, respectively. The model preserves the specified agent locations/motions and anchors static layout cues consistently over time despite ego motion and viewpoint changes across different camera types ( e.g., , fisheye and narrow views). This demonstrates that dynamic and static controls can be enforced reliably and simultaneously, providing a controllable simulator interface for scenario editing and reproducible benchmarking. 
+
+5.3 Long-Horizon Multi-Camera Generation 
+
+Figure 6 demonstrates 24 s long-horizon rollouts of X-World on multi-camera streams. The generated videos remain stable over extended horizons, maintaining coherent motion and appearance without catastrophic drift. Importantly, X-World can roll out beyond the short-clip setting used in Stage-I training, making it suitable for interactive simulation and closed-loop evaluation. 10 Figure 7: C2V for Scene Appearance Editing. Keeping the ego actions and the dynamic/static elements fixed, we vary the text prompt to edit global appearance, including locale ( e.g., , Germany vs. China), time of day (sunset vs. night), and weather (sunny vs. rainy). All images are generated by X-World, including the first frame. 
+
+5.4 Multi-Camera Consistency 
+
+Multi-camera world simulation requires both temporal coherence and cross-view alignment at each timestep. As illustrated in Figure 6 and Figure 5, X-World maintains strong cross-view consistency :dynamic objects exhibit consistent identity and motion across cameras, and static structures ( e.g., ,lane topology and road boundaries) remain geometrically aligned across views. These qualitative results validate the effectiveness of our view–temporal modeling design for multi-camera generation. 
+
+5.5 Global Appearance Editing via Text Prompts 
+
+Finally, X-World supports controllable appearance editing through its text-conditioning branch, which primarily modulates global style while actions and scene elements are governed by their dedicated control branches. Figure 7 shows C2V generations from the front camera where we keep ego actions and dynamic/static controls fixed, but vary the text prompt to edit global appearance, including locale (e.g., , Germany vs. China), time of day (sunset vs. night), and weather (sunny vs. rainy). Notably, all frames are generated by X-World, including the first frame, highlighting its ability to perform appearance-driven style transfer and controllable data synthesis. 
+
+## 6 Applications 
+
+In this section, we delineate the practical deployment of X-World within XPeng’s autonomous driving stack. Beyond simple video generation, X-World serves as a high-fidelity, reactive, and controllable substrate for the development and validation of our next-generation Vision-Language-Action (VLA 2.0) policies. 
+
+6.1 Closed-loop Evaluation Engine for VLA 2.0 
+
+Although traditional 3DGS-based simulation evaluations can accurately reproduce the driving trajec-tories of the end-to-end driving model, they are unable to handle scenarios where the autonomous driving model makes significant lane changes, or where the running trajectory is completely different from the real vehicle’s collected logs. X-World functions as a generative simulator that enables full closed-loop testing for VLA 2.0. 
+
+Reactive Rollouts : Unlike static log-replays, X-World responds to the ego-vehicle’s real-time planned trajectories. If VLA 2.0 executes a sudden braking or steering maneuver, X-World updates the future multi-view observations accordingly, maintaining temporal and causal consistency. 11 Figure 8: Closed-loop simulation and counterfactual testing with X-World. Scenario 1: In the logged video, the ego vehicle waits behind a front car that is actually parked. Under the same initial scene, X-World enables counterfactual rollout to evaluate a policy that detours around the parked car. 
+
+Scenario 2: Starting from a logged straight-driving scenario, we edit the scene by inserting a cyclist darting out from behind an occluding black car. X-World generates realistic futures under this edit, and the tested policy safely stops before the cyclist to avoid collision. 
+
+Safety Critical Metrics : By running VLA 2.0 within X-World, we can measure high-level perfor-mance indicators such as collision rates, progress-to-goal, and ride comfort in a virtual environment that closely mirrors the real-world visual distribution. Figure 8 illustrates the potential of X-World as a closed-loop simulator for policy evaluation under 
+
+counterfactual and edited scenarios. We show two representative cases. 
+
+Scenario 1 (counterfactual action rollout). In the logged video, the ego vehicle chooses to wait behind a front vehicle that is in fact parked. Under the same initial scene, we use X-World to roll out a counterfactual future conditioned on an alternative policy action: the tested policy model decides to 
+
+detour around the parked car. X-World generates a coherent multi-camera future consistent with this maneuver, enabling scalable evaluation of whether the policy can take the more efficient action while remaining safe. 
+
+Scenario 2 (scene editing for safety-critical stress test). In the logged video, the ego vehicle goes straight and passes a nearby black car on the front-left. We then edit the scene by inserting a cyclist that darts out from behind the black car, initially occluded by it. Under this edited condition, X-World generates high-quality futures with consistent occlusion and motion, and the tested policy model successfully stops before the cyclist, yielding to it and safely avoiding a collision. Together, these examples demonstrate that X-World can support closed-loop evaluation by (i) rolling out alternative ego actions under the same scene and (ii) generating realistic, safety-critical counter-factuals through controllable scene editing, providing a practical testbed for end-to-end/VLA policy development. 
+
+6.2 Simulator for Online Reinforcement Learning 
+
+To bridge the gap between imitation learning and expert-level performance, X-World is utilized as a training environment for Online Reinforcement Learning (RL). 
+
+Hard-case Specialization : We leverage X-World’s controllability to stress-test VLA 2.0 in scenarios where it typically underperforms, such as "hidden-person" (ghost-outs) at intersections or indecisive lane-changing in dense traffic. 
+
+Efficient Exploration : By fine-tuning the policy within X-World, the VLA model can explore diverse action sequences and receive immediate visual feedback. This iterative loop allows the model to learn 12 recovery behaviors from near-accident states—scenarios that are too dangerous to explore in the real world. 
+
+6.3 Large-scale Data Synthesis and Augmentation 
+
+X-World acts as a generative data factory, synthesizing rare and high-value data assets that are difficult to collect via fleet vehicles. 
+
+Corner Case Generation : We can procedurally generate safety-critical events, such as extreme weather conditions, rare vehicle types, or erratic pedestrian behaviors, providing a balanced training distribution that mitigates the long-tail problem. 
+
+Overseas Expansion : To support our global strategy, X-World enables "Zero-shot style transfer" for data. By conditioning the model on localized appearance prompts (e.g., European road markings, unique traffic signs, or left-hand traffic logic), we can transform domestic driving data into overseas training assets, significantly accelerating our international deployment without the need for extensive local data collection. 
+
+## 7 Conclusion 
+
+We presented X-World, a controllable multi-camera generative world model for autonomous driving that simulates future observations directly in video space. Conditioned on multi-view visual history and a future action sequence, X-World generates high-quality future multi-camera videos with strong 
+
+cross-view geometric consistency , temporal coherence , and strict action following . To support reproducible and editable scene rollouts, X-World additionally accepts optional controls over dynamic traffic agents and static road elements . In addition, we retain a text-conditioning branch that primarily modulates global appearance ( e.g., , weather and time of day), enabling controllable appearance-driven style editing and data synthesis while the specified actions and scene factors are enforced by their dedicated conditioning branches. Architecturally, X-World builds on a latent video generation framework with a high-compression 3D causal VAE and a customized multi-view DiT backbone. The view–temporal self-attention explicitly aligns features across time and cameras, and decoupled cross-attention branches effectively fuse heterogeneous conditions with reduced interference, together enabling controllable multi-view generation under diverse inputs. To make the model practical as a “real-world simulator” for the end-to-end era, we further adopt a streaming, autoregressive generation interface with efficient long-horizon rollout supported by a fixed-size rolling KV cache. Overall, X-World moves generative world models closer to a scalable, interactive simulator abstraction that can support reproducible benchmarking, scenario editing, and closed-loop rollouts for end-to-end/VLA autonomous driving systems, as well as controllable data synthesis and appearance-driven style transfer. We believe this direction will play an increasingly important role in scalable evaluation and training—including online reinforcement learning—by enabling low-cost, repeatable, and diverse interactions beyond what is feasible with real-world testing alone. 13 Contributors 
+
+We extend our sincere gratitude to the entire team for their dedication and hard work. This project is a testament to our collective effort in pushing the boundaries of world model research and engineering. 
+
+Advisors: Yu Zhang, Xianming Liu 
+
+Project Lead: Boyang Wang 
+
+Contributors: Chaoda Zheng *, Sean Li *, Jinhao Deng, Zhennan Wang, Shijia Chen, Liqiang Xiao, Ziheng Chi, Hongbin Lin ‡, Kangjie Chen ‡
+
+> *
+
+Core contribution. The first two authors are listed in alphabetical order. 
+
+> ‡
+
+Research Intern at XPENG. 
+
+## References 
+
+[1] Kevin Black, Noah Brown, Danny Driess, Adnan Esmail, Michael Equi, Chelsea Finn, Niccolo Fusai, Lachy Groom, Karol Hausman, Brian Ichter, Szymon Jakubczak, Tim Jones, Liyiming Ke, Sergey Levine, Adrian Li-Bell, Mohith Mothukuri, Suraj Nair, Karl Pertsch, Lucy Xiaoyang Shi, James Tanner, Quan Vuong, Anna Walling, Haohuan Wang, and Ury Zhilinsky. π0: A vision-language-action flow model for general robot control, 2026. [2] Holger Caesar, Varun Bankiti, Alex H. Lang, Sourabh Vora, Venice Erin Liong, Qiang Xu, Anush Krishnan, Yu Pan, Giancarlo Baldan, and Oscar Beijbom. nuscenes: A multimodal dataset for autonomous driving. 
+
+arXiv preprint arXiv:1903.11027 , 2019. [3] Boyuan Chen, Diego Martí Monsó, Yilun Du, Max Simchowitz, Russ Tedrake, and Vincent Sitzmann. Diffusion forcing: Next-token prediction meets full-sequence diffusion. Advances in Neural Information Processing Systems , 37:24081–24125, 2024. [4] Hyung Won Chung, Noah Constant, Xavier Garcia, Adam Roberts, Yi Tay, Sharan Narang, and Orhan Firat. Unimax: Fairer and more effective language sampling for large-scale multilingual pretraining. arXiv preprint arXiv:2304.09151 , 2023. [5] Whye Kit Fong, Rohit Mohan, Juana Valeria Hurtado, Lubing Zhou, Holger Caesar, Oscar Beijbom, and Abhinav Valada. Panoptic nuscenes: A large-scale benchmark for lidar panoptic segmentation and tracking. 
+
+arXiv preprint arXiv:2109.03805 , 2021. [6] Xun Huang, Zhengqi Li, Guande He, Mingyuan Zhou, and Eli Shechtman. Self forcing: Bridging the train-test gap in autoregressive video diffusion. arXiv preprint arXiv:2506.08009 , 2025. [7] Jyh-Jing Hwang, Runsheng Xu, Hubert Lin, Wei-Chih Hung, Jingwei Ji, Kristy Choi, Di Huang, Tong He, Paul Covington, Benjamin Sapp, Yin Zhou, James Guo, Dragomir Anguelov, and Mingxing Tan. Emma: End-to-end multimodal model for autonomous driving. arXiv preprint arXiv:2410.23262 , 2024. [8] Physical Intelligence, Kevin Black, Noah Brown, James Darpinian, Karan Dhabalia, Danny Driess, Adnan Esmail, Michael Equi, Chelsea Finn, Niccolo Fusai, Manuel Y. Galliker, Dibya Ghosh, Lachy Groom, Karol Hausman, Brian Ichter, Szymon Jakubczak, Tim Jones, Liyiming Ke, Devin LeBlanc, Sergey Levine, Adrian Li-Bell, Mohith Mothukuri, Suraj Nair, Karl Pertsch, Allen Z. Ren, Lucy Xiaoyang Shi, Laura Smith, Jost Tobias Springenberg, Kyle Stachowicz, James Tanner, Quan Vuong, Homer Walke, Anna Walling, Haohuan Wang, Lili Yu, and Ury Zhilinsky. π0.5: a vision-language-action model with open-world generalization, 2025. [9] Xingchao Liu, Chengyue Gong, and Qiang Liu. Flow straight and fast: Learning to generate and transfer data with rectified flow. arXiv preprint arXiv:2209.03003 , 2022. [10] William Peebles and Saining Xie. Scalable diffusion models with transformers. In ICCV , pages 4195–4205, 2023. [11] Team Wan, Ang Wang, Baole Ai, Bin Wen, Chaojie Mao, Chen-Wei Xie, Di Chen, Feiwu Yu, Haiming Zhao, Jianxiao Yang, Jianyuan Zeng, Jiayu Wang, Jingfeng Zhang, Jingren Zhou, Jinkai Wang, Jixuan Chen, Kai Zhu, Kang Zhao, Keyu Yan, Lianghua Huang, Mengyang Feng, Ningyi Zhang, Pandeng Li, Pingyu Wu, Ruihang Chu, Ruili Feng, Shiwei Zhang, Siyang Sun, Tao Fang, Tianxing Wang, Tianyi Gui, Tingyu Weng, Tong Shen, Wei Lin, Wei Wang, Wei Wang, Wenmeng Zhou, Wente Wang, Wenting Shen, Wenyuan Yu, Xianzhong Shi, Xiaoming Huang, Xin Xu, Yan Kou, Yangyu Lv, Yifei Li, Yijing Liu, Yiming Wang, Yingya Zhang, Yitong Huang, Yong Li, You Wu, Yu Liu, Yulin Pan, Yun Zheng, Yuntao Hong, Yupeng Shi, Yutong Feng, Zeyinzi Jiang, Zhen Han, Zhi-Fan Wu, and Ziyu Liu. Wan: Open and advanced large-scale video generative models, 2025. 
+
+14 [12] Waymo. The Waymo world model: A new frontier for autonomous driving simu-lation. https://waymo.com/blog/2026/02/the-waymo-world-model-a-new-frontier-for-autonomous-driving-simulation/ , February 2026. Accessed: 2026-03-09. [13] J Beau W Webber. A bi-symmetric log transformation for wide-range data. Measurement Science and Technology , 24(2):027001, 2013. [14] Tianwei Yin, Michaël Gharbi, Taesung Park, Richard Zhang, Eli Shechtman, Fredo Durand, and William T Freeman. Improved distribution matching distillation for fast image synthesis. In NeurIPS .[15] Tianwei Yin, Michaël Gharbi, Richard Zhang, Eli Shechtman, Frédo Durand, William T Freeman, and Taesung Park. One-step diffusion with distribution matching distillation. In CVPR , 2024. [16] Tianwei Yin, Qiang Zhang, Richard Zhang, William T Freeman, Fredo Durand, Eli Shechtman, and Xun Huang. From slow bidirectional to fast causal video generators. arXiv e-prints , pages arXiv–2412, 2024. 
+
+15
