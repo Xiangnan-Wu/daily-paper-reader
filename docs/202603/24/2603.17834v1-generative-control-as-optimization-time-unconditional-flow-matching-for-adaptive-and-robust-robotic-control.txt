@@ -1,0 +1,568 @@
+Title: Generative Control as Optimization: Time Unconditional Flow Matching for Adaptive and Robust Robotic Control
+
+URL Source: https://arxiv.org/pdf/2603.17834v1
+
+Published Time: Thu, 19 Mar 2026 01:26:42 GMT
+
+Number of Pages: 16
+
+Markdown Content:
+# Generative Control as Optimization: Time Unconditional Flow Matching for Adaptive and Robust Robotic Control 
+
+Zunzhe Zhang * 1 2 Runhan Huang * 1 Yicheng Liu 1 2 Shaoting Zhu 1 Linzhan Mou 3 Hang Zhao 1 2 
+
+# Abstract 
+
+Diffusion models and flow matching have be-come a cornerstone of robotic imitation learn-ing, yet they suffer from a structural inefficiency where inference is often bound to a fixed integra-tion schedule that is agnostic to state complexity. This paradigm forces the policy to expend the same computational budget on trivial motions as it does on complex tasks. We introduce Genera-tive Control as Optimization (GeCO) , a time-unconditional framework that transforms action synthesis from trajectory integration into itera-tive optimization. GeCO learns a stationary ve-locity field in the action-sequence space where expert behaviors form stable attractors. Conse-quently, test-time inference becomes an adaptive process that allocates computation based on con-vergence—exiting early for simple states while re-fining longer for difficult ones. Furthermore, this stationary geometry yields an intrinsic, training-free safety signal, as the field norm at the opti-mized action serves as a robust out-of-distribution (OOD) detector, remaining low for in-distribution states while significantly increasing for anoma-lies. We validate GeCO on standard simulation benchmarks and demonstrate seamless scaling to 
+
+π0-series Vision-Language-Action (VLA) mod-els. As a plug-and-play replacement for standard flow-matching heads, GeCO improves success rates and efficiency with an optimization-native mechanism for safe deployment. Video and code can be found at https://hrh6666.github.io/GeCO/. 
+
+# 1. Introduction 
+
+Generative modeling has rapidly established itself as a cor-nerstone of modern robotic imitation learning (Black et al., 
+
+* Equal contribution. Author order was determined randomly. 
+
+> 1
+
+Institute for Interdisciplinary Information Sciences, Tsinghua Uni-versity, Beijing, China 2Galaxea Inc., Beijing, China 3Department of Computer Science, Princeton University, New Jersey, US. Cor-respondence to: Hang Zhao <hangzhao@mail.tsinghua.edu.cn >.
+
+Preprint. March 19, 2026. 
+
+2024; Chi et al., 2025; Janner et al., 2022; Huang et al., 2025b;a; Ze et al., 2024; Kim et al., 2024; Bu et al., 2025). By representing policies as conditional distributions rather than deterministic mappings, approaches such as diffusion models (Ho et al., 2020; Song et al., 2020; Zhang et al., 2023) and flow matching (Lipman et al., 2022; Liu et al., 2022) have demonstrated exceptional capabilities in captur-ing the multi-modal nature of human behavior. These meth-ods excel at synthesizing complex trajectories for manipu-lation and locomotion tasks (Chi et al., 2025; Intelligence et al., 2025; Huang et al., 2025b; Ze et al., 2024; Ajay et al., 2022), driving state-of-the-art performance across diverse benchmarks (Chen et al., 2025b; Liu et al., 2023a; Zhang et al., 2025). Their success stems largely from iteratively refining noise into feasible actions via time-conditioned dynamics and effectively decomposing the challenging gen-eration problem into a sequence of manageable denoising or flow integration steps (Ho et al., 2020; Lipman et al., 2022). Yet, this reliance on time-conditioning introduces a fun-damental structural inefficiency for control applications, a limitation that persists across standard formulations. These methods learn dynamic vector fields that evolve according to a pre-defined fictitious time schedule (Wang & Du, 2025): while this schedule bridges Gaussian noise and the expert data distribution, it creates a rigid inference paradigm that is agnostic to the actual complexity of the current robot state. The policy is compelled to execute a fixed number of integration steps regardless of convergence, thereby wasting computational resources on trivial motions while potentially failing to sufficiently refine actions for complex tasks. This “blind integration” problem not only hinders efficiency but also obscures the geometric structure of the policy. Time-varying fields lack a stationary energy landscape (Wang & Du, 2025; Sun et al., 2025): with the field direction shifting across timesteps, there is no intrinsic mechanism to verify action validity or detect out-of-distribution (OOD) scenar-ios, a critical gap for safe real-world deployment (Hodge et al., 2025). To address these limitations, we reimagine generative con-trol through a time-unconditional lens, grounding action synthesis in iterative optimization rather than trajectory in-tegration. Our framework, Generative Control as Opti-
+
+1
+
+> arXiv:2603.17834v1 [cs.RO] 18 Mar 2026 Generative Control as Optimization
+
+mization (GeCO) , embodies a paradigm shift: instead of learning time-dependent dynamics, we learn a single, sta-tionary velocity field in the action-sequence space where expert behaviors form stable attractors. To ensure robust convergence in continuous action spaces, we incorporate a velocity rescaling mechanism that modulates flow mag-nitude based on distance to the expert manifold, creating a geometric sink around target modes. This transforms inference from a fixed-schedule process into an adaptive optimization loop that naturally settles at equilibrium. The stationary nature of GeCO’s velocity field unlocks two transformative capabilities absent in time-dependent base-lines, directly addressing our core motivations of adaptive computation and intrinsic OOD awareness. First, it enables 
+
+adaptive inference rooted in convergence: rather than ad-hering to an arbitrary step count, the policy dynamically adjusts computation by exiting early for simple states (e.g., basic reaching) and spending more time refining actions for high-precision tasks (e.g., delicate manipulation). This decouples planning horizon from training schedules, allo-cating computational resources efficiently. Second, and cru-cially, the static geometric structure provides intrinsic OOD awareness as a training-free safety signal. The residual norm of the velocity field acts as a robust epistemic uncer-tainty metric: in-distribution states converge to zero-velocity attractors (low norm), while OOD states, lacking a learned manifold to settle on, exhibit persistent, non-vanishing gradi-ents. This allows the robot to detect anomalies directly from the field’s energy, without auxiliary networks or ensembles. Notably, GeCO exhibits strong architectural versatility, seamlessly supporting both standard Diffusion Transformers (DiT) (Chi et al., 2025; Dong et al., 2024; 2025) and large-scale Vision-Language-Action (VLA) foundation models (Black et al., 2024; Intelligence et al., 2025). A defining advantage lies in its plug-and-play design: it serves as a di-rect drop-in replacement for standard flow-matching heads (Black et al., 2024), requiring minimal architectural adjust-ments or modifications to the loss function to integrate into existing systems. Building on this versatility, we conduct extensive validation of GeCO on standard simulation bench-marks (Chen et al., 2025b; Liu et al., 2023a; Zhang et al., 2025). Empirically, GeCO outperforms state-of-the-art time-conditioned baselines while fundamentally redefining infer-ence efficiency through the modulation of computational resources based on task complexity, rather than adherence to rigid fixed schedules. Beyond pure performance gains, we further establish that the intrinsic geometric signals of GeCO’s stationary field enable robust detection of task-level distribution shifts, delivering an optimization-native safety mechanism critical for reliable real-world robotic deploy-ment. 
+
+# 2. Related Work 
+
+Generative Models for Robotic Control. Generative pol-icy learning has become a dominant paradigm for robotic control in recent years. One prominent direction lever-ages the reasoning and perceptual capabilities of Vision-Language Models (VLMs) (Beyer et al., 2024; Bai et al., 2023; Liu et al., 2023b) for high-level planning (Driess et al., 2023; Liang et al., 2022; Tian et al., 2024) and ac-tion generation (Kim et al., 2024; 2025; Bu et al., 2025). Parallel efforts utilize video generation models (Liu et al., 2024b; Yang et al., 2024; Wiedemer et al., 2025) to serve as predictive priors for robotic decision-making (Du et al., 2023; Chen et al., 2025a; Shen et al., 2025). In the realm of precise robotic control, diffusion (Ho et al., 2020; Song et al., 2020) and flow matching (Lipman et al., 2022) have demonstrated exceptional effectiveness, functioning as ro-bust planners and action-chunk generators (Chi et al., 2025; Huang et al., 2025a; Zhou et al., 2024; Huang et al., 2025b; Janner et al., 2022; Ajay et al., 2022; Dong et al., 2025; Ze et al., 2024). Notably, the integration of continuous flow-matching heads into VLA architectures has emerged as a powerful paradigm (Black et al., 2024; Intelligence et al., 2025; Li et al., 2025; Shukor et al., 2025; Jiang et al., 2025); this approach bridges the semantic understanding of VLM backbones with high-frequency, continuous action execution. Such continuous generation mechanisms are widely adopted in modern Vision-Language-Action systems to replace purely autoregressive, discretized action decoding (Kim et al., 2024; 2025), enabling higher fidelity control and improved real-time performance (Black et al., 2025; In-telligence et al., 2025). Our work focuses on this continuous generative control family of flow matching, which continues to drive advancements across domains ranging from robotic manipulation to navigation. 
+
+Time-Unconditional Generative Dynamics. Most diffu-sion and flow-based models (Ho et al., 2020; Song et al., 2020; Lipman et al., 2022) formulate generation as a time-conditioned dynamical system, where the vector field varies with an explicit noise or time variable, typically necessitat-ing a fixed integration horizon. Recent studies (Sun et al., 2025) indicate that removing this explicit conditioning can lead to graceful degradation, or even performance gains, suggesting that dynamics can often be inferred implicitly from the state. However, naively discarding time condition-ing does not guarantee stable equilibrium behavior or well-posed optimization dynamics (Wang & Du, 2025). (Wang & Du, 2025) address this by learning a stationary vector field compatible with an implicit energy landscape (LeCun et al., 2006), enabling optimization-driven sampling (Flo-rence et al., 2022). While this paradigm shows promise in image generation, its effectiveness in robotic control, which demands rigorous accuracy and sequential stability, still remains an open question. 2Generative Control as Optimization A. The Paradigm Shift Mechanism)     
+
+> Flow Matching Time -Dependent)
+> Integration (t=0 1
+> Rigid Schedule: Regardless of Complexity
+> Shift to Static Field Optimization
+> GeCO Ours Optimization Process
+> State -Dependent)
+> Optimization Stop when 𝑓𝑓 𝜃𝜃 →0)
+> Adaptive Steps: Converge to Stationary Points
+
+B. Adaptive Computation Efficiency)  
+
+> Scenario 1 Simple Transit
+> Inference Steps: 4/20
+> Simple State
+> Fast Convergence, Early Exit)
+> Scenario 2 Grasping an Object
+> 16/20
+> Complex State
+> Deep Optimization)
+
+[ ]
+
+C. Intrinsic Safety Geometry)  
+
+> In -Distribution ID Stable Attractor
+> Safe Execution Stable
+> Scenario 2 Grasping an Object
+> Inference
+> Steps: 16/20
+> Complex State (refined Execution)
+
+[ ]            
+
+> Out -of-Distribution OOD Chaotic Field
+> Anomaly Detected Non -Equilibrium)
+> Field Norm
+> || 𝑓𝑓 𝜃𝜃 𝑎𝑎 ,𝑠𝑠 || ≫0
+> Field Norm
+> || 𝑓𝑓 𝜃𝜃 𝑎𝑎 ,𝑠𝑠 || ≈0
+> Inference Steps:
+
+[ ]
+
+Figure 1. Generative Control as Optimization (GeCO). (A) The Paradigm Shift: Unlike standard flow matching which relies on rigid, time-dependent integration schedules (top), GeCO learns a stationary velocity field where inference becomes an iterative optimization process toward stable attractors (bottom). (B) Adaptive Computation: This formulation enables the policy to dynamically allocate computational budget based on state complexity—exiting early for simple transit phases (Scenario 1) while performing deep refinement for precise manipulation (Scenario 2). (C) Intrinsic Safety: The stationary geometry provides a zero-shot safety mechanism. In-distribution (ID) states converge to low-energy equilibria ( || fθ || ≈ 0), whereas out-of-distribution (OOD) anomalies exhibit persistently high field norms ( || fθ || ≫ 0), enabling robust detection. 
+
+# 3. Method 
+
+Our goal is to turn generative control for robotic manipula-tion from a fixed-time integration process into an optimiza-tion problem over a time-invariant velocity field. At each control step, the policy observes images, proprioception, and a language instruction, and synthesizes a short-horizon action sequence. We first revisit time-conditioned diffusion and flow matching for such control, then introduce our time-unconditional field and optimization-based inference, and finally show how the same geometry yields intrinsic OOD awareness. 
+
+3.1. Revisiting Time-Conditioned Generative Control 
+
+Diffusion- and flow-based controllers for manipulation typi-cally learn a time-conditioned velocity field 
+
+vθ (xγ , γ, s t),
+
+where xγ is a noisy or partially denoised action sequence, 
+
+γ is a time variable, and st is the current observation and instruction. Inference follows an integration path in the time domain : starting from noise, the policy traverses γ from 0
+
+to 1 using steps {∆γk}k with P 
+
+> k
+
+∆γk ≈ 1.
+
+Although one can change the number of steps and step sizes at deployment, these choices are constrained by the requirement of representing a valid integration of the time-conditioned field over γ ∈ [0 , 1] . Stopping too early under-integrates the ODE/SDE; letting P 
+
+> k
+
+∆γk > 1 pushes the system beyond the interval on which the field is defined and trained. Thus the geometry of vθ (·, γ, s t) is always tied to a specific notion of time progress. This design couples three roles into a single scalar γ: track-ing progress along the generative trajectory, controlling the strength of the field, and parameterizing the integration do-main. As a result, the field geometry changes with γ, and there is no single, time-invariant notion of “good actions” or a creteria whose magnitude directly measures how close a final action is to the in-distribution manifold. GeCO decouples this dependence on time: instead of con-ditioning on γ, we learn a stationary field over action se-quences and use it as the objective of an unconstrained optimization procedure. 
+
+3.2. Time-Unconditional Velocity Fields for Control 
+
+At timestep t, the robot observes st (multi-view RGB of the workspace, proprioception, and a language instruction) and predicts a sequence of future low-level actions. 
+
+a = at:t+Ta−1 ∈ RTa×da ,
+
+Rather than a time-indexed vθ (·, γ, s t), GeCO learns a time-unconditional velocity field fθ (x, s t) over action sequences. We want fθ (·, s t) to point from noisy or suboptimal se-quences toward equilibrium actions that solve the current task, and to vanish near ground truth in-distribution actions, 3Generative Control as Optimization 
+
+in order stop automatically during inference without an ex-plicit time condition. To train such a field, we introduce γ only as a implicit training variable. Given a demonstration a and Gaussian noise ε ∼ N (0 , I ), we form 
+
+xγ = γa + (1 − γ)ε, γ ∼ U (0 , 1) , (1) and crucially do not provide γ to the model. At each xγ we define a restoring direction 
+
+g⋆(a, ε, γ ) = ( ε − a) c(γ), (2) where c(γ) is a scalar schedule that decays to zero as γ →
+
+1. Because c(1) = 0 , the target field vanishes at xγ =
+
+a, transforming ground-truth action sequences into natural stationary equilibrium points of the learned field. Given such rescaling mechanism, the denoising process is able to automatically stop in the ground truth stationary points, effectively solving the non-equilibrium nature of the vanilla time-unconditional flow matching. Conditioned on st, the loss is 
+
+L(θ) = E(st,a )Eε,γ fθ (xγ , s t) − g⋆(a, ε, γ ) 2
+
+. (3) Here γ only controls the interpolation and the scale via c(γ);since it never enters the model, fθ (·, s t) must organize all training pairs into a single consistent field for each scene. This encourages fθ to approximate the gradient of an im-plicit potential field over action sequences whose minima lie near successful demonstrations. 
+
+3.3. Optimization-Based Inference 
+
+Once fθ has been learned, inference is no longer framed as integrating over a time axis. At deployment, the controller runs in closed loop: at each timestep t, it observes st and solves a small optimization problem in action space using 
+
+fθ (·, s t).We initialize a(0) from a prior pprior (· | st), e.g., isotropic Gaussian noise, and then perform K gradient-based updates: 
+
+a(k+1) = a(k) − ηk fθ (a(k), s t), (4) where ηk may depend on the sample or iteration. Because there is no time index, and there is no requirement that the effective “total step length” P 
+
+> k
+
+ηk equal a particular value. Taking more or fewer steps, or even P 
+
+> k
+
+ηk > 1,remains a natural optimization process in the same stationary field, rather than violating a time-integration constraint and leading to non-equilibrium divergence. Convergence is monitored directly through the field: 
+
+∥fθ (a(k), s t)∥ ≤ τopt or k ≥ Kmax . (5) 
+
+Algorithm 1 Adaptive Inference (GeCO)  
+
+> 1:
+
+Input: Observation s, Max steps K, Tolerance τ , Rate 
+
+η 
+
+> 2:
+
+Output: Action ˆa, OOD Score S 
+
+> 3:
+
+a(0) ∼ N (0 , I ) ▷ Initialize prior  
+
+> 4:
+
+for k = 0 , . . . , K − 1 do  
+
+> 5:
+
+vk ← fθ (a(k), s ) 
+
+> 6:
+
+if ∥vk∥2 < τ then  
+
+> 7:
+
+break ▷ Adaptive early exit  
+
+> 8:
+
+end if  
+
+> 9:
+
+a(k+1) ← a(k) − η · vk 
+
+> 10:
+
+end for  
+
+> 11:
+
+ˆa ← a(k) 
+
+> 12:
+
+return ˆa, ∥fθ (ˆ a, s )∥2
+
+Simple scenes (e.g., unobstructed reaches) reach a low-norm region in few iterations; cluttered or contact-rich scenes require more. GeCO behaves as an optimization-based, receding-horizon manipulation controller grounded in a learned generative field. Detailed inference pseudocode can be found in Algo.1. 
+
+3.4. Intrinsic OOD Detection from Field Geometry 
+
+GeCO also provides optimization-native OOD awareness. Here OOD is defined at the level of the conditional field: training exposes the model to (st, a ) pairs from pdata (st, a ),and thus to conditional fields fθ (·, s t) induced by st ∼
+
+pdata (st). At test time, an observation st is OOD if it induces a field whose geometry is inconsistent with this family; optimization on such a field need not reach a low-norm equilibrium, and this breakdown in convergence becomes an OOD signal. Given a test observation st, we run optimization as in (4) – (5) , obtaining an approximate equilibrium ˆa(st), and define 
+
+Score( st) = fθ (ˆ a(st), s t) . (6) For in-distribution robot control states st ∼ pdata , the in-duced field resembles those seen during training: optimiza-tion can move xγ into regions that behave like high-γ sam-ples, where c(γ) is small and the field is trained to nearly vanish, so Score( st) is low. When st is OOD, the induced field is itself out-of-distribution: optimization operates in regions never trained to lead to small norm, the gradient norm at the end of the optimization process at ˆa(st) remains large. We obtain a binary OOD decision via 
+
+isOOD( st) = 1{Score( st) > τ OOD }. (7) This incurs essentially no overhead, as the same gradient norms are already computed for convergence checking. 4Generative Control as Optimization       
+
+> (a) (b) (c) (d) (e) (f) Figure 2. Computation Follows Task Complexity. We visualize the spatial distribution of inference effort along a single rollout. The first three panels (a–c) are sampled from LIBERO-Spatial, and the last three panels (d–f) are from LIBERO-Object. The color of each line encodes the number of function evaluations (NFE) required for convergence at that state, ranging from blue (NFE = 1) to red (NFE = 20). This visualization illustrates how GeCO allocates more computation to challenging states while using fewer steps in easier regions.
+
+3.5. Plug-and-Play Integration with VLA Systems 
+
+Modern flow-based Vision-Language-Action (VLA) sys-tems (Black et al., 2024; Intelligence et al., 2025; Jiang et al., 2025; Shukor et al., 2025) consist of two core com-ponents: (1) a Vision-Language Model (VLM) that fuses multi-modal inputs (multi-view RGB v ∈ RH×W ×3×Nv ,proprioception p ∈ Rdp , language instruction l ∈ L ) into a task-aware conditional signal st = VLM (v, p, l ); (2) a time-conditioned flow-matching head that takes st and ac-tion sequence xγ as inputs to predict vθ (xγ , γ, s t).GeCO enables plug-and-play integration with such VLA architectures via minimal modifications: we directly re-place the time-conditioned flow-matching head vθ (xγ , γ, s t)
+
+with our time-unconditional velocity field fθ (x, s t) (Section 3.2), while retaining the VLM’s multi-modal fusion pipeline and the VLA system’s original input-output interface. No architectural changes to the VLM or control pipeline are required—at inference, the VLA system generates action sequences a ∈ RTa×da via GeCO’s adaptive optimization loop (Algorithm 1) using the same st signal, leveraging the stationary geometry of fθ to eliminate the rigid time-schedule constraints of baseline flow-matching heads. 
+
+# 4. Experiments 
+
+We evaluate GeCO along three complementary axes: (1) 
+
+Adaptive Efficiency , analyzing how the optimization-based inference dynamically allocates computation based on task complexity; (2) Scalability , assessing the method’s effec-tiveness as a plug-and-play head for large Vision-Language-Action (VLA) models ( π0 series); and (3) Intrinsic Safety ,verifying the reliability of the stationary field norm as a zero-shot Out-of-Distribution (OOD) detector. Implementation details can be found in Appendix A. 
+
+4.1. Policy Performance and Adaptive Computation The Efficiency-Performance Trade-off. Table 1 demon-strates that GeCO achieves a superior trade-off between in-ference speed and task success compared to fixed-schedule baselines on the LIBERO (Liu et al., 2023a) benchmark. Remarkably, GeCO with a budget of only 5 steps already outperforms Rectified Flow (20 steps), achieving a higher success rate (91.9% vs. 90.0%) while requiring 75% less compute . When the budget is increased to 20 steps, GeCO reaches a peak success rate of 93.5%. Crucially, the average NFE required to achieve this peak is only 11.6, significantly lower than the maximum budget. This indicates that GeCO’s optimizer effectively allocates computational resources, au-tonomously exiting early for simpler states while reserving the budget for complex ones. 
+
+Temporal Analysis: Computation Follows Complexity. 
+
+To verify that the observed variation in NFE is structurally driven by task complexity rather than randomness, we an-alyze the inference profile shown in Figure 2. We observe distinct optimization behaviors across different task types: • Motion Planning Complexity (LIBERO-Spatial): 
+
+For tasks requiring spatial reorientation (Fig. 2 a-c), higher NFE concentrates heavily around bottleneck phases, such as pre-grasp alignment and object place-ment. In contrast, free-space transit phases converge rapidly, demonstrating that the learned vector field pro-vides a smooth gradient in unobstructed regions. • Semantic Grounding (LIBERO-Object): In tasks where the robot must identify a specific target among multiple distractors based on language instructions (e.g. pick the ketchup and place it in the basket), we observe a distinct NFE spike at the episode onset (Fig. 2 d-f). This suggests that the optimizer requires more itera-tions to resolve the visual-semantic correspondence, effectively deliberating to lock onto the specific ob-ject defined by the instruction before committing to a trajectory. These results confirm that GeCO acts as an adaptive con-troller, dynamically modulating its inference horizon based on both kinematic constraints and perceptual uncertainty. 5Generative Control as Optimization                                                  
+
+> Table 1. Performance vs. Efficiency on LIBERO. GeCO achieves higher success rates by allowing adaptive refinement. By increas-ing the max step budget, GeCO refines actions for complex states, yet the average compute remains low compared to fixed-schedule baselines. Method Max Success Rate (%) Efficiency Steps Goal Spat. Obj. Long Avg. NFE
+> Diff. Policy 100 (Fixed) 82.9 91.4 88.9 82.7 86.5 100.0 Rectified flow 20 (Fixed) 92.4 94.6 97.0 76.0 90.0 20.0
+> GeCO (Ours) 591.6 95.4 98.2 82.4 91.9 5.0 GeCO (Ours) 10 93.0 95.8 99.0 81.8 92.4 8.7
+> GeCO (Ours) 20 95.2 95.8 99.0 83.8 93.5 11.6
+> GeCO (Ours) 30 93.6 95.2 98.8 84.8 93.1 12.8
+
+4.2. Scalability to Vision-Language-Action Models 
+
+We evaluate the scalability of GeCO by integrating it into flow-matching-based VLA models, with the π0-series mod-els selected as a representative example. A critical advan-tage of GeCO is its architectural compatibility with existing time-conditional backbones. Since π0 is originally trained as a time-dependent flow matching model expecting a time embedding t ∈ [0 , 1] , we adapt it to our time-unconditional framework by simply fixing the input time t = 0 during fine-tuning. This effectively freezes the time channel, forcing the network to learn a single, stationary velocity field fθ (x, s )
+
+using the pre-trained weights, rather than a sequence of time-varying fields. This plug-and-play adaptation integrate the rich visual-semantic representations of foundation models with the native adaptive optimization inference of GeCO, with no need for structural modifications or training from scratch. For a fair comparison, both GeCO and the baselines are fine-tuned from the same pre-trained π0 base for 30,000 steps. Details can be found in Appendix B. 
+
+VLABench Result We benchmark our method on VLABench (Zhang et al., 2025), a challenging suite de-signed to evaluate long-horizon, language-conditioned robotic manipulation with strong requirements on semantic grounding and multi-step reasoning. As shown in Table 3, 
+
+π0 with GeCO achieves the strongest overall performance with an average success rate of 0.36 , improving upon the baseline π0 (0.294). The most substantial gains are ob-served on Track 1 and Track 6, which respectively eval-uate in-distribution manipulation skills and robustness to unseen textures and visual variations. In addition, GeCO consistently improves results on Track 3 (common-sense and world knowledge) and Track 4 (semantic instruction fol-lowing), both of which emphasize multi-step reasoning and long-horizon task execution. By contrast, performance on Track 2 (cross-category generalization) remains comparable to standard π0, suggesting that improvements are more pro-nounced on execution- and reasoning-intensive tasks than on pure category-level transfer. 
+
+RoboTwin 2.0 Benchmark Result RoboTwin 2.0 (Chen et al., 2025b) evaluates bimanual manipulation under two difficulty settings: Easy uses clean environments, while 
+
+Hard tests the same policies under domain-randomized eval-uation with clutter, texture, lighting, and tabletop-height variations. As shown in Table 2, adding GeCO to π0 substan-tially improves robustness in the Hard setting, raising the av-erage success rate from 0.18 to 0.28 , while slightly improv-ing the Easy average (0.49 →0.50). The gains are consis-tent across several contact-rich tasks, including Adjust Bot-tle (0.56 →0.66), Beat Block Hammer (0.21 →0.36), Click Alarmclock (0.11 →0.16), and Click Bell (0.03 →0.21), indi-cating improved tolerance to visual and scene perturbations. By contrast, Blocks Ranking (Size) remains challenging for all methods (near-zero success in both settings), suggesting that fine-grained ordering under bimanual coordination is still a major bottleneck on RoboTwin 2.0. 
+
+LIBERO Benchmark Result LIBERO (Liu et al., 2023a) comprises four suites that isolate different distribution shifts in language-conditioned manipulation: goal changes (Goal), spatial relation shifts (Spat.), object category shifts (Obj.), and long-horizon compositional execution (Long). In Ta-ble 4, GeCO remains comparable overall relative to standard fine-tuning: for π0 it matches a similar average (93.9 vs. 94.2), and for π0.5 it stays close (95.9 vs. 96.9). These re-sults suggest that GeCO maintains performance comparable to the flow matching baseline across different VLA model backbones. Collectively, these results validate that GeCO acts as a bet-ter drop-in replacement for VLA action heads, delivering higher performance and robustness under identical training conditions. 
+
+4.3. Intrinsic OOD Detection from Optimization 
+
+GeCO performs action synthesis via iterative optimization at each planning call. We hypothesize that under distribution shift, this optimization fails to converge cleanly, leading to larger update magnitudes. We therefore use the final update norm produced by a single planning call as an intrinsic anomaly score. 
+
+Experiment Setup. We train a single policy on LIBERO-Goal (10 tasks) and evaluate OOD detection on LIBERO-Spatial (10 tasks) as Task OOD . We choose LIBERO-Goal for training because tasks share the same scene layout and objects but differ in goal predicates, making performance sensitive to correctly grounding language instructions into behaviors. At test time, LIBERO-Spatial introduces unseen spatial arrangements of otherwise similar objects, creating a controlled workspace-layout shift while keeping the manip-ulation vocabulary comparable. 6Generative Control as Optimization 
+
+Table 2. Success rate (%) of different VLA methods on the RoboTwin 2.0 benchmark. Each task is evaluated under two difficulty levels: 
+
+Easy and Hard . For every method we report the success rate for each task and difficulty level, together with the average performance across all five tasks. Higher values indicate better task completion ability. The best result in each column is highlighted in bold .Method Adjust Bottle Beat Block Hammer Blocks Ranking (Size) Click Alarmclock Click Bell Avg. Easy Hard Easy Hard Easy Hard Easy Hard Easy Hard Easy Hard RDT (Liu et al., 2024a) 81.0 75.0 77.0 37.0 0.0 0.0 61.0 12.0 80.0 9.0 60.0 27.0 ACT (Zhao et al., 2023) 97.0 23.0 56.0 3.0 0.0 0.0 32.0 4.0 58.0 3.0 49.0 7.0 
+
+π0 (Black et al., 2024) 90.0 56.0 43.0 21.0 7.0 1.0 63.0 11.0 44.0 3.0 49.0 18.0 
+
+π0 with GeCO 86.0 66.0 52.0 36.0 0.0 0.0 72.0 16.0 42.0 21.0 50.0 28.0 
+
+Table 3. VLA success rates (%) on VLABench tracks. We report track-wise success and the average over the listed tracks; higher is better. Method Track 1 Track 2 Track 3 Track 4 Track 6 Avg. 
+
+π0 47.0 21.2 29.1 17.3 32.2 29.4 
+
+π0.5 40.6 22.6 18.0 16.1 25.6 24.5 
+
+π0 with GeCO 61.0 22.0 34.0 20.0 45.0 36.0 
+
+Table 4. VLA success rates (%) on LIBERO benchmark. We report track-wise success and the average over the listed tracks; higher is better. Method Goal Spat. Obj. Long Avg. 
+
+π0 + FAST (Pertsch et al., 2025) 88.6 96.4 96.8 60.2 85.5 
+
+π0 (Black et al., 2024) 95.8 96.8 98.8 85.2 94.2 
+
+π0.5 (Intelligence et al., 2025) 98.0 98.8 98.2 92.4 96.9 Ours ( π0) 96.4 96.8 97.0 85.4 93.9 
+
+Ours ( π0.5) 96.6 97.0 98.8 91.2 95.9 
+
+Baseline OOD Signal. Following the Diff-DAgger-style idea of using the diffusion training objective as an uncer-tainty signal (Lee et al., 2025), we define a lightweight base-line based on the flow-matching training loss . The original formulation estimates an expectation over many sampled timesteps (e.g., 512 samples); to avoid extra sampling cost, we use a single-step proxy and evaluate the flow-matching loss at a fixed timestep t = 1 for each planning call. This produces one scalar baseline score per planning call. 
+
+Anomaly Score and AUROC Computation. An episode consists of multiple planning calls (each call runs optimiza-tion to produce an action chunk that is then executed in the environment). We compute an anomaly score per planning call . For the j-th planning call at state s(j), we run GeCO optimization for at most Kmax = 10 steps. With the update 
+
+ak+1 ← ak − η f θ (ak, s (j)), we define score  plan j = fθ (a(j) 
+
+> K
+
+, s (j)) 2,
+
+where K ≤ Kmax denotes the last executed refinement step (if early termination is triggered, K is the stopping step; otherwise K = Kmax ). We sample 500 in-distribution (ID) episodes from LIBERO-Goal and 500 OOD episodes from LIBERO-Spatial. To avoid overweighting longer episodes, we compute AUROC on a fixed number of planning calls per episode, treating OOD plans as positives and ID plans as negatives. 
+
+Temporal Filtering and Early Reporting. Within each planning call, raw per-step norms can be noisy, so we evalu-ate two lightweight filters over the refinement-step residual norms rk = ∥fθ (ak, s (j))∥2. Both filters output an online 
+
+OOD flag for the current planning call; once the flag trig-gers (at any planning call), we immediately terminate the episode to avoid executing the remaining (eventually fail-ing) interactions. • Moving Average. We smooth rk by averaging over the last w = 5 refinement steps, ˜rk = 1
+
+> w
+
+Pki=k−w+1 ri,
+
+and trigger an OOD flag when ˜rk exceeds a threshold. • Leaky Bucket. We maintain an accumulator that integrates only sustained large residuals: bk ←
+
+max {0, (1 − λ)bk−1 + ( rk − τ )+}, where (x)+ =max( x, 0) . We raise an OOD flag if bk ≥ B at any step. 
+
+Quantitative Results. Table 5 reports separability and operating-point performance for distinguishing ID (LIBERO-Goal) from OOD (LIBERO-Spatial). We treat OOD plans as positives and ID plans as negatives; thus TPR 
+
+measures the fraction of OOD instances correctly flagged, while TNR measures the fraction of ID instances correctly retained (i.e., not falsely flagged). The baseline loss sig-nal is less aligned with the suite-level shift, whereas GeCO yields strong separation. We choose the detection threshold to target TPR ≈ 90% for our detector when possible, and report the corresponding TNR. Time Saved measures the fraction of interaction time avoided on OOD episodes by early reporting: for each OOD episode, we record the first reporting time treport 
+
+(the environment time step when the first planning call triggers the OOD flag) and normalize by the full episode duration Ttotal under the standard evaluation protocol, 7Generative Control as Optimization 
+
+Table 5. OOD Detection on LIBERO Suite Shift (Goal →
+
+Spatial). We report planning-level AUROC for separating ID (Goal) and OOD (Spatial) using optimization-dynamics signals computed per planning call. At a fixed operating point, TNR is specificity on ID instances and TPR is recall on OOD instances. 
+
+Time Saved is the average fraction of interaction time avoided on OOD episodes by early reporting, computed as 1 − treport /T total .Method AUROC ( ↑) TNR(%) TPR (%) Time Saved(%) Baseline (Moving Avg) 0.53 14.4 27.8 10.3 Ours (Moving Avg) 0.93 82.4 89.7 42.4     
+
+> Ours (Leaky Bucket) 0.93 84.0 90.0 44.3
+
+Time Saved = 1 −treport /T total ; we then average this quan-tity over OOD episodes. 
+
+4.4. Ablation Study: Effect of Truncation Parameter α
+
+To evaluate the sensitivity of our adaptive optimization dy-namics to the truncation schedule, we conduct an ablation study on the truncation parameter α. As discussed in Sec-tion 3.2, α controls the onset of the velocity rescaling decay, directly impacting the equilibrium convergence. Table 6 presents the success rates on the LIBERO benchmark across different values of α ∈ { 0.6, 0.8, 0.9}.The results highlight a clear trade-off governed by the smoothness of the learned vector field. When α is too small (e.g., α = 0 .6), the field becomes overly smooth. While this provides stable gradient directions, it drastically slows down convergence. The optimization often fails to reach the tight equilibrium manifold within a limited step budget. Conversely, an excessively large α (e.g., α = 0 .9) leads to a large Lipschitz constant ( L-smoothness) for the velocity field. This creates a sharp and stiff optimization landscape, making it difficult for the iterative solver to converge stably, thus degrading overall performance. Setting α = 0 .8 strikes the optimal balance, ensuring the attractors are sharp enough for precise control while maintaining a smooth enough field for rapid and stable inference. 
+
+Table 6. Ablation Study on Truncation Parameter α. We report the success rates (%) on the LIBERO benchmark across different values of α to demonstrate its impact on policy performance. 
+
+α Success Rate (%) Goal Spat. Obj. Long Avg. 
+
+0.6 85.8 98.0 91.6 48.6 81.0 
+
+0.8 96.4 97.4 98.6 92.4 96.2 
+
+0.9 95.8 97.8 94.0 81.2 92.2 
+
+4.5. Real-World Experiment 
+
+To validate the practical effectiveness and efficiency of GeCO in unstructured physical environments, we conduct real-world benchmarks using the Galaxea R1 Lite(Jiang et al., 2025) mobile manipulator. 
+
+Experimental Setup. As shown in Fig.3 and Fig.4, we use Galaxea G0 Plus (Jiang et al., 2025) as our baseline, which employs standard flow matching (FM) as VLA ac-tion head, and compare it against G0 Plus with GeCO .For both policies, the flow-matching heads are fine-tuned on a demonstration dataset collected via teleoperation. We select two complex and high-precision manipulation tasks for the benchmark: Nut Assembly and Chemistry Tube Ar-rangement . These tasks require millimeter-level precision, providing a rigorous testbed for GeCO’s ability to perform deep refinement during contact-rich bottleneck phases while exiting early during simple transit motions. Each task is eval-uated over 10 independent trials on the physical hardware. We control the same total gradient steps during training. Detailed experimental setup can be found in Appendix E. 
+
+Quantitative Results. As shown in Table 7, GeCO con-sistently outperforms the standard flow-matching baseline in success rate across both challenging tasks, and notably achieves these gains with a significantly lower average Num-ber of Function Evaluations (NFE). While the baseline is constrained to a fixed schedule of 10 steps, GeCO’s adaptive inference mechanism allows it to settle at equilibrium faster, thereby improving efficiency without compromising control fidelity (see Appendix F for detailed NFE analysis). We attribute this substantial performance margin to two key ad-vantages: enhanced sample efficiency and superior general-ization. First, given that both policies were fine-tuned using identical datasets and training budgets, GeCO’s higher suc-cess rate clearly underscores the improved sample efficiency inherent to its time-unconditional formulation. Second, our method demonstrates remarkable robustness during phys-ical deployment. Under domain-randomized evaluations, GeCO’s optimization-based inference maintains robust con-vergence amidst real-world visual and physical variations, whereas the fixed-schedule baseline proves brittle to such unstructured domain shifts. 
+
+Table 7. Real-world performance on Galaxea R1 Lite. We report the success rate and the average NFE over 10 trials per task. Method Nut Assembly Tube Arrangement Success ( ↑) Avg. NFE Success ( ↑) Avg. NFE G0 Plus (Baseline) 10% 10.0 (Fixed) 20% 10.0 (Fixed)     
+
+> G0 Plus + GeCO (Ours) 70% 6.2 80% 5.1
+
+# 5. Discussion and Limitations 
+
+GeCO reformulates generative action synthesis as a ro-bust optimization task, and the proposed framework deliv-ers promising performance alongside strong adaptivity and OOD awareness, which validates the effectiveness of our core design. While the framework performs well in practical settings, we acknowledge that its theoretical foundation can be further strengthened. Future work will focus on deriving more rigorous theoretical bounds for performance gains, 8Generative Control as Optimization 1 2 3 
+
+> Figure 3. GeCO policy execution for the Nut Assembly task. The robot performs high-precision alignment and rotational insertion.
+
+# 1 2 3 
+
+> Figure 4. GeCO policy execution for the Chemistry Tube Arrangement task. The policy adaptively handles the tight-tolerance insertion of fragile tubes.
+
+the convergence speed of the optimization process, and the OOD detection mechanism in the context of control and VLA to further solidify GeCO’s theoretical foundation. 
+
+# 6. Conclusion 
+
+We introduced GeCO , a time-unconditional formulation of flow-matching policies that casts action generation as iterative optimization over a stationary velocity field, where expert behaviors form stable attractors via velocity rescal-ing. This removes the rigid dependence on fixed integration schedules and provides a plug-and-play replacement for continuous action heads in modern VLA systems. Exper-imentally, GeCO delivers a better efficiency–performance trade-off through state-dependent adaptive optimization, scales to flow matching based VLA models, and yields an optimization-native safety signal: the final field norm serves as a training-free OOD score. 
+
+# Impact Statement 
+
+This paper aims to advance the efficiency and safety of gen-erative robotic control. The proposed framework, GeCO, introduces an intrinsic anomaly detection mechanism that helps mitigate operational risks in unstructured environ-ments. Additionally, our adaptive inference approach opti-mizes computational resource usage, enabling more efficient deployment on robot hardware. We do not foresee specific negative societal consequences beyond the general implica-tions of advancing automation technology. 
+
+# References 
+
+Ajay, A., Du, Y., Gupta, A., Tenenbaum, J., Jaakkola, T., and Agrawal, P. Is conditional generative model-ing all you need for decision-making? arXiv preprint arXiv:2211.15657 , 2022. Bai, J., Bai, S., Chu, Y., Cui, Z., Dang, K., Deng, X., Fan, Y., Ge, W., Han, Y., Huang, F., et al. Qwen technical report. arXiv preprint arXiv:2309.16609 , 2023. Beyer, L., Steiner, A., Pinto, A. S., Kolesnikov, A., Wang, X., Salz, D., Neumann, M., Alabdulmohsin, I., Tschan-nen, M., Bugliarello, E., et al. Paligemma: A versatile 3b vlm for transfer. arXiv preprint arXiv:2407.07726 , 2024. Black, K., Brown, N., Driess, D., Esmail, A., Equi, M., Finn, C., Fusai, N., Groom, L., Hausman, K., Ichter, B., et al. π0: A vision-language-action flow model for general robot control. arXiv preprint arXiv:2410.24164 ,2024. Black, K., Galliker, M. Y., and Levine, S. Real-time exe-cution of action chunking flow policies. arXiv preprint arXiv:2506.07339 , 2025. Bu, Q., Yang, Y., Cai, J., Gao, S., Ren, G., Yao, M., Luo, P., and Li, H. Univla: Learning to act anywhere with task-centric latent actions. arXiv preprint arXiv:2505.06111 ,2025. Chen, B., Zhang, T., Geng, H., Song, K., Zhang, C., Li, P., Freeman, W. T., Malik, J., Abbeel, P., Tedrake, R., et al. Large video planner enables generalizable robot control. 
+
+arXiv preprint arXiv:2512.15840 , 2025a. 9Generative Control as Optimization 
+
+Chen, T., Chen, Z., Chen, B., Cai, Z., Liu, Y., Li, Z., Liang, Q., Lin, X., Ge, Y., Gu, Z., et al. Robotwin 2.0: A scal-able data generator and benchmark with strong domain randomization for robust bimanual robotic manipulation. 
+
+arXiv preprint arXiv:2506.18088 , 2025b. Chi, C., Xu, Z., Feng, S., Cousineau, E., Du, Y., Burch-fiel, B., Tedrake, R., and Song, S. Diffusion policy: Visuomotor policy learning via action diffusion. The International Journal of Robotics Research , 44(10-11): 1684–1704, 2025. Dong, Z., Yuan, Y., Hao, J., Ni, F., Ma, Y., Li, P., and Zheng, Y. Cleandiffuser: An easy-to-use modularized library for diffusion models in decision making. Advances in Neural Information Processing Systems , 37:86899–86926, 2024. Dong, Z., Liu, Y., Li, Y., Zhao, H., and Hao, J. Conditioning matters: Training diffusion policies is faster than you think. arXiv preprint arXiv:2505.11123 , 2025. Driess, D., Xia, F., Sajjadi, M. S., Lynch, C., Chowdhery, A., Wahid, A., Tompson, J., Vuong, Q., Yu, T., Huang, W., et al. Palm-e: An embodied multimodal language model. 2023. Du, Y., Yang, S., Dai, B., Dai, H., Nachum, O., Tenenbaum, J., Schuurmans, D., and Abbeel, P. Learning universal policies via text-guided video generation. Advances in neural information processing systems , 36:9156–9172, 2023. Florence, P., Lynch, C., Zeng, A., Ramirez, O. A., Wahid, A., Downs, L., Wong, A., Lee, J., Mordatch, I., and Tompson, J. Implicit behavioral cloning. In Conference on robot learning , pp. 158–168. PMLR, 2022. Ho, J., Jain, A., and Abbeel, P. Denoising diffusion proba-bilistic models. Advances in neural information process-ing systems , 33:6840–6851, 2020. Hodge, V. J., Paterson, C., and Habli, I. Out-of-distribution detection for safety assurance of ai and autonomous sys-tems. arXiv preprint arXiv:2510.21254 , 2025. Huang, R., Balim, H., Yang, H., and Du, Y. Flexible loco-motion learning with diffusion model predictive control. 
+
+arXiv preprint arXiv:2510.04234 , 2025a. Huang, X., Truong, T., Zhang, Y., Yu, F., Sleiman, J. P., Hodgins, J., Sreenath, K., and Farshidian, F. Diffuse-cloc: Guided diffusion for physics-based character look-ahead control. ACM Transactions on Graphics (TOG) , 44(4): 1–12, 2025b. Intelligence, P., Black, K., Brown, N., Darpinian, J., Dha-balia, K., Driess, D., Esmail, A., Equi, M., Finn, C., Fusai, N., et al. π0.5: a vision-language-action model with open-world generalization. arXiv preprint arXiv:2504.16054 ,2025. Janner, M., Du, Y., Tenenbaum, J. B., and Levine, S. Plan-ning with diffusion for flexible behavior synthesis. arXiv preprint arXiv:2205.09991 , 2022. Jiang, T., Yuan, T., Liu, Y., Lu, C., Cui, J., Liu, X., Cheng, S., Gao, J., Xu, H., and Zhao, H. Galaxea open-world dataset and g0 dual-system vla model. arXiv preprint arXiv:2509.00576 , 2025. Kim, M. J., Pertsch, K., Karamcheti, S., Xiao, T., Balakr-ishna, A., Nair, S., Rafailov, R., Foster, E., Lam, G., San-keti, P., et al. Openvla: An open-source vision-language-action model. arXiv preprint arXiv:2406.09246 , 2024. Kim, M. J., Finn, C., and Liang, P. Fine-tuning vision-language-action models: Optimizing speed and success. 
+
+arXiv preprint arXiv:2502.19645 , 2025. LeCun, Y., Chopra, S., Hadsell, R., et al. A tutorial on energy-based learning. 2006. Lee, S.-W., Kang, X., and Kuo, Y.-L. Diff-dagger: Uncer-tainty estimation with diffusion policy for robotic ma-nipulation. In 2025 IEEE International Conference on Robotics and Automation (ICRA) , pp. 4845–4852. IEEE, 2025. Li, Y., Ma, X., Xu, J., Cui, Y., Cui, Z., Han, Z., Huang, L., Kong, T., Liu, Y., Niu, H., et al. Gr-rl: Going dexterous and precise for long-horizon robotic manipulation. arXiv preprint arXiv:2512.01801 , 2025. Liang, J., Huang, W., Xia, F., Xu, P., Hausman, K., Ichter, B., Florence, P., and Zeng, A. Code as policies: Language model programs for embodied control. arXiv preprint arXiv:2209.07753 , 2022. Lipman, Y., Chen, R. T., Ben-Hamu, H., Nickel, M., and Le, M. Flow matching for generative modeling. arXiv preprint arXiv:2210.02747 , 2022. Liu, B., Zhu, Y., Gao, C., Feng, Y., Liu, Q., Zhu, Y., and Stone, P. Libero: Benchmarking knowledge transfer for lifelong robot learning. Advances in Neural Information Processing Systems , 36:44776–44791, 2023a. Liu, H., Li, C., Wu, Q., and Lee, Y. J. Visual instruction tun-ing. Advances in neural information processing systems ,36:34892–34916, 2023b. Liu, S., Wu, L., Li, B., Tan, H., Chen, H., Wang, Z., Xu, K., Su, H., and Zhu, J. Rdt-1b: a diffusion founda-tion model for bimanual manipulation. arXiv preprint arXiv:2410.07864 , 2024a. 10 Generative Control as Optimization 
+
+Liu, X., Gong, C., and Liu, Q. Flow straight and fast: Learning to generate and transfer data with rectified flow. 
+
+arXiv preprint arXiv:2209.03003 , 2022. Liu, Y., Zhang, K., Li, Y., Yan, Z., Gao, C., Chen, R., Yuan, Z., Huang, Y., Sun, H., Gao, J., et al. Sora: A review on background, technology, limitations, and opportunities of large vision models. arXiv preprint arXiv:2402.17177 ,2024b. Oquab, M., Darcet, T., Moutakanni, T., Vo, H., Szafraniec, M., Khalidov, V., Fernandez, P., Haziza, D., Massa, F., El-Nouby, A., et al. Dinov2: Learning robust visual features without supervision. arXiv preprint arXiv:2304.07193 ,2023. Pertsch, K., Stachowicz, K., Ichter, B., Driess, D., Nair, S., Vuong, Q., Mees, O., Finn, C., and Levine, S. Fast: Efficient action tokenization for vision-language-action models. arXiv preprint arXiv:2501.09747 , 2025. Raffel, C., Shazeer, N., Roberts, A., Lee, K., Narang, S., Matena, M., Zhou, Y., Li, W., and Liu, P. J. Exploring the limits of transfer learning with a unified text-to-text transformer. Journal of machine learning research , 21 (140):1–67, 2020. Shen, Y., Wei, F., Du, Z., Liang, Y., Lu, Y., Yang, J., Zheng, N., and Guo, B. Videovla: Video generators can be generalizable robot manipulators. arXiv preprint arXiv:2512.06963 , 2025. Shukor, M., Aubakirova, D., Capuano, F., Kooijmans, P., Palma, S., Zouitine, A., Aractingi, M., Pascal, C., Russi, M., Marafioti, A., et al. Smolvla: A vision-language-action model for affordable and efficient robotics. arXiv preprint arXiv:2506.01844 , 2025. Song, J., Meng, C., and Ermon, S. Denoising diffusion implicit models. arXiv preprint arXiv:2010.02502 , 2020. Sun, Q., Jiang, Z., Zhao, H., and He, K. Is noise condition-ing necessary for denoising generative models? arXiv preprint arXiv:2502.13129 , 2025. Tian, X., Gu, J., Li, B., Liu, Y., Wang, Y., Zhao, Z., Zhan, K., Jia, P., Lang, X., and Zhao, H. Drivevlm: The conver-gence of autonomous driving and large vision-language models. arXiv preprint arXiv:2402.12289 , 2024. Wang, R. and Du, Y. Equilibrium matching: Genera-tive modeling with implicit energy-based models. arXiv preprint arXiv:2510.02300 , 2025. Wiedemer, T., Li, Y., Vicol, P., Gu, S. S., Matarese, N., Swer-sky, K., Kim, B., Jaini, P., and Geirhos, R. Video mod-els are zero-shot learners and reasoners. arXiv preprint arXiv:2509.20328 , 2025. Yang, Z., Teng, J., Zheng, W., Ding, M., Huang, S., Xu, J., Yang, Y., Hong, W., Zhang, X., Feng, G., et al. Cogvideox: Text-to-video diffusion models with an ex-pert transformer. arXiv preprint arXiv:2408.06072 , 2024. Ze, Y., Zhang, G., Zhang, K., Hu, C., Wang, M., and Xu, H. 3d diffusion policy: Generalizable visuomotor policy learning via simple 3d representations. arXiv preprint arXiv:2403.03954 , 2024. Zhang, L., Rao, A., and Agrawala, M. Adding conditional control to text-to-image diffusion models. In Proceedings of the IEEE/CVF international conference on computer vision , pp. 3836–3847, 2023. Zhang, S., Xu, Z., Liu, P., Yu, X., Li, Y., Gao, Q., Fei, Z., Yin, Z., Wu, Z., Jiang, Y.-G., et al. Vlabench: A large-scale benchmark for language-conditioned robotics manipulation with long-horizon reasoning tasks. In Pro-ceedings of the IEEE/CVF International Conference on Computer Vision , pp. 11142–11152, 2025. Zhao, T. Z., Kumar, V., Levine, S., and Finn, C. Learn-ing fine-grained bimanual manipulation with low-cost hardware. arXiv preprint arXiv:2304.13705 , 2023. Zhou, G., Swaminathan, S., Raju, R. V., Guntupalli, J. S., Lehrach, W., Ortiz, J., Dedieu, A., L ´azaro-Gredilla, M., and Murphy, K. Diffusion model predictive control. arXiv preprint arXiv:2410.05364 , 2024. 11 Generative Control as Optimization 
+
+# A. Implementation Details for Adaptive Inference and Training 
+
+A.1. Codebase and Baselines 
+
+All experiments are implemented on top of the CleanDiffuser (Dong et al., 2024) codebase. We use the same network backbone as a Continuous Rectified Flow policy (Liu et al., 2022), but differ in the learning objective and the test-time inference algorithm. 
+
+A.2. Model Architecture 
+
+We follow the Rectified Flow architecture with a 1D diffusion-style transformer and a frozen vision-language conditioner. 
+
+Vision-language condition. We use a frozen DINOv2 (Oquab et al., 2023) vision encoder and a T5 (Raffel et al., 2020) text encoder. The T5 hidden dimension is set by the pretrained configuration: 
+
+t5 hidden dim ← T5Config.from pretrained(t5 model).d model .
+
+The conditioner is instantiated as: • ViTAndT5VisionLanguageCondition with emb dim=768 , freeze=True , To=1 , and n views=2 .
+
+Policy backbone. The action generator uses a DiT-style 1D transformer with cross-attention conditioning: • DiT1dWithACICrossAttention with x dim=act dim , x seq len=Ta(=16) , emb dim=768 ,
+
+d model=384 , n heads=6 , depth=12 .GeCO uses the same backbone modules for fair comparison, while changing the training objective and inference procedure. 
+
+A.3. Adaptive Inference Setup Sampler. We use a standard gradient-descent (GD) sampler with a maximum of Kmax = 30 refinement steps. Denoting the refinement direction by fθ (ak, s ), the update is: 
+
+ak+1 ← ak − ηk fθ (ak, s ), k = 0 , . . . , K max − 1.
+
+Step-size schedule. We use a fixed per-step learning-rate schedule {ηk}30 
+
+> k=1
+
+:
+
+η1 = 0 .1, η2.. 4 = 0 .05 , η5.. 16 = 0 .02 , η17 .. 30 = 0 .01 .
+
+We enable adaptive early stopping using a norm-based stopper: we terminate refinement once 
+
+∥fθ (ak, s )∥2 < 0.4.
+
+A.4. Training Recipe and Hyperparameters Pretrained encoders. 
+
+• T5: google-t5/t5-base 
+
+• ViT: facebook/dinov2-base 
+
+Training details. We use a truncated linear decay for equilibrium field learning 
+
+c(γ) = 
+
+
+
+λ, γ ≤ a0,λ 1 − γ
+
+1 − a0
+
+, γ > a 0, (8) with scale λ = 4 and onset a0 = 0 .1.12 Generative Control as Optimization                                                                                                                                  
+
+> Table 8. Per-task success rates on VLABench primitive 10-task evaluation. We report success rates for the baseline π0and π0with GeCO (ours) across five tracks; higher is better. Track averages correspond to the averages over the 10 tasks in each track. Task Track 1 Track 2 Track 3 Track 4 Track 6
+> π0Ours π0Ours π0Ours π0Ours π0Ours add condiment 0.66 0.80 0.14 0.08 0.34 0.16 0.26 0.10 0.56 0.76 insert flower 0.18 0.30 0.04 0.00 0.22 0.28 0.02 0.00 0.10 0.02 select book 0.694 0.84 0.064 0.08 0.417 0.51 0.311 0.23 0.714 0.79 select chemistry tube 0.52 0.76 0.12 0.14 0.70 0.94 0.06 0.02 0.28 0.71 select drink 0.52 0.78 0.224 0.30 0.08 0.10 0.10 0.04 0.44 0.66 select fruit 0.38 0.56 0.46 0.52 0.083 0.14 0.06 0.18 0.30 0.32 select mahjong 0.25 0.58 0.02 0.04 0.125 0.12 0.12 0.06 0.02 0.25 select painting 0.46 0.22 0.26 0.12 0.50 0.60 0.56 0.76 0.30 0.18 select poker 0.54 0.70 0.26 0.54 0.06 0.22 0.12 0.52 0.28 0.52 select toy 0.50 0.52 0.36 0.34 0.38 0.32 0.12 0.10 0.18 0.28 Avg SR 0.47 0.61 0.212 0.22 0.291 0.34 0.173 0.20 0.322 0.45
+
+Constants. 
+
+• Observation horizon: To = 1 
+
+• Action horizon: Ta = 16 
+
+• Executed actions per step: num act exec=8 
+
+• Normalization parameters: norm params=[0.5, 0.5, 0.5] 
+
+# B. Benchmarks 
+
+LIBERO. We evaluate on the LIBERO simulation benchmark (Liu et al., 2023a), which contains four task suites— Goal ,
+
+Spatial , Object , and Long —designed to isolate different distribution shifts in language-conditioned manipulation. Goal 
+
+varies task goals while keeping objects and layouts fixed; Spatial introduces unseen spatial configurations; Object shifts object categories; and Long consists of long-horizon, compositional tasks. For policy learning and evaluation, our model predicts action chunks of length Ta = 16 ; after each prediction, we execute the first 8 actions ( num act exec =8) in closed loop before replanning the next chunk. The observation space consists of two-view RGB images at the current time step with 
+
+To = 1 (no history), and the language instruction is encoded by a frozen T5 encoder ( google-t5/t5-base ). Unless otherwise specified, we train each suite-specific policy for 30k optimization steps and report success rates averaged over 50 rollouts, following the standard evaluation protocol of LIBERO. 
+
+RoboTwin 2.0. We additionally benchmark on RoboTwin 2.0 (Chen et al., 2025b), a bimanual manipulation benchmark that evaluates robustness under controlled domain shifts. RoboTwin 2.0 reports performance under two difficulty settings: 
+
+Easy uses clean environments, while Hard introduces domain-randomized perturbations such as clutter distractors, texture changes, lighting variations, and tabletop-height shifts. We evaluate on five representative tasks ( Adjust Bottle , Beat Block Hammer , Blocks Ranking (Size) , Click Alarmclock , and Click Bell ) and report Easy/Hard success and their averages (Table 2). All methods are evaluated with 100 rollouts per setting, using the official success criteria of RoboTwin 2.0. We highlight that the Hard setting creates a realistic robustness test by perturbing both visual appearance and scene dynamics while keeping task semantics unchanged. 
+
+VLABench. We further evaluate on VLABench (Zhang et al., 2025), a large-scale benchmark for language-conditioned manipulation that emphasizes long-horizon reasoning and semantic grounding. VLABench organizes tasks into multiple tracks covering in-distribution execution, cross-category generalization, common-sense/world-knowledge transfer, semantic instruction understanding, and unseen texture generalization. We report track-wise success rates on Tracks and their average (Table 3), following the benchmark’s standard evaluation protocol with 50 rollouts. We include per-task breakdown for the 10-task primitive subset in Table 8, which complements the track-level summary in Table 3. 13 Generative Control as Optimization 
+
+# C. VLA Training Details. 
+
+We fine-tune π0 / π0.5 VLAs using the OpenPI training stack with LeRobot-format datasets. Across all benchmarks, we train for 30k gradient steps . Unless otherwise specified, weights are initialized from the corresponding OpenPI base checkpoint. 
+
+RoboTwin 2.0. For RoboTwin 2.0, we fine-tune a separate π0 model per task. Observations include three RGB views (cam high , cam left wrist , cam right wrist ) and robot proprioception ( observation.state ). We train for 30k steps with batch size 32 for each task. 
+
+LIBERO. For π0 on LIBERO, we fine-tune on physical-intelligence/libero datasets. We initialize from 
+
+gs://openpi-assets/checkpoints/pi0 base/params and train for 30k steps with batch size 32. For π0.5 on LIBERO, we fine-tune for 30k steps with batch size 256. We use AdamW with gradient clipping (clip gradient norm=1.0 ) and an EMA of model weights ( ema decay=0.999 ). The learning rate follows a cosine schedule with warmup ( warmup steps=10,000 , peak lr=5e-5 ). 
+
+VLABench. For the VLABench fine-tuning experiment, we choose to fine-tune π0 on huggingface datasets 
+
+vlabench/vlabench primitive ft lerobot . We trained for 30k steps with batch size 256. 
+
+# D. OOD Detection Settings 
+
+ID/OOD split. We study a controlled suite-level distribution shift on LIBERO by treating LIBERO-Goal as in-distribution (ID) and LIBERO-Spatial as out-of-distribution (OOD). We train a single policy on the 10 tasks of LIBERO-Goal and evaluate OOD detection on the 10 tasks of LIBERO-Spatial. 
+
+Episode and planning-call sampling. We sample 500 ID episodes from LIBERO-Goal and 500 OOD episodes from LIBERO-Spatial. Each episode consists of multiple planning calls, where the policy generates an action chunk and executes a fixed number of actions before replanning. To avoid overweighting longer episodes, we compute planning-level statistics using a fixed number of planning calls per episode: we extract J = 20 planning calls from each episode using random J
+
+calls and treat each extracted planning call as one evaluation instance. 
+
+GeCO score (optimization-dynamics signal). For each planning call at state s(j), GeCO performs iterative optimization for at most Kmax = 10 steps and produces per-step norms rk = ∥fθ (ak, s (j))∥2. We use the final-step norm as the raw anomaly score for that planning call: score (plan j) = ∥fθ (a(j) 
+
+> K
+
+, s (j))∥2,
+
+where K ≤ Kmax is the last executed refinement step (early termination uses the stopping step; otherwise K = Kmax ). 
+
+Temporal filters and triggering rule. We evaluate two online filters over {rk}Kk=1 within each planning call: (i) Moving Average with window w = 5 , triggering when ˜rk > τ ma ; (ii) Leaky Bucket defined by bk ← max {0, (1 − λ)bk−1 +(rk − τ )+}, triggering when bk ≥ B. We set (τma , τ, λ, B ) = (0.6, 0.5, 0, 0.7) and keep them fixed across all experiments. 
+
+Baseline score (training-loss proxy). As a baseline OOD signal, we follow the Diff-DAgger-style idea (Lee et al., 2025) of using the policy’s training objective as an uncertainty indicator. For each planning call, let x0 denote the generated action chunk and let c denote the conditioning input. We draw a single Gaussian noise sample ϵ ∼ N (0 , I ) and construct a noised input at timestep t via linear interpolation 
+
+xt = (1 − t) x0 + t ϵ, 
+
+where T is the total number of diffusion steps used by the training objective. We then evaluate the flow-matching regression loss 
+
+LFM (x0, c ) = E ∥fθ (xt, t, c ) − (ϵ − x0)∥22
+
+AUROC computation. We compute planning-level AUROC by sweeping a threshold over the scalar score to separate OOD planning calls (positive) from ID planning calls (negative), using the 500 × J ID instances and 500 × J OOD instances. 14 Generative Control as Optimization 
+
+Operating point (TNR/TPR). We report TNR/TPR at a single operating point selected to achieve TPR ≈ 90% on OOD instances for our detector when possible. Specifically, we choose the threshold θ such that TPR( θ) is closest to 0.9 and report the corresponding TNR. 
+
+Early reporting and Time Saved. The detector runs online during an episode. Once any planning call triggers an OOD flag, we immediately terminate the episode. We define the reporting time treport as the environment time step when the first trigger occurs, and compute Time Saved = 1 − treport 
+
+Ttotal 
+
+,
+
+where Ttotal = 300 is the episode horizon under the standard evaluation protocol. We report Time Saved averaged over OOD episodes only. 
+
+# E. Real World Experiment Settings 
+
+Hardware Configuration. We conduct our real-world experiments using the Galaxea R1 Lite mobile manipulator. The robot is equipped with two dexterous arms and 3 RGB cameras. For our policy input, we utilize three camera views: a head camera ( cam head ), and two wrist-mounted cameras ( cam left wrist , cam right wrist ). We also include the robot’s proprioceptive state ( observation.state ), which contains joint positions and gripper states. The control frequency of the physical system is set to 15 Hz, and the execution action chunk size is set to Ta = 16 .
+
+Data Collection and Task Description. We select two contact-rich, high-precision manipulation tasks: Nut Assembly and 
+
+Chemistry Tube Arrangement . The task setup is shown in Fig. 5.  
+
+> Figure 5. Task setups for the real-world robotic deployment, showing the configurations for both the Nut Assembly and the Chemistry Tube Arrangement tasks.
+
+• Nut Assembly: The robot shall grasp a plastic nut, accurately align it with a threaded bolt, and perform the insertion. A trial is considered successful only when both two nuts are fully threaded onto their respective bolts. • Chemistry Tube Arrangement: The robot shall grasp chemistry tubes from a randomized initial pose and insert them into designated tight-tolerance slots on a rack with random position and rotation. A successful trial requires the tube to be fully seated in the correct slot without dropping or tipping over. 
+
+Training Details. Our baseline policy is Galaxea G0 Plus , which employs a standard flow-matching-based continuous action head. To train our G0 Plus with GeCO policy, we initialize the model with the pre-trained G0 Plus weights. Following the GeCO formulation, we fix the time conditioning to t = 0 during fine-tuning to learn a stationary velocity field. We fine-tune the model on the expert demonstrations for 4 full epochs with a batch size of 32. We use the AdamW optimizer with a peak learning rate of 2.5e-5 and a cosine learning rate schedule with warmup steps=200 .
+
+GeCO Inference Setup. During real-world deployment, the GeCO policy synthesizes action chunks via iterative opti-mization. We set the maximum number of optimization steps to Kmax = 10 . We use a step-size schedule {ηk} initialized at 15 Generative Control as Optimization 
+
+0.25 and decaying to 0.02 for deeper refinement. The adaptive early stopping mechanism is triggered when the gradient norm falls below a threshold τopt :
+
+∥fθ (ak, s t)∥2 < τ opt ,
+
+where τopt is empirically set to 1.5 . If the threshold is not met, the optimization continues until Kmax is reached, ensuring complex states (e.g., insertion alignment) receive maximum computational budget while simple transits exit early. 
+
+Evaluation Protocol. We evaluate both the baseline (G0 Plus) and our method (G0 Plus + GeCO) over 10 independent physical trials for each task. The initial positions of the objects (nuts, bolts, tubes, racks) are randomized within the workspace to test robustness to spatial variations. We report the success rate and record the average Number of Function Evaluations (NFE) per planning call. For the baseline, inference is bound to a fixed schedule of NFE = 10 . For GeCO, NFE varies dynamically based on the early stopping criteria. 
+
+# F. Detailed Analysis of Real-World Adaptive Computation 
+
+To provide a deeper understanding of how GeCO dynamically modulates its computation over time, we present a detailed step-by-step NFE analysis of the physical rollouts in Figure 6.   
+
+> Figure 6. Dynamic NFE allocation during real-world execution. We visualize the real-time Number of Function Evaluations (NFE) employed by GeCO across a full episode for both the (a) Nut Assembly and (b) Tube Arrangement tasks. Instead of relying on a fixed computation schedule, GeCO automatically allocates maximum compute (NFE=10) during critical bottleneck phases—such as precise target alignment, picking, and insertion. Conversely, the policy adaptively exits early (with NFE dropping as low as 3) during simpler free-space transit phases. This dynamic temporal modulation directly translates to the reduced average NFE (6.45 and 5.11, respectively) and improved real-time inference efficiency on physical hardware without sacrificing task success rates.
+
+As shown in Figure 6, the high-compute peaks strictly align with the most complex physical interactions (e.g., the precise insertion phase at the end of both tasks). The ability to seamlessly transition into a low-compute regime during simpler semantic stages highlights the efficiency of our Time-Unconditional Flow Matching formulation in real-world scenarios. 16
