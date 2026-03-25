@@ -1,0 +1,1136 @@
+Title: Model Predictive Control with Differentiable World Models for Offline Reinforcement Learning
+
+URL Source: https://arxiv.org/pdf/2603.22430v1
+
+Published Time: Wed, 25 Mar 2026 00:06:18 GMT
+
+Number of Pages: 16
+
+Markdown Content:
+# Model Predictive Control with Differentiable World Models for Offline Reinforcement Learning 
+
+Rohan Deb 1 Stephen J. Wright 2 Arindam Banerjee 1
+
+## Abstract 
+
+Offline Reinforcement Learning (RL) aims to learn optimal policies from fixed offline datasets, without further interactions with the environ-ment. Such methods train an offline policy (or value function), and apply it at inference time without further refinement. We introduce an in-ference time adaptation framework inspired by model predictive control (MPC) that utilizes a pre-trained policy along with a learned world model of state transitions and rewards. While existing world model and diffusion-planning methods use learned dynamics to generate imagined trajecto-ries during training, or to sample candidate plans at inference time, they do not use inference-time information to optimize the policy parameters on the fly. In contrast, our design is a Differentiable World Model (DWM) pipeline that enables end-to-end gradient computation through imagined rollouts for policy optimization at inference time 
+
+based on MPC. We evaluate our algorithm on D4RL continuous-control benchmarks (MuJoCo locomotion tasks and AntMaze), and show that exploiting inference-time information to optimize the policy parameters yields consistent gains over strong offline RL baselines. 
+
+## 1. Introduction 
+
+Offline reinforcement learning learns a policy in a Markov decision process from a fixed dataset of previously collected trajectories, without any additional interaction with the en-vironment (Levine et al., 2020; Prudencio et al., 2022; Ernst et al., 2005; Fujimoto et al., 2019b). This setting arises naturally in domains where data is abundant but online in-teraction is constrained (Levine et al., 2020; Fujimoto et al., 2019b; Liu et al., 2020). Examples include modern recom-mender and advertising systems, which operate on massive 
+
+> 1
+
+Siebel School of Computing and Data Science, University of Illinois Urbana-Champaign, IL, USA 2Department of Computer Sciences, University of Wisconsin Madison, WI, USA. Correspon-dence to: Rohan Deb <rd22@illinois.edu>. 
+
+logs of user interactions (Xiao & Wang, 2023; Afsar et al., 2022; Cai et al., 2017; Zhao et al., 2021); healthcare and other safety-critical decision problems, which cannot permit exploratory actions (Gottesman et al., 2019; Yu et al., 2021a; Fatemi et al., 2022); robotics and control, which may be limited by real-world cost, wear, and safety (Kober et al., 2013; Zhou et al., 2022; Venkataraman et al., 2024); and autonomous driving and navigation, which rely typically on recorded datasets rather than unrestricted on-policy ex-ploration (Kiran et al., 2022; Shi et al., 2021; Shah et al., 2023). The core challenge of offline RL is to optimize reward while avoiding actions that are unsupported by the data distribu-tion (Lange et al., 2012; Levine et al., 2020). Offline RL algorithms address this challenge by shaping either the pol-icy or the value-learning objective. Behavior Regularized Actor Critic (BRAC) approaches keep the learned policy close to the dataset behavior (Fujimoto & Gu, 2021; Tarasov et al., 2023b); Conservative Q Learning (CQL) penalizes high Q-values on unlikely actions to reduce overestimation under dataset shift (Kumar et al., 2020); and in-sample or implicit methods avoid querying out of distribution actions during improvement (e.g., IQL) (Kostrikov et al., 2022). Separately, motivated by the success of generative models, many recent works replace simple parametric policies with generative models that capture multi-modal behavior in the dataset. These include sequence-modeling policies such as Decision Transformer that predict actions conditioned on return (Chen et al., 2021) and diffusion or flow-based policies such Decision Diffuser (Janner et al., 2022a) and Flow Q learning (Park et al., 2025) that generate actions or trajectories by iterative denoising or flow dynamics. For a more detailed discussion on related works, see Appendix A. Existing offline RL methods typically produce a single pol-icy trained on the offline dataset and then deploy it as-is 
+
+at inference time. These methods do not explicitly exploit inference-time information about the particular states en-countered by the agent beyond using it as the input to the pre-trained policy. Recent work on large language models and reasoning suggests that additional inference-time com-putation can improve performance on a given test instance. For example, self-consistency and search-based reasoning methods use extra computation at inference time to refine 1
+
+> arXiv:2603.22430v1 [cs.LG] 23 Mar 2026
+
+Model Predictive Control with Differentiable World Models for Offline Reinforcement Learning Policy 
+
+> Offline
+> Dataset
+> Offline Training
+> Reward
+> Offline
+> Dataset
+> Offline Training
+
+Diffusion Sampler : 
+
+> Offline
+> Dataset
+> Offline Training
+> Condition
+> Differentiable
+> World Model
+> Backpropagate
+> Forward Rollout
+
+Figure 1. Inference-time MPC with a diffusion world model. An offline dataset is used to train (i) a policy πψ and terminal critic Qϕ (ii) a reward model rξ , and (iii) a diffusion-based dynamics sampler fθ . At inference time, starting from the current state st, we unroll multiple imagined rollouts by alternating policy actions ˜ah = πψ (˜ sh) and diffusion transitions ˜sh+1 = fθ (˜ sh, ˜ah, ε t+h), evaluate a finite-horizon surrogate return (predicted rewards plus terminal value), and backpropagate through the differentiable rollout to update ψ before executing the first action in the real environment. Green arrows indicate the forward rollout; red dashed arrows indicate gradient flow. 
+
+or select among candidate outputs (Wang et al., 2023; Yao et al., 2023; Muennighoff et al., 2025), while more recent work has begun to explore reinforcement-learning-based ap-proaches for inference-time improvement (Hou et al., 2025; Zuo et al., 2025). This motivates asking whether, in offline RL, additional inference-time computation can similarly improve the performance of an agent beyond executing a fixed policy learned from static data. In offline RL, realizing this idea requires identifying what form of inference-time optimization is both feasible and reliable from a fixed dataset. Specifically, an offline learner returns a pre-trained policy and an associated Q-value, in-tended to approximate the optimal policy and Q-values (see Section 2.2 for definitions). When the policy is deployed without further adaptation, performance depends primar-ily on how accurate these approximations are in the states and actions encountered at inference time . We argue this is challenging for two reasons. First, estimating Q-value is intrinsically difficult because it represents a long-horizon quantity: it aggregates future rewards over many steps start-ing from a given state action pair. Second, in offline RL the critic must approximate the Q-value of the optimal pol-icy, even though the available data might be generated by a different behavior policy. In contrast, in the Markovian model, the one-step transition dynamics P (s′ | s, a ) and reward function r(s, a ) are local objects: they depend only on the current state-action pair, rather than on long-horizon estimates, and are independent of whatever policy is being deployed. This fact motivates a different approach: learn world models of P and r from offline data and use these learned functions at inference time to formulate policy. The link between P and r and a corre-sponding optimal policy is provided by Model Predictive Control (MPC) (Camacho & Bordons, 2007; Rawlings et al., 2017). Conventional MPC optimizes action sequences over rolled-out short-horizon trajectories defined by the function 
+
+P , thus implicitly generating a policy. We use MPC in a different way, using information gathered from the rollout simulations to update the parameters that define our policy. In this way, the initial policy learned from the offline data is updated continuously during deployment as new infor-mation is gathered about the system. See Figure 1 for a visual overview and Section 4 for a detailed description of our method. 2Model Predictive Control with Differentiable World Models for Offline Reinforcement Learning 
+
+We now describe our method in detail and outline our main contributions. 1. We introduce a Differentiable World Model (DWM) pipeline that consists (i) a state-transition sampler, (ii) a reward model, and (iii) a terminal-value function for finite-horizon evaluation. A key design choice is to make these components differentiable w.r.t. their inputs or con-ditionings, so the entire pipeline forms a computation graph that supports gradient-based optimization. See Section 3 for a detailed description. 2. At inference time, we use the current state st to generate multiple imagined rollouts by unrolling the differen-tiable dynamics under the current policy. We score these rollouts with a surrogate objective built from predicted rewards and a terminal-value function. We then update the policy parameters with gradient-based steps before executing one step of the resulting action in the real environment. See Figure 1 for a visual overview and Section 4 for a detailed description of our method. 3. We instantiate the differentiable state-transition sampler with a diffusion model and derive a policy update that backpropagates through imagined rollouts, expressing the gradient in terms of the policy Jacobians and the diffusion-dynamics Jacobians via a recursive chain rule (see Theorem 4.1). 4. We evaluate our algorithm on standard D4RL continuous control benchmarks (Fu et al., 2020), including MuJoCo locomotion tasks (18 datasets) as well as the more chal-lenging AntMaze environments (6 datasets). We show that our approach of leveraging inference time optimiza-tion using imagined rollouts consistently outperforms strong offline RL baselines (see Section 5). 
+
+Comparison with existing World Model based Offline RL methods. Although world models (including diffusion-based world models) have been used in offline RL, they are typically leveraged in two ways. Some methods (Kidambi et al., 2020; Yu et al., 2020; 2021b; Ding et al., 2024) use the learned dynamics primarily during training , generating imagined rollouts from the offline dataset to construct addi-tional targets or synthetic experience for policy and value learning, including diffusion world models that model multi-step futures without step-by-step rollout. Other methods use a generative model at inference time to produce candidates for future optimal state trajectories via sampling (often with guidance via return-conditioning), and then select an ac-tion by executing the first action of a sampled plan, without adapting the underlying policy parameters during inference (Ajay et al., 2023; Janner et al., 2022a; Ki et al., 2025; Yun et al., 2024). In contrast, our method uses the current ob-served state to adapt the policy parameters at inference time 
+
+by backpropagating through a differentiable world model over imagined finite-horizon rollouts. 
+
+## 2. Preliminaries 
+
+2.1. Offline Reinforcement Learning 
+
+We consider a discounted Markov decision process (MDP) specified by the tuple M = ⟨S , A, P, d 0, r, γ ⟩, where S
+
+and A are the state and action spaces, P (s′ | s, a ) is the transition kernel, d0 is the initial state distribution, r(s, a ) is the reward function, and γ ∈ [0 , 1) is the discount fac-tor. A stochastic policy π(a | s) induces a trajectory 
+
+τ = ( s0, a 0, r 0, s 1, a 1, r 1, . . . ) with probability pπ (τ ) = 
+
+d0(s0) Q 
+
+> t≥0
+
+π(at | st)P (st+1 | st, a t) and discounted re-turn R(τ ) = P∞ 
+
+> t=0
+
+γtr(st, a t). The RL objective is to find a return-maximizing policy π⋆ ∈ argmax π Eτ ∼pπ [R(τ )] .
+
+Temporal-difference learning. TD methods approxi-mate the optimal action-value function Q⋆(s, a ) =
+
+Eτ ∼pπ⋆ [R(τ ) | s0 = s, a 0 = a] with a parameterized critic 
+
+Qθ by minimizing a Bellman error on transition data: 
+
+LTD (θ) = E
+
+> (s,a,r,s ′)∼D
+
+h r + γ max  
+
+> a′∈A
+
+Qθ (s′, a ′) − Qθ (s, a )2i
+
+.
+
+For continuous action spaces, the maximization is typi-cally implemented via a parameterized actor πϕ(a | s),leading to a policy objective of the form J (ϕ) := 
+
+Es∼D , a ∼πϕ(·| s)[Qθ (s, a )] .
+
+Offline RL and distribution shift. Offline RL learns a policy from a fixed dataset without additional environment interactions. We assume access to a static dataset of tran-sitions D = {(si, a i, r i, s ′
+
+> i
+
+)}Ni=1 collected by an unknown behavior policy μ. A core difficulty is that naively applying TD learning and policy improvement can drive the learned policy πϕ toward state-action regions that are weakly rep-resented in D, i.e., the induced occupancy measure dπϕ
+
+moves away from dμ. Many offline RL methods address this distribution shift by enforcing an explicit constraint, for example of the form D(dπϕ ∥ dμ) ≤ ε, where D is a divergence or discrepancy measure, incorporated directly into the learning procedure. Such constrained formulations often introduce additional algorithmic heuristics to obtain stable and competitive performance in practice. 
+
+2.2. Diffusion Probabilistic Models 
+
+Diffusion probabilistic models (Sohl-Dickstein et al., 2015; Ho et al., 2020) define a latent-variable generative model by reversing a fixed forward diffusion (noising) process. Let x0 ∈ Rd denote a data sample. The model likelihood is defined by introducing latent variables x1, . . . , x K and marginalizing them out: 
+
+pθ (x0) := 
+
+Z
+
+p(xK )
+
+> K
+
+Y
+
+> k=1
+
+pθ (xk−1 | xk) dx 1: K ,
+
+where p(xK ) is typically a standard Gaussian prior. The for-ward diffusion chain gradually corrupts the data by adding 3Model Predictive Control with Differentiable World Models for Offline Reinforcement Learning 
+
+Gaussian noise according to a variance schedule {βk}Kk=1 
+
+i.e., q(x1: K | x0) := QKk=1 q(xk | xk−1), with one-step transitions q(xk | xk−1) := N xk; √1 − βk xk−1, β kI.
+
+The reverse (denoising) process is parameterized as a Gaus-sian with timestep-dependent covariance pθ (xk−1 | xk) = 
+
+N xk−1; μθ (xk, k ), Σk
+
+, where μθ (xk, k ) is a neural net-work that maps the noisy latent xk and timestep k to the mean of the reverse transition. Although a tractable varia-tional lower bound on log pθ (x) can be optimized to train diffusion models, in practice it is common to use the simpli-fied surrogate objective proposed by Ho et al. (2020), which trains the model to predict the injected noise. Specifically, the predefined forward noising process is 
+
+q(xk | xk−1) := N
+
+
+
+xk; √αk−1 xk−1, (1 − αk−1)I
+
+
+
+,
+
+and the learned reverse process is parameterized as 
+
+pθ (xk−1 | xk) := N
+
+
+
+xk−1; μθ (xk, k ), Σk
+
+
+
+,
+
+where {αk}K−1 
+
+> k=0
+
+specifies the variance schedule, x0 := x is a data sample, and xK ∼ N (0 , I ) for K large enough. The simplified denoising loss is 
+
+Ldenoise (θ) := Ek∼Unif( {1,...,K })  
+
+> x0∼q, ϵ∼N (0 ,I )
+
+h
+
+ϵ − ϵθ (xk, k ) 22
+
+i
+
+.
+
+where ϵθ (xk, k ) is a neural network that predicts the Gaus-sian noise ϵ added to obtain the noisy latent xk. This is equivalent to predicting the reverse-process mean, since 
+
+μθ (xk, k ) can be expressed as a function of ϵθ (xk, k ) (Ho et al., 2020). 
+
+## 3. Components of the World Model 
+
+Our algorithm at inference time requires sampling next state samples conditioned on the current state action pair, and dif-ferentiating those samples with respect to the conditioning variables. We refer to any model with this sample plus gradi-ent interface as a differentiable generative world model (Dif-fGenWM), and in this work we implement it using a condi-tional diffusion model. In addition to the DiffGenWM mod-ule, our world model includes a differentiable reward model and a terminal value function given by the critic of a pre-trained policy. Concretely, we build a world model using the offline dataset of trajectories D = {(st, a t, r t, s t+1 )}Nt=1 ,consisting of the following components. 1. A Differentiable Diffusion Sampler fθ to simulate the transition dynamics. 2. A reward model rξ to learn the reward of a given state action pair. 3. A pretrained policy πψ and the corresponding pretrained critic value Qϕ.Next we describe all these components in detail. 
+
+3.1. Differentiable Diffusion Sampler 
+
+Our objective is to learn a parametric differentiable diffusion sampler that conditioned on a given state-action pair st, a t
+
+at time t and sampled noise ϵt generates the next state st+1 :
+
+st+1 = fθ (st, a t, ε t), εt ∼ p0(ε),
+
+Here fθ is the reverse diffusion sampler , written as a de-terministic computation graph, and εt is a collection of Gaussian random variables used in the generation process. Equivalently, the diffusion model specifies a conditional distribution over next states, pθ (st+1 | st, a t), together with a reparameterized sampling procedure st+1 = fθ (st, a t, ε t)
+
+whose randomness is isolated in εt.We learn pθ (st+1 | st, a t) from an offline dataset of tran-sitions D = {(st, a t, r t, s t+1 )}Nt=1 . The diffusion model is trained to represent the conditional law of st+1 given 
+
+(st, a t) by introducing a forward noising process on st+1 
+
+and a learned reverse denoising process that inverts this noising when conditioned on (st, a t). At sampling time, the reverse process induces the map fθ .
+
+Forward process: Fix a diffusion horizon K ∈ N and a variance schedule {αk}Kk=1 ⊂ (0 , 1) . For each transition tu-ple (st, a t, s t+1 ) ∈ D , define a Markovian forward process that progressively corrupts the next state as follows: 
+
+s(0)  
+
+> t+1
+
+= st+1 ,s(k) 
+
+> t+1
+
+| s(k−1)  
+
+> t+1
+
+∼ q s(k) | s(k−1) 
+
+= N  √αk s(k−1)  
+
+> t+1
+
+, (1 − αk)I, k = 1 , . . . , K. 
+
+Let ¯αk := Qkj=1 αj . This choice implies a closed-form marginal for any noise level k:
+
+q s(k) 
+
+> t+1
+
+| st+1 
+
+ = N  √¯αk st+1 , (1 − ¯αk)I.
+
+In particular, one can write a reparameterized sample from the marginal as 
+
+s(k) 
+
+> t+1
+
+= √¯αk st+1 + √1 − ¯αk ϵ, ϵ ∼ N (0 , I ).
+
+Conditional reverse process: The reverse process aims to sample st+1 conditioned on (st, a t) by iteratively denoising from a Gaussian reference distribution at level K. Let the conditioning be ct := ( st, a t). At sampling time, initialize from a base noise variable s(K) 
+
+> t+1
+
+∼ N (0 , I ), and apply a learned reverse transition for k = K − 1, . . . , 1:
+
+s(k−1)  
+
+> t+1
+
+= 1
+
+√αk
+
+
+
+s(k) 
+
+> t+1
+
+− (1 − αk) ˆ ϵθ
+
+ s(k)
+
+> t+1
+
+, k, c t
+
+
+
++ σkzk−1,zk−1 ∼ N (0 , I ).
+
+Here ˆϵθ (·, k, c t) is a parametric predictor of the noise com-ponent at level k, and {σk} specifies the reverse-process 4Model Predictive Control with Differentiable World Models for Offline Reinforcement Learning 
+
+variance. The final denoised sample is s(0)  
+
+> t+1
+
+∼ pθ (· | st, a t),and we define the reverse sampler fθ by collecting all Gaus-sian random variables used by the reverse procedure into 
+
+εt := ( zK , z K−1, . . . , z 0), so that the sampled next state can be written as s(0)  
+
+> t+1
+
+= fθ (st, a t, ε t). We define the ini-tialization map gK : Rd → Rd and the reverse-step map 
+
+hk : Rd × Rd × Rm × Rd → Rd by 
+
+gK (z) := z, hk(u, s, a, z ) := 1
+
+√αk
+
+
+
+u − (1 − αk) ˆ ϵθ
+
+ u, k, (s, a )
+
++ σkz, for k = 1 , . . . , K − 1 (1) so that s(k−1)  
+
+> t+1
+
+= hk(s(k)
+
+> t+1
+
+, s t, a t, z k−1) and s(K) 
+
+> t+1
+
+= gK (zK ).
+
+Deterministic computation graph for fixed noise. For any fixed realization of εt, the mapping (st, a t) 7 → s(0) 
+
+> t+1
+
+is a deterministic composition of (i) linear operations, (ii) evaluations of the denoiser ˆϵθ (·, k, c t) at each reverse step, and (iii) additive terms determined by the fixed Gaussian draws. Consequently, fθ is a differentiable computation graph in its inputs (st, a t) for fixed εt.
+
+Learning objective: We train ˆϵθ to invert the forward cor-ruption of st+1 , conditioned on (st, a t). Using the marginal reparameterization at a randomly chosen diffusion level k,we form 
+
+s(k) 
+
+> t+1
+
+= √¯αk st+1 + √1 − ¯αk ϵ, ϵ ∼ N (0 , I ),
+
+and minimize the conditional noise-prediction error 
+
+L(θ) = E (st,a t,s t+1 )∼D  
+
+> k∼Unif( {1,...,K })
+> ϵ∼N (0 ,I )
+
+h
+
+ϵ − ˆϵθ
+
+ s(k)
+
+> t+1
+
+, k, c t
+
+ 22
+
+i
+
+.
+
+Intuitively, this objective teaches the denoiser to recover the injected Gaussian noise at arbitrary noise levels while leveraging (st, a t) as side information. After training, the resulting reverse process defines a conditional generative model pθ (st+1 | st, a t), and its sampling procedure is pre-cisely the transition map st+1 = fθ (st, a t, ε t), ε t ∼ p0(ε),which we treat as a learned, differentiable simulator of one-step dynamics. 
+
+3.2. Reward model 
+
+In addition to the transition model, we learn a parametric reward predictor from the same offline data. We parame-terize the reward predictor as a function rξ : S × A → R,which maps a state–action pair (st, a t) to a scalar reward estimate. Given an offline dataset of transitions D =
+
+{(st, a t, r t, s t+1 )}Nt=1 , we fit rξ by supervised regression on observed rewards: 
+
+min  
+
+> ξ
+
+Lr (ξ) := E(st,a t,r t,·)∼D 
+
+h rξ (st, a t) − rt
+
+2i
+
+.
+
+After training, rξ serves as a differentiable reward oracle that can be queried at arbitrary (s, a ) pairs produced by downstream planning or policy optimization, and can be combined with the learned diffusion transition model to form multi-step return objectives. 
+
+3.3. Policy and Terminal Value 
+
+Given an offline dataset D = {(st, a t, r t, s t+1 )}Nt=1 , we learn a parametric policy πψ (s) and a parametric action-value function Qϕ(s, a ). We adopt a Behavior-Regularized Actor Critic (BRAC) style objective from (Wu et al., 2019) and follow the practical architectural and training choices from ReBRAC (Tarasov et al., 2023a). The critic is trained by one-step temporal-difference regression with a target network Q ¯ϕ:
+
+LQ(ϕ) := E(s,a,r,s ′)∼D  
+
+> a′∼πψ(·| s′)
+
+h Qϕ(s, a ) − r − γQ ¯ϕ(s′, a ′)2i
+
+.
+
+The actor is trained to select actions with high value under 
+
+Qϕ, while remaining close to the dataset behavior by a behavior-cloning regularizer that increases the likelihood of dataset actions under πψ :
+
+Lπ (ψ) := E (s,a )∼D   
+
+> aπ∼πψ(·| s)
+
+h
+
+− Qϕ(s, a π ) − α log πψ (a | s)
+
+i
+
+.
+
+where α > 0 controls the strength of behavior regularization and γ ∈ (0 , 1) is the discount factor. In practice, Q ¯ϕ is maintained as a slowly updated copy of Qϕ to stabilize the bootstrapped target in LQ(ϕ).
+
+## 4. MPC with Differentiable World Model 
+
+We now describe a receding-horizon model predictive con-trol (MPC) procedure that uses the learned diffusion world model as a differentiable simulator. The world model is given by the reparameterized transition map st+1 =
+
+fθ (st, a t, ε t), ε t ∼ p0(ε), where fθ denotes the reverse diffusion sampler unrolled as a computation graph. We combine this dynamics model with a learned reward predic-tor rξ (s, a ) and a learned terminal critic Qϕ(s, a ). The critic provides a terminal value for truncated rollouts, while rξ
+
+supplies the immediate reward along imagined trajectories at inference time. 
+
+4.1. Receding-horizon Objective 
+
+At a real environment state st, MPC optimizes a horizon-H
+
+objective over imagined trajectories generated by fθ . Given a fixed noise sequence εt:t+H−1 = ( εt, . . . , ε t+H−1) define the imagined rollout recursively by 
+
+˜s0 = st, ˜aj = πψ (˜ sj ), ˜sj+1 = fθ (˜ sj , ˜aj , ε t+j ), (2) 5Model Predictive Control with Differentiable World Models for Offline Reinforcement Learning 
+
+Algorithm 1 MPCwDWM (Model Predictive Control with Differentiable World Model) 
+
+Require: Diffusion sampler fθ , noise {ε(i)
+
+> t:t+H−1
+
+}Mi=1 re-ward model rξ , terminal critic Qϕ, policy πψ , horizon 
+
+H, particles M , inner steps E, step size α, discount γ.
+
+1: for t = 1 , 2, 3 . . . , T do 
+
+2: Observe environment state st
+
+3: for e = 1 , 2, . . . , E do 
+
+4: ˜s(i)0 ← st ∀ i ∈ { 1, 2, . . . , M }
+
+5: J ← 0
+
+6: for j = 0 , 1, . . . , H − 1 do 
+
+7: for i = 1 , 2, . . . , M do 
+
+8: ˜a(i) 
+
+> j
+
+← πψ (˜ s(i) 
+
+> j
+
+) ▷ Action for imagined rollout 9: end for 
+
+10: J ← J + 1
+
+> M
+
+PMi=1 γj rξ (˜ s(i) 
+
+> j
+
+, ˜a(i) 
+
+> j
+
+)
+
+11: for i = 1 , 2, . . . , M do 
+
+12: ˜s(i) 
+
+> j+1
+
+← fθ (˜ s(i) 
+
+> j
+
+, ˜a(i) 
+
+> j
+
+, ε (i) 
+
+> t+j
+
+) ▷ Next state 13: end for 
+
+14: end for 
+
+15: J ← J + 1
+
+> M
+
+PMi=1 γH Qϕ(˜ s(i) 
+
+> H
+
+, π ψ (˜ s(i) 
+
+> H
+
+)) 
+
+16: ψ ← ψ + α ∇ψ J ▷ Policy Update 17: end for 
+
+18: Execute at ← πψ (st) and observe (rt, s t+1 )
+
+19: end for 
+
+where j = 0 , . . . , H − 1. We evaluate the finite-horizon return by summing predicted stage rewards and adding a terminal value given by the critic: 
+
+L(ψ; εt:t+H−1) = 
+
+> H−1
+
+X
+
+> j=0
+
+γj rξ (˜ sj , ˜aj ) + γH Qϕ
+
+
+
+˜sH , π ψ (˜ sH )
+
+
+
+.
+
+We then define the MPC objective as the expecta-tion of this return over diffusion noise: Jt(ψ) =
+
+Eεt:t+H−1∼p0
+
+h
+
+L(ψ; εt:t+H−1)
+
+i
+
+.
+
+4.2. Monte Carlo Approximation 
+
+We approximate Jt(ψ) with M i.i.d. noise sequences 
+
+{ε(m)
+
+> t:t+H−1
+
+}Mm=1 , where ε(m) 
+
+> t:t+H−1
+
+∼ p0. For each m, gener-ate an imagined rollout {˜s(m) 
+
+> j
+
+, ˜a(m) 
+
+> j
+
+}Hj=0 by 
+
+˜s(m)0 = st, ˜a(m) 
+
+> j
+
+= πψ(˜ s(m) 
+
+> j
+
+), ˜s(m) 
+
+> j+1
+
+= fθ(˜ s(m) 
+
+> j
+
+, ˜a(m) 
+
+> j
+
+, ε (m) 
+
+> t+j
+
+).
+
+The Monte Carlo estimator is 
+
+bJt(ψ) = 1
+
+M
+
+> M
+
+X
+
+> m=1
+
+" H−1X
+
+> j=0
+
+γj rξ
+
+ ˜s(m) 
+
+> j
+
+, ˜a(m)
+
+> j
+
+
+
++ γH Qϕ
+
+
+
+˜s(m) 
+
+> H
+
+, π ψ (˜ s(m) 
+
+> H
+
+)
+
+#
+
+.
+
+4.3. Gradient-based optimization 
+
+At time t, we perform E steps of gradient ascent on 
+
+bJt(ψ) while holding fθ , rξ , and Qϕ fixed: ψ ← ψ +
+
+α∇ψ bJt(ψ), e = 1 , . . . , E, where α > 0 is a step size. Af-ter the inner loop, MPC executes the first action in the real environment at = πψ (st), observes (rt, s t+1 ), and repeats the procedure at the next state st+1 (see Algorithm 1). 
+
+4.4. Gradient recursion through diffusion rollouts 
+
+The next theorem states a compact Jacobian recursion for the gradient of the per-noise objective L(ψ; εt:t+H−1) under the rollout dynamics in (2) (see Appendix B for proof). Define the rollout Jacobians, for j = 0 , . . . , H − 1,
+
+Πs(j) := ∇sπψ (s) s=˜ sj
+
+, Πψ (j) := ∇ψ πψ (˜ sj ),Fs(j) := ∇sfθ (s, a, ε t+j ) s=˜ sj ,a =˜ aj ,Fa(j) := ∇afθ (s, a, ε t+j ) s=˜ sj ,a =˜ aj .
+
+Let Gj := ∇ψ ˜sj and Dj := ∇ψ ˜aj . Then G0 = 0 and, for 
+
+j = 0 , . . . , H − 1,
+
+Dj = Π s(j) Gj + Π ψ (j),Gj+1 = Fs(j) Gj + Fa(j) Dj .
+
+Further define the gradient of the reward and the critic as: 
+
+rs(j) := ∇srξ (˜ sj , ˜aj ), ra(j) := ∇arξ (˜ sj , ˜aj ),Qs := ∇sQϕ(˜ sH , ˜aH ), Qa := ∇aQϕ(˜ sH , ˜aH ).
+
+Theorem 4.1 (Gradient recursion ). Fix a time t, a horizon H, and a noise sequence εt:t+H−1, and let 
+
+{(˜ sj , ˜aj )}Hj=0 be defined by (2) . Assume πψ is differ-entiable in ψ and its state input, and fθ , rξ , and Qϕ are differentiable in their state and action arguments. Then the gradient of the per-noise return is 
+
+∇ψ L(ψ; εt:t+H−1) = 
+
+> H−1
+
+X
+
+> j=0
+
+γj 
+
+rs(j) Gj + ra(j) Dj
+
+
+
++ γH 
+
+Qs GH + Qa DH
+
+
+
+.
+
+Moreover, if fθ is implemented by a reverse diffusion recursion as given by (1) then 
+
+∇afθ (s, a, ε ) = A0, ∇sfθ (s, a, ε ) = B0,
+
+where AK = 0 , BK = 0 , and for k = K, . . . , 1,
+
+Ak−1 = ∂h k
+
+∂u Ak + ∂h k
+
+∂a , Bk−1 = ∂h k
+
+∂u Bk + ∂h k
+
+∂s ,
+
+with all partial derivatives evaluated at (u, s, a, z ) = (s(k), s, a, z k−1).
+
+6Model Predictive Control with Differentiable World Models for Offline Reinforcement Learning 25 50 75 100 125 150 175 200               
+
+> Training Step (x1000)
+> 0.3
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> 0.9
+> One-Step RMSE
+> halfcheetah-medium-replay
+> halfcheetah
+> 25 50 75 100 125 150 175 200
+> Training Step (x1000)
+> 0.14
+> 0.16
+> 0.18
+> 0.20
+> 0.22
+> 0.24
+> 0.26
+> One-Step RMSE
+> hopper-medium-replay
+> hopper
+> 25 50 75 100 125 150 175 200
+> Training Step (x1000)
+> 1.4
+> 1.6
+> 1.8
+> 2.0
+> 2.2
+> One-Step RMSE
+> walker2d-medium-replay
+> walker2d
+
+Figure 2. One-step state prediction RMSE of diffusion models across training steps (20k–200k) on medium-replay datasets. RMSE decreases with training for all three environments (halfcheetah, hopper, walker2d), with shaded regions showing standard error over 1000 transitions. 25 50 75 100 125 150 175 200               
+
+> Training Step (x1000)
+> 0.10
+> 0.15
+> 0.20
+> 0.25
+> 0.30
+> 0.35
+> Reward RMSE
+> halfcheetah-medium-replay
+> halfcheetah
+> 25 50 75 100 125 150 175 200
+> Training Step (x1000)
+> 0.017
+> 0.018
+> 0.019
+> 0.020
+> 0.021
+> 0.022
+> 0.023
+> Reward RMSE
+> hopper-medium-replay
+> hopper
+> 25 50 75 100 125 150 175 200
+> Training Step (x1000)
+> 0.045
+> 0.050
+> 0.055
+> 0.060
+> 0.065
+> Reward RMSE
+> walker2d-medium-replay
+> walker2d
+
+Figure 3. Reward prediction RMSE of reward models across training steps (20k–200k) on medium-replay datasets. All environments show decreasing RMSE with training. Shaded regions indicate standard error over 1000 transitions. 
+
+Remark 4.2 . Theorem 4.1 provides an explicit chain-rule decomposition of ∇ψ L(ψ; εt:t+H−1) along the rollout (2) .The sensitivities (Gj , D j ) propagate how changing ψ per-turbs the imagined state action sequence, through the policy Jacobians (Π s(j), Πψ (j)) and the diffusion-dynamics Jaco-bians (Fs(j), F a(j)) . The final expression aggregates these perturbations through the stage rewards and the terminal critic via (rs(j), r a(j)) and (Qs, Q a), yielding the update. 
+
+## 5. Experiments 
+
+Baselines. We compare against strong ensemble-free of-fline RL baselines that are widely used on D4RL loco-motion. These include TD3+BC (Fujimoto & Gu, 2021), which adds behavior cloning regularization to a TD3 ac-tor update; IQL (Kostrikov et al., 2022), which performs offline policy improvement via value-weighted regression without explicit behavior constraints; CQL (Kumar et al., 2020), which trains a conservative critic by penalizing high values on out-of-distribution actions; SAC-RND (Nikulin et al., 2023), which augments SAC with random-network-distillation-based penalties to discourage out-of-distribution actions; and ReBRAC (Tarasov et al., 2023b), which revis-its behavior-regularized actor-critic with practical improve-ments and strong performance. 
+
+Datasets. We evaluate on the D4RL benchmark (Fu et al., 2020), focusing on continuous-control domains where of-fline learning and long-horizon credit assignment are chal-lenging. Our main results cover all Gym MuJoCo loco-motion datasets (18 tasks spanning random, medium, ex-pert, medium-expert, medium-replay, and full-replay set-tings across all three environments HalfCheetah, Hopper, and Walker2d). We also consider all AntMaze datasets (6 tasks spanning maze, maze-diverse, medium-play, medium-diverse, large-play, and large-diverse) and compare our method with ReBRAC (which was shown to beat TD3+BC, IQL, CQL and SAC-RND in (Tarasov et al., 2023a)). For each task, we report D4RL normalized scores computed from the return accumulated by the learning agent on ten episodes. 
+
+Experimental details. Our approach has an offline training stage and an inference-time adaptation stage. Offline, we first train a policy πψ and critic Qϕ on the fixed dataset using ReBRAC (Tarasov et al., 2023b). We then train a diffusion transition model fθ on dataset transitions and a reward predictor rξ on dataset rewards using supervised learning. Figure 2 reports the diffusion model prediction RMSE across training steps, and Figure 3 reports the re-ward model prediction RMSE across training steps. See 7Model Predictive Control with Differentiable World Models for Offline Reinforcement Learning                                                                                                                                                                                                                                                                                                                                                  
+
+> Task Name TD3+BC IQL CQL SAC-RND ReBRAC MPCwDWM
+> halfcheetah-random 30 .9±0.419 .5±0.831 .1±3.527 .6±2.129 .59 ±2.729.9 ±1.50
+> halfcheetah-medium 54 .7±0.950 .0±0.246 .9±0.466 .4±1.465 .87 ±1.370.05 ±1.8
+> halfcheetah-expert 93 .4±0.495 .5±2.197 .3±1.1102 .6±4.2105 .22 ±0.92 106.14 ±2.1
+> halfcheetah-medium-expert 89 .1±5.692 .7±2.895 .0±1.4108.1 ±1.5100 .29 ±8.2105 .35 ±1.8
+> halfcheetah-medium-replay 45 .0±1.142 .1±3.645 .3±0.351 .2±3.250 .21 ±0.759.89 ±1.2
+> halfcheetah-full-replay 75 .0±2.575 .0±0.776 .9±0.981 .2±1.382 .19 ±0.985.149 ±0.9
+> hopper-random 8.5±0.710 .1±5.95.3±0.619 .6±12 .48.56 ±0.98.56 ±0.9( ⋆)
+> hopper-medium 60 .9±7.665 .2±4.261 .9±6.491 .1±10 .1102 .05 ±0.9103.38 ±0.35
+> hopper-expert 109 .6±3.7108 .8±3.1106 .5±9.1109.8 ±0.5104 .73 ±6.94 105 .06 ±5.02
+> hopper-medium-expert 87 .8±10 .585 .5±29 .796 .9±15 .1109 .8±0.6105 .70 ±8.3107 .42 ±5.30
+> hopper-medium-replay 55 .1±31 .789 .6±13 .286 .3±7.397 .2±9.095 .82 ±7.9103.14 ±0.45
+> hopper-full-replay 97 .9±17 .5104 .4±10 .8101 .9±0.6107 .4±0.8107 .49 ±0.4108.77 ±0.6434
+> walker2d-random 2.0±3.611 .3±7.05.1±1.718 .7±6.920 .22 ±4.620 .22 ±4.6( ⋆)
+> walker2d-medium 77 .7±2.980 .7±3.479 .5±3.292.7 ±1.284 .78 ±1.888 .91 ±0.6
+> walker2d-expert 110 .0±0.696 .9±32 .3109 .3±0.1104 .5±22 .8112 .15 ±0.2116.65 ±0.41
+> walker2d-medium-expert 110 .4±0.6112 .1±0.5109 .1±0.2104 .6±11 .2111 .81 ±0.3115.76 ±1.04
+> walker2d-medium-replay 68 .0±19 .275 .4±9.376 .8±10 .089 .4±3.880 .67 ±5.895.87 ±1.19
+> walker2d-full-replay 90 .3±5.497 .5±1.494 .2±1.9105 .3±3.2100 .16 ±8.8105.76 ±2.91
+> Average 70 .372 .973 .682 .681 .53 85.33
+> Table 1.
+
+Average normalized score over the final evaluation and ten unseen training seeds on Gym-MuJoCo tasks. TD3+BC IQL CQL and SAC-RND scores are taken from (Tarasov et al., 2023a). We ran ReBRAC and MPCwDWM with ReBRAC as the pre-trained policy. The symbol ± represents the standard deviation across the seeds. (⋆) We did not see an improvement with inference-time optimization and the performance is that of the pre-trained ReBRAC policy. Appendix C for the full diffusion and reward model results. At inference time, for each real environment state st, we solve a receding-horizon problem by sampling M noise se-quences, rolling out H-step imagined trajectories through 
+
+fθ under the current policy, and forming the Monte Carlo objective bJt(ψ) given by discounted predicted rewards plus a terminal value from Qϕ. We update ψ for E inner steps using gradients through the full computation graph, then execute the resulting action at = πψ (st) in the real en-vironment and repeat at the next state. We report mean and standard deviation of normalized score over multiple evaluation seeds. 
+
+Results. Across D4RL (Fu et al., 2020) continuous-control benchmarks, MPCwDWM is competitive with and on 12 out of 18 datasets, improves upon existing strong offline RL base-lines (see Table 1). It achieves average normalized scores of 85 .33 on Gym MuJoCo (vs. SAC-RND 82 .6, ReBRAC 
+
+81 .53 ). On 16 out of 18 datasets, our method MPCwDWM 
+
+improves the performance from the pre-trained ReBRAC policy, showing that inference time adaptation of the policy brings statistical benefits. We also compare our method 
+
+MPCwDWM with the pre-trained ReBRAC policy in Table 3 and show that inference time adaptation improves the per-formance of the agent. Our method acheives an average score of 85 .07 on AntMaze (vs. ReBRAC 77 .62 ), with the largest gains on hard AntMaze variants (large-play 59 → 67 ,large-diverse 51 → 66 ).                                          
+
+> Task Name ReBRAC MPCwDWM
+> antmaze-umaze 99.0 ±3.099.0 ±3.0
+> antmaze-umaze-diverse 89 .0±7.090.0 ±6.3
+> antmaze-medium-play 86 .7±11 .594.4 ±6.8
+> antmaze-medium-diverse 83 .0±10 .194.0 ±8.0
+> antmaze-large-play 59 .0±25 .567.0 ±26 .1
+> antmaze-large-diverse 51 .0±27 .066.0 ±30 .4
+> Average 77 .62 85.07
+> Table 3.
+
+Average normalized score on ten unseen seeds on AntMaze tasks. The symbol ± represents the standard deviation across the seeds. 
+
+Generative Model Baselines. We also compare against generative model based approaches to Offline RL. Decision Transformer (DT) casts offline RL as return conditioned sequence modeling and predicts actions with a Transformer conditioned on the desired return and history (Chen et al., 2021). Trajectory Transformer (TT) models trajectories as sequences and plans by decoding high reward trajectories under the learned sequence model (Janner et al., 2021b). MOPO learns a dynamics model from offline data and optimizes a policy in the learned model while penalizing rewards using model uncertainty to discourage exploiting model errors (Yu et al., 2020). MOReL constructs a pes-simistic surrogate MDP that transitions to an absorbing state in regions where the model is unreliable, then learns a pol-icy within this conservative MDP (Kidambi et al., 2020). 8Model Predictive Control with Differentiable World Models for Offline Reinforcement Learning                                                                                                                      
+
+> Dataset Environment DT TT MOPO MOReL MBOP Diffuser MPCwDWM
+> Medium Expert HalfCheetah 86.8 95.0 63.3 53.3 105.9 88 .9±0.3105 .35 ±1.8
+> Hopper 107.6 110.0 23.7 108.7 55.1 103 .3±1.3107 .420 ±5.30
+> Walker2d 108.1 101.9 44.6 95.6 70.2 106 .9±0.2115.76 ±1.04
+> Medium HalfCheetah 42.6 46.9 42.3 42.1 44.6 42 .8±0.370.05 ±1.8
+> Hopper 67.6 61.1 28.0 95.4 48.8 74 .3±1.4103.38 ±0.35
+> Walker2d 74.0 79.0 17.8 77.8 41.0 79 .6±0.55 88.91 ±0.6
+> Medium Replay HalfCheetah 36.6 41.9 53.1 40.2 42.3 37 .7±0.559.89 ±1.2
+> Hopper 82.7 91.5 67.5 93.6 12.4 93 .6±0.4103.14 ±0.45
+> Walker2d 66.6 82.6 39.0 49.8 9.7 70 .6±1.695.87 ±1.19
+> Average 74.7 78.9 42.1 72.9 47.8 77.5 94.4
+> Table 2. Normalized scores on D4RL MuJoCo tasks. DT, TT, MOPO, MOReL, MBOP, and Diffuser values are taken from (Janner et al., 2022b). The symbol ±represents the standard deviation across the seeds.
+
+MBOP performs model predictive planning in a learned dynamics model while constraining candidate action se-quences with a behavior prior and extending the horizon with a value estimate (Argenson & Dulac-Arnold, 2021). Finally, Diffuser learns a diffusion model over trajectories and plans by iterative denoising with flexible conditioning, so sampling corresponds to generating high reward behavior consistent with the constraints (Janner et al., 2022a). Ta-ble 2 shows that MPCwDWM consistently outperforms prior generative model based offline RL approaches across all three dataset types. In particular, MPCwDWM achieves the best average score and improves substantially over average score of 94 .4 and beats the existing diffusion based planning baseline Diffuser which acheives an average score of 77 .5
+
+## 6. Conclusion 
+
+We introduced an inference-time adaptation framework for offline RL inspired by model predictive control, in which a pre-trained policy is refined online using the current state and a learned differentiable world model. Our key design is a Diffusion World Model pipeline that supports end-to-end gradient computation through imagined rollouts, enabling direct optimization of policy parameters at inference time using a finite-horizon surrogate objective built from pre-dicted rewards and a terminal value function. Empirically, this inference-time optimization yields consistent gains over strong offline RL baselines across D4RL continuous-control benchmarks, including Gym MuJoCo tasks and AntMaze. Future work includes reducing inference time via multi step generative world models that predict finite horizon futures in a few passes. Flow matching or mean flow objectives may further cut the cost of differentiating through imagined rollouts. Decoupled variants inspired by Flow Q Learning could enable inference time improvement without backprop-agation through time. Finally, offline to online extensions with periodic world model updates may improve robustness under distribution shift. 
+
+## Impact Statement 
+
+This paper presents work whose goal is to advance the field of Machine Learning. There are many potential societal consequences of our work, none which we feel must be specifically highlighted here. 
+
+## References 
+
+Afsar, M. M., Crump, T., and Far, B. Reinforcement learn-ing based recommender systems: A survey. ACM Com-puting Surveys , 2022. Ajay, A., Du, Y., Gupta, A., Tenenbaum, J. B., Jaakkola, T., and Agrawal, P. Is conditional generative model-ing all you need for decision-making? In International Conference on Learning Representations (ICLR) , 2023. arXiv:2211.15657. Argenson, A. and Dulac-Arnold, G. Model-based offline planning. In International Conference on Learning Rep-resentations (ICLR) , 2021. doi: 10.48550/arXiv.2008. 05556. URL https://openreview.net/forum? id=OMNB1G5xzd4 .Cai, H., Ren, K., Zhang, W., Malialis, K., Wang, J., Yu, Y., and Guo, D. Real-time bidding by reinforcement learning in display advertising. In Proceedings of the Tenth ACM International Conference on Web Search and Data Mining , pp. 661–670, 2017. Camacho, E. F. and Bordons, C. Model Predictive Con-trol . Springer, London, 2 edition, 2007. doi: 10.1007/ 978-0-85729-398-5. Chen, L., Lu, K., Rajeswaran, A., Lee, K., Grover, A., Laskin, M., Abbeel, P., Srinivas, A., and Mordatch, I. De-cision transformer: Reinforcement learning via sequence modeling. In Advances in Neural Information Processing Systems (NeurIPS) , 2021. 9Model Predictive Control with Differentiable World Models for Offline Reinforcement Learning 
+
+Ding, Z., Zhang, A., Tian, Y., and Zheng, Q. Diffusion world model: Future modeling beyond step-by-step roll-out for offline reinforcement learning. arXiv preprint arXiv:2402.03570 , 2024. Ernst, D., Geurts, P., and Wehenkel, L. Tree-based batch mode reinforcement learning. Journal of Machine Learn-ing Research , 6:503–556, 2005. Fatemi, M., Benz, A., Carnicelli, A., and Ghassemi, M. Semi-markov offline reinforcement learning for health-care. In Proceedings of the 2nd Machine Learning for Health Symposium , volume 174 of Proceedings of Ma-chine Learning Research , pp. 299–315, 2022. Fu, J., Kumar, A., Nachum, O., Tucker, G., and Levine, S. D4rl: Datasets for deep data-driven reinforcement learning, 2020. Fujimoto, S. and Gu, S. S. A minimalist approach to offline reinforcement learning. In Advances in Neural Informa-tion Processing Systems (NeurIPS) , 2021. Fujimoto, S., Meger, D., and Precup, D. Off-policy deep reinforcement learning without exploration. In Proceed-ings of the 36th International Conference on Machine Learning (ICML) , volume 97 of Proceedings of Ma-chine Learning Research , pp. 2052–2062. PMLR, 2019a. URL https://proceedings.mlr.press/v97/ fujimoto19a.html .Fujimoto, S., Meger, D., and Precup, D. Off-policy deep reinforcement learning without exploration. In Proceed-ings of the 36th International Conference on Machine Learning , volume 97 of Proceedings of Machine Learn-ing Research , pp. 2052–2062, 2019b. Gottesman, O., Johansson, F., Meier, J., Denton, M., Lee, D., Srinivasan, S., Zhang, L., Ding, Y., Wihl, S., Peng, X., Yao, J., Lage, I., Mosch, C., Sonabend, L. H., Ranganath, R., Celi, L. A., and Doshi-Velez, F. Guidelines for rein-forcement learning in healthcare. Nature Medicine , 25 (1):16–18, 2019. Ho, J., Jain, A., and Abbeel, P. Denoising diffusion proba-bilistic models. In Advances in Neural Information Pro-cessing Systems (NeurIPS) , volume 33, pp. 6840–6851, 2020. Hou, Z., Lv, X., Lu, R., Zhang, J., Li, Y., Yao, Z., Li, J., Tang, J., and Dong, Y. T1: Advancing language model reasoning through reinforcement learning and inference scaling. In Singh, A., Fazel, M., Hsu, D., Lacoste-Julien, S., Berkenkamp, F., Maharaj, T., Wagstaff, K., and Zhu, J. (eds.), Proceedings of the 42nd International Conference on Machine Learning , volume 267 of Proceedings of Machine Learning Research , pp. 23976–24003. PMLR, 13–19 Jul 2025. URL https://proceedings.mlr. press/v267/hou25e.html .Janner, M., Li, Q., and Levine, S. Offline rein-forcement learning as one big sequence modeling problem. In Advances in Neural Information Processing Systems (NeurIPS) , volume 34, pp. 1273–1286, 2021a. doi: 10.48550/arXiv.2106. 02039. URL https://papers.neurips. cc/paper_files/paper/2021/hash/ 099fe6b0b444c23836c4a5d07346082b-Abstract. html .Janner, M., Li, Q., and Levine, S. Offline rein-forcement learning as one big sequence modeling problem. In Advances in Neural Information Processing Systems (NeurIPS) , volume 34, pp. 1273–1286, 2021b. doi: 10.48550/arXiv.2106. 02039. URL https://papers.neurips. cc/paper_files/paper/2021/hash/ 099fe6b0b444c23836c4a5d07346082b-Abstract. html .Janner, M., Du, Y., Tenenbaum, J. B., and Levine, S. Plan-ning with diffusion for flexible behavior synthesis. In 
+
+International Conference on Machine Learning (ICML) ,2022a. Janner, M., Du, Y., Tenenbaum, J. B., and Levine, S. Plan-ning with diffusion for flexible behavior synthesis. In 
+
+Proceedings of the International Conference on Machine Learning (ICML) , 2022b. Ki, D., Oh, J., Shim, S.-W., and Lee, B.-J. Prior-guided dif-fusion planning for offline reinforcement learning. arXiv preprint arXiv:2505.10881 , 2025. Kidambi, R., Rajeswaran, A., Netrapalli, P., and Joachims, T. Morel: Model-based offline reinforcement learning. 
+
+arXiv preprint arXiv:2005.05951 , 2020. Kiran, B. R., Sobh, I., Talpaert, V., Mannion, P., Sallab, A. A. A., Yogamani, S., and Pérez, P. Deep reinforce-ment learning for autonomous driving: A survey. IEEE Transactions on Intelligent Transportation Systems , 23 (6):4909–4926, 2022. Kober, J., Bagnell, J. A., and Peters, J. Reinforcement learning in robotics: A survey. The International Journal of Robotics Research , 32(11):1238–1274, 2013. Kostrikov, I., Nair, A., and Levine, S. Offline reinforce-ment learning with implicit q-learning. In International Conference on Learning Representations (ICLR) , 2022. Kumar, A., Fu, J., Tucker, G., and Levine, S. Sta-bilizing off-policy q-learning via bootstrapping 10 Model Predictive Control with Differentiable World Models for Offline Reinforcement Learning 
+
+error reduction. In Advances in Neural Infor-mation Processing Systems (NeurIPS) , 2019. doi: 10.48550/arXiv.1906.00949. URL https: //papers.nips.cc/paper/2019/hash/ 2f4d86d9b4d1d7c0b8b6d81e2a9c3f2b-Abstract. html .Kumar, A., Zhou, A., Tucker, G., and Levine, S. Con-servative q-learning for offline reinforcement learning. In Advances in Neural Information Processing Systems (NeurIPS) , 2020. Lange, S., Gabel, T., and Riedmiller, M. Batch rein-forcement learning. In Wiering, M. and van Otterlo, M. (eds.), Reinforcement Learning: State-of-the-Art .Springer, 2012. Levine, S., Kumar, A., Tucker, G., and Fu, J. Offline rein-forcement learning: Tutorial, review, and perspectives on open problems. arXiv preprint arXiv:2005.01643 , 2020. Lipman, Y., Chen, R. T. Q., Ben-Hamu, H., Nickel, M., and Le, M. Flow matching for generative modeling. arXiv preprint arXiv:2210.02747 , 2023. Liu, Y., Swaminathan, A., Agarwal, A., and Brunskill, E. Provably good batch reinforcement learning without great exploration. In Advances in Neural Information Process-ing Systems , volume 33, pp. 1264–1274, 2020. Muennighoff, N., Yang, Z., Shi, W., Li, X. L., Fei-Fei, L., Hajishirzi, H., Zettlemoyer, L., Liang, P., Can-dès, E., and Hashimoto, T. s1: Simple test-time scaling. In Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing ,2025. URL https://aclanthology.org/2025. emnlp-main.1025/ .Nair, A., Dalal, M., Gupta, A., and Levine, S. Awac: Accelerating online reinforcement learning with offline datasets. In International Conference on Learning Rep-resentations (ICLR) , 2021. doi: 10.48550/arXiv.2006. 09359. URL https://openreview.net/forum? id=OJiM1R3jAtZ .Nikulin, A., Kurenkov, V., Tarasov, D., and Kolesnikov, S. Anti-exploration by random network distillation. 
+
+arXiv preprint arXiv:2301.13616 , 2023. URL https: //arxiv.org/abs/2301.13616 .Park, S., Li, Q., and Levine, S. Flow q-learning. In Proceed-ings of the 42nd International Conference on Machine Learning , volume 267 of Proceedings of Machine Learn-ing Research , pp. 48104–48127. PMLR, 2025. Prudencio, R. F., Maximo, M. R. O. A., and Colombini, E. L. A survey on offline reinforcement learning: Taxonomy, review, and open problems. IEEE Transactions on Neural Networks and Learning Systems , 2022. Rawlings, J. B., Mayne, D. Q., and Diehl, M. Model Pre-dictive Control: Theory, Computation, and Design . Nob Hill Publishing, Madison, WI, 2 edition, 2017. 2nd edi-tion. Available at: https://sites.engineering. ucsb.edu/~jbraw/mpc/ .Shah, D., Bhorkar, A., Leen, H., Kostrikov, I., Rhinehart, N., and Levine, S. Offline reinforcement learning for visual navigation. In Proceedings of The 6th Conference on Robot Learning , volume 205 of Proceedings of Machine Learning Research , pp. 44–54, 2023. Shi, T., Li, Y., Liu, Y., and Wang, H. Offline reinforcement learning for autonomous driving with safety and explo-ration enhancement. arXiv preprint arXiv:2110.07067 ,2021. Sohl-Dickstein, J., Weiss, E. A., Maheswaranathan, N., and Ganguli, S. Deep unsupervised learning using nonequi-librium thermodynamics. In Proceedings of the 32nd International Conference on Machine Learning (ICML) ,pp. 2256–2265. PMLR, 2015. Tarasov, D., Kurenkov, V., Nikulin, A., and Kolesnikov, S. Revisiting the minimalist approach to offline reinforce-ment learning. arXiv preprint arXiv:2305.09836 , 2023a. doi: 10.48550/arXiv.2305.09836. Tarasov, D., Kurenkov, V., Nikulin, A., and Kolesnikov, S. Revisiting the minimalist approach to offline rein-forcement learning. In Advances in Neural Information Processing Systems (NeurIPS) , 2023b. Venkataraman, S., Wang, Y., Wang, Z., Chintalapati, N. R. T., Erickson, Z., and Held, D. Real-world offline rein-forcement learning from vision-language model feedback. 
+
+arXiv preprint arXiv:2411.05273 , 2024. Wang, X., Wei, J., Schuurmans, D., Le, Q. V., Chi, E. H., Narang, S., Chowdhery, A., and Zhou, D. Self-consistency improves chain of thought reasoning in lan-guage models. In The Eleventh International Confer-ence on Learning Representations , 2023. URL https: //openreview.net/forum?id=1PL1NIMMrw .Wu, Y., Tucker, G., and Nachum, O. Behavior regu-larized offline reinforcement learning. arXiv preprint arXiv:1911.11361 , 2019. doi: 10.48550/arXiv.1911. 11361. Xiao, T. and Wang, D. A general offline reinforcement learn-ing framework for interactive recommendation. arXiv preprint arXiv:2310.00678 , 2023. Yao, S., Yu, D., Zhao, J., Shafran, I., Griffiths, T. L., Cao, Y., and Narasimhan, K. R. Tree of thoughts: Deliber-ate problem solving with large language models. In 
+
+Advances in Neural Information Processing Systems ,11 Model Predictive Control with Differentiable World Models for Offline Reinforcement Learning 
+
+2023. URL https://openreview.net/forum? id=5Xc1ecxO1h .Yu, C., Liu, J., and Nemati, S. Reinforcement learning in healthcare: A survey. ACM Computing Surveys , 55(1): 1–36, 2021a. Yu, T., Thomas, G., Yu, L., Ermon, S., Zou, J., Levine, S., Finn, C., and Ma, T. Mopo: Model-based offline policy optimization. arXiv preprint arXiv:2005.13239 , 2020. Yu, T., Kumar, A., Rafailov, R., Rajeswaran, A., Levine, S., and Finn, C. Combo: Conservative offline model-based policy optimization. arXiv preprint arXiv:2102.08363 ,2021b. Yun, T., Yun, S., Lee, J., and Park, J. Guided trajectory generation with diffusion models for offline model-based optimization. arXiv preprint arXiv:2407.01624 , 2024. Zhao, X., Gu, C., Zhang, H., Yang, X., Liu, X., Liu, H., and Tang, J. Dear: Deep reinforcement learning for on-line advertising impression in recommender systems. In 
+
+Proceedings of the AAAI Conference on Artificial Intelli-gence , volume 35, pp. 750–758, 2021. Zhou, G., Ke, L., Srinivasa, S., Gupta, A., Rajeswaran, A., and Kumar, V. Real world offline reinforcement learning with realistic data source. arXiv preprint arXiv:2210.06479 , 2022. Zuo, Y., Zhang, K., Sheng, L., Qu, S., Cui, G., Zhu, X., Li, H., Zhang, Y., Long, X., Hua, E., Qi, B., Sun, Y., Ma, Z., Yuan, L., Ding, N., and Zhou, B. Ttrl: Test-time reinforcement learning. In Advances in Neural Information Processing Systems , 2025. URL https: //openreview.net/forum?id=VuVhgEiu20 .12 Model Predictive Control with Differentiable World Models for Offline Reinforcement Learning 
+
+## A. Related Works 
+
+Offline reinforcement learning. Offline reinforcement learning studies how to learn a high return policy from a fixed dataset while mitigating distribution shift between the learned policy and the logged behavior (Lange et al., 2012; Levine et al., 2020). A large family of methods constrains policy improvement to remain close to actions supported by the dataset, either by explicitly regularizing the learned policy toward behavior cloning or by limiting the space of candidate actions used for value based updates (Wu et al., 2019; Fujimoto et al., 2019a; Kumar et al., 2019; Fujimoto & Gu, 2021; Tarasov et al., 2023b). Another family focuses on conservative value estimation to reduce overestimation when evaluating actions that are unlikely under the dataset, with CQL penalizing high values assigned to low density actions (Kumar et al., 2020). Complementary approaches avoid explicit out of distribution action maximization during policy improvement by extracting policies from value functions using implicit or advantage weighted updates, as in IQL and AWAC (Kostrikov et al., 2022; Nair et al., 2021). Across these lines, the shared objective is to maximize return while ensuring that learning and improvement remain grounded in the support of the offline data. 
+
+Generative models for offline reinforcement learning. Recent work replaces simple unimodal parametric policies with conditional generative models that can represent multimodal behaviors present in offline datasets. Sequence modeling approaches treat decision making as conditional generation over trajectories, using return or goal conditioning to produce actions, including Decision Transformer and trajectory modeling formulations (Chen et al., 2021; Janner et al., 2021a). Diffusion based methods generate trajectories or action sequences via iterative denoising, enabling flexible behavior synthesis and planning style control, with Diffuser as a representative approach and related developments connected to continuous time generative modeling such as flow matching (Janner et al., 2022a; Lipman et al., 2023). In parallel, model based offline reinforcement learning uses learned dynamics to enable short horizon planning or to augment training with synthetic rollouts while controlling model error, including MOPO, MOReL, COMBO, and MBOP (Yu et al., 2020; Kidambi et al., 2020; Yu et al., 2021b; Argenson & Dulac-Arnold, 2021). Diffusion world models extend the dynamics modeling component by learning future state distributions beyond step by step rollout (Ding et al., 2024), and several works use generative planners at inference time to sample candidate futures with conditioning or guidance mechanisms, including conditional generative decision making and guided diffusion trajectory generation (Ajay et al., 2023; Ki et al., 2025; Yun et al., 2024). These generative and model based directions typically select actions from sampled plans or use learned models to improve training, whereas the focus here is on adapting policy parameters at inference time by backpropagating through a differentiable world model over imagined rollouts. 
+
+## B. Proof of Theorem 4.1 
+
+We fix a time t, horizon H, and a noise sequence εt:t+H−1. All quantities below are defined along the imagined rollout (2) . Since the noise is fixed, the rollout is deterministic, hence the gradient ∇ψ L(ψ; εt:t+H−1) is obtained by repeated application of the chain rule. 
+
+B.1. Sensitivity recursions 
+
+Recall the rollout recursion (2): 
+
+˜s0 = st, ˜ah = πψ (˜ sh), ˜sh+1 = fθ (˜ sh, ˜ah, ε t+h), h = 0 , . . . , H − 1. (3) Define the state and action sensitivities 
+
+Gh := ∇ψ ˜sh, Dh := ∇ψ ˜ah. (4) Since ˜s0 = st does not depend on ψ, we have 
+
+G0 = 0 . (5) For each h, the action is ˜ah = πψ (˜ sh). By the chain rule, 
+
+Dh = ∇ψ πψ (˜ sh) + ∇sπψ (s) s=˜ sh
+
+∇ψ ˜sh. (6) Introduce the policy Jacobians (as in the theorem statement) 
+
+Πs(h) := ∇sπψ (s) s=˜ sh
+
+, Πψ (h) := ∇ψ πψ (˜ sh). (7) 13 Model Predictive Control with Differentiable World Models for Offline Reinforcement Learning 
+
+Substituting (7) into (6) yields 
+
+Dh = Π s(h) Gh + Π ψ (h). (8) For each h ∈ { 0, . . . , H − 1}, the next state is ˜sh+1 = fθ (˜ sh, ˜ah, ε t+h). Differentiating with respect to ψ and applying the chain rule gives 
+
+Gh+1 = ∇sfθ (s, a, ε t+h) s=˜ sh,a =˜ ah
+
+Gh + ∇afθ (s, a, ε t+h) s=˜ sh,a =˜ ah
+
+Dh. (9) Introduce the world-model Jacobians (as in the theorem statement) 
+
+Fs(h) := ∇sfθ (s, a, ε t+h) s=˜ sh,a =˜ ah
+
+, Fa(h) := ∇afθ (s, a, ε t+h) s=˜ sh,a =˜ ah
+
+. (10) Substituting (10) into (9) yields 
+
+Gh+1 = Fs(h) Gh + Fa(h) Dh. (11) Equations (5), (8), and (11) are exactly the sensitivity recursions stated in Theorem 4.1. 
+
+B.2. Gradient of the per-noise return 
+
+Recall the per-noise return definition: 
+
+L(ψ; εt:t+H−1) = 
+
+> H−1
+
+X
+
+> h=0
+
+γh rξ (˜ sh, ˜ah) + γH Qϕ
+
+
+
+˜sH , π ψ (˜ sH )
+
+
+
+. (12) Fix h ∈ { 0, . . . , H − 1} and define the stage reward rh := rξ (˜ sh, ˜ah). By the chain rule, 
+
+∇ψ rh = ∇srξ (˜ sh, ˜ah) Gh + ∇arξ (˜ sh, ˜ah) Dh. (13) Introduce the shorthand 
+
+rs(h) := ∇srξ (˜ sh, ˜ah), ra(h) := ∇arξ (˜ sh, ˜ah). (14) Then (13) becomes 
+
+∇ψ rξ (˜ sh, ˜ah) = rs(h) Gh + ra(h) Dh. (15) Define the terminal action ˜aH := πψ (˜ sH ) and the terminal value VT := Qϕ(˜ sH , ˜aH ). By the chain rule, 
+
+∇ψ VT = ∇sQϕ(˜ sH , ˜aH ) GH + ∇aQϕ(˜ sH , ˜aH ) DH . (16) Introduce the terminal derivatives 
+
+Qs := ∇sQϕ(˜ sH , ˜aH ), Qa := ∇aQϕ(˜ sH , ˜aH ). (17) Then (16) becomes 
+
+∇ψ Qϕ(˜ sH , ˜aH ) = Qs GH + Qa DH . (18) Here DH is defined exactly as in (4), and can be expanded via the same policy sensitivity identity (8) with h = H:
+
+DH = Π s(H) GH + Π ψ (H). (19) Differentiating (12) and applying (15) and (18) gives 
+
+∇ψ L(ψ; εt:t+H−1) = 
+
+> H−1
+
+X
+
+> h=0
+
+γh ∇ψ rξ (˜ sh, ˜ah) + γH ∇ψ Qϕ(˜ sH , ˜aH )=
+
+> H−1
+
+X
+
+> h=0
+
+γh 
+
+rs(h) Gh + ra(h) Dh
+
+
+
++ γH 
+
+Qs GH + Qa DH
+
+
+
+, (20) 14 Model Predictive Control with Differentiable World Models for Offline Reinforcement Learning 
+
+which is the gradient expression stated in Theorem 4.1. Next we derive and prove the Jacobian recursions for ∇afθ (s, a, ε ) and ∇sfθ (s, a, ε ) under the reverse diffusion implemen-tation (1). Fix (s, a ) and a noise pack ε = ( zK , z K−1, . . . , z 0). Let {s(k)}Kk=0 be generated by 
+
+s(K) = gK (zK ), (21) 
+
+s(k−1) = hk
+
+ s(k), s, a, z k−1
+
+, k = K, . . . , 1, (22) 
+
+fθ (s, a, ε ) = s(0) . (23) Assume gK is independent of (s, a ) and each hk(u, s, a, z ) is differentiable in (u, s, a ).Define the diffusion-depth sensitivities 
+
+Ak := ∇as(k) ∈ Rd×m, Bk := ∇ss(k) ∈ Rd×d. (24) Since s(K) = gK (zK ) and gK does not depend on (s, a ),
+
+AK = 0 , BK = 0 . (25) Fix k ∈ { 1, . . . , K } and write (22) as 
+
+s(k−1) = hk(u, s, a, z k−1) u=s(k) . (26) Differentiate (26) with respect to a and apply the chain rule: 
+
+Ak−1 = ∇as(k−1) = ∂h k
+
+∂u ∇as(k) + ∂h k
+
+∂a = ∂h k
+
+∂u Ak + ∂h k
+
+∂a , (27) where the partial derivatives are evaluated at 
+
+(u, s, a, z ) =  s(k), s, a, z k−1
+
+. (28) Differentiating (26) with respect to s gives 
+
+Bk−1 = ∇ss(k−1) = ∂h k
+
+∂u ∇ss(k) + ∂h k
+
+∂s = ∂h k
+
+∂u Bk + ∂h k
+
+∂s , (29) with the same evaluation point (28). 
+
+Iterating to obtain ∇afθ and ∇sfθ . Starting from (25) and iterating (27) – (29) for k = K, K − 1, . . . , 1 yields A0 and 
+
+B0. Since fθ (s, a, ε ) = s(0) by (23), 
+
+∇afθ (s, a, ε ) = ∇as(0) = A0, ∇sfθ (s, a, ε ) = ∇ss(0) = B0. (30) 
+
+## C. Additional Experimental Details 
+
+We report the predictive performance of the offline trained diffusion dynamics model and the offline trained reward model across D4RL MuJoCo datasets. Table 4 summarizes reward model accuracy via reward prediction RMSE, while Table 5 reports diffusion model accuracy via MC one step RMSE, with uncertainty reported as standard error and additionally normalized by the number of transitions for the MC one step metric. Overall, both models achieve low error on most datasets, with larger errors on the more challenging expert style settings, most notably walker2d-expert .15 Model Predictive Control with Differentiable World Models for Offline Reinforcement Learning 
+
+Task One step RMSE ( ± SE) 
+
+halfcheetah-random 0.2318 ± 0.000010 
+
+halfcheetah-medium 0.5494 ± 0.000014 
+
+halfcheetah-expert 1.3065 ± 0.000026 
+
+halfcheetah-medium-expert 0.5972 ± 0.000013 
+
+halfcheetah-medium-replay 0.3996 ± 0.000014 
+
+halfcheetah-full-replay 0.4739 ± 0.000014 
+
+hopper-random 0.1268 ± 0.004497 
+
+hopper-medium 0.0784 ± 0.001281 
+
+hopper-expert 0.1375 ± 0.000755 
+
+hopper-medium-expert 0.1678 ± 0.000710 
+
+hopper-medium-replay 0.1008 ± 0.000764 
+
+hopper-full-replay 0.1178 ± 0.002514 
+
+walker2d-random 0.6591 ± 0.009463 
+
+walker2d-medium 1.4068 ± 0.005905 
+
+walker2d-expert 3.3412 ± 0.014321 
+
+walker2d-medium-expert 1.5566 ± 0.026789 
+
+walker2d-medium-replay 1.1100 ± 0.002611 
+
+walker2d-full-replay 1.2560 ± 0.009531 Average 0.7565 ± 0.000031    
+
+> Table 4. One step RMSE (mean ±standard error) on D4RL MuJoCo datasets.
+
+Task Reward RMSE ( ± SE) 
+
+halfcheetah-random 0.0477 ± 0.0016 
+
+halfcheetah-medium 0.1292 ± 0.0034 
+
+halfcheetah-expert 0.2763 ± 0.0076 
+
+halfcheetah-medium-expert 0.1622 ± 0.0045 
+
+halfcheetah-medium-replay 0.0918 ± 0.0027 
+
+halfcheetah-full-replay 0.1164 ± 0.0033 
+
+hopper-random 0.0082 ± 0.0003 
+
+hopper-medium 0.0720 ± 0.0030 
+
+hopper-expert 0.1415 ± 0.0058 
+
+hopper-medium-expert 0.0789 ± 0.0033 
+
+hopper-medium-replay 0.0192 ± 0.0005 
+
+hopper-full-replay 0.0208 ± 0.0005 
+
+walker2d-random 0.0244 ± 0.0008 
+
+walker2d-medium 0.0779 ± 0.0020 
+
+walker2d-expert 0.4902 ± 0.0123 
+
+walker2d-medium-expert 0.1060 ± 0.0031 
+
+walker2d-medium-replay 0.0459 ± 0.0013 
+
+walker2d-full-replay 0.0578 ± 0.0022 Average 0.1092 ± 0.0271    
+
+> Table 5. Reward prediction RMSE (mean ±standard error) on D4RL MuJoCo datasets.
+
+16
