@@ -6,43 +6,38 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-03-26
-- 运行时间：2026-03-26 20:19:54 UTC
+- 最新运行日期：2026-03-27
+- 运行时间：2026-03-27 19:24:59 UTC
 - 运行状态：成功
-- 本次总论文数：7
+- 本次总论文数：5
 - 精读区：5
-- 速读区：2
+- 速读区：0
 
 ### 今日简报（AI）
-今日聚焦具身智能与自动驾驶前沿，深度解析 3D 信息集成与潜空间世界模型。
-重点关注 3D-Mix 模块如何为 VLA 模型注入空间感知，以及 Latent-WAM 在端到端自动驾驶中的建模突破。
-建议优先研读两篇满分论文，掌握将 3D 几何与潜空间预测引入机器人决策的核心范式。
-- 详情：[/202603/26/README](/202603/26/README)
+今日聚焦具身智能双巅峰，深度解析获满分评价的统一多模态 VLA 模型与高稳定性机器人世界模型。
+重点关注 MMaDA-VLA 实现的指令生成一体化，以及通过强化学习解决世界模型多步预测漂移、实现长程预测稳定的创新方案。
+建议关注“扩散模型+强化学习”在具身智能中的深度融合，这是提升机器人复杂任务规划能力的关键路径。
+- 详情：[/202603/27/README](/202603/27/README)
 
 ### 精读区论文标签
-1. [3D-Mix for VLA: A Plug-and-Play Module for Integrating VGGT-based 3D Information into Vision-Language-Action Models](/202603/26/2603.24393v1-3d-mix-for-vla-a-plug-and-play-module-for-integrating-vggt-based-3d-information-into-vision-language-action-models)  
+1. [MMaDA-VLA: Large Diffusion Vision-Language-Action Model with Unified Multi-Modal Instruction and Generation](/202603/27/2603.25406v1-mmada-vla-large-diffusion-vision-language-action-model-with-unified-multi-modal-instruction-and-generation)  
    标签：评分：10.0/10、query:robot
-   evidence：将3D信息集成到视觉-语言-动作模型中
-2. [Latent-WAM: Latent World Action Modeling for End-to-End Autonomous Driving](/202603/26/2603.24581v1-latent-wam-latent-world-action-modeling-for-end-to-end-autonomous-driving)  
+   evidence：用于机器人操作的原生预训练大型扩散VLA模型
+2. [Persistent Robot World Models: Stabilizing Multi-Step Rollouts via Reinforcement Learning](/202603/27/2603.25685v1-persistent-robot-world-models-stabilizing-multi-step-rollouts-via-reinforcement-learning)  
    标签：评分：10.0/10、query:robot
-   evidence：用于自动驾驶轨迹规划的潜空间世界动作建模
-3. [TAG: Target-Agnostic Guidance for Stable Object-Centric Inference in Vision-Language-Action Models](/202603/26/2603.24584v1-tag-target-agnostic-guidance-for-stable-object-centric-inference-in-vision-language-action-models)  
-   标签：评分：10.0/10、query:robot
-   evidence：机器人视觉-语言-动作（VLA）模型的推理时引导机制
-4. [SOMA: Strategic Orchestration and Memory-Augmented System for Vision-Language-Action Model Robustness via In-Context Adaptation](/202603/26/2603.24060v1-soma-strategic-orchestration-and-memory-augmented-system-for-vision-language-action-model-robustness-via-in-context-adaptation)  
+   evidence：通过强化学习稳定动作条件机器人世界模型的多步推演
+3. [SABER: A Stealthy Agentic Black-Box Attack Framework for Vision-Language-Action Models](/202603/27/2603.24935v1-saber-a-stealthy-agentic-black-box-attack-framework-for-vision-language-action-models)  
    标签：评分：9.0/10、query:robot
-   evidence：视觉-语言-动作模型鲁棒性与自适应系统
-5. [Knowledge-Guided Manipulation Using Multi-Task Reinforcement Learning](/202603/26/2603.24083v1-knowledge-guided-manipulation-using-multi-task-reinforcement-learning)  
-   标签：评分：8.0/10、query:robot
-   evidence：基于关系场景图的机器人操纵模型化策略优化
+   evidence：针对视觉-语言-动作（VLA）模型的对抗性攻击
+4. [Beyond Attention Magnitude: Leveraging Inter-layer Rank Consistency for Efficient Vision-Language-Action Models](/202603/27/2603.24941v1-beyond-attention-magnitude-leveraging-inter-layer-rank-consistency-for-efficient-vision-language-action-models)  
+   标签：评分：9.0/10、query:robot
+   evidence：视觉-语言-动作（VLA）模型的高效令牌选择
+5. [Vega: Learning to Drive with Natural Language Instructions](/202603/27/2603.25741v1-vega-learning-to-drive-with-natural-language-instructions)  
+   标签：评分：9.0/10、query:robot
+   evidence：用于自动驾驶的统一视觉-语言-世界-动作模型
 
 ### 速读区论文标签
-1. [From Digital Twins to World Models:Opportunities, Challenges, and Applications for Mobile Edge General Intelligence](/202603/26/2603.17420v1-from-digital-twins-to-world-modelsopportunities-challenges-and-applications-for-mobile-edge-general-intelligence)  
-   标签：评分：7.0/10、query:robot
-   evidence：边缘智能中从数字孪生到世界模型演进的综述
-2. [ReSteer: Quantifying and Refining the Steerability of Multitask Robot Policies](/202603/26/2603.17300v1-resteer-quantifying-and-refining-the-steerability-of-multitask-robot-policies)  
-   标签：评分：6.0/10、query:robot
-   evidence：优化多任务机器人策略的可操控性
+- 本次无速读推荐。
 
 
 <div class="dpr-home-promo-card">
