@@ -1,0 +1,372 @@
+Title: Multi-Robot Learning-Informed Task Planning Under Uncertainty
+
+URL Source: https://arxiv.org/pdf/2603.20544v1
+
+Published Time: Tue, 24 Mar 2026 00:21:25 GMT
+
+Number of Pages: 8
+
+Markdown Content:
+# Multi-Robot Learning-Informed Task Planning Under Uncertainty 
+
+Abhish Khanal ∗, Abhishek Paudel ∗, Hung Pham, and Gregory J. Stein 
+
+Abstract — We want a multi-robot team to complete complex tasks in minimum time where the locations of task-relevant objects are not known. Effective task completion requires reasoning over long horizons about the likely locations of task-relevant objects, how individual actions contribute to overall progress, and how to coordinate team efforts. Planning in this setting is extremely challenging: even when task-relevant infor-mation is partially known, coordinating which robot performs which action and when is difficult, and uncertainty introduces a multiplicity of possible outcomes for each action, which further complicates long-horizon decision-making and coordination. To address this, we propose a multi-robot planning abstraction that integrates learning to estimate uncertain aspects of the environ-ment with model-based planning for long-horizon coordination. We demonstrate the efficient multi-stage task planning of our approach for 1, 2, and 3 robot teams over competitive baselines in large Proc THOR household environments. Additionally, we demonstrate the effectiveness of our approach with a team of two LoCoBot mobile robots in real household settings. 
+
+I. I NTRODUCTION 
+
+We consider a centrally coordinated team of mobile robots tasked to complete a complex objective in partially known environments in minimum time. For example, imagine a two-robot team tasked with reaching a remote and a pillow in a home (Fig. 1). While the high-level layout of the home is known, the locations of the task-relevant objects are not known. To complete this task effectively, the robots must coordinate their efforts despite the uncertain duration and outcomes of actions undertaken by members of the team as they search for task-relevant objects. Effective behavior requires that robots reason over long-horizons about where task-relevant objects are likely to be, how their individual actions contribute to overall task progress, and how to coordinate to most efficiently make progress towards the task. Planning is an effective tool to reason over long-horizons and achieve such behaviors. However, planning in this domain is incredibly chal-lenging. Even when the location of task-relevant objects is known, team coordination requires consideration of which robot does what and when so that they may align their progress to minimize time. When the locations of task-relevant objects are unknown, planning becomes even more complex, since what the team does next will depend on where and when those objects are found. Uncertainty results in a multiplicity of possible outcomes, which grows combinatori-ally as the planning horizon increases, making long-horizon coordination and decision-making extremely challenging.                
+
+> * Equal contribution Authors are with the Department of Computer Science, George Mason University, Fairfax, VA, 22030, USA. Email:
+
+{akhanal7, apaudel4, hpham33, gjstein }@gmu.edu       
+
+> Fig. 1. Planner Comparison in Home Environment: Two robots are tasked to reach remote and pillow with the exact locations of these objects unknown. A myopic approach searches the nearest locations first, until the task is completed, leading to poor behavior. Our approach utilizes learning with a model-based planning framework to best guide the robots for efficient task completion. See further discussion in Section VII.
+
+A naive approach in such scenarios is for each robot to search nearby locations for task-relevant objects. While simple, this strategy is often inefficient and leads to poor behavior of the team (Fig. 1, left). Learning can be used to inform the likely locations of task-relevant objects, yet using this information for effective task coordination still requires long-horizon reasoning among the robots. As such, good behavior in such scenarios necessiates strategically dividing the search space and effectively coordinating the actions of each robot in the team (Fig. 1, right). Achieving such coordinated, long-horizon decision mak-ing requires a planning abstraction that 1 incorporates predictions about what might lie in unseen space (e.g., via learning) 2 defines a single-robot action abstraction with predicted action outcome probabilities and so understands how each action can advance the overall task, and 3 lever-ages this single-robot action abstraction to build a multi-robot state-transition model that supports concurrent execution and coordination among multiple robots. While no planning abstraction exists that simultaneously supports all such capabilities, progress has been made to-wards each of these in isolation or in pairs. There are multiple approaches that develop learning-augmented abstractions for planning that focus on single-robot object search [1–5] and task planning [6] in partially known environments, where a learned estimator makes predictions about unseen space 
+
+> arXiv:2603.20544v1 [cs.RO] 20 Mar 2026
+
+needed to act well. The planner of Khanal et al. [7] addresses multi-robot point-goal navigation, but their work cannot straightforwardly handle complex uncertain state transitions needed for coordination at the task planning level. As such, we need an approach that both coordinates multiple robots to plan for complex tasks and uses learning to make predictions about unseen objects needed to inform effective search. In this work, we develop a novel framework for multi-robot task planning under uncertainty and demonstrate ef-fective multi-robot coordination in various task planning settings. The central contribution of this work is a multi-robot planning framework that jointly achieves all of 1 , 2 , and 3 to achieve coordinated long-horizon planning under uncer-tainty, subsuming prior work in this space [6–8]. Specifically, our framework introduces a multi-robot planning abstraction that incorporates learned predictions about object locations and accounts for complex state transitions that arise when multiple robots simultaneously execute stochastic, high-level actions with non-uniform durations. We demonstrate the efficient multi-stage task planning of our approach with improvements of up to 47.0%, 40.7%, and 33.8% for 1, 2, and 3 robot teams over baselines in large Proc THOR household environments. Additionally, we demonstrate the effectiveness of our approach with a team of two LoCoBot mobile robots in real household settings. II. R ELATED WORK 
+
+Task planning has been widely explored in robotics, where the goal is to generate action sequences that enable robots to complete multi-stage objectives. Classical symbolic planners often assume full knowledge of the environment [9, 10], which limits their applicability in realistic household settings where task-relevant objects may not be directly observable. Executing tasks in unknown or partially known environ-ments requires robots to search for and then interact with objects to make progress in the task. Learning has proven to be a useful tool for informing good behavior in such settings and many works leverage learning to search for objects, ranging from heuristic-based exploration strategies to approaches that exploit semantic and structural cues to predict likely object locations [1–5] in previously unseen environments. However, these approaches are limited to object search and not easily applied to solve complex multi-stage tasks. Other works [6, 11, 12] use temporal logic or  
+
+> PDDL
+
+to specify tasks and leverage learning to plan for multi-stage tasks. However, these approaches are designed for a single robot and cannot account for the concurrent, durative actions required to coordinate multi-robot teams. Multiple robots working as a team can make concurrent progress towards a task to complete it more quickly. Some recent works [13–15] rely on model-free reinforcement-learning-based approaches for multi-robot coordinated plan-ning under uncertainty. While these approaches have shown promising results, they often require extensive training data and can be brittle [16], particularly for complex and long-horizon tasks. Khanal et al. [7, 17] use learning with model-based planning to coordinate a team of robots in an unknown environment to find unseen point goals. However, this work is limited to goal-directed navigation and cannot be used to coordinate a team of robots to do task planning. While prior works have made progress in using learning un-der uncertainty, task planning, and multi-robot coordination, these advances have largely been achieved in isolation. There is a need for a representation that enables a team of robots to coordinate and plan multi-stage tasks under uncertainty regarding task-relevant object locations. This work addresses this gap by leveraging learning to enable multi-robot teams to plan efficiently for complex tasks in partially known environments by reasoning about where objects may be, and using a model-based planning framework to capture how individual actions contribute to overall task progress and how to coordinate concurrent execution. III. P RELIMINARIES : R EPRESENTING TASKS AND 
+
+MONTIORING PROGRESS WITH DFA AND SC LTL To enable effective coordination and execution for a multi-robot team, we require a task representation that allows us to reason about the team’s progress, identify when the task is complete, and determine which actions will advance the task state. A DFA is an ideal representation for this purpose. The states of the DFA can represent the progress made, its transitions can map to robot actions that advance the task, and its accepting states formally define task completion. While a DFA provides the properties we need, manually constructing one for every complex task is impractical. Instead, we specify tasks using Syntactically Co-Safe Linear Temporal Logic ( SC LTL). S CLTL is a natural choice in this domain, owing to its expressive sytax for writing specifica-tions with boolean and temporal operators—such as negation 
+
+(¬), conjunction (∧), eventually (♢), until (U)—over a set of atomic propositions Σ, each corresponding to a robot action. Crucially, robust tooling exists to convert an SC LTL formula into the desired DFA representation [18]. For instance, consider a task where a robot team must pick both a pillow and a remote without constraining the order. We first define the atomic propositions as Σ = 
+
+{pick-pillow , pick-remote } and write the task in 
+
+> SC
+
+LTL as: φ = ♢pick-remote ∧ ♢pick-pillow . This 
+
+> SC
+
+LTL-specified task φ can be converted into a DFA , denoted as Mφ = ⟨Z , Z 0, Σ, F ⟩, used to monitor the progress towards completing the task. Here, Z is the finite set of  
+
+> DFA
+
+states with each z ∈ Z corresponding progress in the task, Z0 ∈ Z is the initial state, F ⊆ Z is a set of accepting (goal) states. The DFA induces a directed graph (as visualized in Fig. 2) that specifies how the team can advance the state of the task. The figure shows the initial state Z0, where neither object has been picked: e.g., relevant words W ∈ Σ needed to advance the DFA is W(Z0) = 
+
+{pick-pillow , pick-remote }. If the team picks the 
+
+pillow first, the DFA transitions to state Z1, with W(Z1) = 
+
+{pick-remote }. Conversely, picking the remote first leads to state Z3, with W(Z3) = {pick-pillow }. The overall task is completed when an accepting state Z2 is reached, where both pillow and remote have been picked. Fig. 2. Overview of our approach: For a joint-action at specifying what container each robot should travel towards and interact with to find task-relevant objects, the robot team concurrently travels towards the assigned containers—until one of the robots reaches and searches a container. The outcomes of each joint action transition the robot’s belief state based on whether any task-relevant objects were found on the container. The DFA Mφ keeps track of the overall task progress and transitions based on what objects have been interacted with and what objects are still needed to complete the task. 
+
+IV. P ROBLEM FORMULATION 
+
+We consider a team of N centrally coordinated homoge-nous robots operating in a partially known environment. The environment is described by an occupancy grid mt
+
+and a set of known locations called containers S: e.g., tables, desks, beds. The containers may contain objects (e.g., books, pillows, remotes), but the robot might not know which container contains which object at the outset. Each robot has a set of interaction (manipulation) skills like pick and place. The team’s high-level task is specified by an SC LTL formula 
+
+φ. Each atomic proposition Σ that forms the SC LTL formula 
+
+φ corresponds to the execution of a robot skill on an a object: e.g, pick-remote , reach-pillow .Since the location of task-relevant objects may be un-known to the robots, the robots have to search for task-relevant objects and then interact with them to make progress towards the task. Therefore, in addition to manipulation skills to interact with objects, the robots also has skills to move 
+
+to and when necessary search containers for objects. Using the combination of all of these skills, necessary to complete the objective, the robot team has to coordinate to satisfy the task specification φ in minimum time. V. M ETHODOLOGY 
+
+To enable the robot team to quickly complete complex long-horizon tasks under uncertainty, we first define a high-level abstract action for a single robot ri. A single-robot high-level action ai ≡ ⟨ σi, w ⟩ corresponds to executing a sequence of skills: move to container σi ∈ S (e.g., a couch), 
+
+search the container if necessary, and finally execute the 
+
+interact skill w if its corresponding object is found in that container. Via this action abstraction, the set of high-level abstract actions available to a single robot Ai is the outer product of the set of containers S and the set of interaction skills w ∈ W (Z) capable of advancing the DFA state Z:
+
+Ai ≡ S ⊗ W (Z).To represent multiple robots concurrently making progress towards the task, a joint-action representation at is needed. The joint-action is written in terms of the individual single-robot actions assigned to each robot in the team: i.e., at =[⟨σ1, w 1⟩ , ⟨σ2, w 2⟩ , · · · , ⟨σN , w N ⟩], where N is the number of robots, so that at ∈ AiN . Planning directly via this abstraction is difficult, since robots are acting concurrently and each of their actions may finish at different times and the duration of each action is conditioned on whether or not 
+
+search succeeds at finding the object of interest, necessitating a novel planning abstraction capable of tracking different ways the team might progress. 
+
+A. A High-Level Abstraction for Multi-Robot Planning 
+
+To plan, we seek to advance the state until a robot is free 
+
+and therefore in need of a new action. However, not only does each action have a non-uniform duration, but when a robot will become free depends on whether it succeeds in finding the object it is searching for in the container. Therefore, we need a state abstraction that tracks the progress of each robot towards their respective actions and determines all possible pathways for any robot to become available. We define an abstract belief state as a tuple bt =
+
+⟨mt, S, qt, at, p, Mφ, Z, H⟩ , where mt is the occupancy map, S is the set of containers, qt is the list of N robot poses, at is the list of high-level action assigned to the robots with progress p the robots have made towards their assigned action, Mφ is the DFA , Z is the current DFA state, and H is the observation history , which stores the outcomes of search .Whenever any robots are free, they are assigned an action from A(bt) ≡ A i ∪ { wait }, where the additional wait action tells that robot to wait in place until another robot is free, sometimes needed for good behavior. Planning must consider the many possible outcomes of search for a particular team assignment, how likely those outcomes are, and, conditioned on each, when each robot will complete its assigned action and so be in need of a new assignment. For example, if there were only one robot executing an action ai to pick-block in the cabinet, two belief states are reachable: (1) with probability PS (ai ≡⟨cabinet , pick-block ⟩) the block is found and time passes Small Medium Large 1 robot 2 robots 3 robots 1 robot 2 robots 3 robots 1 robot 2 robots 3 robots Non-learned Myopic 312.86 204.62 165.42 789.37 483.01 398.27 1413.62 857.10 649.77 Learned Myopic 255.34 160.03 133.03 672.05 368.57 286.64 1190.14 674.72 511.69 MR Planner (ours) 215.22 145.67 130.86 480.30 304.11 269.45 748.37 507.93 429.83 
+
+Improvement vs Non-learned Myopic 31.21% 28.81% 20.89% 39.15% 37.04% 32.35% 47.06% 40.74% 33.85% Improvement vs Learned Myopic 15.71% 8.97% 1.63% 28.53% 17.49% 6.00% 37.12% 24.72% 16.00% 
+
+Fig. 3. Results: Partially known Proc THOR environments The table shows the average cost accrued in 400 experiments in randomly selected tasks for each planner. We see that our planner improves over the cost over learned and non-learned baselines. Scatter plots shows results for our approach versus learned and non-leared baselines for 1, 2, and 3 robots. The statistics for all the results show benefits of our learning augmented model-based planner. 
+
+until its pick-block interaction finishes; (2) with the inverse probability the block is not found, and the robot becomes free immediately after search reveals the block is not in the cabinet. For the multi-robot case, each robot is concurrently moving, searching, or interacting, and so there are potentially many pathways to any of the robots becoming free, necessitating an approach to determine the distribution of belief states in which a robot needs assignment: Bfree . From each of the resulting belief states, any free robots can then be assigned new actions, A(b) : b ∈ B free . In the team’s joint action, only the robots that are free get assigned a new action, while the actions of all other robots remain unchanged. Algorithm 1 (A DVANCE BELIEF UNTIL ROBOT FREE ) de-tails our procedure to compute the distribution Bfree . This process works as follows: we first imagine the most opti-mistic outcome, in which each robot succeeds in finding the object they are looking for and can interact with it. The first of those actions to finish provides an upper bound on when a robot can become free. During that time, any of a number of search actions may fail to find the target object, and the relevant robot is then in need of a new action assignment. These outcomes—the single successful case and the possible negative search outcomes along the way—form the set of states that constitute Bfree . Since each state b′ computed along the way contains observation history Hb′ of past actions and outcomes, the probability pb′ of reaching state b′ can be computed as as: 
+
+pb′ = Y
+
+> (a,o )∈H ′
+
+(
+
+PS (a) if o = OBJECT FOUND ,
+
+1 − PS (a) if o = OBJECT NOT FOUND 
+
+Here, the likelihood PS (a) is estimated via supervised learn-ing. The probability is normalized across all states to get a distribution over states Bfree .
+
+B. Planning with our Multi-Robot Abstraction 
+
+Given the belief state bt, and a joint-action at, we can compute distributions over states Bfree , where robots are free. From these states, the robot team plans until the team reaches the accepting (goal) DFA state, where the task is complete. 
+
+Algorithm 1: ADVANCE BELIEF UNTIL ROBOT FREE 
+
+Input: bt = ⟨mt, S, qt, at, p, Mφ, Z 0, H⟩ 
+
+Output: Bfree  
+
+> 1
+
+TS ← { (a, T move (r, a.σ ) + Tinteract (w)) | (r, a ) ∈ at, a ̸ = wait } 
+
+> 2
+
+TF ← { (a, T move (r, a.σ )) | (r, a ) ∈ at} 
+
+> // Sort action outcomes (success or failure) by time of completion
+> 3
+
+T ← SORT BYTIME (TS ∪ T F) 
+
+> 4
+
+Bfree ← ∅ , H′ ← bt.H 
+
+> 5
+
+foreach (a, t ) ∈ T do  
+
+> 6
+
+q′, p′ ← FORWARD SIMULATE ROBOTS (bt, t ) 
+
+> 7
+
+if (a, t ) ∈ T F then  
+
+> // Compute negative search outcomes along the way
+> 8
+
+H′ ← H ′ ∪ { (a, OBJECT NOT FOUND )} 
+
+> 9
+
+b′ ← ⟨ mt, S, q′, at, p′, Mφ, Z 0, H′⟩ 
+
+> 10
+
+p ← COMPUTE PROBABILITY FROM HISTORY (H′) 
+
+> 11
+
+Bfree ← B free ∪ { b′ : ( p, t )} 
+
+> // Object is found for the next state
+> 12
+
+H′ ← bt.H ∪ { (a, OBJECT FOUND )} 
+
+> 13
+
+else  
+
+> 14
+
+break  
+
+> // Compute most optimistic state
+> 15
+
+H′ ← H ′ ∪ { (a, OBJECT FOUND )} 
+
+> 16
+
+M′ 
+
+> φ
+
+← M φ.ADVANCE DFA (a.w ) 
+
+> 17
+
+b′ ← ⟨ mt, S, q′, at, p′, M′
+
+> φ
+
+, M′
+
+> φ
+
+.state , H′⟩ 
+
+> 18
+
+p ← COMPUTE PROBABILITY FROM HISTORY (H′) 
+
+> 19
+
+Bfree ← B free ∪ { b′ : ( p, t )} 
+
+> 20
+
+Bfree ← NORMALIZE PROBABILITY (Bfree ) 
+
+> 21
+
+return Bfree ; // {b1: ( Pb1 , cost), b2: ( Pb2 , cost) · · · } 
+
+This whole process is illustrated in in Fig. 2, and the cost of a multi-level joint action is defined by a Bellman Equation: 
+
+Q(bt, at) = X
+
+> b′∈Bfree
+
+Pb′
+
+h
+
+tb′ + min  
+
+> a′
+> t∈A (b′)
+
+Q(b′, a′
+
+> t
+
+)
+
+i
+
+(1) Here, Pb′ is the likelihood of reaching the state b′ from state 
+
+bt under joint action at.
+
+C. Learning to Estimate Probabilisitic Action Outcomes 
+
+The state that the robot can reach after executing an action 
+
+ai ≡ ⟨ σi, w i⟩ depends on the outcome of the action. For instance, if the action a ≡ ⟨ cabinet , pick-block ⟩, i.e., 
+
+move to the cabinet and execute skill pick-block , the outcome depends on whether or not the block is on the cabinet. So, we train a neural network to estimate PS (ai ≡⟨σi, w i⟩), the likelihood that the task-relevant object for skill 
+
+wi is present on the container σi. We discuss the details of our neural network to learn the likelihood in Section VI-B. By estimating this likelihood via learning, we can compute the transition probabilities of different outcomes in Bfree .
+
+D. Computing Planning Costs for the Team using PO-UCT 
+
+We compute the cost of multi-robot joint-action using a sample-efficient any-time planning strategy via Partially Observable U CT (PO -UCT ) [19], a variant of Monte Carlo Tree Search. This allows us to approximate expected costs through selective sampling rather than exhaustive simulation. Planning is performed by incrementally building asearch tree rooted at the current belief state (bt). Each node in this tree maintains a rollout history RH bt =[[ a0, n 0, Q 0], · · · , [ak, n k, Q k]] , which stores high-level ac-tions ai ∈ A (bt), the count nt for each action, and the accumulated cost estimates Qt associated for each action ai.Tree expansion is driven from the belief state bt, where robots are assigned a high-level action from the set A(bt)
+
+and a new node is created. From the node where all robots are assigned forming a multi-robot joint-action, the resulting node is sampled using a Bernoulli trial from the distribution over states Bfree , computed using Algorithm 1 where one or more robots are free. From the new node’s belief state, free robots are assigned actions again, and the planning continues. The rollout mechanism closely resembles that of standard 
+
+> MCTS
+
+, with each node’s cost estimated as the sum of (i) the cost to reach that belief from the root and (ii) a heuristic cost providing a lower bound on the remaining cost to the goal. After each node is visited, its visit count is incremented to balance exploration and exploitation during search. Each planning iteration uses 10 5 samples to guide decision mak-ing. During execution, the team selects a joint action with minimum cost and executes it. The team replans once one robot finishes executing its action and becomes free. VI. S IMULATION EXPERIMENTS 
+
+We conduct simulated experiments in partially known, procedurally generated homes using Proc THOR [20]. Each home contains a variety of containers —cabinets, beds, ta-bles, countertops—that may hold objects relevant to a given task specification: e.g., a phone, laptop, a remote, and others. The locations of these containers are known to the robot, yet what objects are present in those containers are not known to the robot team at the outset. As such, the team must coordinate to search these containers and find and grab the required objects in the order specified by the task specifications to complete the task. 
+
+A. Task Specification Templates 
+
+In order to generate a diverse set of experiments in these home environments, we procedurally create task specifica-tions using templates that are then populated with objects              
+
+> Fig. 4. Simulation experiments in small, medium, and large environments for 3 robots. (a) Task: Interact with a pillow , a tabletopdecor , and a
+> book . (b) Task: Interact with either a dishsponge or a toiletpaper ,then interact with a plate , then interact with a creditcard . (c) Task: Interact with a desklamp , a faucet , a plate , and a newspaper . In all these tasks, across different environment sizes, our MR planner improves cost over non-learned and learned baselines.
+
+from the environment. Each task expects the team to find and interact with various objects across the environment. To formalize this, we define I-o as an interaction with object o,where interaction corresponds to executing a skill (e.g., pick ,
+
+grasp , reach ) on that object. In experiments, we generate tasks at random from the following set of specifications:  
+
+> •
+
+Interact with a and b: ♢I-a ∧ ♢I-b . 
+
+> •
+
+Interact with a, b, and c: ♢I-a ∧ ♢I-b ∧ ♢I-c . 
+
+> •
+
+Interact with a, and either b or c: ♢I-a ∧(♢I-b ∨♢I-c ) 
+
+> •
+
+Interact with a, then with b: (¬I-b U I-a ) ∧ ♢I-b . 
+
+> •
+
+Interact with a, then interact with b, then interact with c:
+
+(( ¬I-c ∧ ¬ I-b ) U I-a ) ∧ (¬I-c U I-b ) ∧ ♢I-c  
+
+> •
+
+Interact with either a or b, then interact with c, then interact with d : (( ¬I-c ∧ ¬ I-d ) U I-a ) ∨ (( ¬I-c ∧¬I-d ) U I-b ) ∧ (¬I-d U I-c ) ∧ ♢I-d 
+
+Here, a, b, c, and d are randomly sampled from objects present in the containers in any home. The tasks fall into two broad categories. The first in-cludes order-independent tasks, where objects could be found and interacted with in any order (e.g., ♢I-a ∧ ♢I-b , or 
+
+♢I-a ∧ (♢I-b ∨ ♢I-c )). The second category includes order-dependent tasks with strict temporal constraints, such as (¬I-a U I-b ) ∧ ♢I-a , which requires finding and inter-actions with b before interactions with a. The combination of these can represent complex task sequences, requiring the robot team to coordinate to complete the tasks. Fig. 5. Robots are tasked with order-dependent tasks with strict temporal constraints: (a) interacting with cellphone then toiletpaper , and (b) interacting with fork then bowl . Robots in our model-based planner (a) wait to interact with the object when searching for remaining objects does not improve task-completion cost, and (b) continue to search for other task-relevant objects when waiting to interact with the found object would increase the task-completion cost. The baselines search for all task-relevant objects and then resolve temporal dependencies of the task. 
+
+B. Data Generation and Neural Network Training 
+
+As discussed in Section V-C, we estimate the likelihood of task-relevant objects in the containers. We use a neural network trained on a supervised dataset generated from 500 
+
+> P
+
+roc THOR environments. For each environment, we assign a positive label if the object is in the target container and a negative label otherwise. The network takes as input SBERT 
+
+embeddings of the names of object, container, and room, each a 772-dimensional vector concatenated together, which is passed through 10 fully connected layers, with dimensions of 2048 to 4 in the decreasing powers of 2. Each fully connected layer is followed by a batch normalization and a leaky ReLU activation. Finally, an output layer with a sigmoid activation function predicts the desired likelihood, PS (σ, w ).
+
+C. Planner Evaluation 
+
+We run simulated trials with robot teams in procedurally generated homes using Proc THOR . Each home is categorized into one of three size classes—small, medium, or large— based on its floor area. Homes smaller than 60 m2 are classified as small, those between 60 m2 and 110 m2 as medium, and those larger than 110 m2 as large. For each of these apartment sizes, we run 100 experiments for 1, 2, and 3 robots resulting in a total of 900 experiments, and evaluate the performance of the following planners: 
+
+Non-learned Myopic Planner: This planner guides the  
+
+> Fig. 6. As the number of robots increase, our planner coordinates robots effectively, divides efforts between the team to improve cost for both (a) complex order-dependent tasks and (b) order-independent tasks.
+
+robot team to search the nearest containers to interact with task-relevant objects. If the object is not found, the robot team replans to the next nearest containers until the task is completed (i.e., the planner reaches accepting DFA state). 
+
+Learned Myopic Planner: This planner guides the robots to explore the location with the highest likelihood of finding any of the objects that the team needs to eventually advance the DFA state Z in the task specification. For that, each container’s σ ∈ S weight P (σ) is computed by taking the sum of the likelihood of finding all task-relevant objects corresponding to w ∈ W (Z) from the current DFA state Z using Eq. (2). 
+
+P (σ) = X
+
+> ∀w:w∈W (Z)
+
+PS (σ, w ) (2) Robots coordinate to minimize overall travel distance to those containers and re-plan until the task is complete. 
+
+Multi-robot Model-Based Planner (Ours): This planner uses learned likelihood of task-relevant object locations with our model-based task planning to guide the team to complete the task specification. 
+
+D. Results and Discussion 
+
+We present the statistical results of all experiments in Fig. 3, which includes both a scatterplot and a summary table with average costs for all experiments. Each point in the scatterplot corresponds to one experiment, with the cost incurred by our planner on the y-axis and the baseline cost on the x-axis. Across all experiments with 1, 2, and 3 robots, our planner consistently outperforms both the non-learned and learned myopic baselines. More importantly, Fig. 7. Real-world Demonstration: For the task of reaching either (laptop or wallet ) then remote then tv in a home with a two-robot team, our learning-informed model-based planner outperforms the non-learned myopic planner in terms of navigation costs. 
+
+this performance gap increases as the environment size increases. Efficiently completing tasks in a large environment with multiple robots requires coordination and foresight to effectively split up the search effort between the team without redundant efforts. Baseline approaches lack the long-horizon coordination, and as a result, perform increasingly poorly as the environment size grows. In contrast, our approach lever-ages learning and plans by reasoning over a long horizon to effectively coordinate the team even in larger environments. Representative trials in small, medium, and large environ-ments, as shown in Fig. 4, further highlight the benefit of our planner’s learning-informed long-horizon coordination. Our approach effectively balances searching nearby loca-tions with high-likely locations—for example, it plans by reasoning over when searching a nearby container for a less probable object first is more effective than traveling directly to a location that has a high probability of finding that object and potentially having to backtrack later. This is evident in Fig. 4(a), where the planner directs the green robot to check a dresser for a book while en route to a bed, even though the bed is the more likely location. Similarly, in Fig. 4(c), the green robot searches a dresser for a desklamp on its way to the desk. In contrast, the baseline planner assigns robots based purely on proximity without long-horizon reasoning and increases overall cost (e.g., in Fig. 4 (a), in the learned myopic baseline, the green robot skips the dresser en route to the bed and later returns to it to find the book ). We see various emergent coordination behaviors in the robot team when completing a complex task specification that requires satisfying a temporal dependency. In Fig. 4(b), the robots are tasked to interact with either dishsponge or 
+
+toiletpaper , then a plate , and finally a creditcard .Here, our planner assigns robots to relevant containers to find and interact with toiletpaper , plate , and 
+
+creditcard one after another in that order, and handles dependencies efficiently through long-horizon planning and decision-making. Behavior like this is mostly seen in medium and large environments with many containers, where robots have options to find the same objects in different containers. Baselines often attempt to locate relevant objects and then try to make progress (requiring backtracking and interaction with he object when the task order is not satisfied), leading to inefficient paths. Further examples are shown in Fig. 5. In (a), where the task is to interact with cellphone followed by 
+
+toiletpaper , the red robot finds toiletpaper first but waits, anticipating that the blue robot will find and interact with the cellphone , thus minimizing task cost. Similarly, in (b), where the task is to interact with fork then bowl ,the red robot avoids prematurely interacting with bowl after finding it, instead continuing its search for fork , knowing that the blue robot will efficiently complete the interaction with bowl afterward. The baselines do not anticipate how the action of robots might make progress towards the task in the future, hence replans if interaction with the object does not advance the DFA state, accruing more cost. We show that as the number of robots increases, the planner effectively splits efforts between the robot team and completes the task in minimum cost, showing effective coordination as shown in Fig. 6. This improvement is also reflected quantitatively in the results table in Fig. 3. Overall, while simple heuristics or likelihood-based rea-soning can complete tasks, they often do so in more time hence incurring more cost. By leveraging learning—to infer what any robot’s action might reveal—with a model-based planning framework—for long-horizon coordinated decision making, our approach achieves multi-robot coordination and efficiently handles complex task specifications. VII. R EAL -WORLD ROBOT EXPERIMENTS 
+
+We evaluated our multi-robot model-based task planning on a physical team of two LoCoBots ( Fig. 7), each equipped with a RGB camera to recognize objects using Ground-ingDINO [21]. We present experiments in two household environments (Figs. 1 and 7). In both of these environments, a static map was built from LoCoBot LIDAR scans, where container locations were then defined. Robots are initially placed near each other at start locations and assigned a task to complete. For predictions of object likelihoods in containers, we use the same neural network trained in Proc THOR . We compare our learning-informed planner with a non-learned myopic baseline and show the results in Figs. 1 and 7. Figure 1 shows results in a large apartment with living room, dining room, bedroom, and kitchen, and consisting of nine container locations: sidetable, bed, oven, drawer, countertop, couch, table, chair, and sofa. These containers may hold the objects pillow and remote . The task for the robot is to reach pillow and remote without any order. The baseline myopic planner searches nearby containers first, leading both robots to explore containers in the kitchen before moving to the bedroom. In bedroom, R1 finds the 
+
+pillow on the bed, after which both robots search the living room, R1 finds the remote on the couch, completing the task with a navigation cost of 23.72 meters. In contrast, our planner effectively coordinates the search and directs R1 to bedroom and R2 to livingroom. In bedroom, R1 finds 
+
+pillow at bed, and in living room, R2 robot finds remote 
+
+at couch, completing the task with a navigation cost of 7.79 meters and resulting in 67.2% improvement of over baseline myopic planner in terms of navigation costs. Figure 7 shows results in a medium apartment with living room, dining room, and bedroom with containers: chair, shelf, couch, tvstand, and bed. The task for the robot is to reach either laptop or wallet , then remote , and then tv in that order. While myopic planner shows poor coordination of robots, we observe that our planner, lever-aging learning to predict likely object locations, effectively coordinates the robot team to search for the task-relevant objects and complete the task. With our planner, R1 goes towards the living room and R2 moves towards the bedroom. In living room at tv stand, R1 finds remote and tv .However, reaching remote or tv cannot currenlty result in task progress (i.e. advance the DFA ), and hence R1 continues to instead search for laptop or wallet elsewhere. Later when R2 reaches the laptop at bed, R1 replans to come back to tv stand now that reaching remote and then tv 
+
+can progress the task. After R1 reaches the tv and then the 
+
+remote , the task is complete. This results in the navigation cost of 8.95 meters for our planner while the myopic planner incurs 21.88 meters—an improvement of 59.1%. VIII. C ONCLUSION AND LIMITATIONS 
+
+In this work, we present a planning framework for multi-robot task planning under uncertainty that enables teams of robots to coordinate effectively in partially known environ-ments. Our approach integrates learning with model-based planning to reason about where task-relevant objects may be, how individual robots can concurrently execute actions and complete multi-stage tasks effectively. Through experiments in simulated household environments and real-world deploy-ments with mobile robots, we demonstrate effective team coordination to complete complex tasks and thus improve cost over non-learned and learned baselines. While these results demonstrate learning-informed long-horizon coordination, there are still limitations to its current applicability. This work is limited to a homogeneous robot team of having a similar skill set (e.g., pick, place). In addition, general task planning often involves satisfying preconditions (e.g., the robot that picks an item must also be the one to place it). Constructing SC LTL specifications with such preconditions for general task planning quickly becomes difficult. Furthermore, as with most centralized multi-robot planning frameworks, the joint search space grows with the number of robots and the complexity of the task specification, increasing computational demand. All present opportunities for future work and exploration. ACKNOWLEDGMENTS 
+
+This work was supported by the National Science Foun-dation (NSF) under Grant 2232733, and the U.S. Army Research Laboratory (ARL) under Grant W911NF2520011. REFERENCES [1] M. Kulich, L. Pˇ reu´ cil, and J. J. M. Bront, “Single robot search for a stationary object in an unknown environment,” in 2014 IEEE International Conference on Robotics and Automation (ICRA) , 2014. [2] F. Schmalstieg, D. Honerkamp, T. Welschehold, and A. Valada, “Learning long-horizon robot exploration strategies for multi-object search in continuous action spaces,” arXiv preprint:2205.11384 , 2022. [3] S. Wani, S. Patel, U. Jain, A. X. Chang, and M. Savva, “Multion: Benchmarking semantic map memory using multi-object navigation,” 
+
+arXiv preprint arXiv:2012.03912 , 2020. [4] A. Khanal, H.-D. Bui, E. Plaku, and G. J. Stein, “Learning-informed long-horizon navigation under uncertainty for vehicles with dynamics,” in International Conference on Intelligent Robots and Systems , 2024. [5] S. Hossain, A. Paudel, and G. J. Stein, “Enhancing object search by augmenting planning with predictions from large language models,” in CoRL Workshop on Learning Effective Abstractions for Planning (LEAP) , 2024. [6] C. Bradley, A. Pacheck, G. J. Stein, S. Castro, H. Kress-Gazit, and N. Roy, “Learning and planning for temporally extended tasks in unknown environments,” in IEEE International Conference on Robotics and Automation (ICRA) , 2021. [7] A. Khanal and G. J. Stein, “Learning augmented, multi-robot long-horizon navigation in partially mapped environments,” in 2023 IEEE International Conference on Robotics and Automation (ICRA) , 2023. [8] G. J. Stein, C. Bradley, and N. Roy, “Learning over subgoals for effi-cient navigation of structured, unknown environments,” in Conference on Robot Learning , 2018. [9] C. Aeronautiques, A. Howe, C. Knoblock, I. D. McDermott, A. Ram, M. Veloso, D. Weld, D. W. Sri, A. Barrett, D. Christianson et al. ,“PDDL—the planning domain definition language,” Technical Report, Tech. Rep. , 1998. [10] X. Zhang, H. Qin, F. Wang, Y. Dong, and J. Li, “Lamma-p: Gen-eralizable multi-agent long-horizon task allocation and planning with lm-driven pddl planner,” in 2025 IEEE International Conference on Robotics and Automation (ICRA) . IEEE, 2025. [11] M. L. Littman, A. R. Cassandra, and L. P. Kaelbling, “Learning policies for partially observable environments: Scaling up,” in Machine Learning Proceedings , 1995. [12] R. I. Arnob, M. Merlin, A. Paudel, B. Hedegaard, G. Konidaris, and G. J. Stein, “Effective task planning with missing objects using learning-informed object search,” arXiv preprint:2602.11468 , 2026. [13] J. K. Gupta, M. Egorov, and M. J. Kochenderfer, “Cooperative multi-agent control using deep reinforcement learning,” in AAMAS Workshops , 2017. [14] Y. Jin, Y. Zhang, J. Yuan, and X. Zhang, “Efficient multi-agent cooperative navigation in unknown environments with interlaced deep reinforcement learning,” in IEEE International Conference on Acous-tics, Speech and Signal Processing (ICASSP) , 2019. [15] J. N. Foerster, Y. M. Assael, N. de Freitas, and S. Whiteson, “Learning to communicate with deep multi-agent reinforcement learning,” 2016. [16] J. Kober, J. A. Bagnell, and J. Peters, “Reinforcement learning in robotics: A survey,” International Journal of Robotics Research , 2013. [17] A. Khanal, J. P. Mathew, C. Nowzari, and G. J. Stein, “Learning-augmented model-based multi-robot planning for time-critical search and inspection under uncertainty,” in IEEE 21st International Confer-ence on Automation Science and Engineering (CASE) , 2025. [18] A. Duret-Lutz, E. Renault, M. Colange, F. Renkin, A. G. Aisse 
+
+et al. , “From Spot 2.0 to Spot 2.10: What’s new?” in International Conference on Computer Aided Verification , 2022. [19] D. Silver and J. Veness, “Monte-Carlo planning in large POMDPs,” 
+
+Advances in neural information processing systems , 2010. [20] M. Deitke, E. VanderBilt, A. Herrasti, L. Weihs, K. Ehsani, J. Salvador, W. Han, E. Kolve, A. Kembhavi, and R. Mottaghi, “ProcTHOR: Large-scale embodied ai using procedural generation,” Advances in Neural Information Processing Systems , 2022. [21] S. Liu, Z. Zeng, T. Ren, F. Li, H. Zhang, J. Yang, C. Li, J. Yang, H. Su, J. Zhu et al. , “GroundingDINO: Marrying DINO with grounded pre-training for open-set object detection,” in 2024 European Conference on Computer Vision (ECCV) , 2024.
