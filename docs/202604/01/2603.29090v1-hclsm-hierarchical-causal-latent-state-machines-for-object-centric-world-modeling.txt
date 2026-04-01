@@ -1,0 +1,304 @@
+Title: HCLSM: Hierarchical Causal Latent State Machines for Object-Centric World Modeling
+
+URL Source: https://arxiv.org/pdf/2603.29090v1
+
+Published Time: Wed, 01 Apr 2026 00:18:44 GMT
+
+Number of Pages: 10
+
+Markdown Content:
+# HCLSM: Hierarchical Causal Latent State Machines for Object-Centric World Modeling 
+
+Jaber Jaber ∗
+
+RightNow AI 
+
+jaber@rightnowai.co 
+
+Osama Jaber 
+
+RightNow AI 
+
+osama@rightnowai.co 
+
+## Abstract 
+
+World models that predict future states from video remain limited by flat latent representations that entangle objects, ignore causal structure, and collapse temporal dynamics into a single scale. We present HCLSM, a world model architecture that operates on three interconnected principles: object-centric decomposition via slot attention with spatial broadcast decoding, hierarchical temporal dynamics 
+
+through a three-level engine combining selective state space models for continuous physics, sparse transformers for discrete events, and compressed transformers for abstract goals, and causal structure learning through graph neural network interaction patterns. HCLSM introduces a two-stage training protocol where spatial reconstruction forces slot specialization before dynamics prediction begins. We train a 68M-parameter model on the PushT robotic manipulation benchmark from the Open X-Embodiment dataset, achieving 0.008 MSE next-state prediction loss with emerging spatial decomposition (SBD loss: 0.0075) and learned event boundaries. A custom Triton kernel for the SSM scan delivers 38 × speedup over sequential PyTorch. The full system spans 8,478 lines of Python across 51 modules with 171 unit tests. We release the complete codebase, training infrastructure, and evaluation suite. Code: https://github.com/rightnow-ai/hclsm 
+
+## 1 Introduction 
+
+Humans do not perceive the world as a stream of pixels. We see objects, track their motion, notice when something unexpected happens, and reason about what caused what. A child watching a ball roll off a table simultaneously maintains representations of individual objects (ball, table, floor), processes dynamics at multiple timescales (the ball’s continuous trajectory, the discrete event of falling, the longer-term consequence of it being on the floor), and infers causality (gravity pulled it down, not the table pushing it away). Current world models do none of this. V-JEPA (Bardes, 2024) and its successors predict future latent states from encoder representations, but these latent states are unstructured vectors that entangle all objects, all timescales, and all causal relationships into a single prediction target. This works for video understanding benchmarks, but it does not give an agent access to the structured knowledge that planning and counterfactual reasoning require. The problem has three dimensions. First, objects: physical scenes contain discrete entities (a mug, a table, a robot gripper) whose states evolve semi-independently. Flat latent spaces cannot represent the mug’s position separately from the table’s surface. Second, time: physical dynamics operate at multiple scales simultaneously. A ball’s continuous trajectory (milliseconds), a collision event 
+
+> ∗
+
+Correspondence: jaber@rightnowai.co 
+
+37th Conference on Neural Information Processing Systems (NeurIPS 2023). 
+
+> arXiv:2603.29090v1 [cs.LG] 31 Mar 2026
+
+(discrete), and a game’s strategic plan (minutes) require different computational mechanisms. Third, causality: the gripper pushes the mug, not the other way around. Without explicit causal structure, a model cannot answer “what if the gripper had pushed harder?” Object-centric models like Slot Attention (Locatello, 2020) and SAVi (Kipf, 2022) decompose scenes into slots, but lack temporal dynamics. SlotFormer (Wu, 2023) adds autoregressive prediction but uses a single-scale transformer. DreamerV3 (Hafner, 2023) builds a world model for reinforcement learning but uses flat latent states. Table 1 summarizes these gaps: no existing system unifies object decomposition, hierarchical temporal dynamics, and causal reasoning in a single differentiable architecture. HCLSM addresses all three dimensions. Objects are discovered through slot attention with a spatial broadcast decoder that forces each slot to reconstruct its own image region. Time is modeled through a three-level hierarchy: a selective SSM (Gu, 2023) for frame-to-frame physics, a sparse transformer that fires only at detected event boundaries, and a compressed transformer for goal-level reasoning. Causality emerges from the graph neural network that mediates object interactions, producing edge weights that reveal which objects influence which. The key insight is that structure must precede prediction . When all losses are active from step zero, the dynamics objective dominates because distributed slot codes are easier to predict than object-specific ones. The model takes the shortcut: it uses 32 slots as a collective distributed representation rather than assigning one slot per object. We resolve this with a two-stage training protocol inspired by how the visual cortex develops: first learn what things are (spatial reconstruction), then learn 
+
+what they do (temporal dynamics). Stage 1 trains with reconstruction only, forcing slots to compete for spatial ownership. Stage 2 activates prediction on top of already-decomposed objects. This mirrors the biological observation that object recognition precedes motion prediction in visual development (Schölkopf, 2021). Our contributions: 1. A five-layer architecture unifying object slots, three-level temporal hierarchy (SSM + sparse Transformer + goal Transformer), and GNN-based causal interaction in a single differentiable model. 2. A spatial broadcast decoder using frozen ViT features as reconstruction targets (following DI-NOSAUR (Seitzer, 2023)), enabling unsupervised object decomposition on real robot video. 3. A two-stage training protocol: reconstruction-only for slot specialization (Stage 1), then full JEPA-style dynamics prediction (Stage 2). 4. A Triton kernel for the selective SSM scan achieving 38 × speedup over sequential PyTorch, reducing the per-object temporal prediction from the dominant bottleneck to 5% of forward pass time. 5. An open-source implementation (8,478 lines, 51 modules, 171 tests) with training on real robot manipulation data from the Open X-Embodiment ecosystem (OpenXEmbodiment, 2024). 
+
+## 2 Related Work 
+
+Latent World Models. V-JEPA (Bardes, 2024) predicts video in latent space using a JEPA framework with masking. V-JEPA 2 (Assran, 2025) scales this to billions of parameters. Dream-erV3 (Hafner, 2023) learns a world model for model-based reinforcement learning using a recurrent state-space model. GAIA-1 (Hu, 2023) builds a driving world model using autoregressive video generation. All of these operate on flat latent representations without object decomposition or explicit causal structure. HCLSM instead decomposes scenes into object slots and models their interactions through a learned graph. 
+
+Object-Centric Representation Learning. Slot Attention (Locatello, 2020) introduced iterative soft-attention grouping of image patches into object slots. SAVi (Kipf, 2022) extended this to video with temporal slot propagation. DINOSAUR (Seitzer, 2023) replaced pixel reconstruction with self-supervised ViT features, enabling real-world decomposition. SlotFormer (Wu, 2023) added autoregressive dynamics on top of frozen slot representations. Adaptive Slot Attention (Fan, 2024) learns the number of slots dynamically. Our work builds on the DINOSAUR approach (reconstructing ViT features rather than pixels) but integrates it with hierarchical dynamics and trains both stages end-to-end in sequence rather than requiring frozen slots. 2Table 1: Comparison of world model architectures. HCLSM is the first to combine object-centric slots, hierarchical temporal dynamics, and causal structure learning.                                         
+
+> System Objects Hierarchy Causal SSM Real Data V-JEPA 2 (Assran, 2025) ✗✗✗✗✓
+> DreamerV3 (Hafner, 2023) ✗✗✗✓✓
+> SlotFormer (Wu, 2023) ✓✗✗✗✗
+> DINOSAUR (Seitzer, 2023) ✓✗✗✗✓
+> SAVi++ (Elsayed, 2022) ✓✗✗✗✗
+> Slot SSM (Jiang, 2024) ✓✗✗✓✗
+> HCLSM (ours) ✓✓✓✓✓
+
+State Space Models for Temporal Modeling. S4 (Gu, 2022) demonstrated that structured state space models can match transformer performance on long sequences with linear complex-ity. Mamba (Gu, 2023) introduced input-dependent (selective) SSMs with hardware-aware parallel scan. Slot State Space Models (Jiang, 2024) applied SSMs to object-centric representations. HCLSM uses selective SSMs specifically for per-object continuous dynamics at the finest temporal scale, while reserving transformers for discrete event-level and goal-level processing. 
+
+Causal Discovery in Neural Networks. NOTEARS (Zheng, 2018) formulated causal graph discovery as a continuous optimization problem with an acyclicity constraint. DAG-GNN (Yu, 2019) combined graph neural networks with variational inference for causal discovery. Recent work argues that causal representation learning is fundamental to robust AI (Schölkopf, 2021). HCLSM learns causal structure through the GNN edge weights that gate object-to-object message passing, with a NOTEARS-style DAG regularizer. 
+
+Robot Learning from Video. Open X-Embodiment (OpenXEmbodiment, 2024) aggregated robot manipulation data across 22 embodiments. RT-2 (Brohan, 2023) used vision-language models for robot control. Octo (Ghosh, 2024) built a generalist robot policy from Open X data. These systems focus on policy learning; HCLSM focuses on the world model that such policies could plan through. 
+
+## 3 Architecture 
+
+HCLSM processes video through five interconnected layers (Figure 1): perception, object decompo-sition, hierarchical dynamics, causal reasoning, and continual memory. We describe each layer and the two-stage training protocol that enables their joint function. 
+
+3.1 Layer 1: Perception 
+
+A Vision Transformer encoder processes video frames (B, T, C, H, W ) into patch embeddings 
+
+(B, T, M, d model ) where M = ( H/p )2 is the number of patches ( p = 16 ). Temporal position embed-dings are added per-frame. A linear projection maps from dmodel to dworld , the unified representation dimension. 
+
+3.2 Layer 2: Object Decomposition Slot Attention with Dynamic Birth/Death. Nmax slot proposals are initialized from a learned Gaussian N (μ, σ 2). For K iterations, slots compete for patch tokens through softmax over the slot dimension :
+
+Ank = exp( qn · kk/√d)
+
+P 
+
+> n′
+
+exp( qn′ · kk/√d) (1) where n indexes slots and k indexes tokens. This competition is the inductive bias that drives decomposition: slots that explain different spatial regions minimize the joint loss more efficiently than slots that overlap. Each iteration refines slots through weighted value aggregation and a GRU cell. 3Layer 1: Perception 
+
+> ViT Encoder + Fuser
+
+Layer 2: Object Decomposition 
+
+> SlotAttn + SBD + GNN
+
+Layer 3: Hierarchical Dynamics  
+
+> L0: SSM continuous L1: Sparse Tfm events
+> L2: Goal Tfm abstract
+
+Layer 4: Causal Reasoning 
+
+> DAG + Intervention
+
+Layer 5: Con-tinual Memory   
+
+> Hopfield + EWC
+> (B, T, C, H, W )
+> →(B, T, M, d )
+> (B, T, N, d slot )
+> + alive mask
+> event detection sparse gather
+> SBD loss (Stage 1)
+
+Figure 1: HCLSM architecture. Five layers process video into structured world states. The spatial broadcast decoder (SBD, dashed) provides the reconstruction signal that drives slot specialization during Stage 1 training. An existence head predicts palive ∈ [0 , 1] per slot. When the residual attention energy (tokens not captured by any slot) exceeds a threshold, a dormant slot is “born” by projection from the highest-residual token. 
+
+Spatial Broadcast Decoder (SBD). Each slot is independently broadcast to a 14 × 14 spatial grid, concatenated with (x, y ) positional coordinates, and decoded by a 4-layer CNN into feature predictions plus an alpha mask. The alpha masks are softmax-normalized over alive slots, creating pixel-level competition: 
+
+αn,p = exp(ˆ αn,p )
+
+P 
+
+> n′:alive
+
+exp(ˆ αn′,p ) (2) The reconstruction target is not raw pixels but frozen ViT patch features from the EMA target encoder, following the DINOSAUR (Seitzer, 2023) approach. This gives slots a semantic signal for decomposition rather than low-level texture matching: 
+
+LSBD = X
+
+> n
+
+X
+
+> p
+
+αn,p ∥ˆfn,p − f ∗ 
+
+> p
+
+∥2 (3) where ˆfn,p is slot n’s decoded features at position p and f ∗ 
+
+> p
+
+is the target. 
+
+Relation Graph. A GNN processes all-pairs edge features [oi; oj ; oi −oj ; oi ⊙oj ] through an edge MLP, producing weighted messages aggregated per-node. For N > 32 slots, a chunked computation processes edges in blocks of 16 to prevent memory overflow ( N = 64 would require a 4GB pair tensor otherwise). The GNN edge weights between slots directly encode the interaction structure between objects. 
+
+3.3 Layer 3: Hierarchical Dynamics Level 0: Selective SSM (Continuous Physics). Each object gets its own SSM track with shared parameters. The selective scan computes: 
+
+ht = At ⊙ ht−1 + Bt ⊙ xt, yt = C⊤ 
+
+> t
+
+ht (4) 4Algorithm 1 Two-Stage HCLSM Training  
+
+> 1:
+
+Input: Video dataset D, total steps S, stage ratio r = 0 .4 
+
+> 2:
+
+Initialize model θ, EMA target encoder θ− 
+
+> 3:
+
+for step = 1 to S do  
+
+> 4:
+
+Sample batch (v, a ) ∼ D {video + actions}  
+
+> 5:
+
+Encode: slots, alive, features ← Perceive( v) 
+
+> 6:
+
+Run dynamics: predicted ← SSM → EventTfm → GoalTfm  
+
+> 7:
+
+Compute SBD loss: LSBD ← SpatialDecode(slots, target_features)  
+
+> 8:
+
+if step < r · S then  
+
+> 9:
+
+L ← 5.0 · L SBD + 0 .1 · L diversity {Stage 1: decomposition}  
+
+> 10:
+
+else  
+
+> 11:
+
+L ← L JEPA + LSBD + λobj Lobj + λcausal Lcausal {Stage 2: dynamics}  
+
+> 12:
+
+end if  
+
+> 13:
+
+Update θ via AdamW; update θ− ← τ θ − + (1 − τ )θ 
+
+> 14:
+
+end for 
+
+where At = exp(∆ tA) and ∆t, Bt, Ct are input-dependent (Gu, 2023). A global SSM processes mean-pooled object states and conditions the per-object tracks through additive context. We initialize 
+
+Alog in [−0.5, 0] (not the standard log(1 . . . d state )) and clamp the exponent ∆tA to [−20 , 0] to prevent numerical overflow at bf16 precision. 
+
+Level 1: Sparse Event Transformer. An event detector monitors Level 0 states using multi-scale temporal features (frame differences at scales 1, 2, 4) processed through causal dilated convolutions. When the event score exceeds a learned threshold, the corresponding timestep is gathered into a dense event tensor. A standard transformer with SwiGLU feed-forward processes only the K ≪ T event timesteps, with cost O(K · N 2) instead of O(T · N 2).
+
+Level 2: Goal Compression Transformer. Learned summary query tokens cross-attend to the event sequence, compressing it into nsummary abstract state tokens. These are processed by a goal-level transformer and optionally conditioned on language/goal embeddings for planning. 
+
+Hierarchy Manager. The three levels are combined via vectorized gather/scatter operations (no Python loops) with learned per-level gating weights. 
+
+3.4 Layer 4: Causal Structure 
+
+A causal adjacency matrix W ∈ RN ×N is learned with Gumbel-softmax binary sampling for differentiable edge decisions, L1 sparsity regularization, and a NOTEARS (Zheng, 2018) DAG constraint h(A) = tr (eA⊙A) − N = 0 enforced via augmented Lagrangian optimization. In the current release, the GNN edge weights serve as the primary causal structure signal, with the explicit DAG learning as a regularization pathway. 
+
+3.5 Two-Stage Training Protocol 
+
+The critical design decision in HCLSM is training order. If all losses are active from step zero, the JEPA prediction loss dominates because it is easier to minimize with distributed slot codes than with object-specific representations. The prediction loss gradient overwhelms the SBD signal, and slots never specialize. We adopt a two-stage protocol (Algorithm 1). In Stage 1 (first 40% of training), only the SBD reconstruction loss and a light diversity regularizer contribute to the total loss. The prediction loss is computed for monitoring but does not produce gradients. This forces every slot to minimize its own spatial reconstruction error, which is only achievable through spatial specialization. In Stage 2 (remaining 60%), the full JEPA prediction loss is activated alongside the SBD (now as a regularizer with weight 1.0 instead of 5.0). Slots are already decomposed, so the dynamics model learns to predict the future states of distinct objects. 5Table 2: SSM scan kernel performance on NVIDIA T4. Sequential = PyTorch loop; Triton = our custom kernel.                  
+
+> Config B×NTSequential Triton Speedup Tiny 128 16 6.22 ms 0.16 ms 39.3 ×
+> Base 512 16 69.64 ms 1.83 ms 38.0 ×
+
+Table 3: Training results on PushT (68M params, 50K steps, NVIDIA H100). Two-stage training (TS) includes the spatial broadcast decoder.                       
+
+> Pred. ↓Track. ↓Diversity ↓SBD ↓Total ↓Speed HCLSM (no SBD) 0.002 0.001 0.154 —0.100 2.3 sps HCLSM (two-stage) 0.008 0.016 0.132 0.008 0.262 2.9 sps
+
+## 4 Implementation 
+
+HCLSM is implemented in PyTorch (8,478 lines across 51 modules) with the following engineering highlights. 
+
+Custom Triton SSM Kernel. The selective SSM scan is the computational bottleneck when processing B × N object tracks sequentially. Our Triton kernel parallelizes across (B, d inner /block )
+
+dimensions, launching up to 4,096 parallel programs on a single H100. Table 2 shows the speedup across model configurations. 
+
+Numerical Stability at bf16. Training at bfloat16 precision on H100s required several architectural fixes: (1) replacing x**2 with x*x in all loss functions (the PowBackward0 op produces NaN when inputs exceed bf16 range), (2) initializing SSM Alog in [−0.5, 0] instead of log(1 . . . d state ) to keep 
+
+exp(∆ A) stable, (3) clamping all intermediate activations to [−50 , 50] after the ViT and slot attention GRU, and (4) disabling the GradScaler (unnecessary for bf16 on H100). 
+
+GPU-Native Slot Tracking. We replaced the per-batch-element CPU Hungarian matching (scipy) with a differentiable Sinkhorn-Knopp algorithm running entirely on GPU, eliminating the CPU ↔GPU transfer bottleneck. 
+
+Memory-Efficient GNN. For N > 32 slots, the all-pairs edge tensor would require B × N × N ×
+
+4dslot memory. Our chunked computation processes source nodes in blocks of 16, reducing peak memory by N/ 16 with identical output. 
+
+## 5 Experiments 
+
+5.1 Setup 
+
+We train HCLSM Small (68M parameters) on the PushT task from the LeRobot (LeRobot, 2024) / Open X-Embodiment ecosystem. PushT consists of 206 episodes (25,650 frames) of a robot pushing a T-shaped block toward a target. The action space is 2D (end-effector displacement). We process 16-frame clips at 224 × 224 resolution. Training runs on NVIDIA H100 80GB GPUs with batch size 4, learning rate 1.5 × 10 −4 (cosine schedule with 2K warmup), bfloat16 mixed precision, for 50K steps ( ∼6 hours per run). Stage 1 occupies the first 20K steps; Stage 2 the remaining 30K. We report results across 2 successful runs (4 launched, 2 survived due to seed-dependent NaN at bf16). 
+
+5.2 Quantitative Results 
+
+Table 3 compares training with and without the two-stage SBD protocol. Without SBD, the model achieves lower prediction loss (0.002) because all 32 slots encode the scene distributively, giving the dynamics model an easier prediction target. With the two-stage protocol, prediction loss is higher 6Figure 2: Spatial broadcast decoder output. Top row: per-slot alpha heatmaps (ownership probability). Bottom row: slot overlays on input frame. Left: segmentation map (argmax over slots). Different colors indicate different slot assignments, showing emerging spatial decomposition. (0.008) but the SBD reconstruction loss reaches 0.008, indicating that individual slots have learned to reconstruct specific spatial regions. The diversity loss is lower with SBD (0.132 vs 0.154), confirming that slots are more differentiated. 
+
+5.3 Spatial Decomposition 
+
+Figure 2 shows the spatial broadcast decoder’s alpha masks after two-stage training. The segmentation map (bottom-left) reveals that different slots claim different spatial regions of the PushT scene. While the decomposition is not yet clean (32 slots is excessive for a 3-object scene; each object is split across multiple slots), the spatial structure represents the first emergence of object-aware representations in the model. Prior runs without SBD showed uniform attention across all slots with no spatial structure. 
+
+5.4 Event Detection 
+
+Figure 3 shows the learned event detector firing at state transitions in PushT episodes. The detector identifies 2–3 events per 16-frame sequence, corresponding to moments of significant state change (e.g., contact between the robot end-effector and the T-block). The event detection is trained through a contrastive signal that rewards alignment between event probability and actual state-change magnitude. 
+
+5.5 Latent Dynamics 
+
+Figure 4 visualizes slot state trajectories projected to 2D via PCA (57% variance explained in the best run, 33.5% in the two-stage run). The trajectories show structured temporal evolution: slots follow smooth paths with occasional direction changes at event boundaries. The spread of trajectories indicates that different slots track different aspects of the scene dynamics. 
+
+## 6 Limitations and Future Work 
+
+We are transparent about where HCLSM falls short in its current form. These limitations reflect the bootstrapped nature of this research. 
+
+Slot Count. All 32 slots remain alive throughout training. The existence head does not learn to kill unused slots, meaning a 3-object scene uses 32 slots instead of 3. The spatial decomposition splits each object across ∼10 slots rather than assigning one slot per object. Reducing Nmax to 8 caused training instability (NaN gradients). Adaptive slot methods (Fan, 2024) or codebook-based deduplication (MetaSlot, 2025) are promising directions. 
+
+Causal Discovery. The explicit causal adjacency matrix learns no edges (all weights collapse to zero under sparsity regularization). Training the causal graph jointly with dynamics caused NaN at bf16 precision. The GNN edge weights provide an implicit interaction structure, but we have not verified whether these edges correspond to ground-truth causal relationships. A proper evaluation would require environments with known causal structure and intervention-based metrics. 7Figure 3: Event detection across four episodes. Blue = event probability over time. Red dashed = detected event boundaries. The model learns to fire at moments of state transition (2–3 per episode). 
+
+Scale. We train only the Small configuration (68M) on a single robotics dataset (PushT, 206 episodes). The Base (262M) and Large (3B) configurations have NaN gradient issues at batch size 
+
+≥ 4 that we did not resolve. Multi-GPU training via FSDP failed due to NCCL version incompatibility on our cloud provider. Real production training requires pre-trained ViT initialization (e.g., from V-JEPA 2 weights), larger datasets, and resolved numerical stability. 
+
+Seed Sensitivity. Approximately 40–60% of training runs diverge to NaN within the first 1000 steps due to seed-dependent gradient overflow in the slot attention GRU at bf16 precision. The surviving runs converge reliably. 
+
+Future Directions. (1) Initialize the ViT from V-JEPA 2 checkpoints to provide richer patch features as SBD targets and reduce the perception learning burden. (2) Train on diverse, multi-object manipulation data (e.g., ALOHA bimanual tasks with 5+ objects) where the benefits of object-centric decomposition are more pronounced. (3) Integrate the CEM/MPPI planners (implemented but not evaluated) with the world model for closed-loop robot control. (4) Scale to the Base configuration by resolving the bf16 gradient stability issues, potentially through gradient scaling or fp32 critical-path computation. 
+
+## 7 Conclusion 
+
+We presented HCLSM, an architecture built on a simple premise: world models should mirror the structure of the world they model. Objects are discrete, so representations should be object-centric. 8Figure 4: Slot state trajectories projected to 2D via PCA. Circles = start, squares = end. Different colors = different slots. Trajectories show structured temporal dynamics with slot-specific evolution paths. Time has multiple scales, so dynamics should be hierarchical. Interactions are causal, so the model should maintain an explicit interaction graph. The two-stage training protocol resolves the tension between these structural commitments and the optimization pressure to collapse into flat distributed codes. Training on real robot data demonstrates that these components can work together: 0.008 MSE prediction, emerging spatial decomposition, functional event detection, and a 38 × SSM kernel speedup. The architecture is a foundation. Scaling to diverse multi-object scenes with pre-trained vision backbones, resolving the numerical stability barriers at 262M+ parameters, and closing the loop with model-based planning are the paths from foundation to a complete autonomous agent. We release the complete system, warts and all, at https://github.com/rightnow-ai/hclsm .
+
+## References 
+
+Jiang, J., Deng, F., Singh, G., Lee, M., and Ahn, S. Slot State Space Models. arXiv preprint arXiv:2406.12272 , 2024. Assran, M. et al. V-JEPA 2: Self-Supervised Video Models Enable Understanding, Prediction and Planning. Meta AI Research , 2025. Bardes, A. et al. V-JEPA: Latent Video Prediction for Visual Representation Learning. arXiv preprint arXiv:2404.08471 , 2024. Brohan, A. et al. RT-2: Vision-Language-Action Models Transfer Web Knowledge to Robotic Control. 
+
+arXiv preprint arXiv:2307.15818 , 2023. Schölkopf, B., Locatello, F., Bauer, S., Ke, N.R., Kalchbrenner, N., Goyal, A., and Bengio, Y. Towards Causal Representation Learning. Proceedings of the IEEE , 109(5):612–634, 2021. Elsayed, G. et al. SAVi++: Towards End-to-End Object-Centric Learning from Real-World Videos. 
+
+NeurIPS , 2022. Fan, Z. et al. Adaptive Slot Attention: Object Discovery with Dynamic Slot Number. CVPR , 2024. Ghosh, D. et al. Octo: An Open-Source Generalist Robot Policy. arXiv preprint arXiv:2405.12213 ,2024. 9Gu, A. et al. Efficiently Modeling Long Sequences with Structured State Spaces. ICLR , 2022. Gu, A. and Dao, T. Mamba: Linear-Time Sequence Modeling with Selective State Spaces. arXiv preprint arXiv:2312.00752 , 2023. Hafner, D. et al. Mastering Diverse Domains through World Models. arXiv preprint arXiv:2301.04104 ,2023. Hu, A. et al. GAIA-1: A Generative World Model for Autonomous Driving. arXiv preprint arXiv:2309.17080 , 2023. Kipf, T. et al. Conditional Object-Centric Learning from Video. ICLR , 2022. Cadene, R. et al. LeRobot: State-of-the-art Machine Learning for Real-World Robotics in Pytorch. 
+
+GitHub , 2024. https://github.com/huggingface/lerobot 
+
+Locatello, F. et al. Object-Centric Learning with Slot Attention. NeurIPS , 2020. Gao, Y. et al. MetaSlot: Break Through the Fixed Number of Slots in Object-Centric Learning. arXiv preprint arXiv:2505.20772 , 2025. Open X-Embodiment Collaboration. Open X-Embodiment: Robotic Learning Datasets and RT-X Models. ICRA , 2024. Seitzer, M. et al. Bridging the Gap to Real-World Object-Centric Learning. ICLR , 2023. Wu, Z. et al. SlotFormer: Unsupervised Visual Dynamics Simulation with Object-Centric Models. 
+
+ICLR , 2023. Yu, Y. et al. DAG-GNN: DAG Structure Learning with Graph Neural Networks. ICML , 2019. Zheng, X. et al. DAGs with NO TEARS: Continuous Optimization for Structure Learning. NeurIPS ,2018. 10
