@@ -1,0 +1,915 @@
+Title: AutoWorld: Scaling Multi-Agent Traffic Simulation with Self-Supervised World Models
+
+URL Source: https://arxiv.org/pdf/2603.28963v1
+
+Published Time: Wed, 01 Apr 2026 00:18:17 GMT
+
+Number of Pages: 28
+
+Markdown Content:
+# AutoWorld: Scaling Multi-Agent Traffic Simulation with Self-Supervised World Models 
+
+Mozhgan Pourkeshavarz , Tianran Liu , and Nicholas Rhinehart 
+
+University of Toronto, Canada 
+
+{mozhgan.pourkeshavarz, tianran.liu}@mail.utoronto.ca, nick.rhinehart@utoronto.ca 
+
+Abstract. Multi-agent traffic simulation is central to developing and testing autonomous driving systems. Recent data-driven simulators have achieved promising results, but rely heavily on supervised learning from labeled trajectories or semantic annotations, making it costly to scale their performance. Meanwhile, large amounts of unlabeled sensor data can be collected at scale but remain largely unused by existing traffic simulation frameworks. This raises a key question: How can a method harness unlabeled data to improve traffic simulation performance? In this work, we propose AutoWorld, a traffic simulation framework that employs a world model learned from unlabeled occupancy representa-tions of LiDAR data. Given world model samples, AutoWorld constructs a coarse-to-fine predictive scene context as input to a multi-agent mo-tion generation model. To promote sample diversity, AutoWorld uses a cascaded Determinantal Point Process framework to guide the sam-pling processes of both the world model and the motion model. Fur-thermore, we designed a motion-aware latent supervision objective that enhances AutoWorld’s representation of scene dynamics. Experiments on the WOSAC benchmark show that AutoWorld ranks first on the leader-board according to the primary Realism Meta Metric (RMM). We further show that simulation performance consistently improves with the inclu-sion of unlabeled LiDAR data, and study the efficacy of each component with ablations. Our method paves the way for scaling traffic simulation realism without additional labeling. Our project page contains additional visualizations and released code. 
+
+## 1 Introduction 
+
+Multi-agent traffic simulation is essential for developing and testing autonomous driving systems. An effective traffic simulator should produce a broad range of realistic and interactive driving behaviors. To this end, data-driven simulation approaches have gained increasing attention, as they can overcome key limita-tions of heuristic-based simulators, such as limited reactivity to changes in ego vehicle behavior and reliance on logged trajectories. Several approaches, includ-ing diffusion models [15,19], next-token prediction methods [37,50,56,62], along with their fine tuning based extensions [2, 3, 35, 55], have been proposed and shown promising results on established closed-loop behavior generation bench-marks [31]. Nevertheless, the current simulation paradigms share a significant 
+
+> arXiv:2603.28963v1 [cs.RO] 30 Mar 2026
+
+2 M. Pourkeshavarz et al. Unlabeled   
+
+> LiDAR Data
+> Future
+> Occupancy
+> (Semi -Supervised
+> Learning)
+> Traffic
+> Simulation
+> (Supervised
+> Learning)
+> Initial Scene Initial Scene
+> Labeled
+> Trajectory Data
+> Labeled
+> Trajectory Data
+> Simulated
+> Scenario
+> Simulated
+> Scenario
+> Simulation at
+> Training T ime
+> Simulation Output at
+> Training/ Inference Time
+
+Fig. 1: Comparison between existing traffic simulation approaches and AutoWorld. Existing methods (right) rely solely on labeled trajectory data, whereas AutoWorld (left) leverages unlabeled LiDAR to learn future scene occupancies that guide behavior generation. 
+
+limitation: they primarily depend on supervised learning, which is costly to scale due to the need for extensive annotated sensor data. Can we develop a method that can translate the inclusion of additional unlabeled data into gains in multi-agent traffic simulation performance? Models that can forecast sensor data, often called “world models”, have demonstrated potential in modeling high-dimensional environments [20, 64]. In the field of autonomous driving, there has been significant exploration of video-generative world modeling, with a predominant focus on improving photoreal-ism in simulations [6,12,39,46,52]. However, RGB-based representations are not explicitly geometric, making it difficult to reason about spatial layout and phys-ical constraints that are critical for downstream control tasks. Another area of research instead investigates generative world modeling through LiDAR data, either framed as LiDAR or occupancy forecasting tasks [25,48,49,54]. Yet, these methods often focus on predicting semantic occupancy, which necessitates anno-tation, and typically apply uniform supervision across spatial regions, potentially underemphasizing motion-driven scene evolution. In this paper, we explore a new paradigm for traffic simulation in which a learned predictive model of the environment serves as a general foundation for behavior generation. Our key insight is that rather than depending solely on supervised techniques to learn traffic dynamics, we hypothesize it is both possible and pragmatic to learn a world model from unlabeled sensor data and transfer the predictive capacity to traffic simulation (see Fig. 1). To this end, we propose AutoWorld , a novel traffic simulation framework that performs behavior generation by conditioning on a learned predictive world model. AutoWorld improves a latent LiDAR world model in occupancy space with a motion-aware latent supervision objective that prioritizes accurate prediction of dynamic elements without relying on semantic labels, thereby enabling fully self-supervised training of the world model. We then propose a conditional diffusion policy that leverages future latent occupancies and a predictive scene context en-capsulating the anticipated occupancy sequence to model the joint distribution of future agent behaviors. By doing so, AutoWorld is equipped with a coarse-to-fine navigation context derived from scene dynamics implicitly learned during world modeling. Notably, agent identity is not provided during world model learning; the world model captures only occupancy dynamics, while agent-specific be-haviors are produced by the diffusion model, allowing the two components to AutoWorld 3
+
+play complementary roles. Furthermore, to increase the diversity of generated scenarios, we propose a cascaded latent diversity strategy, applied at inference time without additional training. Diversity is encouraged at both the scene level, when sampling future scene occupancies from the world model, and at the agent instance level during diffusion-based motion generation. We quantify diversity directly in latent space using a determinantal point process (DPP) formula-tion [21]. To account for realism, we augment the standard formulation with a quality-weighted kernel that combines sample-level realism scores and pairwise similarity over joint scenario rollouts, thereby favoring subsets that are both in-ternally diverse and high-quality. This strategy enables AutoWorld to generate diverse and realistic traffic scenarios without modifying model training. In summary, our main contributions are: (1) We propose AutoWorld, a novel two-stage traffic simulation framework that harnesses world models to ex-ploit unlabeled data for behavior generation, paving the way for scaling traffic simulation performance with unlabeled data. (2) We introduce a motion-aware latent supervision objective that emphasizes dynamic scene elements, enabling fully self-supervised world model training without semantic annotations. (3) We introduce a cascaded latent diversity strategy, a training-free inference-time ap-proach that enhances the diversity of simulated scenarios while maintaining high realism. (4) We demonstrate the effectiveness of AutoWorld on the Waymo Open Sim Agents Challenge; AutoWorld achieves the best rank on the primary metric. (5) Through extensive experiments, we show that world-model latents are infor-mative and that latent diversity sampling effectively leverages them to improve simulation realism. 
+
+## 2 Related Work 
+
+We describe two areas of related work: (1) Traffic Simulation and (2) World Models in Autonomous Driving. 
+
+Traffic Simulation. Traffic simulation aims to model the distribution of plausible multi-agent behaviors in dynamic driving environments. Recently, data-driven approaches have gained significant attention, as they overcome limitations of heuristic-based simulators, such as limited adaptability to ego-vehicle behav-ior. Prior work has explored several modeling families for motion generation, including conditional variational autoencoders (CVAEs) [16,43,51], Transformer-based architectures [8,33,40,63], and diffusion models [15,18,27,38,60,61]. More recently, autoregressive formulations inspired by next-token prediction have been proposed to model joint agent trajectories [10, 35–37, 50, 55, 56, 62]. Despite ar-chitectural differences, these methods are typically trained in a fully supervised manner on annotated trajectory datasets, which are costly to collect and la-bel. As a result, scaling simulation performance often requires additional labeled data. In contrast, we explore a complementary direction that enables traffic sim-ulation to leverage unlabeled sensor data through predictive world modeling. 
+
+World Models in Autonomous Driving. World models aim to repre-sent the current driving scene and predict its future evolution. In autonomous driving, prior work broadly falls into two directions. One line of work develops 4 M. Pourkeshavarz et al. Future Frames      
+
+> 2. Voxelized Occupancy Grids & VAE Encoding
+> 1. Unlabeled LiDAR Sequence Input
+> 3. Latent Occupancy
+> Forecasting
+> Gaussian Prior Target
+> Motion Map Latent
+> Resolution Map
+> Weight Map
+> Upweighted
+> Weighted
+> Loss
+> 4. Motion -Aware Latent Supervision
+> Learned Token
+> MHCA
+> Scene Context
+> Pooling
+> Predictive Scene
+> Context
+> Random Noise
+> Reverse Diffusion Steps
+
+Motion -Aware Latent Occupancy Forecasting (World -Model) 
+
+World -Model Grounded Behavior Generation    
+
+> 1. Initial Scene (Agents states , Map , Traffic
+> light + Past Lidar Frames)
+> Past Latent Predicted
+> Future Latent
+> Predicted
+> Future
+> Latent
+> 2. Generate Future
+> Rollouts 3. Encode scene
+> (Agents states ,
+> Map , Traffic light )
+> Scene Encoding
+> MHCA
+
++ 
+
+> Each Future latent
+> 4. Build Step -wise
+> Condition
+> Generated Motion
+> Past Frames Ego Motion
+> Compensation
+
+Cascaded Latent Diversity        
+
+> Initial Scene (Agents states , Map , Traffic
+> light + Past Lidar Frames)
+> 1. Sampling N
+> diverse and
+> plausible future
+> occupancies
+> Total number of simulated scenarios: N M
+> 2. Given each
+> occupancy , sample
+> M realistic joint
+> trajectories
+> Level 1
+> (World Modeling)
+> Level 2
+> (Behavior Generation)
+> N Sampled Future Latent
+> M Sampled Joint
+> Trajectories
+> M Sampled Joint
+> Trajectories
+> M Sampled Joint
+> Trajectories
+
+Fig. 2: Overview of AutoWorld. A LiDAR-based world model is first trained on unla-beled sequences to learn latent scene dynamics. At simulation time, the trained model predicts future occupancies from the observed LiDAR history, which condition the mo-tion generation module. At inference, we sample from both the world model and the motion generator using a training-free cascaded latent diversity strategy. 
+
+world models for end-to-end driving. These approaches learn latent representa-tions from sensory inputs such as camera images or LiDAR point clouds and optimize them to produce driving actions or trajectories. World modeling is typ-ically incorporated as an auxiliary objective that predicts future observations alongside motion planning [4, 7, 11, 22, 34, 58], or as a pretraining mechanism for perception encoders [29, 30, 53]. In these methods, the world representation pri-marily serves to improve downstream planning or control performance. Another line of work focuses on predictive world models as neural simulators, generat-ing future sensory observations such as video [12, 13, 17, 23, 28, 45–47, 57, 59], LiDAR [25, 48, 49, 54, 58, 65], or multimodal sensor data [1]. These models are typically used for synthetic data generation, counterfactual analysis, safety eval-uation, or imagination-based planning in model-based reinforcement learning. Much of this work emphasizes visual fidelity, controllability, or multi-view con-sistency, particularly in video-based simulators. Our work follows the simulator paradigm but differs in how the world model is used. Instead of treating the world model as an offline generator or a tool for policy learning, we integrate it directly into the motion generation process. 
+
+## 3 AutoWorld Harnesses Unlabeled Sensor Data 
+
+Traffic simulation aims to generate realistic multi-agent motion, reflecting the inherently multimodal distribution of possible future outcomes. Learning such AutoWorld 5
+
+a distribution with supervised methods typically requires large-scale annotated trajectory data. However, collecting high-quality motion labels at scale is time-consuming and expensive, limiting the diversity and coverage of driving scenarios available for training. In contrast, raw sensor data such as LiDAR can be col-lected at scale without manual annotation. The main idea behind our proposed semi-supervised framework is to comple-ment supervised motion generation with a self-supervised predictive world mod-eling stage that leverages unlabeled data to implicitly learn scene dynamics and, by doing so, provide structured future context that improves downstream motion generation. We instantiate this idea in AutoWorld, a traffic simulation frame-work that formulates behavior generation as a generative process conditioned on a predictive world model of the environment. In specific, we first learn a motion-aware latent occupancy world model in a fully self-supervised manner from un-labeled LiDAR data, forecasting future latent occupancies (Sec. 3.2). This stage serves as a scalable pretraining phase that implicitly captures motion-driven scene dynamics without requiring semantic or trajectory annotations. From the predicted future latent occupancies, we construct a predictive scene context that summarizes anticipated scene evolution. We then generate agent motions using a conditional diffusion model given both the future latent sequence and the pre-dictive scene context, forming a coarse-to-fine representation of the future scene (Sec. 3.3). Finally, to promote a variety of plausible multi-agent behaviors, we in-troduce a cascaded latent diversity strategy applied at inference time (Sec. 3.4). The overall framework is illustrated in Fig. 2. 
+
+3.1 Problem Formulation 
+
+Given an initial traffic scene consisting of the past states of A agents over a history horizon Th and contextual information, the task of traffic simulation is to model the future states of dynamic agents over a horizon Tf in a closed-loop setting. Concretely, at any timestep t, the states of the A agents are represented as st = [ s1 
+
+> t
+
+, . . . , s At ], where sit = ( xit, y it, v it, θ it) denotes the 2D position, speed, and yaw of agent i. We denote the agent states over the history horizon as 
+
+St−Th:t = [ st−Th , . . . , s t]. In addition to kinematic states, LiDAR observations over the same history horizon Ot−Th:t are also available. Contextual information consists of an HD map V ∈ Rv×dv , encoded as up to v downsampled vector points of dimension dv , and past temporal states R ∈ Rr×dr of up to r traffic lights with feature dimension dr . The corresponding control actions are at = [ a1 
+
+> t
+
+, . . . , a At ],with ait = ( ˙ vit, ˙θit) representing acceleration and yaw rate. In our instantiation, we use “time”-dependent flow matching and diffusion models—their timesteps, later introduced as kμ and kf , are distinct from the state sequence timestep t.
+
+3.2 Motion-Aware Latent Occupancy Forecasting Latent Occupancy Forecasting. We formulate our world model as a LiDAR-based occupancy predictor operating in the latent space of voxelized occupancies encoded by a VAE. We assume access to additional unlabeled LiDAR sequences 6 M. Pourkeshavarz et al. 
+
+Ot−Th:t+Tf , which are used to train the latent occupancy predictor. Let Zt−Th:t
+
+denote past latent occupancies and Zt+1: t+Tf the future sequence to be predicted. We build upon [25], which adopts a rectified flow formulation [26]. We denote the conditioning information as cμ = {Zt−Th:t, τ ego 
+
+> t−Th:t
+
+}, where τ ego  
+
+> t−Th:t
+
+denotes the ego vehicle’s past trajectory embedding. The model learns a time-dependent velocity field μθ (zt, t, c μ) that transports samples from a Gaussian prior toward a target future latent occupancy ˜z. During training, we sample flow matching timestep kμ ∼ U (0 , 1) and z0 ∼ N (0 , I ), construct the interpolation zt = (1 −
+
+t)z0 + t˜z, and optimize the rectified flow objective in Eq. 1: 
+
+Lworld (θ) = Ekμ, z 0, ˜z μθ (zkμ , k μ, c μ) − (˜ z − z0) 22 . (1) 
+
+Motion-Aware Latent Supervision. The latent occupancy forecasting ob-jective typically applies uniform supervision across spatial locations. However, occupancy grids are highly imbalanced: static structures dominate the volume, while dynamic elements correspond to sparse yet behaviorally critical changes for downstream simulation. Consequently, a uniformly weighted flow objective may bias learning toward modeling temporally stable regions and underemphasize motion-driven scene evolution. This issue is less pronounced in prior methods that incorporate semantic supervision during VAE compression, where class la-bels implicitly distinguish dynamic objects from static structures. In contrast, our fully unsupervised setting operates on non-semantic voxelized occupancies, providing no explicit separation between moving and static regions and making the imbalance more pronounced. To address this, we introduce a motion-aware supervision strategy derived directly from temporal occupancy changes. Let Yt and Yt+∆ denote non-semantic occupancy grids with validity masks Mt and Mt+∆ . After compensating for ego motion by warping Yt into the frame of t + ∆ , producing ˜Yt→t+∆ , we compute voxel-wise occupancy transitions: 
+
+Ct, ∆(v) = 1[Yt+∆ (v)̸ = ˜Yt→t+∆ (v)] · ˜Mt→t+∆ (v) · Mt+∆ (v),
+
+where ˜Mt→t+∆ is the validity mask Mt warped to the frame of t + ∆ . We down-sample this motion map to the latent resolution to obtain ¯Ct, ∆ ∈ RH×W and construct a latent weight map Wt(i, j ) = 1+ λ ¯Ct, ∆(i, j ), where λ > 0 controls the strength of motion emphasis. The resulting motion-aware rectified flow objective is 
+
+Lworld (θ) = Ekμ,z 0,˜z
+
+X
+
+> i,j
+
+Wt(i, j ) μθ (zkμ , k μ, c μ)i,j, : − (˜ z − z0)i,j, : 
+
+> 22
+
+,
+
+where Wt is normalized to unit spatial mean. This formulation preserves the standard rectified flow objective while reallocating gradient magnitude toward regions exhibiting temporal occupancy changes. 
+
+3.3 World-Model-Conditioned Traffic simulation 
+
+We formulate traffic simulation as conditional diffusion over joint future agent trajectories in the action space. Let τ0 = [ at+1 , . . . , a Tf ] denote a clean future AutoWorld 7
+
+action trajectory over the prediction horizon Tf . The diffusion model generates trajectories by initializing from Gaussian noise τKf ∼ N (0 , I ) and progressively reversing a predefined noising process over K steps. This reverse process de-fines a conditional Markov chain pψ (τkf −1 | τkf , c f ), where cf represents the conditioning information. At each step kf = Kf , . . . , 1, the transition is: 
+
+pψ
+
+ τkf −1 | τkf , c f  := N  τk−1; fψ
+
+ τkf , k f , c f  , Σkf
+
+ ,
+
+where fψ is a neural network that predicts the mean of the reverse transition, and Σkf is a predefined variance schedule. 
+
+World-model Conditioning. In the proposed framework, the world model serves as a predictive backbone that forecasts how the scene will change over time and, by doing so, provides structured guidance for behavior generation. We incorporate this guidance by conditioning the diffusion model directly on the predicted future latent occupancies. Given the world model rollout ˆZt+1: t+Tf =[ˆ zt+1 . · · · , ˆzt+Tf ], we first construct a predictive scene context that summarizes the forecasted scene dynamics. To reduce redundancy while preserving long-horizon structure, we temporally subsample the predicted latent occupancies using a fixed stride δ. The selected latent states are then aggregated via multi-head cross-attention (“MHCA”) pooling with a learned token ξ, defined as 
+
+g = MHCA  Q = ξ, K = V = ϕ1({ˆzt+eδ }⌊Tf /δ ⌋ 
+
+> e=1
+
+),
+
+where ϕ1(·) indicates a learnable linear projection. Intuitively, each future latent occupancy corresponds to a predicted scene configuration along a sampled world-model rollout, encoding the spatial occupancy of the scene without explicit agent identities. The resulting predictive scene context therefore serves as a compact, structured summary of the corresponding sampled future occupancy sequence, within which agent-specific motions must unfold. Next, we condition the diffusion denoiser at each future timestep on both local and global predictive cues, forming a coarse-to-fine guidance mechanism. Specifically, for each future timestep t, we construct a step-aware conditioning representation by combining the per-step latent occupancy ˆzt with the predictive scene context g. The diffusion condition at timestep t is defined as 
+
+cft = MHCA  Q = h, K = V = ϕ2([ˆ zt; g]) ,
+
+where h denotes the scene encoding obtained via a query-centric Transformer [40], serving as queries, [·; ·] indicates concatenation along the token dimension, and 
+
+ϕ2(·) maps the concatenated latent occupancies into a shared embedding space. In this way, ct combines historical context with predicted future occupancies, allowing the diffusion model to generate behaviors grounded in past observations and guided by world-model rollouts. 
+
+3.4 Cascaded Latent Diversity 
+
+Generating both diverse and plausible motions is a desirable property of traf-fic simulation. To achieve this, we introduce a cascaded latent diversity strat-8 M. Pourkeshavarz et al. 
+
+egy, a training-free mechanism designed to promote diversity in simulated driv-ing scenarios. We quantify diversity at both the world-modeling and behavior-generation stages directly in latent space using two Determinantal Point Pro-cesses (DPPs) [21,32], which naturally encourages repulsion among similar sam-ples and thus favors diverse sample sets. 
+
+Determinantal Diversity Functional. Let X = {ˆx(i)}Ks 
+
+> i=1
+
+be the ground set of generated candidates, and let ˆxi ∈ Rd. Let κ : Rd × Rd → R be a sym-metric positive semidefinite kernel (e.g. cosine similarity), and define the kernel matrix Λ ∈ RKs×Ks by Λij = κ(ˆ x(i), ˆx(j)). Following the standard L-ensemble DPP formulation on a finite ground set, we define a DPP-based probability mass for the Ks jointly generated samples, i.e., treating X as the ground set, we eval-uate the DPP probability of selecting the full subset as: Pκ(X ) = det(Λ) det(Λ+ I) . Pκ
+
+increases when samples are diverse and approximately linearly independent, and decreases as redundancy increases, becoming 0 when X contains any exact dupli-cates under κ (equivalently, when Λ is rank-deficient). This provides a principled continuous measure of diversity. Maximizing diversity alone may push samples away from the data manifold. To balance diversity and plausibility, quality-aware modulation can be incor-porated [32]. Let q = [ q(1) , . . . , q (Ks)], with q(i) ∈ (0 , 1] denoting per-sample quality weights. We use these weights to define the quality-balanced kernel 
+
+κq (ˆ x(i), ˆx(j)) = q(i)κ(ˆ x(i), ˆx(j))q(j), resulting in Λq = diag( q) Λ diag( q), which preserves positive semidefiniteness. The quality-aware DPP probability is given by Pqκ(X ) = det(Λ q )det(Λ q +I) . An optimum of Pqκ balances diversity and quality. 
+
+Diversity-Guided Sampling. To jointly generate Ks diverse candidates 
+
+ˆx(i) Ks
+
+> i=1
+
+, we evaluate Pqκ over the predicted target outputs and incorporate a repulsive guidance term proportional to ∇ log Pqκ into the flow ODE during sampling. This term encourages candidate trajectories to spread across distinct modes of the predictive distribution while maintaining high-quality solutions. The guidance is applied only at inference time and remains independent of the underlying training objective. We apply diversity-guided sampling at both world modeling and behavior generation through a two-stage cascaded inference procedure. First, we sample N
+
+future latent occupancies from the world model X world .
+
+= { ˆZ(i) 
+
+> t+1: t+Tf
+
+}Ni=1 , where each latent rollout represents a distinct plausible future occupancy development. We quantify rollout quality in latent space using the Fréchet Video Distance (FVD) metric [25]. Let Pq, world .
+
+= Pqκ(X world ). The diversity-guided world model sampling dynamics follow the continuous-time flow formulation 
+
+ˆz(i) 
+
+> kμ−1
+
+= μθ (ˆ z(i) 
+
+> kμ
+
+, k μ, c μ) − γμ(kμ)∇z(i)
+
+> kμ
+
+log Pq, world  
+
+> kμ
+
+, i = 1 , . . . , N, 
+
+where γ(.) controls the strength of diversification. Next, conditioned on the step-aware representation derived from each sampled latent representation ˆZ(i) 
+
+> t+1: t+Tf
+
+,we generate M agent behavior trajectories using our conditional diffusion model, 
+
+τ (i,j ) Mj=1 . Since behavior generation proceeds via discrete reverse diffusion AutoWorld 9
+
+steps, we apply diversity guidance as a gradient shift to the reverse-step mean at each timestep kf . Let Pq, motion .
+
+= Pκq (X motion ). The diversity-guided sampling dynamics for the behavior trajectory simulation, similar to the dynamics for the world model, becomes 
+
+τ (i,j )  
+
+> kf−1
+
+= fψ (τ (i,j ) 
+
+> kf
+
+, k f , c f (i)) − γf (kf ) ∇τ (i,j )
+
+> kf
+
+log Pq, motion  
+
+> kf
+
+j = 1 , . . . , M, 
+
+where cf (i) denotes the conditioning signal derived from the i-th world-model rollout. For notational simplicity, we omit the stochastic noise term associated with the variance schedule. Trajectory embeddings are obtained using the scene encoder that encodes agent states. At the behavior level, the quality weights in-corporate realism constraints in trajectory space, including collision rate, kine-matic infeasibility, and off-road violations [9], preventing diversification from promoting physically invalid trajectories. Overall, this cascaded diversity-guided inference procedure promotes multi-modal coverage at both scene and behavior levels, yielding N × M diverse yet plausible rollouts. By decoupling diversity control across hierarchical generative stages and coupling it with task-specific quality metrics, the framework would achieve structured multimodality without sacrificing realism. 
+
+## 4 Experiments 
+
+For evaluation, we conduct a comprehensive set of experiments centered around four key questions: Q1: How does grounding behavior generation in learned world dynamics improve the overall performance of traffic simulation? Q2: Does leveraging increasing amounts of unlabeled LiDAR data enable scalable improve-ments in traffic simulation performance? Q3: Does improving the world model through motion-aware latent supervision lead to better downstream traffic simu-lation? Q4: How does the proposed cascaded latent diversity sampling affect the realism of the generated traffic simulations? Overall, our experiments confirm the efficacy of our approach to enhancing traffic simulation performance with a world model, that this performance scales with the addition of unlabeled data, and that our motion-aware latent supervision approach is effective. 
+
+4.1 Experimental design 
+
+We use the widely adopted Waymo Open Dataset (WOD) [42] and Waymo Open Motion Dataset (WOMD) [5] to train the world model and motion generation modules, respectively. We follow the setup of [44] to construct voxel-wise occu-pancy grids from LiDAR data. Our traffic simulation framework is built upon the WOSAC benchmark [31]. For each scenario, given 1 second of history, we generate 32 multi-agent rollouts over the subsequent 8 seconds at 10 Hz and evaluate how well their distribution matches that of human driving data. We run the simulation in a receding-horizon manner with a replanning rate of 1 Hz. The evaluation measures three complementary aspects of realism, namely physical plausibility of motion (kinematics), interaction quality (e.g., collision 10 M. Pourkeshavarz et al. 
+
+Table 1: Results on the WOSAC leaderboard . RMM (Realism Meta Metric) is the primary ranking metric. The “ †” denotes technical reports for the Waymo challenge.                                                                           
+
+> Model Reference RMM( ↑)Kinematic (↑)Interactive (↑)Map-based (↑)minADE (↓)
+> InfGen [36] ICLR 2026 0.7731 0.4493 0.8084 0.9127 1.4252 LLM2AD [24] CoRL 2025 0.7779 0.4846 0.8048 0.9109 1.2827
+> SMART-tiny [50] NeurIPS 2024 0.7814 0.4854 0.8089 0.9153 1.3931 UniMM †[24] -0.7829 0.4914 0.8089 0.9161 1.2949 UniMotion [41] NeurIPS 2025 0.7851 0.4943 0.8105 0.9187 1.3036 TrajTok [56] ICLR 2026 0.7852 0.4887 0.8116 0.9207 1.3179 CAT-K [55] CVPR 2025 0.7846 0.4931 0.8106 0.9177 1.3065 RLFTSim †[3] -0.7857 0.4927 0.8129 0.9183 1.3252 SMART-R1 [35] ICLR 2026 0.7858 0.4944 0.8110 0.9201 1.2885 DecompGAIL [10] ICLR 2026 0.7864 0.4919 0.8152 0.9176 1.4209
+> AutoWorld (Ours) -0.7865 0.4931 0.8143 0.9185 1.3051
+
+Fig. 3: Simulation rollouts generated by AutoWorld at 0, 2.6, 3.7, 5.5, and 8 seconds (left to right). The purple box highlights the interaction of two agents over time. 
+
+statistics), and adherence to map constraints (e.g., off-road rates). These criteria are aggregated into a single weighted score, the Realism Meta-Metric (RMM), which determines leaderboard ranking. We additionally report minADE, defined as the minimum average displacement error across generated trajectories with respect to the logged ground-truth data. To evaluate the world model, we report IoU on decoded occupancy grids and Fréchet Video Distance (FVD) computed over rollout sequences, measuring spatial reconstruction accuracy and temporal realism, respectively. For additional details on the metrics and model setup, please refer to Appendix D. 
+
+4.2 WOSAC Leaderboard 
+
+We begin by evaluating the proposed framework on the WOSAC leaderboard. As shown in Table 1, AutoWorld ranks first with the highest RMM (0.7865), the pri-mary leaderboard metric. Notably, performance is tightly clustered among top-performing approaches, mostly supervised models and RL/imitation fine-tuning variants, with the top six methods falling within a narrow range of 0.7851–0.7865. Under such tight clustering, maintaining balanced performance across all realism buckets becomes the primary factor in achieving high overall realism. AutoWorld achieves the second-highest Interactive score on the leaderboard (0.8143) without relying on adversarial or reinforcement-learning–based policy optimization during fine-tuning, as adopted by DecompGAIL, SMART-R1, and RLFTSim. Among these methods, improvements in interaction are not accompa-nied by simultaneous dominance in kinematics: DecompGAIL attains the high-est Interactive score (0.8152) but with weaker Kinematic performance (0.4919), whereas SMART-R1 achieves the strongest Kinematic score (0.4944) with a lower AutoWorld 11 
+
+Interactive score (0.8110). RLFTSim lies between these extremes in both met-rics. In contrast, AutoWorld maintains a balanced profile, achieving near-top In-teractive realism while preserving strong Kinematic performance (0.4931). This suggests that incorporating predicted future occupancies in motion generation provides structured scene anticipation that enhances inter-agent coordination without sacrificing physical plausibility. Instead of relying on reward-driven fine-tuning to enforce interaction quality, the learned world model functions as a fu-ture interaction prior, enabling consistent multi-agent realism across dimensions. Turning to the Map-based metric, TrajTok (0.9207) and SMART-R1 (0.9201) achieve higher scores than AutoWorld (0.9185). However, their Interaction scores decrease by a larger margin than their gains in map adherence. Specifically, SMART-R1 exceeds AutoWorld by 0.0016 in Map-based score, yet falls behind by 0.0033 in Interaction (0.8110 vs. 0.8143). Similarly, TrajTok improves over AutoWorld by 0.0022 in Map-based realism but trails by 0.0027 in Interaction (0.8116 vs. 0.8143). These comparisons indicate that AutoWorld improves in-teraction without significantly sacrificing map adherence. This balance arises from leveraging future latent representations, where spatial structure and agent dynamics are jointly modeled through predictive scene occupancy learning. Di-versity is introduced within this structured latent space, enabling behavioral variation while maintaining map compliance. Additionally, AutoWorld achieves a competitive minADE (1.3051) without sacrificing realism, which we attribute in part to our structured diversity mechanism. While LLM2AD attains the low-est minADE (1.2827), it exhibits a substantially lower RMM (0.7779 vs. 0.7865). This contrast suggests that optimizing trajectory matching alone does not guar-antee overall realism, whereas AutoWorld maintains strong accuracy while pre-serving overall realism. 
+
+4.3 Ablation studies on WOSAC 
+
+We conduct a comprehensive ablation study to disentangle the roles of the world model and the proposed diversity mechanisms in AutoWorld. Their effects are in-herently coupled through the sampling budget: the world model produces future latent hypotheses, while diversity mechanisms determine how these hypotheses are explored by the motion generator. Consequently, reallocating the sampling budget between world-model rollouts (N ) and motion samples per rollout (M )
+
+serves as a structural probe into both the informativeness of the learned la-tents and the model’s ability to utilize them. Table 2 jointly varies world-model grounding, scene- and motion-level diversity, and the N × M allocation, allowing us to reveal their interdependence and their impact on realism. Due to the high cost of evaluation, following [10, 35, 55], we use 2 % of the validation split. 
+
+World-model rollouts encode meaningful future hypotheses. We first compare models without world-model grounding. When removing the world model and sampling 32 motion rollouts, performance reaches 0.7472 under IID sampling and improves to 0.7549 with motion diversity. However, both configurations fall be-hind WM-grounded motion generation with the same total budget (e.g., 0.7610 under IID in the 1 × 32 setting). This demonstrates that sampling strategies 12 M. Pourkeshavarz et al. 
+
+Table 2: Ablation study on WOSAC 2% validation split. The “ †” denotes the model we used to submit on the leaderbord.                                                                                               
+
+> Model Samp. Occ. Samp. Mot. N×MRMM (↑)Kinematic (↑)Interactive (↑)Map-based (↑)minADE (↓)
+> Full AutoWorld (Cascaded Diversity; only meaningful when N > 1and M > 1)
+> AutoWorld PμPf
+> 4×8†0.7746 0.4878 0.7968 0.9099 1.3102 8×40.7728 0.4889 0.7948 0.9067 1.3097 W/o scene diversity IID Pf
+> 1×32 0.7664 0.4827 0.7969 0.8894 1.3244 4×80.7648 0.4846 0.7926 0.8892 1.3362 8×40.7671 0.4873 0.7943 0.8921 1.3589 W/o motion diversity PμIID 4×80.7563 0.4833 0.7758 0.8871 1.4138 8×40.7539 0.4827 0.7723 0.8853 1.4093 32 ×10.7492 0.4804 0.7651 0.8824 1.3894 W/o diversity IID IID 1×32 0.7610 0.4849 0.7855 0.8873 1.4369 4×80.7597 0.4840 0.7839 0.8861 1.4256 8×40.7618 0.4846 0.7876 0.8870 1.4334 32 ×10.7523 0.4796 0.7728 0.8819 1.4178 W/o WM -Pf-×32 0.7549 0.4745 0.7848 0.8766 1.4279 IID 0.7472 0.4749 0.7741 0.8682 1.4892
+
+alone cannot compensate for the absence of predictive scene grounding; hence, the world model itself provides informative future structure. Furthermore, even without diversity (IID everywhere), reallocating budget from 4 × 8 to 8 × 4
+
+improves RMM from 0.7597 to 0.7618 . Although modest, this gain indicates that additional world-model rollouts are not redundant but encode distinct and meaningful scene hypotheses. At the same time, the limited magnitude of im-provement suggests that IID sampling underutilizes these latents, motivating the need for more effective diversity-guided exploitation. 
+
+Motion diversity amplifies world-model utility. When motion diversity ( Pf ) is applied while world-model sampling remains IID, reallocating the budget from 
+
+4 × 8 to 8 × 4 leads to a clearer improvement in RMM ( 0.7648 → 0.7671 ), accompanied by gains in interaction and map-based metrics. Compared to the IID-only configuration, increasing the number of world-model rollouts becomes more beneficial under motion diversity. This suggests that the learned future latents encode structured variation that can be effectively realized when the motion generator is capable of exploring them. Motion diversity therefore en-hances the utilization of world-model predictions, rather than merely injecting additional stochasticity. 
+
+Scene-level diversity requires motion-level exploitation. When scene diver-sity (Pμ) is applied at the world-model stage while motion sampling remains IID, reallocating the budget from 4 × 8 to 8 × 4 leads to a decrease in RMM (0.7563 → 0.7539 ), along with degradation in interaction and map-based met-rics. Although scene diversity introduces structured variation in the latent space, increasing the number of world-model rollouts without motion-level diversity re-duces the number of motion samples per latent hypothesis, limiting the ability of the motion generator to exploit this variation. Consequently, additional world-model samples do not translate into improved realism. This indicates that the benefits of enriched future latents depend on sufficient motion-level exploration to realize them. 
+
+Cascaded diversity enables efficient latent utilization. When both scene and motion diversity are applied (full AutoWorld), reallocating the budget from 4×8AutoWorld 13 
+
+Table 3: Effect of motion-aware latent supervision on world modeling and downstream traffic simulation. By focusing on dynamic occupancy transitions, the world-model quality and traffic simulation performance improve without requiring semantic labels.                      
+
+> World model Traffic simulation Variant FVD (↓)( ×10 −3)IoU static (↑)IoU dynamic (↑)RMM (↑)minADE (↓)
+> Semantic-WM 23 0.89 0.73 0.7651 1.4081 NonSem Uniform-RF 51 0.85 0.58 0.7547 1.4826 NonSem MA-RF 35 0.87 0.71 0.7618 1.4334
+
+to 8 × 4 results in a decrease in RMM (0.7746 vs. 0.7728), with reductions in interaction and map-based metrics. Unlike the previous regimes, increasing the number of world-model rollouts does not improve performance under cascaded diversity. Instead, allocating more motion samples per latent hypothesis yields stronger overall realism. This suggests that scene diversity already distributes structured variation in the latent space, while motion diversity effectively ex-ploits it; beyond this balanced regime, additional world-model samples provide diminishing returns. 
+
+4.4 Effect of Motion-Aware Latent Supervision 
+
+To evaluate motion-aware latent supervision and its downstream impact, we conduct a controlled study isolating the world model. To eliminate confounding factors from diversity-guided sampling, we disable DPP and use IID sampling at both stages, adopting the best-performing allocation (8 ×4) identified in Table 2. As shown in Table 3, uniform supervision significantly underperforms the semantic baseline in dynamic regions (IoU dynamic : 0.58 vs. 0.73), despite reason-able static-region performance (0.85 vs. 0.89), confirming that uniform weighting biases learning toward dominant static voxels. In contrast, motion-aware super-vision substantially improves dynamic-region accuracy (0.71), recovering most of the gap to semantic training while maintaining comparable static IoU (0.87). Rollout fidelity measured by FVD also improves accordingly (51 vs. 35). These improvements are most pronounced at the world-model level, where dynamic oc-cupancy modeling is directly optimized, and translate more gradually to traffic simulation metrics. The uniform model degrades both realism and trajectory ac-curacy (RMM 0.7547, minADE 1.4826), whereas the motion-aware model nearly matches the semantically supervised baseline, particularly in RMM (0.7618 vs. 0.7651). A small gap remains in minADE (1.4334 vs. 1.4081), reflecting that occupancy-level agreement does not fully capture the fine-grained, agent-centric motion timing required for precise trajectory alignment. Overall, emphasizing occupancy transitions during world-model training substantially improves dy-namic scene forecasting and largely closes the gap to semantic supervision, while its downstream impact on traffic simulation remains consistent and proportional rather than amplified, indicating that improved scene dynamics provide a stable foundation for realistic behavior generation. 
+
+4.5 Performance scaling with unlabeled data 
+
+Since our world model is trained purely on unlabeled LiDAR data without human annotation, it is important to understand whether its performance scales with 14 M. Pourkeshavarz et al. AutoWorld (Full) Baseline (w/ f) W/o and f Baseline (w/o f)1x 2x 3x 4x 5x     
+
+> Unlabeled training data count multiplier
+> 0.750
+> 0.755
+> 0.760
+> 0.765
+> 0.770
+> 0.775
+> RMM (  ) +0.0069
+> +0.0036 1x 2x 3x 4x 5x
+> Unlabeled training data count multiplier
+> 0.745
+> 0.750
+> 0.755
+> 0.760
+> RMM (  ) +0.0048
+> +0.0021
+
+Fig. 4: RMM vs. amount of unlabeled data in world-model training: Adding unlabeled LiDAR sequences enhances AutoWorld’s simulation realism. Baselines without a world model can’t use unlabeled data. In the full AutoWorld setting, the baseline employs motion diversity, while it uses IID sampling in the IID/IID setting. 
+
+the amount of training data. To this end, we train the world model on the WOD dataset using progressively larger subsets of training sequences (from 1× to 5×). We evaluate two variants: the full AutoWorld framework and a version where both occupancy and motion samples are drawn IID, disabling diversity-guided sampling. As shown in Fig. 4, RMM consistently improves as the number of training sequences increases, confirming that leveraging unlabeled LiDAR data leads to scalable gains in traffic simulation realism. Notably, the scaling trend is more pronounced for the full AutoWorld, where the improvement from 4× to 
+
+5× is 0.0036 , compared to 0.0021 for the IID/IID variant. This highlights that diversity-guided sampling more effectively utilizes the improved latent occupancy representations learned from additional data. These results demonstrate that the proposed framework enables cost-efficient performance scaling by exploiting unlabeled LiDAR data, without requiring additional human annotation. 
+
+## 5 Conclusion 
+
+We presented AutoWorld, a traffic simulation framework that grounds behavior generation in learned world dynamics. By conditioning motion generation on predicted future latent occupancies, the framework provides structured scene-level context that improves multi-agent coordination and overall simulation re-alism. We also presented motion-aware latent supervision for world modeling and a cascaded diversity strategy that couples world-model rollouts with mo-tion generation. Experiments on the WOSAC benchmark show that AutoWorld achieves state-of-the-art realism. Our analysis further shows that world-model representations learned from unlabeled LiDAR data scale with additional data and produce meaningful future hypotheses that benefit downstream traffic sim-ulation. These findings highlight the promise of world-model–based simulation as a scalable approach for realistic traffic behavior generation. 
+
+## 6 Acknowledgments 
+
+This research was enabled in part by the Digital Research Alliance of Canada (alliancecan.ca ), the NVIDIA Academic Grant Program, and Google TPU Research Cloud (TRC). AutoWorld 15 
+
+## References 
+
+1. Bogdoll, D., Yang, Y., Joseph, T., Yazgan, M., Zollner, J.M.: Muvo: A multimodal generative world model for autonomous driving with geometric representations. In: 2025 IEEE Intelligent Vehicles Symposium (IV). IEEE (2025) 2. Christian Rossert, Johannes Drever, L.B.: combot: an ensemble combination model combining results from smart-tiny-clsft with a cognitive behavior mode. CVPR Workshop on Autonomous Driving (WAD) (2025) 3. Ehsan Ahmadi, H.S.: Rlftsim: Multi-agent traffic simulation via reinforcement learning fine-tuning. CVPR Workshop on Autonomous Driving (WAD) (2025) 4. Elfes, A.: Using occupancy grids for mobile robot perception and navigation. Com-puter 22 (6), 46–57 (2002) 5. Ettinger, S., Cheng, S., Caine, B., Liu, C., Zhao, H., Pradhan, S., Chai, Y., Sapp, B., Qi, C.R., Zhou, Y., et al.: Large scale interactive motion forecasting for autonomous driving: The waymo open motion dataset. In: Proceedings of the IEEE/CVF international conference on computer vision (CVPR) (2021) 6. Gao, S., Yang, J., Chen, L., Chitta, K., Qiu, Y., Geiger, A., Zhang, J., Li, H.: Vista: A generalizable driving world model with high fidelity and versatile controllability. Advances in Neural Information Processing Systems (NeurIPS) (2024) 7. Gao, Z., Mu, Y., Shen, R., Chen, C., Ren, Y., Chen, J., Li, S.E., Luo, P., Lu, Y.: Sem2: Enhance sample efficiency and robustness of end-to-end urban autonomous driving via semantic masked world model. In: Deep Reinforcement Learning Work-shop NeurIPS 2022 (2022) 8. Girgis, R., Golemo, F., Codevilla, F., Weiss, M., D’Souza, J.A., Kahou, S.E., Heide, F., Pal, C.: Latent variable sequential set transformers for joint multi-agent motion prediction. arXiv preprint arXiv:2104.00563 (2021) 9. Gulino, C., Fu, J., Luo, W., Tucker, G., Bronstein, E., Lu, Y., Harb, J., Pan, X., Wang, Y., Chen, X., et al.: Waymax: An accelerated, data-driven simulator for large-scale autonomous driving research. Advances in Neural Information Process-ing Systems (NeurIPS) (2023) 10. Guo, K., Liu, H., Wu, X., Lv, C.: Decompgail: Learning realistic traffic behaviors with decomposed multi-agent generative adversarial imitation learning. In: Inter-national Conference on Learning Representations (ICLR) (2026) 11. Hu, A., Corrado, G., Griffiths, N., Murez, Z., Gurau, C., Yeo, H., Kendall, A., Cipolla, R., Shotton, J.: Model-based imitation learning for urban driving. Ad-vances in Neural Information Processing Systems 35 , 20703–20716 (2022) 12. Hu, A., Russell, L., Yeo, H., Murez, Z., Fedoseev, G., Kendall, A., Shotton, J., Corrado, G.: Gaia-1: A generative world model for autonomous driving. arXiv preprint arXiv:2309.17080 (2023) 13. Huang, B., Wen, Y., Zhao, Y., Hu, Y., Liu, Y., Jia, F., Mao, W., Wang, T., Zhang, C., Chen, C.W., et al.: Subjectdrive: Scaling generative data in autonomous driving via subject control. In: Proceedings of the AAAI Conference on Artificial Intelligence (2025) 14. Huang, Z., Karkus, P., Ivanovic, B., Chen, Y., Pavone, M., Lv, C.: Dtpp: Differ-entiable joint conditional prediction and cost evaluation for tree policy planning in autonomous driving. In: 2024 IEEE International Conference on Robotics and Automation (ICRA). IEEE (2024) 15. Huang, Z., Zhang, Z., Vaidya, A., Chen, Y., Lv, C., Fisac, J.F.: Versatile scene-consistent traffic scenario generation as optimization with diffusion. arXiv preprint arXiv:2404.02524 (2024) 16 M. Pourkeshavarz et al. 16. Igl, M., Shah, P., Mougin, P., Srinivasan, S., Gupta, T., White, B., Shiarlis, K., Whiteson, S.: Hierarchical imitation learning for stochastic environments. In: 2023 IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS). IEEE (2023) 17. Jia, F., Mao, W., Liu, Y., Zhao, Y., Wen, Y., Zhang, C., Zhang, X., Wang, T.: Adriver-i: A general world model for autonomous driving. arXiv preprint arXiv:2311.13549 (2023) 18. Jiang, C., Cornman, A., Park, C., Sapp, B., Zhou, Y., Anguelov, D., et al.: Mo-tiondiffuser: Controllable multi-agent motion prediction using diffusion. In: Pro-ceedings of the IEEE/CVF conference on computer vision and pattern recognition (2023) 19. Jiang, M., Bai, Y., Cornman, A., Davis, C., Huang, X., Jeon, H., Kulshrestha, S., Lambert, J., Li, S., Zhou, X., et al.: Scenediffuser: Efficient and controllable driving simulation initialization and rollout. Advances in Neural Information Processing Systems (NeurIPS) (2024) 20. Kong, L., Yang, W., Mei, J., Liu, Y., Liang, A., Zhu, D., Lu, D., Yin, W., Hu, X., Jia, M., et al.: 3d and 4d world modeling: A survey. arXiv preprint arXiv:2509.07996 (2025) 21. Kulesza, A., Taskar, B.: Determinantal point processes for machine learning. Foun-dations and Trends ® in Machine Learning (2012) 22. Li, Q., Jia, X., Wang, S., Yan, J.: Think2drive: Efficient reinforcement learning by thinking with latent world model for autonomous driving (in carla-v2). In: European conference on computer vision. Springer (2024) 23. Li, X., Zhang, Y., Ye, X.: Drivingdiffusion: Layout-guided multi-view driving sce-narios video generation with latent diffusion model. In: European Conference on Computer Vision. Springer (2024) 24. Lin, L., Lin, X., Xu, K., Lu, H., Huang, L., Xiong, R., Wang, Y.: Revisit mixture models for multi-agent simulation: Experimental study within a unified framework. In: Conference on Robot Learning (CoRL) (2021) 25. Liu, T., Zhao, S., Rhinehart, N.: Towards foundational lidar world models with efficient latent flow matching (2025), https://arxiv.org/abs/2506.23434 
+
+26. Liu, X., Gong, C., Liu, Q.: Flow straight and fast: Learning to generate and transfer data with rectified flow. arXiv preprint arXiv:2209.03003 (2022) 27. Lu, J., Wong, K., Zhang, C., Suo, S., Urtasun, R.: Scenecontrol: Diffusion for controllable traffic scene generation. In: 2024 IEEE International Conference on Robotics and Automation (ICRA). IEEE (2024) 28. Lu, J., Huang, Z., Yang, Z., Zhang, J., Zhang, L.: Wovogen: World volume-aware diffusion for controllable multi-camera driving scene generation. In: European con-ference on computer vision. pp. 329–345. Springer (2024) 29. Min, C., Zhao, D., Xiao, L., Nie, Y., Dai, B.: Uniworld: Autonomous driving pre-training via world models. arXiv preprint arXiv:2308.07234 (2023) 30. Min, C., Zhao, D., Xiao, L., Zhao, J., Xu, X., Zhu, Z., Jin, L., Li, J., Guo, Y., Xing, J., et al.: Driveworld: 4d pre-trained scene understanding via world models for autonomous driving. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. pp. 15522–15533 (2024) 31. Montali, N., Lambert, J., Mougin, P., Kuefler, A., Rhinehart, N., Li, M., Gulino, C., Emrich, T., Yang, Z., Whiteson, S., et al.: The waymo open sim agents challenge. Advances in Neural Information Processing Systems (NeurIPS) (2023) 32. Morshed, M.M., Boddeti, V.: Diverseflow: Sample-efficient diverse mode coverage in flows. In: Proceedings of the Computer Vision and Pattern Recognition Confer-ence (CVPR) (2025) AutoWorld 17 33. Ngiam, J., Caine, B., Vasudevan, V., Zhang, Z., Chiang, H.T.L., Ling, J., Roelofs, R., Bewley, A., Liu, C., Venugopal, A., et al.: Scene transformer: A unified archi-tecture for predicting multiple agent trajectories. arXiv preprint arXiv:2106.08417 (2021) 34. Pan, M., Zhu, X., Wang, Y., Yang, X.: Iso-dream: Isolating and leveraging non-controllable visual dynamics in world models. Advances in neural information pro-cessing systems (2022) 35. Pei, M., Shi, S., Shen, S.: Advancing multi-agent traffic simulation via r1-style re-inforcement fine-tuning. In: International Conference on Learning Representations (ICLR) (2026) 36. Peng, Z., Liu, Y., Zhou, B.: Infgen: Scenario generation as next token group pre-diction. In: International Conference on Learning Representations (ICLR) (2026) 37. Philion, J., Peng, X.B., Fidler, S.: Trajeglish: Traffic modeling as next-token pre-diction. In: International Conference on Learning Representations (ICLR) (2024) 38. Pronovost, E., Ganesina, M.R., Hendy, N., Wang, Z., Morales, A., Wang, K., Roy, N.: Scenario diffusion: Controllable driving scenario generation with diffusion. Ad-vances in Neural Information Processing Systems (2023) 39. Russell, L., Hu, A., Bertoni, L., Fedoseev, G., Shotton, J., Arani, E., Corrado, G.: Gaia-2: A controllable multi-view generative world model for autonomous driving. arXiv preprint arXiv:2503.20523 (2025) 40. Shi, S., Jiang, L., Dai, D., Schiele, B.: Mtr++: Multi-agent motion prediction with symmetric scene modeling and guided intention querying. IEEE Transactions on Pattern Analysis and Machine Intelligence (2024) 41. Song, N., Jiang, J., Zhu, X., Zhang, L., et al.: Unimotion: A unified motion frame-work for simulation, prediction and planning. Advances in Neural Information Pro-cessing Systems (NeurIPS) (2025) 42. Sun, P., Kretzschmar, H., Dotiwalla, X., Chouard, A., Patnaik, V., Tsui, P., Guo, J., Zhou, Y., Chai, Y., Caine, B., et al.: Scalability in perception for autonomous driving: Waymo open dataset. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition (CVPR) (2020) 43. Suo, S., Regalado, S., Casas, S., Urtasun, R.: Trafficsim: Learning to simulate realistic multi-agent behaviors. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (2021) 44. Tian, X., Jiang, T., Yun, L., Mao, Y., Yang, H., Wang, Y., Wang, Y., Zhao, H.: Occ3d: A large-scale 3d occupancy prediction benchmark for autonomous driving. Advances in Neural Information Processing Systems (NeurIPS) (2023) 45. Wang, X., Zhu, Z., Huang, G., Chen, X., Zhu, J., Lu, J.: Drivedreamer: Towards real-world-drive world models for autonomous driving. In: European conference on computer vision. Springer (2024) 46. Wang, Y., He, J., Fan, L., Li, H., Chen, Y., Zhang, Z.: Driving into the future: Mul-tiview visual forecasting and planning with world model for autonomous driving. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) (2024) 47. Wen, Y., Zhao, Y., Liu, Y., Jia, F., Wang, Y., Luo, C., Zhang, C., Wang, T., Sun, X., Zhang, X.: Panacea: Panoramic and controllable video generation for autonomous driving. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (2024) 48. Weng, X., Nan, J., Lee, K.H., McAllister, R., Gaidon, A., Rhinehart, N., Kitani, K.M.: S2net: Stochastic sequential pointcloud forecasting. In: European Conference on Computer Vision (ECCV) (2022) 18 M. Pourkeshavarz et al. 49. Weng, X., Wang, J., Levine, S., Kitani, K., Rhinehart, N.: Inverting the pose forecasting pipeline with spf2: Sequential pointcloud forecasting for sequential pose forecasting. In: Conference on Robot Learning (CoRL) (2021) 50. Wu, W., Feng, X., Gao, Z., Kan, Y.: Smart: Scalable multi-agent real-time motion generation via next-token prediction. Advances in Neural Information Processing Systems (NeurIPS) (2024) 51. Xu, D., Chen, Y., Ivanovic, B., Pavone, M.: Bits: Bi-level imitation for traffic simulation. arXiv preprint arXiv:2208.12403 (2022) 52. Yang, J., Gao, S., Qiu, Y., Chen, L., Li, T., Dai, B., Chitta, K., Wu, P., Zeng, J., Luo, P., et al.: Generalized predictive model for autonomous driving. In: Proceed-ings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) (2024) 53. Yang, Z., Chen, L., Sun, Y., Li, H.: Visual point cloud forecasting enables scalable autonomous driving. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (2024) 54. Zhang, L., Xiong, Y., Yang, Z., Casas, S., Hu, R., Urtasun, R.: Copilot4d: Learning unsupervised world models for autonomous driving via discrete diffusion. arXiv preprint arXiv:2311.01017 (2023) 55. Zhang, Z., Karkus, P., Igl, M., Ding, W., Chen, Y., Ivanovic, B., Pavone, M.: Closed-loop supervised fine-tuning of tokenized traffic models. In: Proceedings of the Computer Vision and Pattern Recognition Conference (CVPR) (2025) 56. Zhang, Z., Jia, X., Chen, G., Li, Q., Yan, J.: Infgen: Scenario generation as next token group prediction. In: International Conference on Learning Representations (ICLR) (2026) 57. Zhao, G., Wang, X., Zhu, Z., Chen, X., Huang, G., Bao, X.B., Wang, X.: Drivedreamer-2: Llm-enhanced world models for diverse driving video generation. In: Proceedings of the AAAI Conference on Artificial Intelligence (2025) 58. Zheng, W., Chen, W., Huang, Y., Zhang, B., Duan, Y., Lu, J.: Occworld: Learning a 3d occupancy world model for autonomous driving. In: European conference on computer vision. Springer (2024) 59. Zheng, W., et al.: Generalized predictive model for autonomous driving. In: arXiv preprint arXiv:2403.09630 (2024) 60. Zhong, Z., Rempe, D., Chen, Y., Ivanovic, B., Cao, Y., Xu, D., Pavone, M., Ray, B.: Language-guided traffic simulation via scene-level diffusion. In: Conference on robot learning (CoRL) (2023) 61. Zhong, Z., Rempe, D., Xu, D., Chen, Y., Veer, S., Che, T., Ray, B., Pavone, M.: Guided conditional diffusion for controllable traffic simulation. In: 2023 IEEE international conference on robotics and automation (ICRA). IEEE (2023) 62. Zhou, Z., Haibo, H., Chen, X., Wang, J., Guan, N., Wu, K., Li, Y.H., Huang, Y.K., Xue, C.J.: Behaviorgpt: Smart agent simulation for autonomous driving with next-patch prediction. Advances in Neural Information Processing Systems (NeurIPS) (2024) 63. Zhou, Z., Wang, J., Li, Y.H., Huang, Y.K.: Query-centric trajectory prediction. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recog-nition (2023) 64. Zhu, Z., Wang, X., Zhao, W., Min, C., Li, B., Deng, N., Dou, M., Wang, Y., Shi, B., Wang, K., et al.: Is sora a world simulator? a comprehensive survey on general world models and beyond. arXiv preprint arXiv:2405.03520 (2024) 65. Zyrianov, V., Che, H., Liu, Z., Wang, S.: Lidardm: Generative lidar simulation in a generated world. In: 2025 IEEE International Conference on Robotics and Automation (ICRA). IEEE (2025) AutoWorld 19 
+
+# Appendix 
+
+This appendix provides additional details supporting the main paper. We first present the AutoWorld training and inference procedures, highlighting where the cascaded latent diversity is applied (Sec. A). We then provide qualitative results that assess the multimodal coverage of AutoWorld (Sec. B), followed by additional experiments (Sec. C), as well as implementation details and a summary of the notations used in AutoWorld (Sec. D). 
+
+## A The AutoWorld Workflow 
+
+Algorithms 1 and 2 summarize AutoWorld’s training and inference procedures. 
+
+Training. Algorithm 1 begins by voxelizing LiDAR sequences and encoding them into latent occupancies using the VAE encoder (L5–6). (a) Motion-aware weight maps are then computed (L7–11) by compensating for ego motion and measuring occupancy transitions. These weights emphasize dynamic regions and are used to reweight the world-model supervision. (b) The world model is trained to predict future latent occupancies (L14–20). Given past latents and the ego past trajectory, a noisy latent state is constructed by interpolating between Gaus-sian noise and the target latent sequence. The model learns a velocity field that matches the displacement between the noise and the target under the motion-aware weighted loss. (c) The WM-conditioned motion generator is trained using labeled trajectory data (L22–29). For each scene, the world model produces a single future occupancy rollout (L25). These predicted occupancies are aggre-gated to form the predictive scene context (L26) and combined with per-timestep latents to form conditioning signals for the diffusion model (L27). The motion model is optimized using the standard diffusion loss. Training therefore uses one world-model rollout and one trajectory sample per scene, without any diversity mechanism .
+
+Inference. Algorithm 2 generates diverse simulations by introducing DPP-guided sampling at inference time. After encoding the observed LiDAR history (L4), the world model produces multiple latent scene rollouts (L6–12). Sampling begins from Gaussian noise and is iteratively refined. At each step, a quality-weighted DPP objective is computed across the current samples. The gradient of the log determinant introduces a repulsive force between samples, encourag-ing diversity while preserving high quality predictions. This process yields N
+
+diverse future scene rollouts ˆZ(i) 
+
+> t+1: t+Tf
+
+(L15). Given these scene forecasts, the motion model generates trajectories using cascaded latent sampling (L16–25). For each predicted latent occupancy sequence, a global context embedding g(i)
+
+is computed (L17) and combined with timestep latents to form the diffusion conditioning signals (L18). The diffusion process then generates M trajectories per scene rollout. As in the world model, DPP guidance is applied during sam-pling to encourage trajectory diversity while maintaining consistency with the predicted scene dynamics. The final set of N × M trajectories corresponds to 
+
+N × M diverse and plausible driving scenarios (L28). 20 M. Pourkeshavarz et al. 
+
+Algorithm 1 AutoWorld Training 1: Input: 
+
+2: unlabeled data Dμ = {(Ot−Th:t+Tf )i}Nμ i=1          
+
+> labeled data Df={(Ot−Th:t, S t−Th:t+Tf , V )i}Nfi=1
+> VAE encoder E, world model μθ
+> motion model fψwith projections ϕ1, ϕ 2
+
+3: Output: trained parameters θ, ψ 
+
+4: Required: hyperparameters λ, ∆, δ 
+
+5: D′ 
+
+> μ
+
+= {Yt−Th:t+Tf = Vox (Ot−Th:t+Tf )}
+
+6: D′′  
+
+> μ
+
+= {Zt−Th:t+Tf = E(Yt−Th:t+Tf )}
+
+// (a) Initialize motion-aware weight maps 
+
+7: for Yt−Th:t+Tf ∈ D ′ 
+
+> μ
+
+do 
+
+8: for t ∈ [t − Th : t + Tf ] do 
+
+9: ˜Yt←t+∆ ← Yt
+
+10: ¯Ct, ∆ ← Transition (Yt+∆ , ˜Yt←t+∆ )
+
+11: Wt ← 1 + λ ¯Ct, ∆
+
+12: end for 
+
+13: end for 
+
+// (b) World modeling (WM) 
+
+14: for Zt−Th:t+Tf ∈ D ′′  
+
+> μ
+
+do 
+
+15: Condition cμ ← { Zt−Th:t, τ ego 
+
+> t−Th:t
+
+}
+
+16: Target ˜z ← Zt+1: t+Tf
+
+17: Sampling z0 ∼ N (0 , I ), k μ ∼ U (0 , 1) 
+
+18: Interpolation zkμ ← (1 − kμ)z0 + kμ ˜z
+
+// motion-aware latent supervision 
+
+19: Lworld (θ) ←P 
+
+> i,j
+
+Wt(i, j )∥μθ (zkμ , k μ, c μ)i,j, :
+
+−(˜ z − z0)i,j, :∥22
+
+20: θ ← Update (θ, ∇θ Lworld )
+
+21: end for 
+
+// (c) WM-conditioned motion generation 
+
+22: for (Ot−Th:t, S t−Th:t+Tf , V ) ∈ D f do 
+
+23: Zt−Th:t ← E (Vox (Ot−Th:t)) 
+
+24: Condition cμ ← { Zt−Th:t, τ ego 
+
+> t−Th:t
+
+}
+
+// sample one future occupancy rollout 
+
+25: ˆZt+1: t+Tf ← μθ (·, c μ)
+
+26: g ← MHCA( ϕ1({ˆzt+eδ }[Tf /δ ] 
+
+> e=1
+
+)) 
+
+// per-time-step condition 
+
+27: cft ← { MHCA( ϕ2([ˆ zt; g])) }t+Tft=t+1 
+
+28: Lmotion (ψ) ← DiffLoss (fψ (·, c ft )) 
+
+29: ψ ← Update (ψ, ∇ψ Lmotion )
+
+30: end for 
+
+Algorithm 2 AutoWorld Inference 1: Input: initial scene (Ot−Th:t, S t−Th:t, V ),VAE encoder E, world model μθ ,motion model fψ
+
+2: Output: (N × M ) simulated rollouts Sen 
+
+3: Required: sample counts (N × M )
+
+4: Zt−Th:t ← E (Voxelize (Ot−Th:t)) 
+
+5: condition cμ ← { Zt−Th:t, τ ego 
+
+> t−Th:t
+
+}
+
+// Determinantal Point Process (DPP)-guided world-model sampling 
+
+6: for i = 1 , . . . , N do 
+
+7: z(i) 
+
+> Kμ
+
+∼ N (0 , I )
+
+8: end for 
+
+9: for kμ = Kμ, . . . , 1 do 
+
+10: Pq, world  
+
+> kμ
+
+← DPP ({z(i) 
+
+> kμ
+
+}Ni=1 )
+
+11: for i = 1 , . . . , N do 
+
+12: z(i) 
+
+> kμ −1
+
+← μθ (z(i) 
+
+> kμ
+
+, k μ, c μ)−
+
+γμ(kμ)∇z(i)
+
+> kμ
+
+log Pq, world 
+
+> kμ
+
+13: end for 
+
+14: end for 
+
+15: ˆZ(i) 
+
+> t+1: t+Tf
+
+← z(i)0 , i = 1 , . . . , N 
+
+// cascaded latent sampling 
+
+16: for i = 1 , . . . , N do 
+
+17: g(i) ← MHCA( ϕ1({ˆz(i) 
+
+> t+eδ
+
+}⌊Tf /δ ⌋ 
+
+> e=1
+
+)) 
+
+// per time-step condition 
+
+18: cf (i) 
+
+> t
+
+← { MHCA( ϕ2([ˆ z(i) 
+
+> t
+
+; g(i)])) }t+Tft=t+1 
+
+19: for j = 1 , . . . , M do 
+
+20: τ (i,j ) 
+
+> Kf
+
+∼ N (0 , I )
+
+21: end for 
+
+22: for kf = Kf , . . . , 1 do 
+
+23: Pq, motion  
+
+> kf
+
+← DPP ({τ (i,j ) 
+
+> kf
+
+}Mj=1 )
+
+24: for j = 1 , . . . , M do 
+
+25: τ (i,j )  
+
+> kf−1
+
+← fψ (τ (i,j ) 
+
+> kf
+
+, k f , c f (i) 
+
+> t
+
+)−
+
+γf (kf )∇τ (i,j )
+
+> kf
+
+log Pq, motion 
+
+> kf
+
+26: end for 
+
+27: end for 
+
+28: ˆτ (i,j ) 
+
+> t+1: t+Tf
+
+← τ (i,j )0 , i = 1 , . . . , N, j = 1 , . . . , M 
+
+29: end for 
+
+## B Qualitative Multimodal Behavior Coverage 
+
+To qualitatively illustrate multimodal behaviors produced by AutoWorld, we visualize generated trajectories together with the SDC paths provided in the Waymo Open Motion Dataset (WOMD) [5] 1. The self-driving car (SDC) refers 
+
+1 Waymo Open Motion Dataset: v1.3.1 AutoWorld 21 
+
+to the ego vehicle in each WOMD scenario. The SDC paths annotation provides a set of candidate route polylines representing plausible future routes the ego ve-hicle could follow according to the road topology, such as lane following, turning, or merging behaviors. Since these paths are geometric route hypotheses rather than time-aligned trajectories, they often extend beyond the 8-second forecast-ing horizon used in motion prediction. For visualization, we therefore first retain only single continuous path segments and truncate each path to a comparable horizon based on the future distance traveled by the ground-truth SDC. To avoid displaying many nearly identical routes that arise from map discretization, the truncated paths are further deduplicated by resampling them to a fixed number of points and removing paths whose mean pointwise distance falls below a sim-ilarity threshold. This process yields a compact set of distinct route hypotheses that represent the primary topological futures available to the ego in the scene. Figure 5 visualizes the ground-truth SDC trajectory, the resulting candi-date SDC paths, and 32 predicted ego rollouts generated by AutoWorld. Across scenarios, AutoWorld demonstrates meaningful multimodal coverage, producing diverse behaviors such as alternative turning directions and lane changes within a single scene, capturing both topological and kinematic diversity. While most candidate routes are covered, a few SDC paths corresponding to more com-plex topological traversals remain uncovered. We view this as an opportunity for future work, where incorporating explicit road-topology reasoning into the sampling process may enable better coverage of such complex routes over longer horizons.  
+
+> Fig. 5: Qualitative analysis of multimodal behavior coverage. The ground-truth ego trajectory, candidate SDC paths from WOMD, and 32 rollouts generated by AutoWorld are visualized (left to right). The model produces diverse behaviors within a single scenario, including alternative turning directions and lane changes, with diversity that also reflects different kinematic profiles.
+
+22 M. Pourkeshavarz et al. AutoWorld 23 24 M. Pourkeshavarz et al. 
+
+## C Additional Experiments 
+
+Coarse-to-fine Predictive Scene Context. We study the effect of coarse-to-fine guidance from the world model in a controlled setting. To isolate this component, we disable DPP and use IID sampling at both stages, adopting the best-performing allocation (8 × 4) from Table 2. We compare a variant that conditions only on future latent occupancies with one that additionally incorpo-rates the predictive scene context. As shown in Table 5, adding the predictive scene context improves both realism and trajectory accuracy, increasing RMM from 0.7562 to 0.7618 and reducing minADE from 1.4519 to 1.4334 . This suggests that aggregating future latents into a global context provides useful long-horizon structure for multi-agent coordination, whereas per-step latents alone offer only local guidance. Overall, the predictive scene context serves as a coarse-to-fine signal that improves the quality of generated traffic scenarios.          
+
+> Table 5: Effect of coarse-to-fine predictive scene context on traffic simulation. We compare conditioning on future latent occupancies alone versus combining them with a predictive scene context, under a fixed sampling budget with IID sampling. Incorpo-rating the predictive scene context improves overall realism.
+> Conditioning RMM (↑)minADE (↓)
+> Future latent only 0.7562 1.4519 + Pred. scene context 0.7618 1.4334
+
+## D Implementation Details 
+
+In this section, we describe the implementation details of the main components of AutoWorld. For clarity, the key notations used throughout the method are summarized in Table 6. 
+
+Scene Encoder. The scene encoder processes three inputs derived from the problem formulation: the agent history St−Th:t ∈ RA×(Th+1) ×da , the HD map 
+
+V ∈ Rv×dv , and the traffic light states R ∈ Rr×dr . In our implementation, we use 
+
+A = 32 agents, v = vlvp map vector points corresponding to vl = 256 polylines AutoWorld 25 
+
+each containing vp = 30 sampled waypoints, and r = 16 traffic lights. The agent history is encoded using a shared GRU, producing agent embeddings of shape 
+
+[A, D ], which are combined with agent-type embeddings. The map representa-tion V is organized into polylines and encoded using a PointNet-like polyline encoder: each waypoint is processed by a shared MLP to produce features of dimension D, followed by max pooling along the waypoint dimension to obtain polyline-level features of shape [vl, D ]. The resulting agent, map, and traffic-light embeddings are concatenated to form the initial scene representation of shape 
+
+[A + vl + r, D ]. To model interactions among scene elements, we apply six query-centric Transformer layers following [40]. This architecture encodes relationships between agents, map polylines, and traffic lights using relative positional features while preserving the element-centric representation of each token. The encoder outputs a final scene representation of shape [A + vl + r, D ], with D = 256 .
+
+World Model. We build the latent occupancy world model on top of the LiDAR-based framework of [25]. Raw LiDAR point clouds are first voxelized into non-semantic occupancy grids with voxel size v = [0 .4, 0.4, 0.4] meters within spatial range [−40 , −40 , −1, 40 , 40 , 5.4] . This results in occupancy vol-umes of size (Ho, W o, D o) = (200 , 200 , 16) , producing binary occupancy tensors 
+
+Yt ∈ { 0, 1}Ho×Wo×Do with corresponding validity masks Mt, following [44]. We employ a Swin Transformer-based VAE [25] to encode voxel occupancies into spa-tial latent representations Zt ∈ RH×W ×C . The VAE is trained for 100 epochs with batch size 16 on the voxelized occupancy data. The latent representation has spatial size H × W × C = 16 × 16 × 50 .For latent occupancy forecasting, we follow the rectified flow matching archi-tecture of [25]. The world model predicts future latent occupancies ˆZt+1: t+Tf ∈
+
+RTf ×H×W ×C conditioned on past latent context cμ = {Zt−Th:t, τ ego 
+
+> t−Th:t
+
+}. Here, 
+
+Zt−Th:t denotes the latent occupancy history and τ ego  
+
+> t−Th:t
+
+represents the ego tra-jectory over the same horizon. The ego trajectory is encoded using the same trajectory encoder employed for agent history in the scene encoder. The en-coded trajectory is concatenated with the latent history features and projected through an MLP to produce the final conditioning representation. The temporal horizons Th and Tf are shared with the motion generation model. The rectified flow model operates on latent sequences zt, z 0, ˜z ∈ RTf ×H×W ×C ,where z0 ∼ N (0 , I ) and ˜z denotes the ground-truth future latent occupancy se-quence. The flow model is first trained for 100 epochs with batch size 8 using the standard rectified flow objective. Training then continues for an additional 50 epochs using the proposed motion-aware latent supervision objective, where the motion-aware loss weight is empirically set to λ = 0 .2. Following [25], we maintain an exponential moving average (EMA) of model parameters with de-cay rate 0.9999 to stabilize training. We also employ classifier-free guidance by randomly dropping the conditional input cμ with probability 0.25. 
+
+Motion Generation. Given a sampled world-model rollout ˆZt+1: t+Tf , we flatten each latent into HW spatial tokens and project them into the denoiser embedding space of dimension D. We then build the predictive scene context 
+
+g ∈ R1×D using temporal subsampling at 1 Hz (i.e., stride δ = 10 frames). For 26 M. Pourkeshavarz et al. 
+
+each future step, we concatenate the corresponding latent occupancy and the predictive scene context along the token dimension. These tokens are fused with the scene encoding through cross-attention to produce a refined step-wise con-ditioning representation cft+1: Tf , matching the shape of the scene encoding and used to condition the diffusion denoiser. The denoising network consists of two decoding blocks, each composed of two Transformer decoder layers. Within each block, self-attention models the joint distribution of multi-agent future trajecto-ries while enforcing temporal causality through a causal mask [14] that prevents information leakage from future timesteps. Cross-attention layers condition the trajectory tokens on the world-model-guided context cft+1: Tf , allowing the pre-dicted actions to remain consistent with both the observed scene history and the predicted scene evolution. The decoder outputs clean actions ˆτ0 ∈ RA×Tf ×2.These actions are then integrated using a unicycle dynamics model to obtain the corresponding future agent states (x, y, v, θ ) over the horizon. We set the number of diffusion timesteps to Kf = 50 .
+
+Cascaded Latent Diversity We use time-dependent scaling coefficients 
+
+γμ(kμ) and γf (kf ) to control the strength of the diversity gradients during sam-pling in the world model and motion generation stages, respectively. These coeffi-cients follow the diffusion and flow-matching timestep schedules and are normal-ized by the norm of the corresponding DPP gradients to ensure stable updates. When γ(·) = 0 , the procedure reduces to standard IID sampling. When γ(·) > 0,the DPP gradient encourages diversity by pushing similar samples apart. If the generated samples are already sufficiently diverse, the DPP gradient becomes negligible, and the process naturally behaves like IID sampling. As stated in the main paper, we evaluate the plausibility of generated tra-jectories using the violation metrics provided by the Waymax simulation plat-form [9]. Specifically, we consider the kinematic infeasibility (kin.), collision (col), off-road (off.), and wrong-way metrics (wro.). To obtain a single scalar score for use in DPP-based sampling, we combine these metrics using weights inspired by the Realism Meta-Metric (RMM), which aggregates kinematic, inter-active, and map-based realism as RMM = 0 .20 (kinematic) + 0 .45 (interactive) +0.35 (map-based). Following this structure, we compute the trajectory quality score as Q = 1 − (0 .20 (kin.) + 0 .45 (col.) + 0 .35 off. +wro.  
+
+> 2
+
+). The weights reflect the relative importance of kinematic feasibility, interaction safety, and adherence to map constraints. This scalar score is used as the quality term in the DPP kernel, encouraging the selection of trajectories that are physically feasible, collision-free, and consistent with the road geometry.          
+
+> Table 6: Main notations used in AutoWorld. For functions, “Domain” refers to the domain of the function’s output.
+> Notation Name / Description Domain
+> Scene encoder
+> ANumber of agents N
+> vlNumber of map polylines N
+> vpNumber of sampled waypoints per polyline N
+> Continued on next page
+
+AutoWorld 27 
+
+Notation Name / Description Domain 
+
+v Total number of map vector points ( v = vlvp) N
+
+r Number of traffic lights N
+
+da Agent state dimension N
+
+dv Map feature dimension N
+
+dr Traffic-light feature dimension N
+
+V HD map vector representation Rv×dv 
+
+R Traffic light states Rr×dr 
+
+sit State of agent i at time t R4
+
+st Joint agent states RA×4
+
+St−Th:t Agent state history RA×(Th+1) ×4
+
+h Scene encoding output R(A+vl+r)×D
+
+D Scene embedding dimension N
+
+World model 
+
+t Discrete scene timestep N
+
+Th History horizon N
+
+Tf Future prediction horizon N
+
+Yt Occupancy grid at time t {0, 1}Ho ×Wo ×Do 
+
+Mt Validity mask {0, 1}Ho ×Wo ×Do 
+
+˜Yt→t+∆ Ego-motion compensated occupancy grid {0, 1}Ho ×Wo ×Do 
+
+Ct, ∆(v) Voxel occupancy transition indicator {0,1} 
+
+¯Ct, ∆ Downsampled motion map RH×W
+
+Wt Motion-aware latent weight map RH×W
+
+λ Motion emphasis coefficient R>0
+
+Zt Latent occupancy representation at time t RH×W ×C
+
+Zt−Th:t Latent occupancy history R(Th+1) ×H×W ×C
+
+Zt+1: t+Tf Ground-truth future latent occupancies RTf ×H×W ×C
+
+ˆZt+1: t+Tf Predicted future latent occupancies RTf ×H×W ×C
+
+z0 Gaussian prior latent sequence sample RTf ×H×W ×C
+
+zkμ Latent variable at rectified-flow step kμ RTf ×H×W ×C
+
+μθ (·) World-model velocity field network RTf ×H×W ×C
+
+kμ Rectified-flow timestep N
+
+Motion generation 
+
+ait Agent action (acceleration, yaw rate) R2
+
+at Joint agent actions RA×2
+
+τ0 Clean future trajectory (action sequence) RA×Tf ×2
+
+τkf Noisy trajectory during diffusion step kf RA×Tf ×2
+
+g Predictive scene context R1×D
+
+δ Temporal subsampling stride N
+
+ξ Learned pooling query token R1×D
+
+ϕ1(·) Latent projection for context pooling RDϕ1 ×1
+
+ϕ2(·) Conditioning projection RDϕ2 ×1
+
+cft Diffusion conditioning representation at timestep t R(A+vl+r)×D
+
+cf Full diffusion conditioning sequence RTf ×(A+vl+r)×D
+
+fψ (·) Diffusion denoiser network RA×Tf ×2
+
+Σkf Diffusion variance schedule M⪰0
+
+kf Diffusion timestep N
+
+Cascaded latent sampling 
+
+X Candidate sample set {ˆx(i)}Ks i=1 
+
+ˆx(i) Candidate sample representation Rd
+
+Ks Number of samples in DPP set N
+
+κ(·, ·) Similarity kernel R
+
+Λ Kernel matrix RKs ×Ks 
+
+Pqκ(X ) Quality-aware DPP diversity probability [0,1] 
+
+q(i) Quality weight for sample i R
+
+Λq Quality-aware kernel matrix RKs ×Ks 
+
+X world .
+
+= { ˆZ(i) 
+
+> t+1: t+Tf
+
+}Ni=1 World-model rollout set RN ×Tf ×H×W ×C
+
+γμ(kμ) World-model diversity guidance strength R>0
+
+Continued on next page 28 M. Pourkeshavarz et al. 
+
+Notation Name / Description Domain 
+
+N Number of sampled world-model rollouts N
+
+X motion .
+
+= {τ (i,j )}Mj=1 Motion trajectory sample set RM ×A×Tf ×2
+
+γf (kf ) Motion diversity guidance strength R>0
+
+M Number of motion samples per rollout N
