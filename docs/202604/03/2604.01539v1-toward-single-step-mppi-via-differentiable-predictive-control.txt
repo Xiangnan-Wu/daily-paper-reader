@@ -1,0 +1,989 @@
+Title: Toward Single-Step MPPI via Differentiable Predictive Control
+
+URL Source: https://arxiv.org/pdf/2604.01539v1
+
+Published Time: Fri, 03 Apr 2026 00:22:55 GMT
+
+Number of Pages: 8
+
+Markdown Content:
+# Toward Single-Step MPPI via Differentiable Predictive Control 
+
+Viet-Anh Le 1, Renukanandan Tumu 1, and Rahul Mangharam 1
+
+Abstract — Model predictive path integral (MPPI) is asampling-based method for solving complex model predictive control (MPC) problems, but its real-time implementation faces two key challenges: the computational cost and sample requirements grow with the prediction horizon, and manually tuning the sampling covariance requires balancing exploration and noise. To address these issues, we propose Step-MPPI , a framework that learns a sampling distribution for efficient single-step lookahead MPPI implementation. Specifically, we use a neural network to parameterize the MPPI proposal distribution at each time step, and train it in a self-supervised manner over a long horizon using the MPC cost, constraint penalties, and a maximum-entropy regularization term. By embedding long-horizon objectives into training the neural distribution policy, Step-MPPI achieves the foresight of a multi-step optimizer with the millisecond-level latency of single-step lookahead. We demonstrate the efficiency of Step-MPPI across multiple challenging tasks in which MPPI suffers from high dimensionality and/or long control horizons. 
+
+I. I NTRODUCTION 
+
+Model predictive path integral (MPPI) control [1] is a sampling-based approach for solving nonlinear and non-convex model predictive control (MPC) problems for both stochastic and deterministic systems [2]. By sampling tra-jectories from a control distribution and updating the control sequence using a cost-weighted strategy, MPPI avoids relying on problem-specific, domain-knowledge-based optimizers, making it well suited for nonlinear dynamical systems and complex control tasks. MPPI implementation can also be efficiently parallelized, making it attractive for real-time control. As a result, MPPI has been widely applied in practice, especially in robotics and autonomous driving (see [3] for a survey). Despite these advantages, MPPI still has several important limitations; it can require many samples in long-horizon tasks, and is sensitive to the choice of sampling distribution. Achieving strong control performance in long-horizon tasks requires many samples, due to the stochastic nature of MPPI sampling. These large sample counts can make MPPI computationally expensive on embedded hard-ware. Second, the choice of sampling distribution, which is often manually tuned, can have large impacts on the performance and robustness of the resulting control. These limitations pose major challenges for real-time deployment. Recent studies have focused on improving the proposal distribution in MPPI to achieve better performance with             
+
+> 1Department of Electrical &Systems Engineering, University of Pennsylvania, Philadelphia, PA 19104, USA (emails:
+
+{vietanh,nandant,rahulm }@seas.upenn.edu ). This work was partially supported by US DoT Safety21 National Uni-versity Transportation Center and NSF under Grant CISE-2431569 .Sampling in Step-MPPI 
+
+> Optimal
+> trajectory
+> Sampling in MPPI
+> Neural distribution policy
+
+…
+
+> Rollouts
+> during training
+> Single-step
+> online inference
+
+Fig. 1: Overview of the proposed Step-MPPI versus con-ventional MPPI. In Step-MPPI, samples are drawn from a distribution parameterized by the neural network, whereas MPPI samples from a nominal distribution over the control horizon. During training, Step-MPPI performs rollouts over the full control horizon, while during inference, only a single-step rollout at the current state is needed. fewer rollouts, which is important for real-time implementa-tion. Asmar et al . [4] proposed adaptive importance sampling to refine the proposal mean and covariance from an initial batch of samples. Sacks et al . used imitation learning to learn MPPI update rules for fast, low-sample control [5], and later proposed jointly learning the optimizer and warm-starting procedure with model-free reinforcement learning [6]. Kusumoto et al . [7] learned sampling distributions using conditional variational autoencoders trained on datasets of optimal solutions. Belvedere et al . [8] augmented MPPI with local linear feedback gains derived from sensitivity analysis. Qu et al . [9] used an offline reinforcement learning policy to initialize MPPI rollouts. Trevisan et al . [10] proposed Biased-MPPI that uses classical or learning-based ancillary controllers to guide sampling. Crestaz et al . [11] trained a value function via temporal-difference learning to approx-imate long-term return, enabling shorter-horizon MPPI to retain strong performance. We propose Step-MPPI , a framework that learns a neural distribution policy to identify the sampling distribution at each time step. The distribution is then used to generate control inputs in a single-step lookahead MPPI, as opposed to learning the distribution over the entire horizon, as done in prior work. Moreover, the neural distribution policy in Step-MPPI provides a “feedback policy” that guides the sampling distribution toward the optimal solution learned during training. That fundamental discrepancy between Step-MPPI and conventional MPPI can be illustrated in Fig. 1. The learning procedure is inspired by differentiable predic-tive control (DPC) [12], in which the neural distribution 
+
+> arXiv:2604.01539v1 [eess.SY] 2 Apr 2026
+
+policy is trained in a self-supervised manner using a loss function defined by the MPC cost, constraint penalties, and an exploratory regularization term. Furthermore, to enable end-to-end policy optimization, we formulate the sampling-based MPPI update as a differentiable operator, and derive the closed-form Jacobian for the MPPI update layer, bridging the gap between differentiable programming and derivative-free sampling methods. The proposed framework offers several advantages over existing methods in the literature. First, most prior MPPI methods draw rollout samples over the entire control horizon, but generating useful samples to capture complex behav-iors is difficult without a distributional prior. For example, in autonomous vehicle navigation, if the desired behavior involves sharp acceleration and turns, a large number of samples may be required to cover low-cost trajectories. By training the distribution policy offline and using it to generate samples, our framework guides online samples toward low-cost regions. In addition, the framework learns both the sampling mean and covariance, enabling a balance between control performance and exploration for greater robustness. Second, online execution of Step-MPPI is reduced to a neural network prediction followed by a single-step MPPI update, resulting in lower computational cost and sample requirements than conventional MPPI approaches. Finally, unlike deterministic neural policies that often struggle under out-of-distribution conditions, Step-MPPI combines learned proposals with online sampling-based refinement to preserve adaptability in real time. As a result, compared with DPC, the proposed framework provides a robust correction layer that helps mitigate suboptimality and constraint violations under out-of-distribution conditions. The remainder of this paper is organized as follows. Section II presents the formulation of the problem and the necessary background, and Section III details the proposed framework. Section IV presents the simulation results, and Section V concludes the paper with final remarks. II. P ROBLEM FORMULATION AND PRELIMINARIES 
+
+In this section, we present the problem formulation and provide the necessary background on sampling-based MPC via MPPI and the self-supervised DPC framework. 
+
+A. MPC Problem Formulation 
+
+We consider the control problem for a discrete-time dy-namical system with states xt ∈ Rnx and control inputs 
+
+ut ∈ Rnu . The system dynamics are governed by: 
+
+xt+1 = f (xt, ut; ξt), (1) where f is a dynamic model with possibly time-varying model parameters collected in ξt. In practice, the discrete-time model (1) is obtained from the continuous-time ODEs using a differentiable discretization method with sampling time δt . In MPC, over a control horizon of length H, we seek a control sequence u⊤ 
+
+> t:t+H−1
+
+=[u⊤ 
+
+> t
+
+, u⊤
+
+> t+1
+
+, · · · , u⊤
+
+> t+H−1
+
+], which results in a state trajectory 
+
+x⊤ 
+
+> t:t+H
+
+= [ x⊤ 
+
+> t
+
+, x⊤
+
+> t+1
+
+, · · · , x⊤ 
+
+> t+H
+
+], that minimizes the follow-ing cost function: 
+
+C(xt:t+H , ut:t+H−1; rt:t+H ) = 
+
+> H−1
+
+X
+
+> h=0
+
+c(xt+h+1 , ut+h; rt+h+1 ), (2) where c(xt, ut; rt) is the stage cost, while rt denotes the vector of exogenous information available to the controller, such as future reference signals, time-varying cost parame-ters, and, when applicable, coefficients associated with state and input constraints. At each time step t, we solve the following optimization problem: 
+
+minimize 
+
+> ut:t+H−1
+
+C(xt:t+H , ut:t+H−1; rt:t+H )
+
+subject to: xt+h+1 = f  xt+h, ut+h; ξt+h
+
+ ,h = 0 , . . . , H − 1.
+
+(3) In a receding horizon manner, we apply only the first control input u⋆t from the optimizer, move the horizon forward, and resolve (3) at the next time step. Note that the MPC formulation (3) can accommodate both state and input constraints, which are treated as soft constraints through penalty terms in the cost function. Soft constraints are commonly used in both sampling-based MPC and DPC. In addition, the formulation in (2) assigns the same stage cost to the terminal time step as to the preceding time steps. Nevertheless, the framework can be readily extended to include an additional terminal cost function, as well as terminal soft constraints. 
+
+B. MPPI 
+
+In MPPI [1], the optimal control sequence is computed based on multiple samples drawn from a Gaussian dis-tribution. Let zh denote the parameters of the sampling distribution at time step h, which consists of the mean and the Cholesky factor of the covariance matrix. Over the con-trol horizon, define z⊤ 
+
+> t:t+H−1
+
+= [ z⊤ 
+
+> t
+
+, z⊤
+
+> t+1
+
+, · · · , z⊤
+
+> t+H−1
+
+].Henceforth, for notation simplicity, we use x, u, r, and z
+
+to denote the corresponding horizon-wise variables. Let ηz
+
+denote the sampling distribution of the control inputs, i.e., 
+
+u ∼ ηz . Thus, at every time step t, the goal of MPPI is to find the over-horizon optimal parameters zt:t+H−1 that solve: 
+
+zt:t+H−1 = arg min  
+
+> z∈Z
+
+Jt(z), (4) where Jt(·) is a statistic defined given the cost function 
+
+C(x, u; r) at time step t which measures the accumulated cost of a trajectory. In MPPI, we choose the exponential utility for the statistic: 
+
+Jt(z) := − log Eπz
+
+
+
+exp 
+
+
+
+− 1
+
+λ C(x, u; r)
+
+ 
+
+, (5) where λ > 0 is a scaling parameter, also known as tem-perature. We compute the gradients using a likelihood-ratio derivative as follows: 
+
+∇Jt(z) = 
+
+Eηz
+
+h
+
+w(u) ∇z log ηz (u)
+
+i
+
+Eηz
+
+h
+
+w(u)
+
+i , (6) where 
+
+w(u) = exp 
+
+
+
+− 1
+
+λ C(x, u; r)
+
+
+
+. (7) We approximate these expectations with Monte Carlo sam-pling, which results in a convex combination of gradients: 
+
+∇Jt(z) = −
+
+> N
+
+X
+
+> i=1
+
+wi ∇z log ηz
+
+ u(i), (8) with weights wi defined by the softmax operation 
+
+wi = exp  − 1 
+
+> λ
+
+C(x(i), u(i); r)PNj=1 exp  − 1 
+
+> λ
+
+C(x(j), u(j); r) . (9) Next, we choose the Bregman divergence to be the KL divergence and the distribution to be a factorized Gaussian: 
+
+ηz (u) = 
+
+> H−1
+
+Y
+
+> h=0
+
+N (ut+h; μt+h, Σt+h), (10) for mean vectors μt+h and covariance matrices Σt+h. Under these assumptions, we obtain the following update rule for the distribution’s mean: 
+
+μt+h =
+
+> N
+
+X
+
+> i=1
+
+wi u(i)
+
+> t+h
+
+, (11) while the covariance matrix is updated according to 
+
+Σt+h =
+
+> N
+
+X
+
+> i=1
+
+wi m(i)
+
+> t+h
+
+ m(i)
+
+> t+h
+
+⊤, (12) or be kept fixed over time. In summary, MPPI operates in three steps. First, MPPI samples input sequences over a planning horizon from a predefined sampling distribution. Second, it rolls out the system dynamics for each sample and evaluates the corre-sponding trajectory costs. Third, it updates the control input sequence using the importance-sampling weighting rule. This procedure can be repeated for multiple iterations. 
+
+C. Differentiable Predictive Control 
+
+DPC [12], contrary to MPPI, is a deterministic framework that uses differentiable programming to train a neural net-work to approximate the explicit predictive control policy in a self-supervised manner. The MPC problem is viewed as a parametric optimal control problem (pOCP), where the parameters may include the current state, reference signals, model parameters, and cost parameters. DPC then learns a neural control policy that maps the current state and parameters to the optimal control input at each time step. In DPC, we make the following differentiability assumption. 
+
+Assumption 1 (Differentiability): The system dynamics, cost functions, and constraint functions are continuously differentiable with respect to their arguments. As a result, the closed-loop state and control trajectories, as well as the corresponding training objective, are differentiable with respect to the control policy parameters. Let πθ denote a differentiable control policy parameter-ized by θ. At time step h, the control input is computed by: 
+
+uh = πθ (xh, rh+1 , ξh) , (13) where rh+1 and ξh may include references and model parameters, allowing the policy to generalize to tasks and operating conditions. Given an initial state x0 and a sequence of problem parameters, the policy is rolled out through the system dynamics as: 
+
+xh+1 = f (xh, πθ (xh, zh); ξh) , (14) for h = 0 , . . . , H − 1. This yields a differentiable compu-tational graph for the closed-loop trajectory. The resulting rollout is structurally similar to a single-shooting MPC for-mulation, except that the optimization variables are the policy parameters θ rather than the open-loop control sequence [12]. To train the neural policy, DPC minimizes an empirical finite-horizon loss over sampled initial conditions and task parameters {x(i)0 , r(i), ξ(i)}i=1: M :
+
+minimize 
+
+> θ
+
+1
+
+M H 
+
+> M
+
+X
+
+> i=1
+> H−1
+
+X
+
+> h=0
+
+c (xh+1 , uh; rh+1 ) (15a) subject to: uh = πθ (xh, rh+1 , ξh), (15b) 
+
+xh+1 = f (xh, uh; ξh), (15c) 
+
+x0 = x(i)0 , r0: H = r(i), ξ0: H = ξ(i), (15d) for all h = 0 , . . . , H − 1 and i = 1 , . . . , M . Since the stage cost, penalty terms, policy, and rollout dynamics are differen-tiable almost everywhere, gradients of (15) with respect to θ
+
+can be computed efficiently by backpropagation through time using automatic differentiation. This enables offline training using stochastic gradient-based methods, while online control reduces to a single forward pass of πθ , which can be much faster than solving the original MPC problem repeatedly. Overall, MPPI and DPC offer complementary strengths for real-time control. MPPI can handle nonlinear dynamics and complex objectives without requiring analytic gradients, but its online sampling can be computationally expensive. In contrast, DPC enables fast online inference through of-fline training, but it is sensitive to distribution shift and may yield suboptimal or constraint-violating solutions. Our proposed Step-MPPI, presented next, combines the strengths of both approaches by leveraging offline policy learning and online sampling-based refinement to achieve computational efficiency, strong performance, and robustness. III. P ROPOSED APPROACH 
+
+In this section, we present the details of Step-MPPI , a framework that learns how to compute a sampling distribu-tion to enable a single-step MPPI rollout and update while optimizing a loss function over a long control horizon. A. Single-Step MPPI 
+
+First, we introduce the concept of single-step MPPI, which aims to find uh that minimizes the single-step immediate cost function. In single-step MPPI, suppose that we draw the samples of control inputs at time step h as follows, 
+
+uh = μh + Lhϵ, ϵ ∼ N (0, I), (16) where μh is the mean vector and Lh is a lower-triangular Cholesky factor of the covariance matrix, while 0 and I
+
+are the zero vector and identity matrix with appropriate dimensions. (16) is also known as the reparameterization trick . Suppose that K samples are drawn, and for each sample candidate u(k) 
+
+> h
+
+, k = 1 , . . . , K , we perform single-step rollouts using the dynamics, and the following MPPI update rule: 
+
+umppi  
+
+> h
+
+=
+
+> K
+
+X
+
+> k=1
+
+wku(k) 
+
+> h
+
+. (17) where the MPPI weights are computed by: 
+
+wk =exp 
+
+
+
+− 1 
+
+> λ
+
+c(x(k)
+
+> h+1
+
+, u(k) 
+
+> h
+
+; r(k)
+
+> h+1
+
+)
+
+PKj=1 exp 
+
+
+
+− 1 
+
+> λ
+
+c(x(j)
+
+> h+1
+
+, u(j) 
+
+> h
+
+; r(j)
+
+> h+1
+
+)
+
+ . (18) We represent the optimal control input computed by (17) using the following MPPI layer: 
+
+umppi  
+
+> h
+
+= MPPI( zh, s(1: K)), (19) where s(1: K) denotes the vector of K cost samples. Single-step MPPI performs poorly because it solves only a single-step optimal control problem. For this reason, the sampling distribution must be optimized through training so that single-step MPPI can achieve performance comparable to that of multi-step MPPI. 
+
+B. Learning Sampling Distributions 
+
+We denote zh = ( μh, Lh) as the sampling-distribution parameters. In this work, we propose to learn the optimal parameters of the sampling distribution by a neural network as follows: 
+
+zh = πθ (xh, rh+1 , ξh). (20) Naively, πθ can be trained using a similar loss function to (15). However, using solely the MPC formulation to define the loss function may cause the covariance of the neural distribution policy to shrink during training. Consequently, to preserve the exploration capability of MPPI, we propose augmenting the loss function with a maximum-entropy regu-larization term for the neural distribution policy. The entropy of a Gaussian distribution N (μh, Σh), denoted by H (zh),can be given by: 
+
+H(zh) = 12 log  (2 πe )d det Σh
+
+ (21) Thus, given M training instances {x(i)0 , r(i), ξ(i)}i=1: M , the following loss function can be used to train the neural distribution policy: 
+
+minimize  
+
+> θ
+
+Lpolicy = 1
+
+M H 
+
+> M
+
+X
+
+> i=1
+> H−1
+
+X
+
+> h=0
+
+ℓh(θ), (22a) subject to: uh = MPPI  zh, xh, s(1: K), (22b) 
+
+zh = πθ (xh, rh+1 , ξh), (22c) 
+
+xh+1 = f (xh, uh; ξh), (22d) 
+
+x0 = x(i)0 , r0: H = r(i), ξ0: H = ξ(i), (22e) for all h = 0 , . . . , H −1, where the stage loss function ℓh(θ)
+
+is defined by: 
+
+ℓh(θ) := c(xh+1 , uh; rh+1 ) − γH(zh) (23) with γ > 0 being a weighting factor for the regularization term. In (22), s(1: K) = [ s(1) , . . . , s (K)]⊤ is the vector of cost samples, where for each k = 1 , . . . , K , s(k) is computed by: 
+
+s(k) = c f (xh, μh + Lhϵ(k); ξh), μh + Lhϵ(k); rh+1 
+
+,
+
+Next, we briefly describe the NN architectures used for learning the parameters of the sampling distribution. The neural network πθ consists of a shared multi-layer percep-tron (MLP) backbone, followed by two MLP heads that pre-dict the control mean and the entries of the lower-triangular Cholesky factor, respectively. When control inputs are sub-ject to bounds, the mean output is smoothly squashed using the tanh function, while the covariance parameterization is processed through the softplus function, with additional clamping to ensure positivity and numerical stability. 
+
+C. Differentiation of the MPPI Layer 
+
+To train the neural distribution policy in an end-to-end manner, we need to differentiate through the MPPI layer (19). In what follows, we treat the MPPI weighted update as a differentiable layer using the reparameterization trick (16), and derive the Jacobian of the layer’s outputs with respect to the inputs. Note that in this section, we omit time subscripts for simplicity unless they are necessary to be included explicitly. Using the finite-sample approximation in (17), the Jaco-bian of the MPPI layer output with respect to its inputs is obtained by differentiating (17), which yields 
+
+∂u
+
+∂z =
+
+> K
+
+X
+
+> k=1
+
+ ∂w k
+
+∂z u(k) + wk
+
+∂u(k)
+
+∂z
+
+
+
+. (24) Note that each sample is differentiable with respect to the distribution parameters, and the Jacobians are given by: 
+
+∂u(k)
+
+∂μ = I, ∂u(k)
+
+∂L =
+
+
+
+ϵ(k)⊤
+
+. (25) where with a slight abuse of notation, we let ∂u(k)/∂ L
+
+denote the Jacobian as a linear operator acting on dL, i.e., 
+
+du(k) = ( dL) ϵ(k). To complete the differentiation in (24) we need to compute the gradient of wk with respect to 
+
+z, which includes ∂w k/∂ μ and ∂w k/∂ L. We present the gradient computation in Lemma 1. Lemma 1: Consider the importance-sampling weighting strategy (9), the gradients of wk with respect to μ and L
+
+are calculated as follows: 
+
+∂w k
+
+∂μ = − 1
+
+λ wk
+
+∂c (k)
+
+∂u(k) −
+
+> K
+
+X
+
+> j=1
+
+wj
+
+∂c (j)
+
+∂u(j)
+
+!
+
+,∂w k
+
+∂L = − 1
+
+λ wk
+
+∂c (k)
+
+∂u(k)
+
+
+
+ϵ(k)⊤
+
+−
+
+> K
+
+X
+
+> j=1
+
+wj
+
+∂c (j)
+
+∂u(j)
+
+
+
+ϵ(j)⊤
+
+!
+
+,
+
+(26) 
+
+where we denote c(k) = c(x(k)
+
+> h+1
+
+, u(k) 
+
+> h
+
+; rh+1 ).
+
+Proof: By the chain rule, we have 
+
+∂w k
+
+∂z =
+
+> K
+
+X
+
+> j=1
+
+∂w k
+
+∂c (j)
+
+∂c (j)
+
+∂z . (27) Using the gradient of the softmax function, 
+
+∂w k
+
+∂c (j) = − 1
+
+λ wk (δkj − wj ) , (28) where δkj is the Kronecker delta, we obtain 
+
+∂w k
+
+∂z = − 1
+
+λ wk
+
+ ∂c (k)
+
+∂z −
+
+> K
+
+X
+
+> j=1
+
+wj
+
+∂c (j)
+
+∂z
+
+ , (29) with ∂c (k)
+
+∂z = ∂c (k)
+
+∂u(k)
+
+∂u(k)
+
+∂z . (30) Since ∂u(k) 
+
+> ∂μ
+
+= I, ∀k, we have 
+
+∂c (k)
+
+∂μ = ∂c (k)
+
+∂u(k) . (31) Therefore, combining with (29), we obtain 
+
+∂w k
+
+∂μ = − 1
+
+λ wk
+
+ ∂c (k)
+
+∂u(k) −
+
+> K
+
+X
+
+> j=1
+
+wj
+
+∂c (j)
+
+∂u(j)
+
+ .
+
+Similarly, since ∂u(k) 
+
+> ∂L
+
+= ϵ(k), ∀k we obtain 
+
+∂c (k)
+
+∂L = ∂c (k)
+
+∂u(k)
+
+ ϵ(k)⊤. (32) which, combining with (29), yields 
+
+∂w k
+
+∂L = − 1
+
+λ wk
+
+∂c (k)
+
+∂u(k)
+
+ ϵ(k)⊤ −
+
+> K
+
+X
+
+> j=1
+
+wj
+
+∂c (j)
+
+∂u(j)
+
+
+
+ϵ(j)⊤
+
+!
+
+.
+
+The proof is thus complete. Moreover, by the chain rule, we have 
+
+∇θ ℓ(θ) = E 
+
+> ϵ∼N (0,I)
+
+"
+
+∂u
+
+∂z
+
+∂z
+
+∂θ
+
+!⊤
+
+∇u c(x, u; r)
+
+− γ ∂z
+
+∂θ
+
+> ⊤
+
+∇z H(z)
+
+#
+
+.
+
+(33) The gradient of the entropy term H(z) with respect to L is computed by: 
+
+∇LH(z) = ( L−1)⊤, (34) while the gradient of stage cost with respect to the control inputs can be derived from the chain rule as follows: 
+
+∇uh c(xh+1 , uh; rh+1 ) = ∂c (xh+1 , uh; rh+1 )
+
+∂uh
+
++ ∂c (xh+1 , uh; rh+1 )
+
+∂xh+1 
+
+∂f (xh, uh; ξh)
+
+∂uh
+
+,
+
+(35) Therefore, the differentiation of the vanilla MPPI layer can be obtained by combining (24), (25), (26), (34), and (35). IV. R ESULTS AND DISCUSSIONS 
+
+In this section, we validate the performance of the pro-posed framework through three numerical examples: (1) a high-speed autonomous vehicle, (2) a quadrupedal robot, and (3) an urban traffic network (see Fig. 2). While the autonomous vehicle example demonstrates the advantages of the proposed frameworks in the long-horizon MPC problem, the quadrupedal robot example is better suited for validation in a problem involving higher-dimensional state and input spaces, as well as a system that is more sensitive to noise. In addition, the urban traffic network problem is challenging due to two reasons: the high dimensionality and the long con-trol horizon. The implementation and simulation videos are available at the supplemental website: https://sites. google.com/seas.upenn.edu/step-mppi .
+
+A. High-speed Autonomous Vehicle 
+
+We validate the framework using an autonomous vehicle example in the F1TENTH-Gym environment [13]. In this example, the autonomous vehicle tracks a reference trajec-tory while staying within the track boundaries. Our empirical results show that, in constrained high-speed driving, the MPC horizon must be sufficiently long for the vehicle to success-fully navigate challenging regions, such as sharp turns. We consider the dynamic single-track model [14], in which the state of the system is given by x = [ px, p y , v, δ, Ψ, ˙Ψ, β ]⊤,where (px, p y ) is the position in cartesian coordinates, v is the velocity, δ is the steering angle of the front wheels, 
+
+Ψ is the heading angle, ˙Ψ is the yaw rate, and β is the side-slip angle. The control inputs u = [ a, dδ ]⊤ include the acceleration in the longitudinal direction and the steering speed. The objective function at each time step is to minimize the tracking errors to reference waypoints and the control efforts as follow: 
+
+c(xt+h+1 , ut+h; rt+h+1 ) = 
+
+
+
+∥xt+h+1 − rt+h+1 ∥2
+
+> Q
+
++ ∥ut+h∥2
+
+> R
+
+
+
+,
+
+(36) where Q and R are the weight matrices with appropriate dimensions. Safety constraints to the track border are for-mulated as linear constraints at each time step as follows: 
+
+cright , t +h ≤ at+h px,t +h + bt+h py,t +h ≤ cleft , t +h, (37) where (xt+h, y t+h) denotes the vehicle position in global coordinates, while (at+h, b t+h, c left , t +h, c right , t +h) are the coefficients defining the local linear half-space approxima-tion of the left and right track borders. In addition to the (a) Autonomous vehicle in F1TENTH-Gym (b) Quadrupedal robot in MuJoCo Region 0 Region 3      
+
+> Region 1 Region 4 Region 5
+> Region 2 Region 6
+> u0,3
+> u0,1u0,4
+
+(c) Traffic network with perimeter control 
+
+Fig. 2: Three numerical examples considered for validation. 0 500 1000 1500 2000 2500 3000 3500 
+
+> Time step
+> −1
+> 0
+> 1
+> Cross-track error [m]  MPPI
+> DPC
+> Step-MPPI
+
+(a) Cross-track error over time. MPPI 
+
+> DPC
+> Step-MPPI
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+> 1.25
+> Absolute cross-track error [m]
+
+(b) Absolute cross-track error distribution. 
+
+Fig. 3: Cross-track error comparison of MPPI, DPC, and Step-MPPI in the autonomous vehicle example. safety constraints, we impose the following bound constraints on the states and inputs: 
+
+vmin ≤ vt+h ≤ vmax , δ min ≤ δt+h ≤ δmax , (38) 
+
+amin ≤ at+h ≤ amax , dδ min ≤ dδ t+h ≤ dδ max , (39) where vmin , v max , δmin , δ max , amin , a max , and dδ min , dδ max 
+
+denote the bounds on speed, steering angle, acceleration, and steering rate, respectively. We consider the MPC problem with a horizon of length 
+
+H = 40 and sampling time δt = 0 .05 s . Step-MPPI employs the importance-sampling updates with 1024 samples. Note that Step-MPPI performs only a single iteration at each time step. We compare them with two baselines: (1) the DPC 
+
+policy, and (2) MPPI executing one iterations and 16 , 384 
+
+rollout samples. The MPPI implementation with an adaptive penalty method for better constraint handling, as presented in [15], is adopted. The MPPI hyperparameters have been manually tuned to ensure that the vehicle can complete the lap without crashes. Figure 3 compares the cross-track error of MPPI, DPC, and Step-MPPI in a simulation with a vehicle speed of 
+
+10 m /s. In the top panel, we observe that MPPI exhibits the largest oscillations and error magnitudes over the trajectory, while DPC significantly reduces the error but still shows TABLE I: Comparison of MPPI, DPC, and Step-MPPI on the quadrupedal robot task over 100 testing simulations with different goal positions.             
+
+> Method Success Failure Timeout MPPI 83 17 0
+> DPC 95 41
+> Step-MPPI 100 00
+
+noticeable fluctuations in several intervals. In contrast, Step-MPPI maintains smaller cross-track errors and smoother trajectories. The bottom panel further confirms this obser-vation through the distribution of the absolute cross-track error. Overall, Step-MPPI achieves lower median errors with tighter distributions than DPC and MPPI. Overall, the figure shows that the proposed method improves tracking accuracy compared with MPPI and DPC. 
+
+B. Quadrupedal Robot 
+
+We validate the proposed framework on a quadrupedal robot walking task, whose MPC formulation is adopted from [16]. The MPC formulation is based on single rigid body dynamics (SRBD), which capture the robot’s center-of-mass motion and body rotation while neglecting the swing-leg dynamics. Let pc ∈ R 3 and vc ∈ R 3 denote the center-of-mass position and velocity, respectively; let Φ ∈ R 3 denote the orientation, parameterized by roll, pitch, and yaw angles; and let C ω ∈ R 3 denote the angular velocity expressed in the body frame. Moreover, let Γi ∈ R 3 denote the ground reaction forces (GRFs) at each foot i ∈ { 1, . . . , 4}, and δ be the contact states of all four legs, which can be computed by a gait optimization layer. The full details of the SRBD model can be found in [16]. The vectors of states and control inputs are defined as 
+
+x⊤ =
+
+h
+
+p⊤ 
+
+> c
+
+, v⊤ 
+
+> c
+
+, Φ⊤, C ω
+
+i
+
+, u⊤ = [ Γ⊤ 
+
+> i
+
+]i=1 ,..., 4. (40) The following quadratic cost function is used for this control task: 
+
+c(xt+h+1 , ut+h; rt+h+1 ) = ∥xt+h+1 − xref ∥2 
+
+> Q
+
++
+
+∥ut+h − uref ∥2 
+
+> R
+
+, (41) where Q and R are positive diagonal weighting matrices, 
+
+xref and uref are the desired states and nominal contact forces, respectively, and r⊤ 
+
+> t+h+1
+
+= [ x⊤ 
+
+> ref
+
+, u⊤ 
+
+> ref
+
+].We consider the MPC problem with a horizon of length 
+
+H = 20 and sampling time δt = 0 .02 s . We compare Step-MPPI with 512 samples, DPC, and MPPI with 16 , 384 rollout Linear velocity 
+
+> error
+> Orientation
+> error
+> 0.000
+> 0.025
+> 0.050
+> 0.075
+> 0.100
+> 0.125
+> 0.150
+> Tracking error
+> MPPI
+> DPC
+> Step-MPPI
+
+Fig. 4: Box-plot comparison of tracking performance for MPPI, DPC, and Step-MPPI in the quadrupedal robot task. samples. The performance of these methods is evaluated over 100 testing simulations with different goal positions. The results in Table I show that conventional MPPI, even with a large number of samples, achieves the lowest success rate of 84% . Meanwhile, Step-MPPI attains the best perfor-mance among all tested methods, successfully completing all simulations without any failures or timeouts. DPC performs reasonably well, with success rates of 95% , indicating that they are less reliable than Step-MPPI in this example. We ad-ditionally present the tracking errors as box plots, including the linear velocity and orientation errors. Step-MPPI achieves the lowest linear-velocity error, with MPPI close behind, while DPC exhibits the largest velocity-error distribution. For orientation tracking, both DPC and Step-MPPI show much tighter distributions than MPPI, with Step-MPPI achieving the smallest spread and a slightly lower median error. 
+
+C. Urban Traffic Network 
+
+In the urban traffic network setting [17], the task is to regulate the flow of traffic through a traffic network in order to dissipate the traffic as quickly as possible. The traffic network consists of R regions with indices R = {1, . . . , R }.We denote the neighbors of region i as Ni ⊂ R . The state 
+
+xij ≥ 0 is the accumulation in region i with destination j,and x is the matrix containing all state components. The total accumulation and outflow of region i are computed by: 
+
+xi = X
+
+> j∈R
+
+xij , gi(xi) = aix3 
+
+> i
+
++ bix2 
+
+> i
+
++ cixi, (42) where gi is the macroscopic fundamental diagram (MFD), typically a cubic polynomial fit to empirical data [18]. The transfer and completion flows are 
+
+mihj = θihj 
+
+xij 
+
+xi
+
+gi(xi), mii = xii 
+
+xi
+
+gi(xi), (43) where θihj ∈ [0 , 1] is the fraction of traffic in region i with destination j that routes through neighbor h, with P 
+
+> h
+
+θihj =1. The exogenous demand dij (t) gives the rate at which vehicles appear in region i with destination j. The perimeter control uij ∈ [u, ¯u] regulates flow between adjacent regions. The system dynamics are therefore given by: 
+
+˙xii = dii − mii (x) + X
+
+> h∈N i
+
+uhi mhii (x), (44a) 
+
+˙xij = dij − X
+
+> h∈N i
+
+uih mihj (x) + X
+
+> h∈N i
+> h̸=j
+
+uhi mhij (x). (44b) TABLE II: Urban Traffic Network Results. 
+
+TVH = Total Vehicle Hours, defined as P 
+
+> k
+
+∥xk ∥1 · ∆t/ 3600 .                                                                           
+
+> Method Final Accumulation (veh) TVH (veh ·h)
+> In-Distribution
+> Baseline 10 ,328 .34 ±205 .82 17 ,858 .97 ±288 .67
+> Naive MPPI 10 ,532 .53 ±238 .07 18 ,907 .35 ±321 .52
+> DPC 132 .61 ±15 .44 11 ,182 .57 ±394 .38
+> Step-MPPI 156 .7±9.98 10 ,490 .32 ±229 .63
+> Out-of-Distribution
+> Baseline 13 ,697 .57 ±326 .59 24 ,145 .02 ±531 .99
+> Naive MPPI 13 ,905 .52 ±318 .42 25 ,844 .34 ±591 .13
+> DPC 9,781 .82 ±1,325 .84 21 ,949 .26 ±754 .86
+> Step-MPPI 686 .73 ±130 .32 17 ,513 .5±791 .201000 2000 3000 4000
+> Time (s)
+> 0
+> 5000
+> 10000
+> 15000
+> 20000
+> 25000
+> 30000
+> Total Vehicles
+> (a) In-Distribution
+> 01000 2000 3000 4000
+> Time (s)
+> (b) Out-of-Distribution
+> Baseline DPC Step-MPPI Naive MPPI
+
+Fig. 5: Total network accumulation over time for in-distribution (a) and out-of-distribution (b). We compare Step-MPPI against a baseline controller, which sets all control inputs to their upper limit, DPC, and MPPI. During training, the “high traffic” cells with indices (1 , 5) , (0 , 6) , (5 , 0) , (6 , 1) are initialized according to 
+
+N (4000 , 100) clipped to [0 , 15000] . All other cells are initial-ized with N (150 , 20) . 50 , 000 initial states were sampled for training purposes. The planning horizon used for all methods is H = 40 . Since Step-MPPI combines sampling-based and learning-based control, it is well-suited to scenarios with distribution shift. To evaluate this claim, we compare the methods in an out-of-distribution (OOD) setting, where we replace the initial distribution of the high traffic cells with samples drawn from N (5000 , 200) .The results are summarized in Table II and Figure 5. In the in-distribution (ID) setting, the baseline and naive MPPI both fail to dissipate traffic effectively, leaving over 10 ,000 
+
+vehicles in the network at the end of the horizon. Naive MPPI performs slightly worse than the baseline in both metrics, indicating that without a learned prior, its sampling-based optimization struggles in this high-dimensional setting. In contrast, DPC and Step-MPPI reduce the final accumulation by nearly two orders of magnitude, to 132 .61 and 156 .7
+
+vehicles, respectively. Although DPC achieves a slightly lower final accumulation, Step-MPPI attains a lower TVH (total vehicle hours) of 10 ,490 .32 versus 11 ,182 .57 for DPC, indicating more efficient traffic dissipation over the full horizon. Moreover, Step-MPPI exhibits the lowest variance in both metrics, suggesting more consistent performance across initial conditions. The advantage of Step-MPPI becomes more pronounced in the OOD setting. Under distribution shift, DPC degrades dramatically, with final accumulation increasing from 132 .61 TABLE III: Runtime comparison (in ms) across different considered examples (Example 1: autonomous vehicles; Ex-ample 2: quadrupedal robot; Example 3: traffic network). 
+
+Method Example 1 Example 2 Example 3 
+
+MPPI 16.5 15.1 0.317 DPC 2.9 3.8 0.075 Step-MPPI 7.5 4.3 0.153 
+
+to 9,781 .82 vehicles and a large standard deviation of 
+
+1,325 .84 , indicating poor generalization beyond the training distribution. In contrast, Step-MPPI degrades much more gracefully: its final accumulation increases to 686 .73 vehi-cles, a 4.4× increase from the ID setting but still over 14 ×
+
+lower than DPC. Moreover, its TVH in the OOD setting is 
+
+17 ,513 .5, compared to 21 ,949 .26 for DPC, corresponding to a 20% improvement. This robustness stems from the hybrid architecture of Step-MPPI, where the learned neural proposal provides an informed initialization and the MPPI refinement step adapts online to unseen states. Finally, regarding computational cost, Table III reports the average per-step runtimes for all three examples presented in this section. Overall, DPC is the fastest learned controller, as it requires only a single forward pass through the policy network. Step-MPPI and Neural Step-MPPI incur additional overhead over DPC due to the single-step MPPI sampling performed at each time step, yet they remain faster than MPPI. The higher cost of naive MPPI comes from rolling out all sample sequences over the full planning horizon, resulting in more dynamics evaluations per step than Step-MPPI. Though Step-MPPI is slower than DPC, it still satisfies real-time requirements (e.g., 4.3 ms for a robot with a 20 ms 
+
+sampling time). All controllers are evaluated on an AMD Ryzen 9 7900X with an RTX 4090 GPU. The controllers and models are compiled and executed on the GPU using the JAX framework, which leads to the low runtimes. V. C ONCLUSIONS 
+
+In this paper, we propose Step-MPPI, a learning-based control framework for efficient single-step lookahead MPPI. By learning the sampling distribution offline through DPC, the proposed approach reduces online execution to a neural network prediction followed by a single-step MPPI update, while preserving long-horizon planning capability during training. To enable end-to-end training, we formulate the MPPI weighted update as a differentiable layer and then de-rive its Jacobian using the reparameterization. The numerical studies on an autonomous vehicle, a quadrupedal robot, and an urban traffic network demonstrate the effectiveness of the proposed frameworks over MPPI in improving computational efficiency and control performance. Moreover, Step-MPPI achieves improved robustness compared with both MPPI and DPC. Our future work will focus on extending the framework to non-Gaussian sampling distributions. VI. G EN AI D ISCLOSURE 
+
+ChatGPT (OpenAI) [19] was used to improve the syntax and grammar of several paragraphs in the manuscript. REFERENCES [1] G. Williams, A. Aldrich, and E. A. Theodorou, “Model predictive path integral control: From theory to parallel computation,” Journal of Guidance, Control, and Dynamics , vol. 40, no. 2, pp. 344–357, 2017. [2] H. Homburger, F. Messerer, M. Diehl, and J. Reuter, “Optimality and suboptimality of MPPI control in stochastic and deterministic settings,” 
+
+IEEE Control Systems Letters , 2025. [3] M. Kazim, J. Hong, M.-G. Kim, and K.-K. K. Kim, “Recent advances in path integral control for trajectory optimization: An overview in theoretical and algorithmic perspectives,” Annual Reviews in Control ,vol. 57, p. 100931, 2024. [4] D. M. Asmar, R. Senanayake, S. Manuel, and M. J. Kochenderfer, “Model predictive optimized path integral strategies,” in 2023 IEEE International Conference on Robotics and Automation (ICRA) . IEEE, 2023, pp. 3182–3188. [5] J. Sacks and B. Boots, “Learning to Optimize in Model Predictive Control,” in 2022 International Conference on Robotics and Automa-tion (ICRA) , May 2022, pp. 10 549–10 556. [6] J. Sacks, R. Rana, K. Huang, A. Spitzer, G. Shi, and B. Boots, “Deep model predictive optimization,” in 2024 IEEE International Conference on Robotics and Automation (ICRA) . IEEE, 2024, pp. 16 945–16 953. [7] R. Kusumoto, L. Palmieri, M. Spies, A. Csiszar, and K. O. Arras, “Informed information theoretic model predictive control,” in 2019 International Conference on Robotics and Automation (ICRA) . IEEE, 2019, pp. 2047–2053. [8] T. Belvedere, M. Ziegltrum, G. Turrisi, and V. Modugno, “Feedback-MPPI: fast sampling-based MPC via rollout differentiation–adios low-level controllers,” IEEE Robotics and Automation Letters , vol. 11, no. 1, pp. 1–8, 2025. [9] Y. Qu, H. Chu, S. Gao, J. Guan, H. Yan, L. Xiao, S. E. Li, and J. Duan, “RL-driven MPPI: Accelerating online control laws calculation with offline policy,” IEEE Transactions on Intelligent Vehicles , vol. 9, no. 2, pp. 3605–3616, 2023. [10] E. Trevisan and J. Alonso-Mora, “Biased-MPPI: Informing sampling-based model predictive control by fusing ancillary controllers,” IEEE Robotics and Automation Letters , vol. 9, no. 6, pp. 5871–5878, 2024. [11] P. N. Crestaz, L. De Matteis, E. Chane-Sane, N. Mansard, and A. Del Prete, “TD-CD-MPPI: Temporal-Difference Constraint-Discounted Model Predictive Path Integral Control,” IEEE Robotics and Automation Letters , vol. 11, no. 1, pp. 498–505, 2025. [12] J. Drgoˇ na, A. Tuor, and D. Vrabie, “Learning constrained parametric differentiable predictive control policies with guarantees,” IEEE Trans-actions on Systems, Man, and Cybernetics: Systems , vol. 54, no. 6, pp. 3596–3607, 2024. [13] M. O’Kelly, H. Zheng, D. Karthik, and R. Mangharam, “F1TENTH: An open-source evaluation environment for continuous control and reinforcement learning,” Proceedings of Machine Learning Research ,vol. 123, 2020. [14] M. Althoff, M. Koschi, and S. Manzinger, “CommonRoad: Com-posable benchmarks for motion planning on roads,” in 2017 IEEE Intelligent Vehicles Symposium (IV) . IEEE, 2017, pp. 719–726. [15] Z. Zang, A. Amine, N.-M. T. Kokolakis, T. X. Nghiem, U. Rosolia, and R. Mangharam, “SIT-LMPC: Safe Information-Theoretic Learning Model Predictive Control for Iterative Tasks,” IEEE Robotics and Automation Letters , vol. 11, no. 1, pp. 986–993, 2025. [16] G. Turrisi, V. Modugno, L. Amatucci, D. Kanoulas, and C. Semini, “On the benefits of GPU sample-based stochastic predictive controllers for legged locomotion,” in 2024 IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS) . IEEE, 2024, pp. 13 757– 13 764. [17] R. Tumu, W. S. Cortez, J. Drgoˇ na, D. L. Vrabie, and S. Glavaski, “Differentiable Predictive Control for Large-Scale Urban Road Net-works.” [18] M. Johari, M. Keyvan-Ekbatani, L. Leclercq, D. Ngoduy, and H. S. Mahmassani, “Macroscopic network-level traffic models: Bridging fifty years of development toward the next era,” vol. 131, p. 103334. [19] OpenAI, “ChatGPT,” https://chat.openai.com.
