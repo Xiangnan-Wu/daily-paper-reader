@@ -1,0 +1,992 @@
+Title: Model Predictive Path Integral PID Control for Learning-Based Path Following
+
+URL Source: https://arxiv.org/pdf/2603.29499v1
+
+Published Time: Wed, 01 Apr 2026 00:49:33 GMT
+
+Number of Pages: 28
+
+Markdown Content:
+# Model Predictive Path Integral PID Control for Learning-Based Path Following 
+
+Teruki Kato a, ∗, Koshi Oishi a, Seigo Ito a
+
+> aToyota Central R&D Labs., Inc., Nagakute 480-1192, Japan
+
+Abstract 
+
+Classical proportional–integral–derivative (PID) control is widely employed in industrial applications; however, achieving higher performance often mo-tivates the adoption of model predictive control (MPC). Although gradient-based methods are the standard for real-time optimization, sampling-based approaches have recently gained attention. In particular, model predictive path integral (MPPI) control enables gradient-free optimization and accom-modates non-differentiable models and objective functions. However, directly sampling control input sequences may yield discontinuous inputs and increase the optimization dimensionality in proportion to the prediction horizon. This study proposes MPPI–PID control, which applies MPPI to optimize PID gains at each control step, thereby replacing direct high-dimensional input-sequence optimization with low-dimensional gain-space optimization. This formulation enhances sample efficiency and yields smoother inputs via the PID structure. We also provide theoretical insights, including an information-theoretic interpretation that unifies MPPI and MPPI–PID, an analysis of the effect of optimization dimensionality on sample efficiency, and a character-ization of input continuity induced by the PID structure. The proposed method is evaluated on the learning-based path following of a mini forklift using a residual-learning dynamics model that integrates a physical model with a neural network. System identification is performed with real driving data. Numerical path-following experiments demonstrate that MPPI–PID    
+
+> ∗Corresponding author. Postal address: Toyota Central R&D Labs., Inc., Nagakute 480-1192, Japan. Phone: +81-90-6384-4818
+> Email address: teruki.kato.tg@mosk.tytlabs.co.jp (Teruki Kato)
+> arXiv:2603.29499v1 [eess.SY] 31 Mar 2026
+
+improves tracking performance compared with fixed-gain PID and achieves performance comparable to conventional MPPI while significantly reducing input increments. Furthermore, the proposed method maintains favorable performance even with substantially fewer samples, demonstrating its im-proved sample efficiency. 
+
+Keywords: Model predictive control, Path integral control, PID control, Learning-based control, Path following, Sampling-based optimization 
+
+1. Introduction 
+
+In practical control development, classical proportional–integral–derivative (PID) control remains the established standard. However, to achieve control performance beyond that of PID control, model predictive control (MPC) [1] has been actively studied. As computational methods for real-time optimiza-tion, gradient-based methods are standard, yet sampling-based approaches have recently attracted attention. Model predictive path integral (MPPI) control [2], a representative method in the latter category, provides a highly flexible framework for computing control inputs without gradient calcula-tions, even when the plant model or objective function is non-differentiable. This property enables MPPI to handle plant models based on complex non-linear machine-learning approaches, such as neural networks [3], as well as control specifications with objective functions involving logical branching [4], providing substantial practical benefits. Conversely, as MPPI determines control input based on random samples, the resulting input often exhibits discontinuities. Furthermore, because MPPI directly optimizes the input se-quence, it does not retain the standard PID-controller architecture that is widely adopted in industrial practice, which can complicate deployment and tuning. In addition, (as with standard MPC) the dimensionality of the opti-mization variables scales with the horizon length, which imposes a substantial computational burden. To realize MPC-based real-time optimization while preserving the struc-ture and continuity of PID control, approaches have been proposed that treat PID gains—rather than the control input itself—as optimization vari-ables and perform gradient-based real-time optimization [5, 6, 7, 8]. Various 2studies [5, 6, 7] have targeted linear systems, while others [8] have targeted nonlinear systems based on physics-informed neural networks (PINNs) [3]. However, gradient-based optimization methods are often challenging to em-ploy when the plant model or objective function is non-differentiable and require computationally expensive gradient calculations. Therefore, in this study, we propose a method that updates PID gains— treated as optimization variables—at each control step via sampling-based, model-based optimization using MPPI. The objective is to preserve the struc-ture and continuity of PID control while ensuring versatility (for handling complex control objectives) and computational efficiency. Specifically, the expected benefits are as follows. 
+
+• Handling complex control objectives: As the optimization is based on MPPI, the method can be applied even when the plant model or ob-jective function is non-differentiable. 
+
+• Continuity of the control input: As the PID control law has a filter structure based on the integral and derivative of the error, the control input tends to be smoother than in conventional MPPI, which directly samples the control input. 
+
+• Computational efficiency: In sampling-based optimization using MPPI, computationally expensive gradient calculations are unnecessary. More-over, while in conventional MPPI the dimensionality of the optimiza-tion variables scales with the horizon length, in the proposed method, the dimensionality of the optimization variables equals the (small) num-ber of PID gains, so improved sample efficiency is expected. 
+
+• Compatibility with existing PID controllers: By optimizing only the PID gains while preserving the PID control-law structure, the method can enhance performance without redesigning or replacing existing PID controllers commonly used in industrial applications. Furthermore, we provide theoretical insights that elucidate the proposed method. Specifically, we (i) present an information-theoretic interpretation of an update rule that unifies conventional MPPI with the proposed method, 3(ii) analyze the influence of the optimization dimension on sample efficiency through the effective sample size, and (iii) analyze the continuity of the con-trol input arising from the PID structure. Among related methods, PI 2 (policy improvement with path integrals) [9] is a path-integral-type reinforcement learning approach closely related to MPPI. PI 2, which has also been applied to the tuning of PID gains, is a model-free method that optimizes control policy parameters on an episode-by-episode basis [10]. In contrast, the proposed method employs model-based, receding-horizon optimization at each control step, thereby enabling online adaptation of the PID gains in response to predicted future tracking cost under the current operating condition. In this study, we apply the proposed control method to a residual-learning model that integrates a physical model and a neural network (Fig. 1). In 
+
+> Fig. 1: Overview of the proposed method
+
+particular, as a framework for learning residuals relative to a known physical model via neural networks, we employ universal differential equations (UDEs) [11], which are widely used in Scientific Machine Learning (SciML). Building on this framework, we use a model that integrates two complementary ap-proaches: one that learns only the dynamics of a subset of state dimensions [12, 13, 14] and another that adjusts the residual magnitude depending on the state [15]. Furthermore, we apply the proposed method to system identification and path-following control using real driving data from a mini forklift platform, representing a typical industrial vehicle. In particular, we benchmark the proposed control method against conventional fixed-gain PID control and standard MPPI, demonstrating improvements in path-following performance and continuity of control inputs, as well as in sample efficiency. 4The symbols employed in this study are as follows. The element-wise product of vectors is denoted by ⊙, and element-wise inequalities are ex-pressed using ≤. The function φclip [l,u ] : Rn → Rn (l, u ∈ Rn) denotes the function that clips each component zj of a vector z ∈ Rn to the interval 
+
+[lj , u j ]. N (μ, Σ) denotes a normal distribution with mean μ and covariance matrix Σ.
+
+2. Methods 
+
+2.1. Modeling 2.1.1. Physical model and machine-learning model 
+
+In the physical modeling of the plant, real phenomena are modeled by differential equations and expressed by the following continuous-time state equation: 
+
+˙x(t) = f phys ,c(x(t), u (t)) (1) Here, x(t) ∈ Rnx and u(t) ∈ Rnu denote the state and control input at time 
+
+t, respectively. Applying Euler discretization with step size h to the above equation, we obtain the following discrete-time state equation representation: 
+
+xt+1 = xt + f phys ,c(xt, u t)h =: f phys (xt, u t) (2) Conversely, within machine-learning-based modeling, we conventionally represent the state update mapping of a discrete-time state-space model di-rectly through a neural network: 
+
+xt+1 = f NN (xt, u t) (3) 
+
+2.1.2. Residual-learning model 
+
+The residual-learning model used in this study learns the residual with respect to the physical model using a neural network, and is expressed by the following discrete-time state equation: 
+
+xt+1 = f phys (xt, u t) + wres (xt)M res ⊙ f NN ,res (xt, u t) =: f (xt, u t) (4) 5Here, M res ∈ { 0, 1}nx denotes a mask that identifies the state dimensions to which the residual is applied, and wres : Rnx → [0 , 1] denotes a state-dependent weighting function. By employing the mask M res , when the dy-namics of some state dimensions are sufficiently represented by the physical model, the neural network can be used to correct only the remaining state dimensions. In addition, the weighting function wres enables the model to prioritize the physical formulation in data-scarce regions, while leveraging the residual component in data-rich regions. 
+
+2.2. Control 2.2.1. PID control 
+
+PID control is a classical control method that computes the control input based on proportional, integral, and derivative operations applied to the deviation of the plant state from a reference state. It is expressed as 
+
+ut,j = ubias  
+
+> j
+
++
+
+> nej
+
+X
+
+> l=1
+
+KP
+
+> j,l
+
+et,j,l + KI
+
+> j,l t
+
+X 
+
+> τ=0
+
+eτ,j,l h + KD
+
+> j,l
+
+et,j,l − et−1,j,l 
+
+h
+
+!
+
+(5) Here, ut,j denotes the j-th component of the control input at time t, with 
+
+ubias  
+
+> j
+
+representing a bias term. et,j,l denotes the l-th error used for the control input ut,j , while KP
+
+> j,l
+
+, K I
+
+> j,l
+
+, K D 
+
+> j,l
+
+are the PID gains. When upper and lower bound constraints exist on both the control input and its rate of change, 
+
+u ≤ ut ≤ u, ∆u ≤ ut − ut−1 ≤ ∆u, a constraint-satisfying control input can be obtained by sequentially applying the following correction: 
+
+ut ← φclip [u,u ]
+
+
+
+ut−1 + φclip [∆ u, ∆u] (ut − ut−1)
+
+
+
+(6) Defining the constraint set as U(ut−1) := {u ∈ Rnu |u ≤ u ≤ u, ∆u ≤
+
+u − ut−1 ≤ ∆u}, the right-hand side of the above expression coincides with the projection ΠU(ut−1)(ut) (see the Appendix for the proof). 
+
+2.2.2. MPPI 
+
+In MPC, denoting the current state at each control step as x0, we solve the optimal control problem with prediction horizon N :
+
+min  
+
+> u
+
+J :=  
+
+> N−1
+
+X
+
+> t=0
+
+lt subject to xt+1 = f (xt, u t), u t ∈ U (ut−1) ( t = 0 , . . . , N − 1) 
+
+(7) 6and apply the obtained u0 to the plant. Here, lt is the stage cost at time 
+
+t. When the state transition function f or the objective function J in the above problem is non-differentiable, conventional gradient-based optimiza-tion methods are not directly applicable. Therefore, MPPI performs approx-imate optimization by sampling the control input sequence. The algorithm by which MPPI computes the control input at each control step is outlined as follows. 1. Initialize ut (t = −1, . . . , N −1) (e.g., using the previous control inputs). 2. Generate samples of control inputs by adding perturbations ε(i) 
+
+> t
+
+∼N (0 , diag( σu)2) ( t = 0 , . . . , N − 1, i = 1 , . . . , I ): u(i) 
+
+> t
+
+:= ut + ε(i) 
+
+> t
+
+.Here, σu ∈ Rnu is the standard deviation of the perturbation. Let 
+
+u(i) 
+
+> −1
+
+:= u−1 (i = 1 , . . . , I ).3. By sequential projection, compute constraint-satisfying control inputs 
+
+u(i) 
+
+> t
+
+← ΠU(u(i)
+
+> t−1)
+
+(u(i) 
+
+> t
+
+) ( t = 0 , . . . , N − 1, i = 1 , . . . , I ).4. Using each control input sample, sequentially compute 
+
+x(i) 
+
+> t+1
+
+= f (x(i) 
+
+> t
+
+, u (i) 
+
+> t
+
+) ( t = 0 , . . . , N − 1, i = 1 , . . . , I ) and the objective value J(i). Let x(i)0 := x0 (i = 1 , . . . , I ).5. Compute the weights 
+
+w(i) = exp 
+
+
+
+−J(i) − min i J(i)
+
+λ
+
+
+
+(i = 1 , . . . , I ) (8) and update the control inputs by 
+
+ut ← ut +
+
+PIi=1 w(i)ε(i)
+
+> t
+
+PIi=1 w(i) (t = 0 , . . . , N − 1) (9) where λ > 0 is the temperature parameter. 6. Perform sequential projection again: ut ← ΠU(ut−1)(ut) ( t = 0 , . . . , N −
+
+1) .7. Return to Step 2 (repeat this N iter times). 8. Apply u0 to the plant. 
+
+2.2.3. Proposed method: MPPI-based optimization of PID gains 
+
+The proposed method optimizes PID gains θ := [ KP1,1, K I1,1, K D1,1, . . . , KP 
+
+> nu,n enu
+
+, K I 
+
+> nu,n enu
+
+, K D 
+
+> nu,n enu
+
+]T instead of directly optimizing the control inputs 7in MPPI. Compared with conventional MPPI, the optimization variables are PID gains that are fixed over the horizon; therefore, the dimension of the decision variables can be significantly reduced. The algorithm employed to compute the control at each step of the proposed method is as follows. 1. Initialize θ (e.g., using the gains from the previous time step). 2. Using perturbations ε(i) ∼ N (0 , diag( σθ)2) ( i = 1 , . . . , I ), generate sam-ples of PID gains θ(i) = θ + ε(i) (i = 1 , . . . , I ).3. For each θ(i), sequentially compute the control input u(i) 
+
+> t
+
+based on the PID law (5), apply the projection u(i) 
+
+> t
+
+← ΠU(u(i)
+
+> t−1)
+
+(u(i) 
+
+> t
+
+), and update the state x(i) 
+
+> t+1
+
+= f (x(i) 
+
+> t
+
+, u (i) 
+
+> t
+
+) to obtain the objective value J(i). Let 
+
+x(i)0 := x0, u (i) 
+
+> −1
+
+:= u−1 (i = 1 , . . . , I ).4. As in MPPI, compute the weights 
+
+w(i) = exp 
+
+
+
+−J(i) − min i J(i)
+
+λ
+
+
+
+(i = 1 , . . . , I ) (10) and update the gains: 
+
+θ ← θ +
+
+PIi=1 w(i)ε(i)
+
+PIi=1 w(i) (11) 5. Return to Step 2 (repeat this N iter times). 6. Using the obtained gains θ, compute the control input u0, apply the projection u0 ← ΠU(u−1)(u0), and then apply it to the plant. 
+
+2.3. Theoretical considerations 2.3.1. Information-theoretic interpretation of the algorithm 
+
+In this subsection, we present an information-theoretic interpretation of an update rule that unifies the conventional MPPI and the proposed method. This formulation also facilitates the sampling-efficiency analysis in the next subsection. Here, the optimization variable is denoted as z. In the con-ventional MPPI, z = [ uT 
+
+> 0
+
+, . . . , u TN −1]T , and in the proposed method, z = θ.Then, the update rule for z can be derived information-theoretically as in the following proposition. 8Proposition 1. Let the probability distribution of Gaussian perturbations for the variable z be p(ε) := N (ε; 0 , Σz ). Additionally, let the objective value computed using the perturbed variable z + ε be J(z + ε). Define a probability distribution obtained by weighting the perturbation distribution based on this objective value as 
+
+q(ε) := 1
+
+Z p(ε) exp 
+
+
+
+−J(z + ε)
+
+λ
+
+
+
+, Z := 
+
+Z
+
+p(ε) exp 
+
+
+
+−J(z + ε)
+
+λ
+
+
+
+dε (12) Consider the optimization problem of projecting the above q onto the set of Gaussian distributions with covariance Σz in terms of KL divergence: 
+
+min  
+
+> m
+
+DKL (q(ε)||N (ε; m, Σz )) (13) The solution is given by m∗ = Eq[ε]. Let the update of the variable z based on this m∗ be z ← z + m∗, and apply a Monte Carlo approximation to obtain 
+
+z ← z +
+
+PIi=1 w(i)ε(i)
+
+PIi=1 w(i) , w (i) := exp 
+
+
+
+−J(z + ε(i))
+
+λ
+
+
+
+, ε (i) ∼ p(ε) (14) 
+
+Proof. First, from the definition of KL divergence, 
+
+DKL (q(ε)||N (ε; m, Σz )) = 
+
+Z
+
+q(ε) log q(ε)
+
+N (ε; m, Σz )dε 
+
+=
+
+Z
+
+q(ε) log q(ε)dε −
+
+Z
+
+q(ε) log N (ε; m, Σz )dε 
+
+= Eq[log q(ε)] − Eq[log N (ε; m, Σz )] = const − Eq
+
+
+
+−12(ε − m)T (Σ z )−1(ε − m)
+
+
+
+= const + 12(m − Eq[ε]) T (Σ z )−1(m − Eq[ε]) (15) Therefore, the m that minimizes this expression is given by m∗ = Eq[ε].Furthermore, 
+
+Eq[ε] = 
+
+Z
+
+εq (ε)dε = 1
+
+Z
+
+Z
+
+εp (ε) exp 
+
+
+
+−J(z + ε)
+
+λ
+
+
+
+dε 
+
+= Ep[ε exp( −J(z + ε)/λ )] 
+
+Ep[exp( −J(z + ε)/λ )] (16) This implies that the Monte Carlo approximation yields Eq. (14). 9Next, we demonstrate that when the objective function is differentiable, the update rule can be interpreted as a gradient descent. 
+
+Proposition 2. Assume that the objective function J is differentiable with respect to z, and that the perturbation ε is sufficiently small. Then, the distribution q(ε) in Proposition 1 can be approximated by 
+
+q(ε) ≃ N 
+
+
+
+ε; −Σz ∇z J(z)
+
+λ , Σz
+
+
+
+(17) Moreover, the update of the variable z based on this approximation becomes 
+
+z ← z − Σz ∇z J(z)
+
+λ (18) 
+
+Proof. By applying a Taylor expansion to J,
+
+J(z + ε) ≃ J(z) + ∇z J(z)T ε (19) Thus, the distribution q(ε) can be written as 
+
+q(ε) ≃ 1
+
+Z p(ε) exp 
+
+
+
+−J(z) + ∇z J(z)T ελ
+
+
+
+∝ exp 
+
+
+
+−12εT (Σ z )−1ε − ∇z J(z)T ελ
+
+
+
+∝ exp −12
+
+
+
+ε + Σz ∇z J(z)
+
+λ
+
+T
+
+(Σ z )−1
+
+
+
+ε + Σz ∇z J(z)
+
+λ
+
+!
+
+(20) Therefore, q(ε) can be approximated by N (ε; −Σz ∇z J(z)/λ, Σz ). The latter claim follows directly from the definition. 
+
+2.3.2. Sample efficiency based on effective sample size 
+
+This subsection presents a simplified analysis that illustrates the manner in which the dimensions of the optimization variable affect the sample effi-ciency of the MPPI update rule. As the update in Eq. (14) corresponds to importance sampling with weights w(i), a standard measure of weight degen-eracy (and hence sample efficiency) is the effective sample size (ESS) [16]. 10 For normalized weights ew(i) := w(i)/ PIj=1 w(j), the (sample) ESS is defined as 
+
+bIESS := 1
+
+PIi=1 ( ew(i))2 =
+
+PIi=1 w(i)
+
+2
+
+PIi=1 (w(i))2 . (21) Next, we analyze an idealized counterpart of the above ESS, which is given by 
+
+IESS := I (Ep[w]) 2
+
+Ep[w2] . (22) The evaluation of IESS requires the first and second moments of the weight 
+
+w under p.Next, under the same differentiability and small-perturbation assump-tions as in the previous proposition, we approximate the objective function around z as 
+
+J(z + ε) ≃ J(z) + gT ε, g := ∇z J(z). (23) Then, the weight in (14) becomes 
+
+w(ε) = exp 
+
+
+
+−J(z + ε)
+
+λ
+
+
+
+≃ exp 
+
+
+
+−J(z)
+
+λ
+
+
+
+exp 
+
+
+
+−gT ελ
+
+
+
+=: c exp 
+
+
+
+−gT ελ
+
+
+
+.
+
+(24) As ε ∼ N (0 , Σz ), we have 
+
+−gT ελ ∼ N 
+
+
+
+0, gT Σz gλ2
+
+
+
+, (25) and hence, w(ε) follows a log-normal distribution. Therefore, its moments are given by 
+
+Ep[w] = c exp 
+
+ 12λ2 gT Σz g
+
+
+
+, Ep[w2] = c2 exp 
+
+ 2
+
+λ2 gT Σz g
+
+
+
+. (26) Substituting these into (22) yields 
+
+IESS ≃ I exp 
+
+
+
+− 1
+
+λ2 gT Σz g
+
+
+
+. (27) 11 To make the scaling with the dimension explicit, suppose for simplicity that the perturbation covariance is isotropic, Σz = ( σz )2Inz . If the squared norm of the gradient scales as ∥g∥2 ≃ nz g2, then gT Σz g ≃ (σz )2nz g2 and (27) becomes 
+
+IESS ≃ I exp 
+
+
+
+−(σz )2g2
+
+λ2 nz
+
+
+
+. (28) Equation (28) indicates that the effective sample size can decrease exponen-tially as the optimization dimension nz increases. Therefore, to maintain IESS 
+
+at a desired level, the required number of samples I can grow exponentially with nz .In the conventional MPPI, the optimization variable is the control-input sequence z = [ uT 
+
+> 0
+
+, . . . , u TN −1]T and hence, nz = nuN . In contrast, in the proposed method, z = θ and nz equals the (typically small) number of PID gains. Consequently, for the same sampling budget I, the proposed method can achieve a larger effective sample size, which provides theoretical support for its improved sample efficiency. 
+
+2.3.3. Continuity of the control input 
+
+In this subsection, we theoretically analyze the continuity of the con-trol input expected from the proposed method. To provide an intuition, we present a simplified analysis of the essential mechanism under a fixed perturbation distribution. First, the control input based on PID control can be expressed as 
+
+ut(θ) = ubias + Etθ (29) where Et is a matrix formed by stacking the errors and their derivatives and integrals. In the proposed method, the PID gains are perturbed from a nominal value as θ = θnom + ε (ε ∼ N (0 , Σθ)) ; therefore, the perturbation of the control input is 
+
+δu t := ut(θ) − ut(θnom ) = Etε (30) Hence, the covariance between perturbations at different times conditioned on E is 
+
+Cov[ δu t, δu s|E] = E[Etεε T ETs |E] = EtE[εε T ]ETs = EtΣθETs (31) 12 This indicates that the control input perturbations at different times ( t̸ = s)are temporally correlated. Next, the magnitude of the temporal change in the control input perturbation is 
+
+E[∥δu t − δu t−1∥2|E] = E[∥(Et − Et−1)ε∥2|E]= E[εT (Et − Et−1)T (Et − Et−1)ε|E] = Tr[( Et − Et−1)Σ θ(Et − Et−1)T ]
+
+(32) Here, we have used the fact that, in the proposed method, the PID gains remain constant throughout the horizon. The above expression indicates that when the error terms vary slowly such that Et ≃ Et−1, the average temporal variation of the control input becomes small. Contrarily, the control input in conventional MPPI can be expressed as 
+
+ut = unom  
+
+> t
+
++ εt (εt ∼ N (0 , Σu)) (33) Thus, the perturbation is δu t = εt, and because perturbations at different times are independent, the covariance is Cov[ δu t, δu s] = 0 ( t̸ = s). This indicates that the control input perturbations have no temporal correlation. Next, the magnitude of the temporal change in the perturbation is 
+
+E[∥δu t − δu t−1∥2] = E[∥εt − εt−1∥2] = E[εTt εt − 2εTt εt−1 + εTt−1εt−1]= 2Tr[Σ u] (34) This indicates that the average variation in the control input occurs with a constant magnitude irrespective of the state. From the preceding analysis, the proposed method is expected to yield more continuous control inputs than conventional MPPI. Notably, the above analysis concerns the continuity of the control input sequence generated within the prediction horizon. Although only the first in-put is applied to the plant, smoother trajectories within the horizon generally yield smoother applied inputs in the receding-horizon implementation. 
+
+2.4. Application to forklift path-following control 2.4.1. State and control input 
+
+We consider the motion of a forklift on a two-dimensional plane. Let the state xt and control input ut at time t be xt = [ Xt, Y t, s t, c t, v Xt , v Yt , r t]T ,13 ut = [ at, δ t]T . Here, (X, Y ) is the position; s = sin( ψ), c = cos( ψ) are the trigonometric representations of the yaw angle ψ; (vX , v Y ) = ( ˙X, ˙Y ) is the velocity; and r = ˙ψ is the yaw rate. The control input a is the accelerator command, and δ is the steering angle. 
+
+2.4.2. Physical model 
+
+We use the following physical model for the forklift: 
+
+f phys ,c =
+
+
+
+vXt
+
+vYt
+
+ctrt
+
+−strt
+
+kaatct − kV vXt − rtvYt
+
+kaatst − kV vYt + rtvXt
+
+kδp(vXt )2 + ( vYt )2 δt − krrt
+
+
+
+(35) Here, ka, k V , k δ, k r denote identification parameters. In particular, the dy-namics for the velocity v := [ vX , v Y ]T in the above equation are obtained under the assumption that the speed magnitude V = p(vX )2 + ( vY )2 fol-lows 
+
+˙V (t) = kaa(t) − kV V (t) (36) That is, since v = V [c, s ]T , we have 
+
+˙v = ˙V
+
+cs
+
+
+
++ V
+
+−sr cr 
+
+
+
+= ( kaa − kV V )
+
+cs
+
+
+
++ rV 
+
+−sc
+
+
+
+= kaa
+
+cs
+
+
+
+− kV
+
+vX
+
+vY
+
+
+
++ r
+
+−vY
+
+vX
+
+
+
+(37) This coincides with the velocity dynamics in Eq. (35). 
+
+2.4.3. Residual-learning model 
+
+From the derivation in the previous subsection, the position and angle dynamics within the state dimensions are analytically given by the physical model, whereas modeling errors are expected in the velocity and angular velocity dynamics. Therefore, we set the mask in the residual-learning model 14 to M res = [0 , 0, 0, 0, 1, 1, 1] T . Furthermore, in this study we posit that the available training data are sparse in the low-speed region, thereby placing the neural network in an extrapolative region; thus, we adjust the contribution of the residual using the following state-dependent weight wres :
+
+wres (x) := (vX )2 + ( vY )2
+
+(vX )2 + ( vY )2 + ( V th )2 (38) Here, the threshold V th is treated as a hyperparameter. From the above equation, when the speed magnitude V = p(vX )2 + ( vY )2 is sufficiently small, wres (x) ≃ 0, and the residual is suppressed. 
+
+Remark 1. When the state representation includes s = sin( ψ) and c =cos( ψ) as above, due to numerical or learning errors, prediction results may satisfy s2 + c2̸ = 1 . Therefore, during inference, we apply sequential normal-ization (s, c ) ← (s, c )/√s2 + c2.
+
+2.4.4. Errors used in PID control 
+
+Let the reference path for path-following control be p(ξ) ∈ R2 (ξ ∈ R is the path parameter). Let the nearest point on the path be expressed as 
+
+p∗ 
+
+> t
+
+:= p(ξ∗ 
+
+> t
+
+), ξ ∗ 
+
+> t
+
+:= argmin ξ
+
+Xt
+
+Yt
+
+
+
+− p(ξ) (39) and denote its tangent-direction vector and normal-direction vector by τ ∗
+
+> t
+
+and n∗ 
+
+> t
+
+, respectively. Furthermore, let the reference speed be specified as 
+
+V ref  
+
+> t
+
+. Subsequently, we use the following three errors for PID control: 
+
+• et, 1,1: Signed speed error between the vehicle speed Vt = p(vXt )2 + ( vYt )2
+
+and the reference speed V ref  
+
+> t
+
+, i.e., V ref  
+
+> t
+
+− Vt
+
+• et, 2,1: Signed lateral position error between position [Xt, Y t]T and the nearest point p∗ 
+
+> t
+
+, i.e., n∗Tt ([ Xt, Y t]T − p∗ 
+
+> t
+
+)
+
+• et, 2,2: Signed angular error between the heading direction ψt and the tangent direction τ ∗ 
+
+> t
+
+(angle ψ∗ 
+
+> t
+
+), i.e., ψt − ψ∗
+
+> t
+
+In this case, the PID gains are 9-dimensional: θ = [ KP1,1, K I1,1, K D1,1, K P2,1, K I2,1,KD2,1, K P2,2, K I2,2, K D2,2]T .15 2.4.5. Objective function of MPC 
+
+The stage cost within the objective function for path-following control is defined as 
+
+lt := wV
+
+q 
+
+(vXt )2 + ( vYt )2 − V ref 
+
+> t
+
+2
+
++ wpath 
+
+Xt
+
+Yt
+
+
+
+− p∗
+
+> t
+> 2
+
++ walign 1 −
+
+ct
+
+st
+
+T
+
+τ ∗
+
+> t
+
+!
+
++ w∆u∥ut − ut−1∥2 + wgoal lgoal  
+
+> t
+
+(40) Here, each w denotes a weight parameter, while lgoal  
+
+> t
+
+represents a penalty term that enforces a speed restriction near the goal, defined as 
+
+lgoal  
+
+> t
+
+:= 
+
+p (vXt )2 + ( vYt )2 − εgoal ,vel 
+
+2
+
+if 
+
+"Xt
+
+Yt
+
+#
+
+− pgoal ≤ εgoal ,pos 
+
+and 
+
+q
+
+(vXt )2 + ( vYt )2 ≥ εgoal ,vel 
+
+0 otherwise (41) Here, pgoal ∈ R2 denotes the goal position, and εgoal ,pos , ε goal ,vel represent the thresholds. Note that the above objective function is non-differentiable, and therefore gradient-based optimization methods cannot be directly applied. 
+
+3. Results 
+
+This section presents system identification based on empirical data col-lected from a mini forklift and evaluates state prediction performance. Sub-sequently, it reports comparative results for fixed-gain PID control, conven-tional MPPI, and the proposed method (MPPI–PID) in path-following con-trol. 
+
+3.1. Dataset construction 
+
+In this study, we construct a time-series dataset comprising the state and control input xt = [ Xt, Y t, s t, c t, v Xt , v Yt , r t]T , ut = [ at, δ t]T , derived from manual real-machine driving data of the mini forklift system introduced in [17]. The original dataset contains [Xt, Y t, ψ t, v Xt , v Yt , r t, a t, δ t]T ; however, in 16 this work, we use st = sin( ψt), c t = cos( ψt) to avoid the discontinuity of the yaw angle ψ.The data were recorded at a sampling rate of approximately 15 Hz ( h ≃
+
+1/15 ≃ 0.0667 s), yielding a total of 70,926 samples (corresponding to ap-proximately 78.8 minutes). Due to missing intervals in the data, the log was segmented at points where the time difference exceeds 0.1 s. Subsequently, for each continuous interval, the data were resampled via linear interpolation to yield an equally spaced time series ( h = 0 .0667 s), and then applied a median filter and a moving-average filter. The filter window sizes were set for each signal as follows. 
+
+• X, Y, ψ : median window 3, moving-average window 9 
+
+• vX , v Y , r : median window 3, moving-average window 7 
+
+• a, δ : median window 3, moving-average window 5 Finally, to align the basic unit used in training and evaluation, each pre-processed continuous interval was uniformly partitioned into 5.0 s segments (approximately 75 steps). These fixed-length segments were subsequently split into training, validation, and test datasets in a 70:15:15 ratio. 
+
+3.2. System identification results 
+
+The identification parameters ka, k V , k δ, k r of the physical model were es-timated via least squares using the full training dataset. For both the stan-dard neural network and the residual-learning model, the state and control input were normalized by division with their per-dimension standard devia-tion. Minibatch learning was employed to minimize the one-step-ahead state prediction loss. The main settings for learning are summarized in Table 1. Using the physics model, the standard neural network model, and the residual-learning model trained by the above method, we evaluated the re-cursive state prediction accuracy on the fixed-length test segments using the coefficient of determination R2. The results are reported in Table 2. Table 2 indicates that the residual-learning model yields the highest average R2. It achieves superior R2 values in six of the seven state components, while the yaw rate r is best captured by the standard neural network model. Based 17 Table 1: Main settings for learning-based system identification 
+
+Item Setting Neural network architecture 3 layers, 50 units, activation function: ReLU Training settings Optimizer: Adam, learning rate 1 × 10 −4, batch size 1024, gradient clipping threshold 1.0, std. dev. of noise added to next state 1 × 10 −4, early stopping patience 10 epochs Parameter of residual weight wres 
+
+V th = 0 .20 m/s                                    
+
+> Table 2: Coefficient of determination R2for recursive state prediction (5.0 s) (physics model, standard neural network (NN) model, residual-learning model)
+> Model XYscvXvYrAverage Physics model 0.9842 0.9926 0.9625 0.9455 0.7288 0.8380 0.9102 0.9088 Standard NN 0.9855 0.9774 0.9684 0.9555 0.8394 0.9089 0.9465 0.9402 Residual model 0.9920 0.9965 0.9759 0.9648 0.8585 0.9251 0.9396 0.9503
+
+on the highest overall accuracy, the residual-learning model is adopted in the subsequent path-following control study. 
+
+3.3. Path-following control results 
+
+Path-following control is implemented as an MPC that sequentially com-putes control input sequences based on the residual-learning model identified in the previous section. The reference path is generated from the start and goal states using a cubic Hermite spline. The number of path points is set to 800. The parameters used for control are summarized in Table 3. In this section, we compare fixed-gain PID control, conventional MPPI, and the proposed method (MPPI–PID). Fixed-gain PID control fixes the PID gains at the initial values listed in Table 3 and computes the control input solely according to the PID law (5) (without online optimization). For both con-ventional MPPI and the proposed method, we employ the same prediction model, horizon length, cost function, and number of samples I for each set-ting, ensuring that only the difference in methods is reflected in the results. Next, we first present the baseline results with I = 2048 ; subsequently fol-lowed by additional results with a substantially reduced number of samples 18 Table 3: Parameters used in path-following control 
+
+Item Setting Sampling period h = 0 .0667 s ( ≃ 15 Hz) Horizon length N = 60 (≃ 4.0 s) Number of samples I = 2048 (baseline), I = 16 (low-sample case) Number of iterations N iter = 3 
+
+Temperature parameter λ = 1 .0
+
+Input bounds 0 ≤ a ≤ 100 , −65 ≤ δ ≤ 65 deg Input rate bounds | ˙a| ≤ 32 .0/s, | ˙δ| ≤ 100 deg/s One-step change bounds |∆a| ≤ 32 .0h ≃ 2.13 , |∆δ| ≤ 100 h ≃ 6.67 deg Noise std. dev. in conven-tional MPPI 
+
+σu = [8 .0, 6.0] T (corresponding to a, δ )Bias in PID control input ubias = [40 .0, 0.0] T (corresponding to a, δ )Initial PID gains [KP1,1, K I1,1, K D1,1, K P2,1, K I2,1, K D2,1, K P2,2, K I2,2, K D2,2]= [50 .0, 0.20 , 10 .0, 100 .0, 0.10 , 5.0, 150 .0, 0.10 , 3.0] 
+
+Noise std. dev. of PID gains [10 .0, 0.10 , 5.0, 30 .0, 0.05 , 2.0, 20 .0, 0.05 , 2.0] 
+
+Cost weights wV = 50 , wpath = 500 , walign = 10 , w∆u = 0 .05 ,
+
+wgoal = 50000 
+
+Thresholds near the goal εgoal ,pos = 0 .10 m, εgoal ,vel = 0 .04 m/s Reference speed V ref  
+
+> t
+
+= 0 .10 m/s 
+
+I = 16 (all other parameters are unchanged). Figure 2 depicts the planar trajectories generated under fixed-gain PID control, conventional MPPI, and the proposed method (MPPI–PID) in the baseline setting ( I = 2048 ). The dashed line represents the reference path, while the solid lines denote the tracking trajectories obtained by each method. Although conventional MPPI and the proposed method (MPPI–PID) ex-hibit roughly comparable tracking performance relative to the reference path, fixed-gain PID control demonstrates a larger deviation from the reference path in the latter part. Next, Fig. 3 presents the time series of states and control inputs ob-tained under fixed-gain PID control, conventional MPPI, and the proposed method (MPPI–PID) in the baseline setting ( I = 2048 ), and the path-following error and the one-step change in the control input. Here, the path-following error and the one-step control-input increments are defined as 19 Fig. 2: Comparison of planar trajectories obtained in path-following control ( I = 2048 )(dashed: reference path; solid: fixed-gain PID control / conventional MPPI / proposed method (MPPI–PID)) 
+
+20 Fig. 3: Time series of states, control inputs, path-following error, and control-input incre-ments obtained in path-following control ( I = 2048 ) (fixed-gain PID control / conventional MPPI / proposed method (MPPI–PID)) 
+
+21 epath  
+
+> t
+
+:= ∥[Xt, Y t]T − p∗ 
+
+> t
+
+∥, |∆at| := |at − at−1|, and |∆δt| := |δt − δt−1|, respec-tively. In conventional MPPI, |∆at| and |∆δt| frequently approach the upper bounds of the one-step change constraints (Table 3), resulting in discontinu-ous fluctuations of the control inputs. In the proposed method (MPPI–PID), the temporal changes of a and δ are smaller than in conventional MPPI, while the path error epath  
+
+> t
+
+remains at a level comparable to conventional MPPI. Fixed-gain PID control yields smooth control inputs, but epath  
+
+> t
+
+increases in the latter part. Next, we present additional results obtained with a substantially reduced number of samples ( I = 16 ) to investigate the effect of sampling. Figure 4 illustrates the planar trajectories for I = 16 . Compared with the baseline   
+
+> Fig. 4: Comparison of planar trajectories obtained in path-following control ( I= 16 )(dashed: reference path; solid: fixed-gain PID control / conventional MPPI / proposed method (MPPI–PID))
+
+22 setting ( I = 2048 ), conventional MPPI exhibits a larger deviation from the reference path when the sample size is reduced to I = 16 , whereas the pro-posed method (MPPI–PID) preserves a tracking trajectory closely aligned with the reference path. Fixed-gain PID control still exhibits a larger devia-tion in the latter part. Figure 5 depicts the corresponding time series for I = 16 . From the perspective of the path error epath  
+
+> t
+
+, conventional MPPI exhibits larger er-rors under low-sample setting, while the proposed method maintains smaller errors. Moreover, the control-input increments |∆at| and |∆δt| in conven-tional MPPI frequently approach the one-step change bounds, whereas the proposed method keeps the increments smaller. 
+
+4. Discussion 
+
+From Table 2, the residual-learning model attains the highest average R2.In particular, the velocities (vX , v Y ) exhibit marked improvement relative to the physics-based model, indicating that the residual neural network corrects nonlinear dynamics that are not fully captured by the physics model. The position (X, Y ) and attitude (s, c ) already achieve high values at the physics-model stage, yet the residual-learning model slightly improves them further. An exception arises in the yaw rate r, where the standard neural network model performs best. As position and speed errors directly influence control performance in path-following control, the residual-learning model, which achieved the highest overall accuracy, is adopted for control. The proposed method suppresses control-input increments compared with conventional MPPI, while preserving tracking performance. This is consis-tent with the theoretical analysis on the continuity of the control input: because the optimization variables are limited to the PID gains θ, and the control input sequence is computed through the PID structure incorporat-ing the integral and derivative of the errors, the temporal changes of a
+
+and δ become smoother than in conventional MPPI. Moreover, the low-sample results support the anticipated improvement in sample efficiency. In conventional MPPI, the dimensionality of the optimization variables is 
+
+nuN = 2 × 60 = 120 , whereas in the proposed method it is 9, correspond-ing to the number of PID gains. Consequently, the ability of the proposed 23 Fig. 5: Time series of states, control inputs, path-following error, and control-input incre-ments obtained in path-following control ( I = 16 ) (fixed-gain PID control / conventional MPPI / proposed method (MPPI–PID)) 
+
+24 method to sustain effective path-following performance even with I = 16 is consistent with the effective-sample-size analysis presented in the theoretical section. Although fixed-gain PID control yields smooth control inputs, the increased path deviation highlights its limitation in tracking performance for the reference path. 
+
+5. Conclusions 
+
+In this study, we introduce a receding-horizon PID gain optimization method based on MPPI (MPPI–PID). We establish theoretical insights that unify conventional MPPI and MPPI–PID within an information-theoretic framework, and demonstrate, through effective-sample-size and temporal-correlation analyses, the sample-efficiency and input-smoothness advantages of the proposed approach. The method is applied to learning-based forklift path-following control using a residual-learning dynamics model trained on real-machine data. Numerical results show improved tracking performance compared with fixed-gain PID control and smoother inputs than conventional MPPI, while retaining favorable performance under substantially reduced sample counts. Future work includes experimental validation on a real machine, extension to stochastic control under model uncertainty, and integration with obstacle-avoidance strategies. 
+
+Data availability 
+
+The data that support the findings of this study are not publicly available but may be available from the corresponding author upon reasonable request. 
+
+Appendix: Proof that the projection operation is given by Eq. (6) 
+
+Lemma 1. The projection ΠU(ut−1)(ut) onto the control-input constraint set 
+
+U(ut−1) is given by Eq. (6). 
+
+Proof. First, from the property of the clipping function, 
+
+ut−1 + φclip [∆ u, ∆u](ut − ut−1) = φclip [ut−1+∆ u, u t−1+∆ u](ut) (42) 25 holds. Therefore, the right-hand side of Eq. (6) becomes 
+
+φclip [u,u ]
+
+
+
+ut−1 + φclip [∆ u, ∆u](ut − ut−1)
+
+
+
+= φclip [u,u ]
+
+
+
+φclip [ut−1+∆ u, u t−1+∆ u](ut)
+
+
+
+= φclip [L(ut−1),U (ut−1)] (ut) = Π [L(ut−1),U (ut−1)] (ut) (43) Here, we define L(ut−1) := max( u, u t−1 + ∆ u) and U (ut−1) := min( u, u t−1 +∆u). We also use the equivalence between the clipping operation and pro-jection. The control-input constraint set U(ut−1) can be written as 
+
+U(ut−1) = {u ∈ Rnu |u ≤ u ≤ u, ∆u ≤ u − ut−1 ≤ ∆u}
+
+= {u ∈ Rnu |u ≤ u ≤ u, u t−1 + ∆ u ≤ u ≤ ut−1 + ∆ u}
+
+= {u ∈ Rnu |L(ut−1) ≤ u ≤ U (ut−1)} = [ L(ut−1), U (ut−1)] (44) Thus, the right-hand side of Eq. (6) coincides with the projection ΠU(ut−1)(ut).
+
+References 
+
+[1] S. V. Raković, W. S. Levine (Eds.), Handbook of Model Predictive Con-trol, Control Engineering, Birkhäuser, Cham, 2018. doi:10.1007/978-3-319-77489-3. [2] G. Williams, P. Drews, B. Goldfain, J. M. Rehg, E. A. Theodorou, Information-theoretic model predictive control: theory and applications to autonomous driving, IEEE Trans. Robot. 34 (6) (2018) 1603–1622. doi:10.1109/TRO.2018.2865891. [3] S. L. Brunton, J. N. Kutz, Data-Driven Science and Engineering: Ma-chine Learning, Dynamical Systems, and Control, Cambridge University Press, Cambridge, 2019. doi:10.1017/9781108380690. [4] P. Halder, H. Homburger, L. Kiltz, J. Reuter, M. Althoff, Tra-jectory planning with signal temporal logic costs using determinis-tic path integral optimization, in: 2025 IEEE International Con-ference on Robotics and Automation (ICRA), 2025, pp. 4221–4228. doi:10.1109/ICRA55743.2025.11127582. 26 [5] M. Xu, S. Li, C. Qi, W. Cai, Auto-tuning of PID controller parameters with supervised receding horizon optimization, ISA Trans. 44 (4) (2005) 491–500. doi:10.1016/S0019-0578(07)60056-1. [6] Y. Wu, S. Li, K. Li, Enhanced receding horizon optimal performance for online tuning of PID controller parameters, Int. J. Model. Identif. Control 29 (3) (2018) 209–217. doi:10.1504/IJMIC.2018.091239. [7] F. Gashi, K. Abuibaid, M. Ruskowski, A. Wagner, Model pre-dictive control based reference generation for optimal proportional integral derivative control, in: 2024 32nd Mediterranean Con-ference on Control and Automation (MED), 2024, pp. 518–524. doi:10.1109/MED61351.2024.10566273. [8] J. Ito, Y. Wasa, Data-driven adaptive PID control based on physics-informed neural networks, arXiv preprint arXiv:2510.04591 [eess.SY] (2025). doi:10.48550/arXiv.2510.04591. [9] E. A. Theodorou, J. Buchli, S. Schaal, A generalized path integral con-trol approach to reinforcement learning, J. Mach. Learn. Res. 11 (104) (2010) 3137–3181. [10] J. Buchli, E. A. Theodorou, F. Stulp, S. Schaal, Variable impedance control – a reinforcement learning approach, in: Pro-ceedings of Robotics: Science and Systems, Zaragoza, Spain, 2010. doi:10.15607/RSS.2010.VI.020. [11] C. Rackauckas, Y. Ma, J. Martensen, C. Warner, K. Zubov, R. Supekar, D. Skinner, A. Ramadhan, A. Edelman, Universal differential equations for scientific machine learning, arXiv preprint arXiv:2001.04385 [cs.LG] (2020). doi:10.48550/arXiv.2001.04385. [12] T. Salzmann, E. Kaufmann, J. Arrizabalaga, M. Pavone, D. Scaramuzza, M. Ryll, Real-time neural MPC: deep learning model predictive control for quadrotors and agile robotic platforms, IEEE Robot. Autom. Lett. 8 (4) (2023) 2397–2404. doi:10.1109/LRA.2023.3246839. 27 [13] N. Ding, M. Thompson, J. Dallas, J. Y. M. Goh, J. K. Subosits, Drifting with unknown tires: learning vehicle models online with neural networks and model predictive control, in: 2024 IEEE Intelligent Vehicles Sym-posium (IV), 2024, pp. 2545–2552. doi:10.1109/IV55156.2024.10588474. [14] S. Rhode, F. Jarmolowitz, F. Berkel, Vehicle single track model-ing using physics guided neural differential equations, arXiv preprint arXiv:2403.11648 [cs.CE] (2024). doi:10.48550/arXiv.2403.11648. [15] M. Elsheikh, Y. Ortmanns, F. Hecht, V. Roßmann, S. Krämer, S. En-gell, Model predictive control of an industrial distillation column based on a hybrid model: adapting the domain of validity, IFAC-PapersOnLine 56 (2) (2023) 7166–7171, 22nd IFAC World Congress. doi:10.1016/j.ifacol.2023.10.597. [16] L. Martino, V. Elvira, F. Louzada, Effective sample size for importance sampling based on discrepancy measures, Signal Process. 131 (2017) 386–401. doi:10.1016/j.sigpro.2016.08.025. [17] K. Oishi, T. Kato, H. Makino, S. Ito, Visual-based forklift learning system enabling zero-shot Sim2Real without real-world data, in: 2025 IEEE International Conference on Robotics and Automation (ICRA), 2025, pp. 4915–4921. doi:10.1109/ICRA55743.2025.11127682. 28
