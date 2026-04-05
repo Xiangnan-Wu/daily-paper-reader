@@ -1,0 +1,846 @@
+Title: Posterior Optimization with Clipped Objective for Bridging Efficiency and Stability in Generative Policy Learning
+
+URL Source: https://arxiv.org/pdf/2604.01860v1
+
+Published Time: Fri, 03 Apr 2026 00:53:29 GMT
+
+Number of Pages: 16
+
+Markdown Content:
+> JOURNAL OF L ATEX CLASS FILES, VOL. 1, NO. 1, APRIL 2026 1
+
+# Posterior Optimization with Clipped Objective for Bridging Efficiency and Stability in Generative Policy Learning 
+
+Yuhui Chen, Haoran Li B, Zhennan Jiang, Yuxing Qin, Yuxuan Wan, Weiheng Liu, and Dongbin Zhao 
+
+Abstract —Expressive generative models have advanced robotic manipulation by capturing complex, multi-modal action distri-butions over temporally extended trajectories. However, fine-tuning these policies via RL remains challenging due to instability and sample inefficiency. We introduce Posterior Optimization with Clipped Objective (POCO), a principled RL framework that formulates policy improvement as a posterior inference problem tailored for temporal action chunks. Through an Expectation-Maximization procedure, POCO distills a reward-weighted implicit posterior into the policy without likelihood estimation. Furthermore, POCO adopts an offline-to-online paradigm that anchors online exploration to pre-trained priors, and its model-agnostic design scales to fine-tune large VLA models without architectural modifications. Evaluations across 7 simulation benchmarks and 4 contact-rich real-world tasks demonstrate that POCO prevents catastrophic policy collapse, outperforms SOTA baselines, and achieves a 96.7% success rate on real-world tasks. Videos are available at our project website https://cccedric.github.io/poco/. 
+
+Index Terms —Reinforcement learning, Offline-to-online learn-ing, Posterior inference, Robotic manipulation, Generative policy. 
+
+I. I NTRODUCTION 
+
+# ROBOTIC manipulation is undergoing a critical paradigm shift. To tackle the multi-modal action distributions in-herent in complex, contact-rich physical environments, policy representations have rapidly evolved from traditional uni-modal Gaussian distributions to highly expressive generative models [1, 2], such as diffusion models [3], flow matching [4], and billion-parameter Vision-Language-Action (VLA) models [5, 6]. Crucially, to prevent jitter and ensure smooth execu-tion in high-frequency control, these generative architectures typically predict sequences of future movements rather than a single step, a paradigm known as temporal action chunk-ing [7]. At the same time, reinforcement learning (RL) has emerged as a powerful paradigm for equipping these models with complex decision-making capabilities, demonstrating re-markable success in high-dimensional, continuous, dexterous 
+
+This work has been submitted to the IEEE for possible publication. Copyright may be transferred without notice, after which this version may no longer be accessible. This work was supported by the National Natural Science Founda-tion of China (NSFC) under Grants 62136008 and 62293545; in part by the Beijing Major Science and Technology Project under Contract no. Z251100008125023; and by the Suzhou Innovation and Entrepreneurship Leading Talents Programme – Innovation Leading Talent in Universities and Research Institutes under Grant ZXL2025310; and by Beijing Academy of Artificial Intelligence (BAAI). Yuhui Chen, Haoran Li, Zhennan Jiang, Yuxing Qin, and Dongbin Zhao are with the Institute of Automation, Chinese Academy of Sciences, Beijing 100190, China, and are also with the School of Artificial Intelligence, University of Chinese Academy of Sciences, Beijing 100049, China. Yuxuan Wan is with CFCS, School of Computer Science, Peking University, Beijing 100871. (Corresponding author: Haoran Li. E-mail: lihaoran2015@ia.ac.cn) 
+
+Fig. 1. Conceptual overview comparing typical RL paradigms against POCO. (Left) Off-policy methods enable efficient data reuse, while on-policy methods ensure stability. (Right) Schematic performance curves show that POCO is designed for sample-efficient, stable improvement. 
+
+manipulation tasks [8, 9, 10]. However, applying RL for these generative models to continuously adapt and improve in the real world still faces significant bottlenecks [11]. Because learning purely from online interaction is imprac-tically slow [12], real-world robotic systems usually rely on the offline-to-online paradigm [13, 14, 15], where policies are first pre-trained on offline data and then fine-tuned via online rollouts [16, 17]. However, fine-tuning generative policies is typically trapped in a stability-efficiency dilemma, as illus-trated in Fig. 1. On the one hand, off-policy methods are highly sample-efficient because they can reuse offline data. Yet they backpropagate noisy Q-gradients directly into the policy network. This issue is exacerbated when scaling to high-dimensional action chunks, as the accumulating temporal errors across the predicted chunk inevitably lead these updates to suffer from severe out-of-distribution (OOD) value over-estimation [18, 19]. This destroys the pre-trained priors learned from human demonstrations, leading to catastrophic policy collapse and unpredictable, dangerous behavior on physical hardware. On the other hand, on-policy methods enforce trust regions [20, 21] to ensure stable improvement without collapsing, but they are prohibitively sample-inefficient in real-world continuous control, as they have to learn solely from on-policy rollouts [22]. To break this dilemma and prevent the destruction of pre-trained priors, we argue that policy improvement is more naturally understood as a posterior inference problem rather than direct parameter optimization, as seen in most existing RL methods [20, 23]. From this perspective, the current policy serves as a prior over action chunks, Q-values provide evidence, and policy improvement distills a better action distribution by reweighting the prior via an Expectation-Maximization (E-M) procedure. Theoretically, this framework elegantly bridges the gap: by establishing a variational upper bound on sequence distributions, it leverages sample effi- 
+
+> arXiv:2604.01860v1 [cs.RO] 2 Apr 2026 JOURNAL OF L ATEX CLASS FILES, VOL. 1, NO. 1, APRIL 2026 2
+
+ciency by using off-policy data while enforcing conservative prior regularization to anchor pre-trained behaviors. However, while existing inference-based RL methods [24, 25] yield theoretically monotonic improvement, they critically rely on explicit policy likelihood, such as evaluating the exact single-step action likelihood to construct and project the posterior. This requirement poses a critical challenge: for most gener-ative architectures, including VLA models, exact likelihood evaluation of high-dimensional, multi-step action chunks is mathematically intractable or computationally impractical for real-time robotic control. In this paper, we bridge this gap by introducing Posterior Optimization with Clipped Objective (POCO). By discarding explicit likelihood estimation, POCO constructs an implicit posterior from a set of importance-sampled action chunks, each weighted by its corresponding chunk-level Q-value. It then safely distills these high-value behaviors back into the policy using a clipped surrogate objective. This update mech-anism is stable, preventing the catastrophic physical collapse usually seen in gradient-based methods. Furthermore, it seam-lessly supports likelihood-free Flow Matching policies and large-scale foundation models without altering their underlying architectures. The primary contributions of this work could be summarized as follows: 1) We propose POCO, a principled RL framework that theoretically formulates generative policy improvement as a likelihood-free posterior inference problem. By inte-grating an Implicit E-M procedure with a robust clipped regression mechanism, our framework enables stable, posterior-guided fine-tuning for temporal action chunks, eliminating the need for explicit likelihood estimation and preventing catastrophic policy collapse. 2) We utilize an offline-to-online training paradigm that bridges pre-trained generative priors with online en-vironmental exploration. Specifically, our framework safely anchors online exploration to the pre-trained prior via posterior inference. And this model-agnostic design is scalable, can be directly applied to fine-tune large-scale VLA models without architectural modifications. 3) We systematically evaluate our method across 7 sim-ulated and 4 real-world benchmarks. Empirical re-sults demonstrate that POCO outperforms state-of-the-art (SOTA) baselines in both sample efficiency and per-formance improvement, achieving a 96.7% real-world success rate within 50K online training steps. II. R ELATED WORK 
+
+A. Expressive Policies for Robotic Manipulation 
+
+Recent advancements in robotic manipulation have increas-ingly relied on expressive generative models to capture the multi-modal, high-dimensional action distributions inherent in complex, contact-rich tasks. Traditional policy representations, such as Gaussian models, often fail to model the intricate be-haviors required for dexterous manipulation [3]. Consequently, researchers have turned to generative architectures. Diffusion policies [3, 26, 27, 28], consistency policies [29, 30], and flow-matching policies [4, 19, 31] have demonstrated remarkable success in behavior cloning (BC) from expert demonstrations, largely due to their ability to represent complex distributions. Furthermore, the integration of vision and language into these generative frameworks has led to the development of large-scale VLA models [5, 6, 32, 33, 34]. While these mod-els exhibit strong reasoning and semantic priors, adapting them to downstream tasks with only supervised fine-tuning (SFT) remains challenging [35, 36]. Compared to existing approaches, our work introduces an efficient RL framework specifically tailored for generative policies. By formulating policy improvement as a likelihood-free posterior inference problem, we integrate online exploration with pre-trained priors, accelerating stable downstream adaptation. 
+
+B. Real-World RL Implementations 
+
+Deploying RL on physical robots is fundamentally hindered by the sample inefficiency and safety risks of pure online exploration [11, 37]. To mitigate this, the offline-to-online paradigm [13, 14, 15, 18, 38, 39] pre-trains policies on static datasets before online fine-tuning. However, offline-to-online fine-tuning faces a strict trade-off between stability and efficiency across two main approaches. First, off-policy methods [11, 17, 35, 40] are sample-efficient but unstable. This instability stems from Q over-estimation on OOD states and the direct backpropagation of noisy Q-gradients, which induces catastrophic forgetting of the pre-trained priors [39]. Consequently, these approaches often require costly human-in-the-loop (HIL) interventions [11, 41] to recover from failures and guide the learning process. Second, on-policy methods [8, 20, 22, 42] enforce strict trust regions to stabilize updates but suffer from prohibitive sample inefficiency in real-world continuous control. Advantage-conditioned methods [43, 44] transform RL into a supervised fine-tuning problem to avoid noisy Q-gradients. Yet they still rely on continuous, costly HIL corrections during online rollouts to prevent policy degenera-tion. Alternative safe fine-tuning methods bypass direct weight updates by steering the generative process, either through altering inference noise [45] or applying value guidance [46]. While these approaches provide stability, the maximum perfor-mance of the policy is limited because the underlying model weights remain unchanged. In contrast, our method bridges the gap between off-policy efficiency and on-policy stability. By formulating policy improvement as an E-M inference problem with a clipped surrogate objective, our method achieves stable, sample-efficient policy improvement through online rollouts without intervention actions. III. B ACKGROUND 
+
+A. Problem Setup 
+
+We consider the problem of finding an optimal policy 
+
+π for a discounted RL problem, formally characterized by a Markov decision process (MDP). The MDP consists of 
+
+M = (S, A, P, r, ρ, γ ), where s ∈ S denotes the state space and a ∈ A denotes the action space. P(s′|s, a ) is the environmental transition probabilities that depend on system dynamics, and ρ(s) denotes the initial state distribution. r(s, a )
+
+and γ ∈ (0 , 1) are reward function and discount factor. JOURNAL OF L ATEX CLASS FILES, VOL. 1, NO. 1, APRIL 2026 3  
+
+> Fig. 2. Overview of our proposed framework. The learning paradigm consists of two main stages. (Left) First, the policy is pre-trained through supervised learning using expert demonstrations collected via tele-operation. (Right) Second, during online fine-tuning, the policy interacts with the environment and improves through an iterative E-M procedure. In the Implicit E-step, multiple candidate actions are sampled from the current actor and evaluated by the critic to obtain importance weights. In the M-step, these weighted samples are utilized to compute the POCO loss, updating the parameters to obtain the new actor.
+
+A trajectory is defined as τπ = {(s0, a 0), . . . , (sH , a H )}
+
+sampled by the policy π executing these generated ac-tion chunks sequentially, where H represents the maximum episode step of a trajectory. Typically, the goal of optimizing the policy is maximizing the cumulative expected value of the reward, denoted as: 
+
+V π (st) = Eπ [
+
+> H−t
+
+X
+
+> k=0
+
+γkr(st+k, a t+k)|st] (1) The Q-function of a given policy π evaluates the expected return of executing the action at starting from state st. This is formally denoted as: 
+
+Qπ (st, a t) = Est+1 ∼P [r(st, a t) + γV π (st+1 )] (2) To accommodate high-frequency robotic control and tempo-ral action chunking, we extend the standard single-step action formulation. Let an action chunk of horizon T at time t be defined as at:t+T = [ at, a t+1 , . . . , a t+T −1] ∈ A T . The policy 
+
+π(at:t+T |st, θ ) parameterized by θ is assumed to specify a probability distribution over sequences of future actions given the current state. 
+
+B. Policy Improvement as Inference 
+
+To achieve the reward-maximizing goal defined in the MDP while maintaining the stability required for training expressive generative models, we can recast the policy optimization process as a probabilistic inference problem[24]. RL ultimately seeks policies that make the expected outcomes more likely. To formalize this connection between the MDP and probabilistic inference, we define a binary optimality variable O, where 
+
+O = 1 denotes that a trajectory is expected, such as reaching a goal, accumulating high reward, or satisfying task constraints. A finite-horizon undiscounted RL problem can be cast as an inference problem by defining a likelihood model that connects the aforementioned MDP reward and optimality. Following the maximum-entropy framework, we specify: 
+
+p(O = 1 |τ ) ∝ exp( X
+
+> t
+
+(rt/η )) (3) where η is a temperature parameter. This likelihood model captures the intuition that trajectories with larger cumulative reward should be exponentially more likely to be optimal. Under policy π, the probability that a sampled trajectory is optimal yields: 
+
+log pπ (O = 1) = log 
+
+Z
+
+pπ (τ )p(O = 1 |τ )dτ (4) Note that directly maximizing this quantity is intractable due to the integral over all trajectories. We therefore introduce an auxiliary variational distribution q(τ ). Applying importance sampling and Jensen’s inequality yields an evidence lower bound (ELBO) that serves as our basic optimization objective: 
+
+log pπ (O = 1) = log 
+
+Z q(τ )pπ (τ )p(O = 1 |τ )
+
+q(τ ) dτ 
+
+≥
+
+Z
+
+q(τ )
+
+
+
+log p(O = 1 |τ ) + log pπ (τ )
+
+q(τ )
+
+
+
+dτ 
+
+≡ 1
+
+η Eq
+
+h X 
+
+> t
+
+rt
+
+i
+
+− DKL (q(τ )|| pπ (τ )) = J (q, π )
+
+(5) JOURNAL OF L ATEX CLASS FILES, VOL. 1, NO. 1, APRIL 2026 4
+
+C. Conditional Flow Matching 
+
+Standard policy optimization algorithms often rely on ex-plicitly evaluating the action likelihood π(a|s), which becomes computationally intractable for highly expressive generative models. To accommodate such likelihood-free architectures, we instantiate our framework using Flow Matching (FM) [4] as a representative generative policy built on continuous normalizing flows. Notably, the training objective illustrated below can be interpreted as a generalized supervised loss, making it naturally compatible with our proposed method. Instead of directly outputting a deterministic action or relying on intractable likelihood estimation, a flow matching policy learns a time-dependent vector field that continuously transforms a simple prior distribution, typically a standard Gaussian p0(a) = N (0 , I ), into the target data distribution 
+
+p1(a|s) at m = 1 , where m ∈ [0 , 1] represents the diffusion timesteps. The continuous transformation of the action variable is governed by an Ordinary Differential Equation (ODE): 
+
+da m
+
+dm = vθ (am, m, s ) (6) where vθ is a neural network parameterized by θ and am
+
+represents the intermediate state of the action at diffusion timestep m. During the inference phase, an action is generated by sampling initial noise a0 ∼ N (0 , I ) and simulating the ODE forward to m = 1 conditioned on the environment state 
+
+s.To train the vector field vθ efficiently without the com-putational bottleneck of simulating the ODE through time during training, the policy constructs analytically tractable target probability paths pm(am|a1) and their corresponding conditional vector fields um(am|a1). In our implementation, we use a linear probability path between the noise and the target action: 
+
+am = (1 − m)a0 + ma 1 (7) where a1 is the target action sampled from the dataset dis-tribution, and a0 ∼ N (0 , I ) is the prior noise. Under this formulation, the target vector field simplifies to a constant velocity: um(am|a1) = a1 − a0.Consequently, the policy network vθ can be optimized using a supervised loss objective. This objective minimizes the expected Mean Squared Error (MSE) between the predicted vector field and the target vector field: 
+
+LBC (θ) = Ea1∼D 
+
+h
+
+∥vθ (am, m, s ) − (a1 − a0)∥2i
+
+(8) where m ∼ U[0 , 1] and a0 ∼ N (0 , I ). By minimizing 
+
+LBC , the policy efficiently learns to approximate the marginal vector field. This formulation provides a stable, likelihood-free training objective that effectively captures the multi-modal action space required for dexterous robotic manipulation. IV. M ETHOD 
+
+In this section, we introduce Posterior Optimization with Clipped Objective (POCO), a framework for policy improve-ment, as illustrated in Fig. 2. Unlike standard inference-based RL methods that operate on single-step actions, POCO formulates the posterior inference over action chunks. This perspective fits the output structure of common generative robotic policies, yielding a stable update rule that preserves temporal consistency in high-frequency continuous control. For notational brevity in the subsequent sections, we use ⃗
+
+at and ⃗ a′ 
+
+> t
+
+to denote the current action chunk at:t+T and the subsequent action chunk at+T :t+2 T , respectively. 
+
+A. Posterior Over Actions 
+
+To make the optimization of ELBO in Eq. 5 tractable without relying on an explicit model of environmental dynam-ics, we must first decompose the trajectory-level distribution. Under the standard step-wise inference paradigm, the vari-ational distribution is factorized over individual time steps: 
+
+q(τ ) = p(s0) QHt=0 p(st+1 |st, a t)q(at|st). Substituting this into the ELBO, the trajectory-level divergence decomposes into a sum of divergences: 
+
+DKL (q(τ )|| pπ (τ )) = 
+
+> H
+
+X
+
+> t=0
+
+Eq [DKL (q(at|st)∥π(at|st, θ ))] (9) While this step-wise decomposition strictly aligns with the underlying MDP dynamics, making sequential decisions at a single-step granularity in high-frequency robotic control inherently leads to jittery execution and compounding errors. Leveraging the chain rule of relative entropy, the KL diver-gence between the joint distributions of the action chunks can be exactly decomposed into the divergence of the single-step marginal and the expected divergence of the subsequent conditional distributions: 
+
+DKL (q(⃗at|st)|| π(⃗at|st, θ )) = DKL (q(at|st)|| π(at|st, θ )) + Eat∼q [DKL (q(at+1: t+T |at, s t)|| π(at+1: t+T |at, s t, θ ))] 
+
+(10) Since the KL divergence is non-negative, optimizing the chunk-level divergence could serve as a variational upper bound for minimizing the single-step divergence: 
+
+DKL (q(at|st)|| π(at|st, θ )) ≤ DKL (q(⃗at|st)|| π(⃗at|st, θ )) 
+
+(11) By lifting the action space to temporal chunks and minimiz-ing this upper bound, and incorporating the discount factor 
+
+γ into the likelihood model to ensure practical algorithmic convergence, we adopt a chunk-level Maximum A Posteriori (MAP) perspective. Treating the policy parameters θ as a random variable with a prior p(θ) naturally incorporates a regularization term, leading to the final unified objective: 
+
+J (q, θ ) = Eq
+
+h HX
+
+> t=0
+
+γt[rt − ηD KL (q(⃗at|st)|| π(⃗at|st, θ ))] 
+
+i
+
++ log p(θ)
+
+(12) This formulation justifies an E-M procedure tailored for se-quence generation: an E-step that constructs a non-parametric target distribution over action chunks weighted by values, followed by an M-step that updates θ under the trust-region constraint implied by p(θ).JOURNAL OF L ATEX CLASS FILES, VOL. 1, NO. 1, APRIL 2026 5
+
+1) E-step (Chunk-Level Posterior Evaluation): At the i-th iteration of the E-M process, the E-step computes the optimal non-parametric posterior qi(⃗ at|st) that maximizes the state-wise ELBO in Eq. 12. Here, the subscript i denotes the current algorithm iteration. Solving this variational problem independently for each state yields a closed-form solution: 
+
+qi(⃗ at|st) ∝ π(⃗ at|st, θ i) exp 
+
+ Qπi (st,⃗ at)
+
+η
+
+
+
+(13) Detailed mathematical proof is provided in Appendix A-A. Note that this posterior acts as a reward-weighted refinement of the current policy, shifting probability mass towards the action distribution with higher expected returns. To evaluate this temporally extended evidence, the standard critic in Eq. 2 is inadequate because it assumes the policy intervenes at every time step. In contrast, temporal action chunking executes ⃗ at
+
+in an open-loop manner for T steps, requiring us to directly evaluate the expected return of the entire chunk. Crucially, this chunk-level formulation acts as a multi-step return estimator. Training with a T -step horizon accelerates back-propagation of sparse rewards, effectively alleviating the long-horizon credit assignment problem and facilitating faster critic convergence. To achieve this, we introduce a chunk-level critic Qϕ(st,⃗ at)
+
+with parameter ϕ. Because the intermediate rewards over the subsequent T steps depend solely on the environmental transition dynamics under ⃗ at, we can extend the standard Bellman expectation equation to a multi-step formulation. We train this chunk-level critic by minimizing the T -step temporal difference (TD) residual on the replay buffer D:
+
+LQ(ϕ) = E(st,⃗ at,r t:t+T ,s t+T )∼D 
+
+h 
+
+Qϕ(st,⃗ at)
+
+−
+
+ T −1X
+
+> k=0
+
+γkrt+k + γT E⃗a′ 
+
+> t∼π(·| st+T)
+
+[Q ¯ϕ(st+T ,⃗ a′
+
+> t
+
+)] 
+
+ 2i
+
+(14) where Q ¯ϕ serves as a target network. The learned Q-values are then used to construct the targets qi(⃗at|st) for the subsequent policy update. 
+
+2) M-step (Policy Improvement): Given the posterior 
+
+qi(⃗ at|st), the M-step updates the parametric policy 
+
+πθ to match this target distribution. We instantiate the Bayesian prior log p(θ) as a trust-region constraint, 
+
+DKL (π(·| st, θ i)∥π(·| st, θ )) ≤ ϵ, to ensure stability. Solving this constrained optimization via Lagrange multipliers yields the following weighted objective: 
+
+JM-step (θ) = Est∼μ(st)[Ea∼qi(⃗at|st)[log π(⃗ at|st, θ )] 
+
+− ηD KL (π(·| st, θ i)|| π(·| st, θ ))] (15) where η here acts as the regularization coefficient. The first term projects the policy onto the high-return regions identified in the E-step, while the second term anchors the update to the previous policy πθi . This mechanism prevents policy collapse and ensures stable improvement by keeping the policy within the valid region of the critic. 
+
+B. Posterior Optimization with Clipped Objective 
+
+While the aforementioned E-M procedure provides a prin-cipled and stable framework for policy improvement, its standard implementation relies on the explicit construction of the variational posterior q(⃗at|st). This requires the policy to possess a tractable likelihood for the projection step. Such a requirement becomes a significant bottleneck when employing expressive but likelihood-free policy representations, where the exact log-likelihood log π(⃗at|st, θ ) is either intractable or computationally expensive to evaluate. To overcome these lim-itations, POCO decouples policy improvement from explicit likelihood estimation by characterizing an implicit posterior and designing a sample-based improvement operator. 
+
+1) Implicit E-step (Chunk-Level Posterior Evaluation via Weighted Samples): In the implicit E-step, instead of explicitly constructing the likelihood qi(⃗at|st), we represent the poste-rior through N candidate actions {⃗ ajt }Nj=1 sampled from the current policy π(·| st, θ i). Following Eq. 13, each candidate action is assigned an unnormalized importance weight: 
+
+wj = exp 
+
+ Q(st,⃗ ajt )
+
+η
+
+ (16) In practice, the exponential of large Q-values in Eq. 16 might cause the loss to explode. We therefore normalize these weights, which yields a particle-based approximation of the reward-weighted posterior: 
+
+¯wj = wj
+
+PNk=1 wk
+
+= exp( Q(st,⃗ ajt )/η )
+
+PNk=1 exp( Q(st,⃗ akt )/η ) (17) This allows us to represent the posterior qi using only samples and their corresponding Q-values, bypassing the need for an explicit functional form. 
+
+2) M-step (Policy Improvement with Clipped Objective): 
+
+Given the weighted samples {⃗ ajt , ¯wj } from the Implicit E-step, we redefine the M-step objective in Eq. 15 to support expressive policy representations. Specifically, we employ flow matching policies that converge to a regularized, optimal-transport-guided generative trajectory, characterized by smooth vector fields [4]. To support such likelihood-free policies, we must first map the likelihood-based objective into a tractable supervised learn-ing space. As for generative modeling, the supervised training loss inherently minimizes a variational upper bound on the negative log-likelihood [47, 48]. Therefore, the supervised objective can be mathematically formulated as: 
+
+LBC ,θ (⃗at|st) ≈ − log π(⃗at|st, θ ) + C (18) where LBC ,θ represents the supervised loss for parameter θ,and C represents an intractable normalization constant that is independent of the policy parameters θ. Consequently, computing the difference between the supervised objectives of the current policy θ and the reference policy θi yields an approximation for the log-probability ratio: 
+
+log π(⃗at|st, θ i)
+
+π(⃗at|st, θ ) ≈ L BC ,θ (⃗ at|st) − L BC ,θ i (⃗at|st) (19) Substituting this approximation into the KL divergence term yields: 
+
+DKL (π(·| st, θ i)|| π(·| st, θ )) = E⃗ at∼π(·| st,θ i)
+
+h
+
+log π(⃗at|st, θ i)
+
+π(⃗at|st, θ )
+
+i
+
+≈ E⃗at∼π(·| st,θ i)[LBC ,θ (⃗ at|st) − L BC ,θ i (⃗at|st)] 
+
+(20) JOURNAL OF L ATEX CLASS FILES, VOL. 1, NO. 1, APRIL 2026 6
+
+In practical policy iteration, the reference policy parameters 
+
+θi are treated as fixed constants during the optimization of the current policy θ. Consequently, the expectation term 
+
+E⃗at∼π(·| st,θ i)[LBC ,θ i⃗ at|st)] remains constant with respect to 
+
+θ and does not contribute to the gradient of the objective function. By omitting this constant term, minimizing the KL divergence constraint mathematically reduces to minimizing the expected supervised loss of the current policy: 
+
+DKL (π(·| st, θ i)|| π(·| st, θ )) ≈ E⃗at∼π(·| st,θ i)[LBC ,θ (⃗at|st)] 
+
+(21) In our training setting, we approximate the reference distri-bution π(·| st, θ i) using the data distribution from the replay buffer D. Mathematically, this replaces the strict on-policy trust region with a BC prior regularization. This adaptation introduces a conservative bias that anchors the policy to the of-fline demonstrations, thereby actively preventing catastrophic forgetting of the pre-trained prior. Also, rather than optimiz-ing the exact Lagrangian multiplier η, which is notoriously difficult to tune dynamically in deep RL, we decouple the objective and introduce a tunable hyperparameter β, termed the posterior guidance scale, to explicitly balance the surrogate term and the underlying trust-region regularization. Following the variational mapping, the M-step objective can be tractably optimized using the weighted supervised loss: 
+
+JM-step (θ) ≈E(st,⃗ at)∼D ,{⃗ajt }Nj=1 ∼π(·| st,θ i)
+
+h
+
+LBC ,θ (⃗at|st)+ β
+
+> N
+
+X
+
+> j=1
+
+¯wj LBC ,θ (⃗ajt , s t)
+
+i (22) However, directly minimizing this objective may expose the policy to catastrophic manifold collapse. Highly-weighted OOD actions generated during the E-step typically lie far outside the expert data manifold. An MSE-based supervised objective would impose a large penalty, forcing the generative vector field vθ to abruptly fit these distant outlier points. This violent update destroys the smooth topological structure of the pre-trained vector field. To mitigate this, we introduce a clipped surrogate objective with a threshold ζ. By clipping the weighted supervised ob-jective at ζ, we mathematically impose a maximum allowable geometric deformation per update step. It guarantees that the policy distills knowledge only from high-value actions within a structurally safe, ζ-bounded neighborhood of the current vector field. The final objective for POCO is formulated as: 
+
+JPOCO (θ) = E(st,⃗ at)∼D ,{⃗ajt }Nj=1 ∼π(·| st,θ i)
+
+h
+
+LBC ,θ (⃗ at|st)+ β
+
+> N
+
+X
+
+> j=1
+
+¯wj clip 
+
+
+
+LBC ,θ (⃗ ajt , s t), 0, ζ 
+
+i (23) This formulation illustrates that POCO is equivalent to performing posterior-guided policy improvement: the E-step identifies high-value trajectory segments through re-weighting, while the M-step distills this filtered knowledge back into the parametric policy πθ using a likelihood-free objective. This allows our framework to keep policy stable while supporting the high expressivity required for complex robotic manipula-tion tasks. 
+
+Algorithm 1: Posterior Optimization with Clipped Objective 
+
+Input: Actor πθ , Chunk-level Critic Qϕ, Replay Buffer D
+
+Hyperparams: Chunk horizon T , Number of candidate actions N , Clipping threshold ζ, Weight temperature η,Posterior guidance scale β 
+
+> 1
+
+Initialize parameters θ, ϕ randomly  
+
+> 2
+
+Initialized D with pre-collected demo trajectories  
+
+> 3
+
+# Stage I: Offline Pre-training  
+
+> 4
+
+for each offline training step do  
+
+> 5
+
+Sample {st,⃗ at, r t:t+T , s t+T } from D 
+
+> 6
+
+Update the actor parameters θ by Eq. 24  
+
+> 7
+
+end  
+
+> 8
+
+# Stage II: Online Fine-tuning  
+
+> 9
+
+# Start Interaction Thread:  
+
+> 10
+
+for each interaction step k do  
+
+> 11
+
+Observe current state sk 
+
+> 12
+
+Sample and execute action ak:k+T ∼ π(·| sk, θ ) 
+
+> 13
+
+Store transitions {(st, a t, r t, s t+1 )}Tt=k into D 
+
+> 14
+
+end  
+
+> 15
+
+# Start Policy Learning Thread:  
+
+> 16
+
+Set current actor θ0 ← θ from Stage I  
+
+> 17
+
+for each online training step i do  
+
+> 18
+
+Sample {st,⃗ at, r t:t+T , s t+T } from D 
+
+> 19
+
+if i ≤ critic warmup step then  
+
+> 20
+
+# Critic Warmup  
+
+> 21
+
+Keep actor θi frozen  
+
+> 22
+
+Update the critic ϕ by Eq. 14  
+
+> 23
+
+else  
+
+> 24
+
+# Implicit E-Step  
+
+> 25
+
+Update the critic ϕ by Eq. 14  
+
+> 26
+
+Sample candidate actions from current actor 
+
+{⃗ ajt }Nj=1 ∼ π(·| st, θ i) 
+
+> 27
+
+Calculate weights for each action by Eq. 17  
+
+> 28
+
+# M-Step  
+
+> 29
+
+Update actor from θi to θi+1 by Eq. 23  
+
+> 30
+
+Copy parameter θ ← θi+1 for interaction  
+
+> 31
+
+end  
+
+> 32
+
+end 
+
+C. Offline-to-Online Training Paradigm 
+
+To ensure safe and efficient learning in real-world environ-ments, we adopt a two-stage training paradigm consisting of offline pre-training followed by online fine-tuning for POCO, as shown in Algorithm 1. 
+
+1) Offline Pre-training: To equip the agent with high-quality initial behaviors before interaction in real-world en-vironments, we perform supervised pre-training on the static dataset D, initialized with pre-collected expert demonstra-tions. Specifically, we employ a DAgger-like data collection [34] where human operators may intentionally demonstrate recovery actions from suboptimal states. Incorporating these corrective trajectories enables the policy to learn to recover during policy execution, thereby achieving robust initial prior JOURNAL OF L ATEX CLASS FILES, VOL. 1, NO. 1, APRIL 2026 7
+
+in the offline stage. We optimize the flow-matching policy via supervised learning by minimizing: 
+
+J off (θ) = E(st,⃗ at)∼D [LBC ,θ (⃗at|st)] (24) This supervised stage provides a strong policy initialization, allowing the agent to effectively explore high-reward regions during the online phase. 
+
+2) Online Fine-tuning: During the online phase, we con-tinuously augment the dataset D with new transitions, i.e., 
+
+D ← D ∪ D new . To bridge the gap between offline priors and online dynamics, we adopt a two-stage update strategy. Initially, we address potential Q-value over-estimation and distribution-shift issues [18] by conducting a critic warm-up phase. In this stage, we employ a SARSA-style update [49]. Specifically, we freeze the trained actor parameters and train the chunk-level critic Qϕ by estimating values of actions sam-pled from the fixed policy. This procedure ensures the critic learns conservative and stable value estimates, establishing a reliable guidance for subsequent policy improvements. Once the critic is warmed up, we unfreeze the actor and proceed to the standard iterative POCO updates. V. E XPERIMENTS 
+
+In this section, we conduct a comprehensive empirical evaluation of our proposed framework across a diverse set of manipulation tasks. Our experiments are designed to answer five key questions regarding the performance of our method: 1) Sample Efficiency (SectionV-B): Can our method learn complex policies from scratch with high sample effi-ciency under online settings? 2) Stability in Offline-to-Online Training (SectionV-C): 
+
+Does our method effectively mitigate catastrophic for-getting and enable stable fine-tuning in offline-to-online scenarios? 3) Real-World Applicability (SectionV-D): Can our method perform policy improvement robustly in real-world environments? 4) Ablation Study (SectionV-E): What is the impact of key algorithmic designs, such as the clipped surrogate objective and the implicit posterior weighting, on the effectiveness of our framework? 5) Scalability to VLA models (SectionV-F): Is our method compatible with large-scale pre-trained VLA models to enhance their performance in real-world en-vironments? To answer these questions, we compare our approach against SOTA baselines in both simulation benchmarks and real-robot environments. 
+
+A. Implementation Details 1) Simulation Environments: For the simulation bench-marks, we evaluate our algorithm on 7 sparse-reward robotic manipulation tasks of varying complexity. From OGBench[50], we utilize ”Task 1” of 4 domains: scene ,
+
+puzzle-3x3 , cube-double , and cube-triple . From RoboMimic[51], we select 3 tasks: lift , can and square .Details for all simulation tasks are listed below.                                                       
+
+> Fig. 3. Visualization of all simulation tasks. The simulation tasks includes: a) scene , b) puzzle-3x3 , c) cube-double , d) cube-triple from OGBench [50] and e) lift , f) can , g) square from RoboMimic [51]. TABLE I
+> METADATA FOR OFFLINE DATASETS IN SIMULATION AND REAL -WORLD TASKS .Tasks Num. of Trajs. Num. of Trans. Action Dimension Simulation  scene 1,000 1,000,000 5
+> puzzle-3x3 1,000 1,000,000 5
+> cube-double 1,000 1,000,000 5
+> cube-triple 3,000 3,000,000 5
+> lift 300 31,127 7
+> can 300 62,756 7
+> square 300 80,731 7
+> Real-World  Pick Cube 40 3,471 7
+> Route Cable 30 2,934 7
+> Insert USB 50 3,880 7
+> Assemble SSD 40 2,884 7
+> Pick Pen 50 6,682 7
+> Hang Keychain 50 5,996 7
+
+a) OGBench: For the scene and puzzle-3x3 do-mains, we employ a sparse binary reward r ∈ {− 1, 0}, where a reward of 0 is granted only upon task completion, and −1
+
+otherwise. Detailed descriptions of each domain are provided below:  
+
+> •
+
+scene : A long-horizon task requires the agent to first unlock and open the drawer, then place the cube inside.  
+
+> •
+
+puzzle-3x3 : A 3 × 3 grid-based task where pressing a button toggles its state (red/blue) and that of its cardinal neighbors. The task starts from all-blue buttons, requiring the agent to isolate and flip only the top-left button to red through a series of strategic moves.  
+
+> •
+
+cube-double/triple : Multi-object manipulation domains with 2 or 3 cubes. In cube-double and 
+
+cube-triple , the agent must rearrange all cubes to target poses. The reward is defined as −n, where n
+
+denotes the count of cubes not yet at their goal positions. 
+
+b) RoboMimic: We utilize the Multi-Human (MH) datasets collected by multiple human operators to ensure diverse demonstrations. All tasks use binary task completion rewards where the agent receives a 1 reward when the task is completed and a −0.01 reward otherwise. The tasks are defined as follows:  
+
+> •
+
+lift : A reaching and grasping task where the robot must lift a small cube off the tabletop. JOURNAL OF L ATEX CLASS FILES, VOL. 1, NO. 1, APRIL 2026 8               
+
+> Fig. 4. Visualization of the real-world environment platform. During execution, an operator presses the green button to assign a sparse reward upon success, or the red button to immediately terminate dangerous trajectories for hardware safety.
+> Fig. 5. Visualization of all real-world tasks. The real-world tasks includes: a) Pick Cube , b) Route Cable , c) Insert USB , d) Assemble SSD ,e) Pick Pen . The camera perspectives used in the experiments differ from those used for visualization.
+> •
+
+can : The agent is required to pick up a soda can and place it precisely into a designated container bin.  
+
+> •
+
+square : A high-precision insertion task involving pick-ing up a square nut and placing it onto a vertical rod, requiring high-fidelity control and spatial precision to prevent jamming during the contact phase. All simulation tasks are visualized in Fig. 3 and the meta-data of the corresponding dataset is listed in Tab. I. For OGBench tasks, the 5D action space comprises End-Effector (EEF) Cartesian positions (x, y, z ), gripper yaw, and gripper opening. For RoboMimic tasks, the 7D action space controls the EEF pose (x, y, z, roll, pitch, yaw ) with the gripper state. For a fair comparison, all algorithms used the flow matching policy[4] for simulation tasks, with a flow step of 10 . Both the actor and critic networks use a four-layer Multi-Layer Perceptron (MLP) with a hidden dimension of 512 per layer, employing Sigmoid Linear Unit (SiLU) as the activation func-tion for the hidden layers, while the final output layer of both networks remains linear without any activation. Furthermore, to stabilize value estimation, the critic network incorporates Layer Normalization (LN) after the SiLU activation in each hidden layer. 
+
+2) Real-world Environments: All real-world experiments are conducted using the AgileX Cobot Magic robotic system. The hardware setup features a 6 Degree-of-Freedom (DoF) robotic arm equipped with a 1 DoF parallel jaw gripper, providing a highly capable platform for dexterous manipu-lation. To collect the initial expert datasets, the system is integrated with a tele-operation interface for a collaborative robotic arm, enabling human operators to guide the robot to complete target tasks and record expert demonstrations. At the execution level, the low-level hardware controllers ensure smooth and responsive tracking of the policy’s outputs, running at 15Hz. Furthermore, to accommodate the heavy computational overhead of the generative models while main-taining low-latency real-time control, we deploy a distributed system architecture. All compute-intensive policy training and inference processes are offloaded to a high-performance cloud server equipped with 8 NVIDIA H20 GPUs. Meanwhile, RGB and sensory data streaming, trajectory collection, and physical action execution are managed by a local computer that directly interfaces with the robot hardware over a local network. The observation includes two RGB camera views (e.g., a front view and a wrist view) alongside the robot’s propri-oceptive state, which includes the current joint angles. The image observations are processed through a pre-trained frozen ResNet-10 backbone to extract low-dimensional spatial feature embeddings. These visual features are subsequently flattened and concatenated with the proprioceptive data to formulate the unified state representation. Then we employ a flow matching policy [4] with 10 flow steps during inference. Both the actor and the Q network are parameterized as four-layer MLPs, with a hidden dimension of 512 per layer and SiLU as the activation function. The final output layer is linear, with no activation. Furthermore, to stabilize value estimation, the critic network incorporates LN after each activation. For the offline pre-training stage, we initialize the offline datasets with 30 to 50 pre-collected successful trajectories per task. To capture natural and dexterous manipulation behaviors, these demonstrations are provided directly by human experts via tele-operation using a collaborative robotic arm. During the online fine-tuning phase, we employ a sparse binary reward formulation. Due to the inherent difficulty of automated state evaluation in unstructured physical environments, the reward signal is manually annotated by a human expert through a physical keypad (Fig. 4, right): the agent receives a reward of 
+
+1 upon successful task completion and 0 otherwise at the end of each episode. The tasks are defined as follows:  
+
+> •
+
+Pick Cube : A peg-in-hole task where the agent need grasp a cube and insert it into a tightly fitted square hole.  
+
+> •
+
+Route Cable : A deformable object manipulation task requiring the agent to grasp a flexible cable and press it into a cable management.  
+
+> •
+
+Insert USB : A high-precision task requiring the agent to pick up a USB connector and insert it into a port.  
+
+> •
+
+Assemble SSD : A contact-rich assembly task where the agent must pick up an M.2 Solid-State Drive (SSD), align it at a specific oblique angle, and insert it into a motherboard slot.  
+
+> •
+
+Pick Pen : A pick-and-place task where the agent must grasp a thin, elongated pen from the desktop and insert it vertically into a cylindrical pen holder. The task descrip-JOURNAL OF L ATEX CLASS FILES, VOL. 1, NO. 1, APRIL 2026 9                                                                         
+
+> Fig. 6. Learning curves during online training for 7 simulation tasks. Results are averaged over 50 trials per task at each evaluation step with 5 random seeds. TABLE II
+> POLICY TRAINING DETAILS FOR ONLINE SIMULATION EXPERIMENTS .
+> Parameter Scene Puzzle 3x3 Cube-double Cube-triple Lift Can Square
+> Batch size 256 256 256 256 256 256 256 Learning rate 3e-4 3e-4 3e-4 3e-4 3e-4 3e-4 3e-4
+> γ0.99 0.99 0.99 0.99 0.99 0.99 0.99
+> T5555555Critic warmup step 5,000 5,000 5,000 5,000 5,000 5,000 5,000
+> N32 32 32 32 32 32 32
+> η0.1 0.1 0.1 0.1 0.001 0.001 0.001
+> (β, ζ )(1 .0,0.3) (1 .0,0.3) (1 .0,0.3) (1 .0,0.3) (1 .0,0.15) (1 .0,0.15) (1 .0,0.15)
+
+tion for the VLA model is “Place the black pen in the green pen cup.”  
+
+> •
+
+Hang Keychain : A precise spatial coordination task requiring the agent to grasp a keychain and thread its ring onto a fixed hook. The task description for the VLA model is “Pick up the orange keychain and hang it onto the white hook.” All real-world tasks are visualized in Fig. 5 and the metadata of the corresponding dataset is listed in Tab. I. The 7D action space is parameterized by six delta joint position commands 
+
+(∆ q1, ∆q2, . . . , ∆q6), with a one-dimensional absolute state to control the gripper opening. 
+
+B. Sample Efficiency of Online Learning in Simulation 
+
+To evaluate the sample efficiency of our approach, we compare 3 competitive methods with ours in the online setting across 7 simulation tasks. The specific details of the policy training for each task are in Tab. II. All results are provided with the same set of expert demonstrations to facilitate learn-ing:  
+
+> •
+
+RLPD[52] is an off-policy method that maintains a sep-arate buffer for offline demonstrations and mixes them with data from the replay buffer under a fixed ratio (e.g., 50%) during updates to accelerate online exploration.  
+
+> •
+
+QC[53] that utilized chunked Q function and Max-K action selection for robust and efficient policy update.  
+
+> •
+
+FQL[19] is also an off-policy method that achieves high sample efficiency by directly back-propagating Q func-tion gradients into the flow matching policy network. We report the average success rate within a fixed bud-get of training steps. As illustrated in Fig. 6, our pro-posed method consistently demonstrates superior sample ef-ficiency and asymptotic performance across both OGBench and RoboMimic tasks. On simpler tasks such as Scene , Puzzle 3x3 , and 
+
+Lift , our method achieves high success rates significantly faster than the baselines. For instance, in the Scene task, POCO reaches a near 100% success rate within 0.2M steps, whereas RLPD and QC require considerably more interaction to reach comparable performance, and FQL struggles to learn effectively under the sparse-reward case. This indicates that our framework efficiently leverages the offline dataset, and the chunked-Q accelerates backpropagation of sparse rewards, leading to rapid online convergence. The performance gap widens on challenging tasks involv-JOURNAL OF L ATEX CLASS FILES, VOL. 1, NO. 1, APRIL 2026 10                                                                                                                       
+
+> Fig. 7. Learning curves during offline-to-online training for 4 simulation tasks. Results are averaged over 50 trials per task at each evaluation step with 5 random seeds. TABLE III
+> POLICY TRAINING DETAILS FOR OFFLINE -TO -ONLINE EXPERIMENTS .Simulation Tasks Real-world Tasks
+> Parameter Scene Puzzle 3x3 Can Square Pick Cube Route Cable Insert USB Assemble SSD
+> Batch size 256 256 256 256 256 256 256 256 Learning rate 3e-4 3e-4 3e-4 3e-4 3e-4 3e-4 3e-4 3e-4
+> γ0.99 0.99 0.99 0.99 0.99 0.99 0.99 0.99
+> H750 500 300 400 200 150 200 180
+> T55554444Offline pre-trained step 500,000 500,000 100,000 500,000 20,000 20,000 20,000 20,000 Critic warmup step 5,000 5,000 5,000 5,000 5,000 5,000 5,000 5,000
+> N32 32 32 32 32 32 32 32
+> η0.001 0.001 0.001 0.001 0.001 0.001 0.001 0.001
+> (β, ζ )(1 .0,0.3) (1 .0,0.15) (1 .0,0.3) (1 .0,0.08) (1 .0,0.1) (1 .0,0.1) (1 .0,0.08) (1 .0,0.08)
+> EEF bounding box 1----(40, 40, 30) (20, 30, 30) (20, 15, 15) (12, 15, 15) Object random range 2----(25, 10) (5, 15) (5, 5) (5, 3)
+> 1The unit of dimensions (x, y, z) is centimeter.
+> 2The unit of dimensions (x, y) is centimeter.
+
+ing precise long-horizon manipulation, such as Square ,
+
+Cube-double , and Cube-triple . In Cube-triple ,which requires stacking 3 cubes, FQL completely fails to learn (near 0% success), and the strong baseline RLPD achieves around 60%. Since FQL relies on backpropagating gradients through the entire ODE solver process. In these long-horizon sparse-reward tasks, this leads to severe gradient degradation and the accumulation of value over-estimation, causing the policy to collapse early in training. In contrast, POCO steadily improves, achieving a near-100% success rate. Similarly, in 
+
+Square , POCO outperforms all baselines, demonstrating our method’s ability to model complex multi-modal distributions that are difficult for direct gradient-based methods to capture. While FQL and QC both utilize advanced generative mod-els, they exhibit instability across different domains. FQL, which relies on direct Q-gradient backpropagation, exhibits high variance and fails on sparse-reward OGBench tasks, likely due to noise in Q-gradients during early training. QC performs reliably but learns slower than POCO, suggesting that POCO provides a more stable and efficient learning signal than Chunked-Q matching alone. 
+
+C. Stability of Offline-to-Online Fine-tuning in Simulation 
+
+To evaluate the learning stability of our approach, we compare QC[53], FQL[19], and 3 other competitive methods with our approach under an offline-to-online setting on 4 simulation tasks:  
+
+> •
+
+DSRL[45] that alters the input noise distribution instead of modifying the weights of the policy for performance improvement.  
+
+> •
+
+DPPO[42], which is an on-policy method that adapts the Proximal Policy Optimization framework to diffusion models.  
+
+> •
+
+ReinFlow[22], which is also an on-policy method that utilizes a noise injection network to improve the action generation of the policy network. The specific details of the policy training for each task are in Tab. III. We report the average success rate within afixed budget of training steps. Notably, for the on-policy methods (DPPO and ReinFlow), we deployed them using 20 parallel environments. To ensure a fair comparison, we align the metrics and normalize training steps by multiplying the number of update iterations by the number of parallel environments, maintaining a consistent total sample budget across all methods. As illustrated in Fig. 7, POCO achieves the best bal-ance of stability and sample efficiency, consistently avoiding catastrophic forgetting while reaching the highest asymptotic success rates across all 4 evaluated tasks. The on-policy methods, DPPO and ReinFlow, exhibit smooth and stable learning curves, confirming their ability JOURNAL OF L ATEX CLASS FILES, VOL. 1, NO. 1, APRIL 2026 11                                   
+
+> Fig. 8. Learning curves during offline-to-online training for 4 real-world tasks. Results are displayed as a running average over 20 episodes. TABLE IV
+> SUCCESS RATES OF OFFLINE -TO -ONLINE TRAINING FOR REAL -WORLD TASKS .RESULTS ARE REPORTED OVER 30 TRIALS PER TASK .
+> Task BC QC DSRL POCO
+> Pick Cube 63.3% 66.7% 93.3% 100.0%
+> Route Cable 73.3% 70.0% 80.0% 100.0%
+> Insert USB 46.7% 70.0% 76.7% 90.0%
+> Assemble SSD 26.7% 36.7% 73.3% 96.7% Average 52.5% 60.9% 80.8% 96.7%
+
+to safely preserve the pre-trained prior. However, they suffer from sample inefficiency in these high-dimensional continuous control tasks. Particularly in environments like Scene and 
+
+Puzzle 3x3 , both methods struggle to make meaningful performance improvements within the allocated training step budget, rendering them impractical for real-world deployment. On the other hand, while off-policy methods like FQL and QC demonstrate higher sample efficiency, they exhibit distinct limitations. FQL is vulnerable to over-estimating OOD values, as evident in the Square task. While FQL completely fails to learn from scratch in the pure online setting, it manages to train in the offline-to-online setting only after an initial performance drop to near 35%. This contrast demonstrates that early-stage inaccurate Q-values are fatal to direct gradient-based updates, as they instantly destroy the pre-trained behavioral prior before the critic can stabilize. Further, the supervised online update of QC is susceptible to sub-optimal exploratory rollouts. This causes instability and slow performance improvement during the online stage. DSRL avoids catastrophic forgetting by steering inference noise rather than updating policy weights, proving sample-efficient on simpler tasks like Scene and Puzzle 3x3 .However, because its policy remains frozen at the pre-trained level, its capacity for continuous improvement is limited. Con-sequently, DSRL reaches its performance limit on complex, contact-rich tasks like Can and Square .In contrast, POCO overcomes the limitations through the E-M formulation and robust clipped regression, which filters out noisy gradients from overestimated Q-values, preventing early catastrophic drops. Therefore, POCO safely updates policy weights, enabling continuous improvement. 
+
+D. Real-World Robotic Manipulation 
+
+For the real-world benchmarks, we evaluate our algorithm on 4 sparse-reward robotic manipulation tasks of varying complexity. The specific details of the policy training for each task are in Tab. III. To test the generalizability and robustness of the learned policies, these tasks are designed to challenge the agent across different physical dimensions: from basic spatial reasoning to complex contact-rich interactions. The selected tasks include: 1) Pick Cube , evaluating grasping and tight-tolerance alignment for a rigid cube; 2) Route Cable , assessing continuous force control over a deformable cable; 3) Insert USB , demanding asymmetric precision insertion; and 4) Assemble SSD , requiring a contact-rich oblique assembly process. We compare 2 competitive methods, QC and DSRL, with our approach under real-world settings. And we report the average success rate of a running average over 20 episodes within a fixed budget of training steps. As illustrated in Fig. 8 and quantified results in Tab. IV, POCO consistently demonstrates the best online fine-tuning stability and final performance across all real-world tasks, achieving an average success rate of 96.7%. On tasks such as Pick Cube and Route Cable , our method, after offline pre-training, rapidly improves upon the pre-trained policy, achieving perfect execution. For instance, in the Route Cable task, POCO steadily increases its success rate to 100% within 40K training steps. In contrast, QC struggles to achieve stable policy improvement within the limited training budget. Because QC directly uses a BC loss to update the policy, sub-optimal or OOD data generated during online rollouts may cause its performance to drop. Meanwhile, DSRL exhibits high sample efficiency and a stable learning performance, but its final performance remains bottlenecked by the initial offline-trained policy. This constraint restricts its capacity for further continuous improvement. For tasks requiring high-precision, contact-rich execution, such as Insert USB and Assemble SSD , the advantages of POCO become even clearer. In the most challenging 
+
+Assemble SSD task, which requires high-precision force-guided oblique insertion, the pre-trained policy only achieves a 30% success rate. Due to sub-optimal rollout data, QC struggles to improve policy performance during online fine-tuning. Similarly, the sample efficiency of DSRL is also JOURNAL OF L ATEX CLASS FILES, VOL. 1, NO. 1, APRIL 2026 12    
+
+> Fig. 9. Learning curves during offline-to-online training with different ζ
+> for 2 simulation tasks. Results are averaged over 50 trials per task at each evaluation step with 5 random seeds.
+
+limited, resulting in a low success rate of 60% within the same training step budget. POCO, however, exhibits a remarkably stable learning process and efficiently learns the optimal policy, achieving a 95% success rate. Overall, the real-world results highlight the practical limi-tations of current fine-tuning methods. Rather than explicitly filtering out over-estimated Q-values, POCO mitigates their destructive impact through two mechanisms: first, candidate actions are inherently grounded in the pre-trained prior distri-bution; second, the clipped surrogate objective strictly limits the gradient magnitude of any single action with an abnormal high weight. This creates a stable and highly efficient learning signal, allowing the agent to robustly improve its performance directly on a real-world platform. 
+
+E. Ablation Study 
+
+To evaluate the impact of key algorithmic designs in POCO, we conduct a series of ablation studies. Specifically, we inves-tigate the sensitivity of our framework to two hyperparameters that govern the stability and efficiency of the policy update, the clipping threshold ζ and the posterior guidance scale β.By isolating these variables, we aim to understand how the trust-region constraint and the weighted posterior distillation influence the learning procedure. All ablation experiments are evaluated on representative simulation tasks to provide a clear and quantitative comparative analysis. 
+
+1) Clipping Threshold ζ: The clipping threshold ζ bounds the maximum penalty applied to any candidate action within the surrogate objective, effectively controlling how strongly the posterior influences the policy update. As illustrated in Fig. 9, selecting an appropriate ζ is crucial for balancing learning stability and improvement capacity. If ζ is set too large (e.g., ζ = 0 .3 for Square ), the clipped surrogate loss permits aggressively large parameter updates. During the early stages of the offline-to-online transition, the Q-function often suffers from inaccurate value estimates and over-estimation of OOD. Policy updates driven by these noisy Q-values rapidly destroy the pre-trained prior, causing the policy to collapse catastrophically, as evidenced by the sharp performance drop in the early stages. Conversely, if ζ is set too small (e.g., ζ = 0 or ζ = 0 .04 
+
+for Square ), the clip clipped surrogate strictly restricts the influence of the posterior, causing the update to be similar to    
+
+> Fig. 10. Learning curves during offline-to-online training with different
+> βfor 2 simulation tasks. Results are averaged over 50 trials per task at each evaluation step with 5 random seeds.
+
+standard supervised learning. As a result, it becomes difficult for the posterior to drive meaningful policy improvements, thereby limiting final performance. By establishing a balanced threshold (e.g., ζ = 0 .08 for Square ), POCO effectively enforces the trust-region constraint, preventing initial policy collapse while maintaining sufficient gradient flow to converge to the optimal performance. 
+
+2) Posterior Guidance Scale β: The posterior guidance scale β controls the relative weight of the reward-weighted surrogate objective against the BC regularization. It essentially determines how strongly the inferred posterior influences the policy update. As illustrated in Fig. 10, setting an appropri-ate β is important for achieving effective and stable policy improvement. When β is set too small (e.g., β = 0.1 for Square ), the Q-value guidance is excessively weakened. Under this setting, the optimization objective largely degrades into stan-dard supervised fine-tuning. Consequently, the agent fails to prioritize high-value actions effectively, resulting in minimal performance gains. Conversely, if β is excessively large (e.g., 
+
+β = 10 .0 for Square ), the policy is forced to match the weighted posterior aggressively. During the early stages of online fine-tuning, the critic’s Q-value estimates are often inac-curate. Over-reliance on this noisy guidance causes the policy to rapidly deviate from its pre-trained prior, leading to severe instability and catastrophic policy collapse, such as a sharp initial performance drop to near 0% on the Square task. By adopting a balanced scale (e.g., β = 1 .0 for Square ), POCO leverages the critic’s guidance to continuously improve performance while maintaining sufficient regularization to ensure learning stability. 
+
+F. Scalability to VLA Models 
+
+For the VLA scalability experiments, we adapt the afore-mentioned model setup by substituting the actor with the pre-trained VLA models. Meanwhile, the architecture of the critic network remains unchanged, retaining the same policy network for stable value estimation during the online fine-tuning procedure. The specific details of the policy training for each task are in Tab. V. To evaluate the scalability and model-agnostic nature of our approach, we select two representative generative VLAs, 
+
+π0.5 [5] and GR00T N1.6 [6], as our base models. We JOURNAL OF L ATEX CLASS FILES, VOL. 1, NO. 1, APRIL 2026 13                                                           
+
+> TABLE V
+> POLICY TRAINING DETAILS FOR VLA SCALING REAL -WORLD EXPERIMENTS .
+> Parameter Pick Pen Hang Keychain
+> Batch size 64 64 Learning rate for actor 5e-5 5e-5 Learning rate for critic 3e-4 3e-4
+> γ0.99 0.99
+> H200 200
+> T10 10 Critic warmup step 2,000 2,000
+> N16 16
+> η0.001 0.001
+> (β, ζ )(1 .0,0.01) (1 .0,0.01)
+> EEF bounding box 1(40, 40, 40) (40, 40, 40) Object random range 2(30, 30) (20, 20)
+> 1The unit of dimensions (x, y, z) is centimeter.
+> 2The unit of dimensions (x, y) is centimeter. TABLE VI
+> SUCCESS RATES OF OFFLINE -TO -ONLINE TRAINING FOR 2
+> REAL -WORLD TASKS WITH VLA MODELS .RESULTS ARE REPORTED OVER 30 TRIALS PER TASK .
+> Base Model π0.5GR00T N1.6
+> Task SFT POCO 1SFT POCO 1
+> Pick Pen 76.7% 93.3% 63.3% 86.7%
+> Hang Keychain 60.0% 86.7% 53.3% 83.3%
+> 1Results for POCO are reported within 15,000 training steps.
+
+select two real-world tasks as the benchmark: 1) Pick Pen ,evaluating precise grasping and spatial alignment for a thin object; and 2) Hang Keychain , assessing manipulating a partially deformable object to a target hook. To ensure training efficiency and balance computational re-sources while fully leveraging the extensive pre-trained knowl-edge of these large-scale VLAs, we adopt a parameter-efficient fine-tuning strategy. Specifically, we freeze the encoders and the transformer backbones, restricting the parameter updates to the flow-based action head. Furthermore, to optimize the computational bottleneck during the Implicit E-step, which requires sampling multiple candidate actions, we execute the transformer forward pass only once per state. The resulting conditional state embeddings, or KV cache, are then reused by the action head to generate N candidate action chunks. This architectural design drastically reduces the inference overhead, enabling high-frequency policy updates during online rollouts. As detailed in Tab. VI, purely offline fine-tuning struggles to achieve high performance in precision-demanding tasks, even with the powerful visual and semantic priors embedded in large-scale VLA models. In the Pick Pen task, the offline fine-tuned π0.5 model achieves a 76.7% success rate, whereas GR00T N1.6 only reaches 63.3%. This highlights the inherent limitation of supervised learning: without feedback from interactive environments, large models still struggle to overcome sub-optimal states and spatial misalignments during physical interaction. By continuously improving the policy through the E-M procedure, POCO boosts the performance of these VLAs on downstream tasks. For example, POCO pushes the success rate of π0.5 on Pick Pen from 76.7% to 93.3%. To sum up, these results demonstrate that POCO scales seamlessly to large network architectures. It serves as an efficient and stable alignment mechanism, unlocking the full potential of pre-trained foundational models for robust deployment in complex real-world environments. VI. C ONCLUSION 
+
+In this paper, we introduce Posterior Optimization with Clipped Objective (POCO), a principled RL framework that formulates policy improvement as a likelihood-free posterior inference problem. By employing a robust clipped regression objective, POCO combines off-policy efficiency with strong prior regularization, effectively mitigating catastrophic pol-icy collapse during generative policy fine-tuning. Evaluations across simulation and real-world benchmarks demonstrate that POCO achieves SOTA sample efficiency and stable improve-ment, while seamlessly scaling to fine-tune large VLA models for robust real-world deployment. While POCO offers a reliable training mechanism, exciting avenues for future work remain. First, transitioning from random exploration to prior-driven, structured exploration may further improve sample efficiency in complex, contact-rich tasks. Second, since POCO relies on accurate value estimation, incorporating automated dense reward generation, such as world-model-driven reward shaping, is a critical next step to facilitate robust critic learning. Combining meaningful explo-ration and dense rewards is essential to advance our framework toward fully autonomous, open-ended robot learning. REFERENCES 
+
+[1] J. Urain, A. Mandlekar, Y. Du, N. Muhammad “Mahi” Shafiullah, D. Xu, K. Fragkiadaki, G. Chal-vatzaki, and J. Peters, “A survey on deep generative mod-els for robot learning from multimodal demonstrations,” 
+
+IEEE Transactions on Robotics , vol. 42, pp. 60–79, 2026. [2] H. Chen, C. Lu, C. Ying, H. Su, and J. Zhu, “Offline reinforcement learning via high-fidelity generative behav-ior modeling,” in International Conference on Learning Representations, ICLR , 2022. [3] C. Chi, S. Feng, Y. Du, Z. Xu, E. Cousineau, B. Burch-fiel, and S. Song, “Diffusion policy: Visuomotor policy learning via action diffusion,” in Robotics: Science and Systems, RSS , 2023. [4] Y. Lipman, R. T. Q. Chen, H. Ben-Hamu, M. Nickel, and M. Le, “Flow matching for generative modeling,” in 
+
+International Conference on Learning Representations, ICLR , 2023. [5] P. Intelligence, K. Black, N. Brown, J. Darpinian, K. Dhabalia, D. Driess, A. Esmail, M. Equi, C. Finn, N. Fusai et al. , “ π0.5: A vision-language-action model with open-world generalization,” in Conference on Robot Learning, CoRL , 2025. [6] NVIDIA, J. Bjorck, N. C. Fernando Casta˜ neda, X. Da, R. Ding, L. J. Fan, Y. Fang, D. Fox, F. Hu, S. Huang, J. Jang et al. , “GR00T N1: An open foundation model for generalist humanoid robots,” arXiv:2503.14734 , 2025. JOURNAL OF L ATEX CLASS FILES, VOL. 1, NO. 1, APRIL 2026 14 
+
+[7] T. Z. Zhao, V. Kumar, S. Levine, and C. Finn, “Learning fine-grained bimanual manipulation with low-cost hard-ware,” in Robotics: Science and Systems, RSS , 2023. [8] H. Zang, M. Wei, S. Xu, Y. Wu, Z. Guo, Y. Wang, H. Lin, L. Shi, Y. Xie, Z. Xu et al. , “Rlinf-VLA: A unified and efficient framework for VLA+RL training,” 
+
+arXiv:2510.06710 , 2025. [9] K. Wu, R. Chen, Q. Chen, and W. Li, “Robotic assembly of deformable linear objects via curriculum reinforce-ment learning,” IEEE Robotics and Automation Letters ,vol. 10, no. 5, pp. 4770–4777, 2025. [10] Z. Hu, Y. Zheng, and J. Pan, “Grasping living objects with adversarial behaviors using inverse reinforcement learning,” IEEE Transactions on Robotics , vol. 39, no. 2, pp. 1151–1163, 2023. [11] J. Luo, C. Xu, J. Wu, and S. Levine, “Precise and dexterous robotic manipulation via human-in-the-loop reinforcement learning,” Science Robotics , vol. 10, no. 105, 2025. [12] M. Pan, S. Feng, Q. Zhang, X. Li, J. Song, C. Qu, Y. Wang, C. Li, Z. Xiong, Z. Chen et al. , “SOP: A scalable online post-training system for vision-language-action models,” arXiv:2601.03044 , 2026. [13] S. Lee, Y. Seo, K. Lee, P. Abbeel, and J. Shin, “Offline-to-online reinforcement learning via balanced replay and pessimistic q-ensemble,” in Conference on Robot Learn-ing, CoRL , 2021. [14] A. Nair, A. Gupta, M. Dalal, and S. Levine, “AWAC: Accelerating online reinforcement learning with offline datasets,” in Annual Conference on Neural Information Processing Systems, NeurIPS , 2025. [15] K. Lei, H. Li, D. Yu, Z. Wei, L. Guo, Z. Jiang, Z. Wang, S. Liang, and H. Xu, “RL-100: Performant robotic manipulation with real-world reinforcement learning,” 
+
+arXiv:2510.14830 , 2025. [16] M. S. Mark, T. Gao, G. G. Sampaio, M. K. Srirama, A. Sharma, C. Finn, and A. Kumar, “Policy agnostic rl: Offline rl and online rl fine-tuning of any class and backbone,” in International Conference on Learning Representations, ICLR , 2025. [17] H. Zhang, Z. Li, X. Zeng, L. Smith, K. Stachowicz, D. Shah, L. Yue, Z. Song, W. Xia, S. Levine, K. Sreenath, and Y.-h. Liu, “Traversability-aware legged navigation by learning from real-world visual data,” IEEE Transactions on Robotics , vol. 42, pp. 400–417, 2026. [18] A. Kumar, A. Zhou, G. Tucker, and S. Levine, “Con-servative Q-learning for offline reinforcement learning,” in Annual Conference on Neural Information Processing Systems, NeurIPS , 2020. [19] S. Park, Q. Li, and S. Levine, “Flow Q-learning,” in 
+
+International Conference on Machine Learning, ICML ,2025. [20] J. Schulman, F. Wolski, P. Dhariwal, A. Radford, and O. Klimov, “Proximal policy optimization algorithms,” 
+
+arXiv:1707.06347 , 2017. [21] D. Guo, D. Yang, H. Zhang, J. Song, P. Wang, Q. Zhu, R. Xu, R. Zhang, S. Ma, X. Bi et al. , “Deepseek-r1 incentivizes reasoning in llms through reinforcement learning,” Nature , vol. 645, no. 8081, pp. 633–638, 2025. [22] T. Zhang, C. Yu, S. Su, and Y. Wang, “Reinflow: Fine-tuning flow matching policy with online reinforcement learning,” in Annual Conference on Neural Information Processing Systems, NeurIPS , 2026. [23] T. Haarnoja, A. Zhou, K. Hartikainen, G. Tucker, S. Ha, J. Tan, V. Kumar, H. Zhu, A. Gupta, P. Abbeel 
+
+et al. , “Soft actor-critic algorithms and applications,” 
+
+arXiv:1812.05905 , 2018. [24] A. Abdolmaleki, J. T. Springenberg, Y. Tassa, R. Munos, N. Heess, and M. A. Riedmiller, “Maximum a posteri-ori policy optimisation,” in International Conference on Learning Representations, ICLR , 2018. [25] H. F. Song, A. Abdolmaleki, J. T. Springenberg, A. Clark, H. Soyer, J. W. Rae, S. Noury, A. Ahuja, S. Liu, D. Tirumala, N. Heess, D. Belov, M. A. Riedmiller, and M. M. Botvinick, “V-MPO: on-policy maximum a posteriori policy optimization for discrete and continu-ous control,” in International Conference on Learning Representations, ICLR , 2020. [26] Y. Ze, G. Zhang, K. Zhang, C. Hu, M. Wang, and H. Xu, “3D diffusion policy: Generalizable visuomotor policy learning via simple 3d representations,” in Robotics: Science and Systems, RSS , 2024. [27] D. Wang, C. Liu, F. Chang, and Y. Xu, “Hierarchi-cal diffusion policy: Manipulation trajectory generation via contact guidance,” IEEE Transactions on Robotics ,vol. 41, pp. 2086–2104, 2025. [28] D. Huang, N. Navab, and Z. Jiang, “Improving robustness to out-of-distribution states in imitation learning via deep koopman-boosted diffusion policy,” IEEE Transactions on Robotics , vol. 41, pp. 6680–6692, 2025. [29] Y. Chen, H. Li, and D. Zhao, “Boosting continuous con-trol with consistency policy,” in International Conference on Autonomous Agents and Multiagent Systems, AAMAS ,2024. [30] A. Prasad, K. Lin, J. Wu, L. Zhou, and J. Bohg, “Con-sistency policy: Accelerated visuomotor policies via con-sistency distillation,” in Robotics: Science and Systems, RSS , 2024. [31] H. Ding, N. Jaquier, J. Peters, and L. Rozo, “Fast and robust visuomotor riemannian flow matching policy,” 
+
+IEEE Transactions on Robotics , vol. 41, pp. 5327–5343, 2025. [32] B. Zitkovich, T. Yu, S. Xu, P. Xu, T. Xiao, F. Xia, J. Wu, P. Wohlhart, S. Welker, A. Wahid et al. , “RT-2: Vision-language-action models transfer web knowledge to robotic control,” in Conference on Robot Learning, CoRL , 2023. [33] M. J. Kim, C. Finn, and P. Liang, “Fine-tuning vision-language-action models: Optimizing speed and success,” 
+
+arXiv:2502.19645 , 2025. [34] J. Zheng, J. Li, Z. Wang, D. Liu, X. Kang, Y. Feng, Y. Zheng, J. Zou, Y. Chen, J. Zeng et al. , “X-VLA: Soft-prompted transformer as scalable cross-embodiment vision-language-action model,” in International Confer-ence on Learning Representations, ICLR , 2026. [35] Y. Chen, S. Tian, S. Liu, Y. Zhou, H. Li, and D. Zhao, JOURNAL OF L ATEX CLASS FILES, VOL. 1, NO. 1, APRIL 2026 15 
+
+“ConRFT: A reinforced fine-tuning method for vla mod-els via consistency policy,” in Robotics: Science and Systems, RSS , 2025. [36] H. Li, Y. Zuo, J. Yu, Y. Zhang, Z. Yang, K. Zhang, X. Zhu, Y. Zhang, T. Chen, G. Cui et al. , “Simplevla-RL: Scaling VLA training via reinforcement learning,” in 
+
+International Conference on Learning Representations, ICLR , 2026. [37] J. Luo, Z. Hu, C. Xu, Y. L. Tan, J. Berg, A. Sharma, S. Schaal, C. Finn, A. Gupta, and S. Levine, “SERL: A software suite for sample-efficient robotic reinforcement learning,” in International Conference on Robotics and Automation (ICRA) , 2024. [38] I. Kostrikov, A. Nair, and S. Levine, “Offline reinforce-ment learning with implicit q-learning,” in International Conference on Learning Representations, ICLR , 2022. [39] M. Nakamoto, S. Zhai, A. Singh, M. Sobol Mark, Y. Ma, C. Finn, A. Kumar, and S. Levine, “Cal-QL: Calibrated offline RL pre-training for efficient online fine-tuning,” in Annual Conference on Neural Information Processing Systems, NeurIPS , 2023. [40] Y. Zhao, H. Jin, L. Jiang, X. Zhang, K. Wu, P. Ren, Z. Xu, Z. Che, L. Sun, D. Wu et al. , “Real-world reinforcement learning from suboptimal interventions,” 
+
+arXiv:2512.24288 , 2025. [41] M. Kelly, C. Sidrane, K. Driggs-Campbell, and M. J. Kochenderfer, “Hg-dagger: Interactive imitation learning with human experts,” in International Conference on Robotics and Automation (ICRA) , 2019. [42] A. Z. Ren, J. Lidard, L. L. Ankile, A. Simeonov, P. Agrawal, A. Majumdar, B. Burchfiel, H. Dai, and M. Simchowitz, “Diffusion policy policy optimization,” in International Conference on Learning Representa-tions, ICLR , 2025. [43] A. Ajay, Y. Du, A. Gupta, J. B. Tenenbaum, T. S. Jaakkola, and P. Agrawal, “Is conditional generative modeling all you need for decision making?” in Inter-national Conference on Learning Representations, ICLR ,2023. [44] P. Intelligence, A. Amin, R. Aniceto, A. Balakrishna, K. Black, K. Conley, G. Connors, J. Darpinian, K. Dha-balia, J. DiCarlo et al. , “ π∗
+
+> 0.6
+
+: a vla that learns from experience,” arXiv:2511.14759 , 2025. [45] A. Wagenmaker, M. Nakamoto, Y. Zhang, S. Park, W. Yagoub, A. Nagabandi, A. Gupta, and S. Levine, “Steering your diffusion policy with latent space rein-forcement learning,” in Conference on Robot Learning, CoRL , 2025. [46] M. Nakamoto, O. Mees, A. Kumar, and S. Levine, “Steering your generalists: Improving robotic foundation models via value guidance,” in Conference on Robot Learning, CoRL , 2024. [47] J. Ho, A. Jain, and P. Abbeel, “Denoising diffusion probabilistic models,” in Annual Conference on Neural Information Processing Systems, NeurIPS , 2020. [48] Y. Song, C. Durkan, I. Murray, and S. Ermon, “Maximum likelihood training of score-based diffusion models,” in 
+
+Annual Conference on Neural Information Processing Systems, NeurIPS , 2021. [49] R. S. Sutton and A. G. Barto, “Reinforcement learning: An introduction,” IEEE Transactions on Neural Networks and Learning Systems , vol. 9, no. 5, pp. 1054–1054, 1998. [50] S. Park, K. Frans, B. Eysenbach, and S. Levine, “OG-Bench: Benchmarking offline goal-conditioned RL,” in 
+
+International Conference on Learning Representations, ICLR , 2025. [51] A. Mandlekar, D. Xu, J. Wong, S. Nasiriany, C. Wang, R. Kulkarni, L. Fei-Fei, S. Savarese, Y. Zhu, and R. Mart´ ın-Mart´ ın, “What matters in learning from of-fline human demonstrations for robot manipulation,” in 
+
+Conference on Robot Learning, CoRL , 2021. [52] P. J. Ball, L. Smith, I. Kostrikov, and S. Levine, “Effi-cient online reinforcement learning with offline data,” in 
+
+International Conference on Machine Learning, ICML ,2023. [53] Q. Li, Z. Zhou, and S. Levine, “Reinforcement learning with action chunking,” in Annual Conference on Neural Information Processing Systems, NeurIPS , 2025. APPENDIX AMATHEMATICAL PROOFS 
+
+A. The Closed Form of the Optimal Variational Posterior 
+
+We hereby derive the closed-form solution for the optimal variational distribution q(a|s) presented in Eq. 13. In the E-step, the policy parameters are fixed at θ = θi. We seek the distribution q(a|s) that maximizes the objective. By definition, the expected cumulative discounted return starting from a state s is captured by the state-action value function 
+
+Qπi (s, a ). Therefore, maximizing the global cumulative objec-tive in Eq. 12 is equivalent to maximizing the local objective for each visited state s independently: 
+
+JE-step (q) = Ea∼q(·| s)[Qπi (s, a )] − ηD KL (q(·| s)|| π(·| s, θ i)) 
+
+(25) We define the Lagrangian L(q, λ ) to enforce the normaliza-tion constraint R q(a|s)da = 1 :
+
+L(q, λ ) = 
+
+Z
+
+q(a|s)Qπi (s, a )da 
+
+− η
+
+Z
+
+q(a|s)
+
+
+
+log q(a|s)
+
+π(a|s, θ i)
+
+
+
+da 
+
++ λ
+
+ Z
+
+q(a|s)da − 1
+
+
+
+(26) Taking the functional derivative with respect to q:
+
+δL
+
+δq = Qπi (s, a ) − η(log q(a|s) + 1) + η log π(a|s, θ i) + λ
+
+(27) Setting it to zero and then we have: 
+
+η log q(a|s) = Qπi (s, a ) + η log π(a|s, θ i) + ( λ − η) (28) Dividing by η and exponentiating both sides: 
+
+q(a|s) = π(a|s, θ i) exp 
+
+ Qπi (s, a )
+
+η
+
+
+
+exp 
+
+ λ − ηη
+
+
+
+(29) JOURNAL OF L ATEX CLASS FILES, VOL. 1, NO. 1, APRIL 2026 16 
+
+The term exp(( λ − η)/η ) is constant with respect to action 
+
+a and serves as the normalization constant. Thus, we have the closed-form solution: 
+
+q(a|s) ∝ π(a|s, θ i) exp 
+
+ Qπi (s, a )
+
+η
+
+
+
+(30)
