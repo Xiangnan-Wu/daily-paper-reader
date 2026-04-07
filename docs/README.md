@@ -6,41 +6,49 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-04-06
-- 运行时间：2026-04-06 19:56:27 UTC
+- 最新运行日期：2026-04-07
+- 运行时间：2026-04-07 19:49:03 UTC
 - 运行状态：成功
-- 本次总论文数：6
+- 本次总论文数：9
 - 精读区：6
-- 速读区：0
+- 速读区：3
 
 ### 今日简报（AI）
-今日深度复盘 6 篇前沿论文，聚焦 VLA 模型在自动驾驶世界建模与投机验证领域的双重突破。
-重点推荐 ExploreVLA 的端到端驾驶探索及“开环规划+闭环验证”新范式，两者均获得 10 分满分评价。
-建议关注具身智能如何通过强化验证机制提升决策可靠性，这是迈向高阶自动驾驶的关键一步。
-- 详情：[/202604/06/README](/202604/06/README)
+今日聚焦具身智能与世界模型，DriveVA 与 OpenWorldLib 凭借零样本驾驶与统一框架双双斩获满分。
+视频动作模型正重塑自动驾驶逻辑，而 Delta Token 技术让高效生成式世界建模成为可能。
+建议优先研读 OpenWorldLib 以掌握世界模型的最新定义，并关注具身任务中的 6D 位姿估计进展。
+- 详情：[/202604/07/README](/202604/07/README)
 
 ### 精读区论文标签
-1. [ExploreVLA: Dense World Modeling and Exploration for End-to-End Autonomous Driving](/202604/06/2604.02714v1-explorevla-dense-world-modeling-and-exploration-for-end-to-end-autonomous-driving)  
+1. [DriveVA: Video Action Models are Zero-Shot Drivers](/202604/07/2604.04198v1-driveva-video-action-models-are-zero-shot-drivers)  
    标签：评分：10.0/10、query:robot
-   evidence：用于自动驾驶的稠密世界建模与VLA架构
-2. [Open-Loop Planning, Closed-Loop Verification: Speculative Verification for VLA](/202604/06/2604.02965v1-open-loop-planning-closed-loop-verification-speculative-verification-for-vla)  
+   evidence：用于未来视觉预测和动作序列的自动驾驶世界模型
+2. [OpenWorldLib: A Unified Codebase and Definition of Advanced World Models](/202604/07/2604.04707v1-openworldlib-a-unified-codebase-and-definition-of-advanced-world-models)  
    标签：评分：10.0/10、query:robot
-   evidence：针对VLA控制与规划的投机验证框架
-3. [Learning Task-Invariant Properties via Dreamer: Enabling Efficient Policy Transfer for Quadruped Robots](/202604/06/2604.02911v1-learning-task-invariant-properties-via-dreamer-enabling-efficient-policy-transfer-for-quadruped-robots)  
+   evidence：高级世界模型的统一框架与定义
+3. [E-VLA: Event-Augmented Vision-Language-Action Model for Dark and Blurred Scenes](/202604/07/2604.04834v1-e-vla-event-augmented-vision-language-action-model-for-dark-and-blurred-scenes)  
+   标签：评分：10.0/10、query:robot
+   evidence：事件增强的VLA框架，用于恶劣环境下的鲁棒操作
+4. [VLA-Forget: Vision-Language-Action Unlearning for Embodied Foundation Models](/202604/07/2604.03956v1-vla-forget-vision-language-action-unlearning-for-embodied-foundation-models)  
    标签：评分：9.0/10、query:robot
-   evidence：用于四足机器人控制的Dreamer世界模型
-4. [Multi-View Video Diffusion Policy: A 3D Spatio-Temporal-Aware Video Action Model](/202604/06/2604.03181v1-multi-view-video-diffusion-policy-a-3d-spatio-temporal-aware-video-action-model)  
+   evidence：具身智能基础模型 VLA 的遗忘学习挑战
+5. [Adaptive Action Chunking at Inference-time for Vision-Language-Action Models](/202604/07/2604.04161v1-adaptive-action-chunking-at-inference-time-for-vision-language-action-models)  
    标签：评分：9.0/10、query:robot
-   evidence：用于机器人操作的视频动作模型，建模时空状态
-5. [Hierarchical Planning with Latent World Models](/202604/06/2604.03208v1-hierarchical-planning-with-latent-world-models)  
-   标签：评分：9.0/10、query:robot
-   evidence：利用潜空间世界模型进行分层规划以实现长程控制
-6. [Learning Structured Robot Policies from Vision-Language Models via Synthetic Neuro-Symbolic Supervision](/202604/06/2604.02812v1-learning-structured-robot-policies-from-vision-language-models-via-synthetic-neuro-symbolic-supervision)  
+   evidence：VLA模型推理时的自适应动作分块
+6. [Veo-Act: How Far Can Frontier Video Models Advance Generalizable Robot Manipulation?](/202604/07/2604.04502v1-veo-act-how-far-can-frontier-video-models-advance-generalizable-robot-manipulation)  
    标签：评分：8.0/10、query:robot
-   evidence：将视觉语言模型 (VLM) 专门化用于结构化机器人策略
+   evidence：用于机器人操控和规划的视频生成模型
 
 ### 速读区论文标签
-- 本次无速读推荐。
+1. [A Frame is Worth One Token: Efficient Generative World Modeling with Delta Tokens](/202604/07/2604.04913v1-a-frame-is-worth-one-token-efficient-generative-world-modeling-with-delta-tokens)  
+   标签：评分：8.0/10、query:robot
+   evidence：用于未来状态预测的高效生成式世界建模
+2. [ROSClaw: A Hierarchical Semantic-Physical Framework for Heterogeneous Multi-Agent Collaboration](/202604/07/2604.04664v1-rosclaw-a-hierarchical-semantic-physical-framework-for-heterogeneous-multi-agent-collaboration)  
+   标签：评分：7.0/10、query:robot
+   evidence：集成VLA的多智能体协作分层框架
+3. [OMNI-PoseX: A Fast Vision Model for 6D Object Pose Estimation in Embodied Tasks](/202604/07/2604.02759v1-omni-posex-a-fast-vision-model-for-6d-object-pose-estimation-in-embodied-tasks)  
+   标签：评分：6.0/10、query:robot
+   evidence：用于具身任务和机器人姿态估计的视觉基础模型
 
 
 <div class="dpr-home-promo-card">
