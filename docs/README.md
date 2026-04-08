@@ -6,49 +6,52 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-04-07
-- 运行时间：2026-04-07 19:49:03 UTC
+- 最新运行日期：2026-04-08
+- 运行时间：2026-04-08 20:38:12 UTC
 - 运行状态：成功
-- 本次总论文数：9
-- 精读区：6
-- 速读区：3
+- 本次总论文数：10
+- 精读区：8
+- 速读区：2
 
 ### 今日简报（AI）
-今日聚焦具身智能与世界模型，DriveVA 与 OpenWorldLib 凭借零样本驾驶与统一框架双双斩获满分。
-视频动作模型正重塑自动驾驶逻辑，而 Delta Token 技术让高效生成式世界建模成为可能。
-建议优先研读 OpenWorldLib 以掌握世界模型的最新定义，并关注具身任务中的 6D 位姿估计进展。
-- 详情：[/202604/07/README](/202604/07/README)
+今日深度复盘 10 篇机器人论文，重点攻克世界动作模型安全漏洞与 VLA 模型精准对齐两大难题。
+满分论文揭示了机器人控制中潜在的“越狱”风险，并证明显式语言-动作对齐能显著提升分层模型的执行力。
+建议关注机器人大模型在复杂任务中的安全防御与多模态指令理解，优先阅读两篇 10 分佳作。
+- 详情：[/202604/08/README](/202604/08/README)
 
 ### 精读区论文标签
-1. [DriveVA: Video Action Models are Zero-Shot Drivers](/202604/07/2604.04198v1-driveva-video-action-models-are-zero-shot-drivers)  
+1. [JailWAM: Jailbreaking World Action Models in Robot Control](/202604/08/2604.05498v1-jailwam-jailbreaking-world-action-models-in-robot-control)  
    标签：评分：10.0/10、query:robot
-   evidence：用于未来视觉预测和动作序列的自动驾驶世界模型
-2. [OpenWorldLib: A Unified Codebase and Definition of Advanced World Models](/202604/07/2604.04707v1-openworldlib-a-unified-codebase-and-definition-of-advanced-world-models)  
+   evidence：世界动作模型（WAM）的越狱攻击与评估框架
+2. [Grounding Hierarchical Vision-Language-Action Models Through Explicit Language-Action Alignment](/202604/08/2604.05614v1-grounding-hierarchical-vision-language-action-models-through-explicit-language-action-alignment)  
    标签：评分：10.0/10、query:robot
-   evidence：高级世界模型的统一框架与定义
-3. [E-VLA: Event-Augmented Vision-Language-Action Model for Dark and Blurred Scenes](/202604/07/2604.04834v1-e-vla-event-augmented-vision-language-action-model-for-dark-and-blurred-scenes)  
+   evidence：显式地将分层VLA子任务描述与动作空间对齐
+3. [A1: A Fully Transparent Open-Source, Adaptive and Efficient Truncated Vision-Language-Action Model](/202604/08/2604.05672v1-a1-a-fully-transparent-open-source-adaptive-and-efficient-truncated-vision-language-action-model)  
    标签：评分：10.0/10、query:robot
-   evidence：事件增强的VLA框架，用于恶劣环境下的鲁棒操作
-4. [VLA-Forget: Vision-Language-Action Unlearning for Embodied Foundation Models](/202604/07/2604.03956v1-vla-forget-vision-language-action-unlearning-for-embodied-foundation-models)  
+   evidence：完全开源且高效的截断式VLA模型
+4. [Action Images: End-to-End Policy Learning via Multiview Video Generation](/202604/08/2604.06168v1-action-images-end-to-end-policy-learning-via-multiview-video-generation)  
+   标签：评分：10.0/10、query:robot
+   evidence：用于机器人策略学习的统一世界动作模型
+5. [Safety, Security, and Cognitive Risks in World Models](/202604/08/2604.01346v2-safety-security-and-cognitive-risks-in-world-models)  
    标签：评分：9.0/10、query:robot
-   evidence：具身智能基础模型 VLA 的遗忘学习挑战
-5. [Adaptive Action Chunking at Inference-time for Vision-Language-Action Models](/202604/07/2604.04161v1-adaptive-action-chunking-at-inference-time-for-vision-language-action-models)  
+   evidence：自主决策世界模型中的安全与风险
+6. [StarVLA: A Lego-like Codebase for Vision-Language-Action Model Developing](/202604/08/2604.05014v1-starvla-a-lego-like-codebase-for-vision-language-action-model-developing)  
    标签：评分：9.0/10、query:robot
-   evidence：VLA模型推理时的自适应动作分块
-6. [Veo-Act: How Far Can Frontier Video Models Advance Generalizable Robot Manipulation?](/202604/07/2604.04502v1-veo-act-how-far-can-frontier-video-models-advance-generalizable-robot-manipulation)  
-   标签：评分：8.0/10、query:robot
-   evidence：用于机器人操控和规划的视频生成模型
+   evidence：包含世界模型后端的VLA研究代码库
+7. [VLA-InfoEntropy: A Training-Free Vision-Attention Information Entropy Approach for Vision-Language-Action Models Inference Acceleration and Success](/202604/08/2604.05323v1-vla-infoentropy-a-training-free-vision-attention-information-entropy-approach-for-vision-language-action-models-inference-acceleration-and-success)  
+   标签：评分：9.0/10、query:robot
+   evidence：视觉-语言-动作（VLA）模型的推理加速
+8. [Uncovering Linguistic Fragility in Vision-Language-Action Models via Diversity-Aware Red Teaming](/202604/08/2604.05595v1-uncovering-linguistic-fragility-in-vision-language-action-models-via-diversity-aware-red-teaming)  
+   标签：评分：9.0/10、query:robot
+   evidence：通过红队测试揭示VLA模型中的语言脆弱性
 
 ### 速读区论文标签
-1. [A Frame is Worth One Token: Efficient Generative World Modeling with Delta Tokens](/202604/07/2604.04913v1-a-frame-is-worth-one-token-efficient-generative-world-modeling-with-delta-tokens)  
-   标签：评分：8.0/10、query:robot
-   evidence：用于未来状态预测的高效生成式世界建模
-2. [ROSClaw: A Hierarchical Semantic-Physical Framework for Heterogeneous Multi-Agent Collaboration](/202604/07/2604.04664v1-rosclaw-a-hierarchical-semantic-physical-framework-for-heterogeneous-multi-agent-collaboration)  
+1. [HiPolicy: Hierarchical Multi-Frequency Action Chunking for Policy Learning](/202604/08/2604.06067v1-hipolicy-hierarchical-multi-frequency-action-chunking-for-policy-learning)  
    标签：评分：7.0/10、query:robot
-   evidence：集成VLA的多智能体协作分层框架
-3. [OMNI-PoseX: A Fast Vision Model for 6D Object Pose Estimation in Embodied Tasks](/202604/07/2604.02759v1-omni-posex-a-fast-vision-model-for-6d-object-pose-estimation-in-embodied-tasks)  
+   evidence：用于机器人策略学习的分层动作分块
+2. [Joint Prediction of Human Motions and Actions in Human-Robot Collaboration](/202604/08/2604.03065v1-joint-prediction-of-human-motions-and-actions-in-human-robot-collaboration)  
    标签：评分：6.0/10、query:robot
-   evidence：用于具身任务和机器人姿态估计的视觉基础模型
+   evidence：人类运动与动作的联合估计与预测
 
 
 <div class="dpr-home-promo-card">
