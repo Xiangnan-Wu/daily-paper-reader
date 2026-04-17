@@ -1,0 +1,197 @@
+Title: Diffusion Sequence Models for Generative In-Context Meta-Learning of Robot Dynamics
+
+URL Source: https://arxiv.org/pdf/2604.13366v1
+
+Published Time: Thu, 16 Apr 2026 00:20:30 GMT
+
+Number of Pages: 7
+
+Markdown Content:
+# Diffusion Sequence Models for Generative In-Context Meta-Learning of Robot Dynamics 
+
+Angelo Moroncelli 1,2,∗, Matteo Rufolo 1,2,∗, Gunes Cagin Aydin 3,∗, Asad Ali Shahid 1,3, Loris Roveda 1,3
+
+Abstract — Accurate modeling of robot dynamics is essen-tial for model-based control, yet remains challenging under distributional shifts and real-time constraints. In this work, we formulate system identification as an in-context meta-learning problem and compare deterministic and generative sequence models for forward dynamics prediction. We take a Transformer-based meta-model, as a strong deterministic baseline, and introduce to this setting two complementary diffusion-based approaches: (i) inpainting diffusion (Diffuser), which learns the joint input–observation distribution, and (ii) conditioned diffusion models (CNN and Transformer), which generate future observations conditioned on control inputs. Through large-scale randomized simulations, we analyze per-formance across in-distribution and out-of-distribution regimes, as well as computational trade-offs relevant for control. We show that diffusion models significantly improve robustness under distribution shift, with inpainting diffusion achieving the best performance in our experiments. Finally, we demonstrate that warm-started sampling enables diffusion models to operate within real-time constraints, making them viable for control applications. These results highlight generative meta-models as a promising direction for robust system identification in robotics. 
+
+I. I NTRODUCTION 
+
+Accurate modeling of system dynamics lies at the core of robot control [1], underpinning applications including model predictive control (MPC) [2], [3] and model-based reinforcement learning [4], [5]. However, accurate and re-liable modeling of real-world robotic systems remains in-herently challenging, as classical physics-based approaches often struggle to fully capture the complexity of real-world dynamics. Data-driven approaches offer an appealing alter-native by directly learning robot behavior from observa-tions [6]. In particular, black-box models approximate system dynamics as a function of input-output trajectories without requiring explicit parameterization. Despite their flexibility, such methods often suffer from poor generalization, high data requirements, and limited robustness under distributional shifts [7]. Within this landscape, learning-based approaches to robot control can be broadly categorized into three paradigms: (i) policy learning methods, which directly map observations to inputs [6]; (ii) world models, which learn latent repre-sentations optimized for planning and control [8]; and (iii)         
+
+> *These authors contributed equally to this work. Corresponding author: loris.roveda@supsi.ch .
+> 1University of Applied Science and Arts of Southern Switzerland, De-partment of Innovative Technologies, IDSIA-SUPSI, Lugano, Switzerland.
+> 2Universit` adella Svizzera Italiana, Faculty of Informatics, Lugano, Switzerland.
+> 3Politecnico di Milano, Mechanical Department, Milano, Italy.
+
+explicit dynamics models, which predict future system ob-servations [9], [10]. Among these, explicit dynamics models offer a natural interface with classical control techniques, but their effectiveness critically depends on accurate system identification, which remains challenging in practice. In this work, we approach the dynamics modeling problem through the lens of meta-learning. We do this by adopting a 
+
+black-box meta-modeling framework for dynamics, casting system identification as an in-context learning problem. This paradigm was initially proposed by learning a meta-model that represents a class of dynamical systems harnessing the power of Transformers [11], [12] and subsequently extended in future works [13], [14]. More recently, it has been suc-cessfully scaled to high-dimensional robotic manipulation tasks [10], [15]. The core premise relies on the in-context learning capabilities of modern neural architectures. Rather than optimizing a separate neural network for every distinct system, the meta-model learns the governing rules of entire classes of dynamical systems from contextual input-output trajectories. This framework provides a powerful, data-driven mechanism for generalization across similar systems by effectively “learning to learn” [16]. Transformer-based meta-models such as RoboMorph [10], provide a strong deterministic baseline for explicit robot dynamics modeling via in-context learning. However, these models inherently lack the capacity for rigorous uncertainty quantification and suffer from severe performance degradation when exposed to distributional shifts. While recent advances in diffusion models have achieved impressive results in policy generation [6] and trajectory planning [17], and Denoising Diffusion Probabilistic Mod-els (DDPMs) [18] have recently emerged as stable gen-erative frameworks capable of modeling multi-modal dis-tributions [19]; these approaches typically bypass explicit modeling of system dynamics. Despite their success in policy learning, their application to explicit dynamics estimation remains largely unexplored, particularly in meta-learning settings [10], [20]. Consequently, a gap remains between advances in generative modeling and the requirements of system identification for control [7]. In this work, as shown in Fig. 1, we propose two diffusion-based formulations for system identification: in-painting diffusion (Diffuser ) [17], which models the full input–observation trajectory, and conditioned diffusion [6], which predicts future observations conditioned on control inputs using CNN ( CDCNN ) or Transformer ( CDT ) back-bones. By systematically evaluating these novel probabilistic frameworks against established deterministic baselines, this               
+
+> arXiv:2604.13366v1 [cs.LG] 15 Apr 2026 Fig. 1. Comparison of sequence models. Diffusion models ( Inpainting and Conditioned ) are contrasted with a deterministic Transformer ( RoboMorph ). Inpainting Diffusion learns the full trajectory distribution over y1: Nfrom context (the green area). Conditioned Diffusion models system dynamics by generating ym:Nconditioned on u1: N, producing future trajectories under input conditioning with smoother denoising updates. Diffusion models require multiple iterative steps (e.g., 20 in this example) to progressively denoise an initial random distribution, refining predictions over time. In contrast, the deterministic Transformer predicts ym:Ndirectly from um:Nand context in a single forward pass.
+
+paper seeks to answer the following critical research ques-tions:  
+
+> •
+
+Can generative models improve robustness and gener-alization in system identification?  
+
+> •
+
+How do different diffusion formulations compare to deterministic architectures in modeling complex robot dynamics?  
+
+> •
+
+What are the trade-offs between prediction accuracy and computational cost in control-oriented settings? To address these questions, we develop a unified exper-imental framework for meta-learned robot dynamics across diverse randomized systems and excitation signals. We in-troduce diffusion-based generative models for in-context dynamics learning, explicitly modeling forward dynamics, unlike diffusion policy methods. Compared to deterministic meta-models, our approach captures the trajectory distribu-tion, improving robustness under distributional shift while re-maining compatible with real-time control via warm-starting. Our main contributions are:  
+
+> •
+
+We extend in-context meta-learning for robot dynamics to a large-scale randomized simulation setting.  
+
+> •
+
+We introduce diffusion-based generative models (in-painting and conditioned) for dynamics meta-modeling and compare them to a deterministic Transformer base-line (RoboMorph) under distribution shift.  
+
+> •
+
+We show that warm-started conditioned diffusion en-ables real-time, control-compatible inference while maintaining strong robustness. The remainder of this paper is organized as follows. Section II introduces the problem formulation and proposed models, Section III presents the experimental evaluation, and Section IV concludes the work. Models checkpoints and datasets are publicly available. II. P ROBLEM DESCRIPTION 
+
+In this section, we formalize our meta-learning framework and motivate our architectural choices, domain randomiza-tion strategy, and training procedures. Classical modeling of robot dynamics relies on deriving a faithful mathematical representation of a physical plant. Formally, let S denote a specific physical system (e.g., a robotic manipulator with exact, fixed physical param-eters) drawn from a broader system class C of similar systems, which represents the family of all such systems under varying physical conditions (e.g. different physical parameters). When exact prior knowledge about the physical parameterization of S is unavailable, system identification relies on black-box modeling. This approach is agnostic to the underlying physical equations, instead approximating the true system dynamics via a parameterized function approx-imator g(x, θ ). To optimize θ , the model is trained on a trajectory dataset D = ( u1: N , y1: N ), which comprises a finite sequence of control inputs and corresponding system obser-vations generated by exciting the specific physical system 
+
+S . Depending on the required expressiveness, this model can range from classical linear projections over a set of basis functions to highly non-linear, high-dimensional neural network architectures [21]. 
+
+A. Model-Free Black-Box Meta-Models 
+
+While traditional black-box models are trained to identify a single, isolated dynamical system, recent advancements have expanded this paradigm to model entire classes of sys-tems [11]. This is achieved by framing system identification as an meta-learning problem. In this framework, a neural meta-model Mφ is trained directly over a broad trajectory distribution p(D), which jointly encapsulates the variations in underlying physical systems and the corresponding control excitations. For each sampled trajectory D ∼ p(D), we partition the data into a context window of length m, and a prediction hori-zon from m to N. The context, denoted as Dctx = ( u1: m, y1: m),provides the necessary historical information to implicitly identify the specific system dynamics. The meta-model is then tasked with predicting the future system response ym:N ,given on both the context and the future control inputs um:N :ˆym:N = Mφ (um:N , Dctx ) . (1) The optimal model parameters φ ∗ are obtained by minimiz-ing the expected prediction loss (e.g., Mean Squared Error (MSE)) across the entire trajectory space: 
+
+φ ∗ = arg min  
+
+> φ
+
+ED∼p(D)
+
+h
+
+∥ym:N − ˆym:N ∥22
+
+i
+
+. (2) Transformers, inherently designed for sequence-to-sequence mapping and in-context conditioning [22], serve as a natural architectural baseline for this meta-modeling task. 
+
+B. Deterministic vs. Generative Inference 
+
+Standard neural architectures trained via the deterministic objective above, regress a single point estimate. To account for complex model and data-borne uncertain-ties, the meta-model must be formulated probabilistically to explicitly learn the conditional distribution of the system trajectories. This is achieved by transitioning from deter-ministic point estimation to a probabilistic meta-model pφ ,which maximizes the expected log-likelihood over the task distribution: 
+
+φ ∗ = arg max  
+
+> φ
+
+ED∼p(D)
+
+log pφ (ym:N | um:N , Dctx ) . (3) While this formulation provides a principled measure of uncertainty, standard implementations typically restrict the predictive estimation to uni-modal probability distributions. For a comprehensive derivation of this probabilistic frame-work within a system identification context, we refer the reader to previous work [23]. While standard architectures can be extended into this generative framework (e.g., via Variational Autoencoders), doing so typically requires explicitly defining complex, rigid priors over a reduced latent space, which can overly re-strict expressiveness when modeling high-dimensional robot dynamics. To robustly parameterize pφ without restrictive latent assumptions, DDPM [18] have proven highly effective. A DDPM defines a forward Markov chain that gradually corrupts the true future trajectory, denoted as y0 = ym:N ,with Gaussian noise over T steps, alongside a parameterized reverse process that learns to iteratively denoise it. Let yt
+
+denote the noisy trajectory at diffusion step t ∈ { 1, . . . , T }.The forward noise-addition process is governed by a fixed variance schedule, yielding a sequence of increasingly noisy observations. To reverse this process, the generative meta-model Mφ is trained to predict the exact injected noise εφ , conditioned on the current noisy observation yt , the future inputs um:N ,and the past context Dctx = ( u1: m, y1: m). During inference, starting from pure Gaussian noise yT ∼ N (0, I), the future trajectory is iteratively reconstructed by sampling from the learned posterior p∗ 
+
+> φ
+
+. At each step t, the predicted noise 
+
+εφ is subtracted from yt (scaled by the predefined diffusion scheduling parameters) alongside a stochastic Gaussian in-jection, progressively resolving the true trajectory y0.To optimize Mφ , we minimize the discrepancy between the true injected Gaussian noise ε ∼ N (0, I) and the pre-dicted noise εφ using the standard simplified variational bound [18]. Unlike deterministic baselines (e.g., Robo-Morph), which optimize a direct trajectory error Ldet =
+
+∥ym:N − ˆym:N ∥22, our diffusion models are trained using a weighted MSE loss applied at randomly sampled timesteps 
+
+t:
+
+Ldiff = Et,y0,ε
+
+h
+
+W ⊙  ε − Mφ (yt ,t, um:N , Dctx ) 22
+
+i
+
+. (4) Here, W represents a constant weight mask applied over the joint input-observation space. Because future control inputs um:N are perfectly known deterministically, the mask is set to W = [ wu, wy] = [ 1, 3] for the Diffuser architecture. This selectively penalizes observation reconstruction errors, actively forcing the network to prioritize learning the un-known system dynamics rather than reconstructing the given control sequences. For all other diffusion models, a standard unweighted mask W = [ 1, 1] is utilized. Fundamentally, unconditional diffusion models act as pure generative priors; they blindly sample from the learned data distribution without regard for specific environmental con-straints or target outcomes. To effectively steer the generative process toward a desirable, dynamically valid trajectory, the sampling must be explicitly guided via goal-conditioned loss functions, architectural conditioning, or inpainting. The specifics of these structural formulations are detailed in the subsequent section. 
+
+C. Neural Architectures 
+
+We consider sequence models along two dimensions: (i) 
+
+deterministic vs. generative inference , and (ii) inpainting vs. conditional trajectory modeling , as illustrated in Fig. 1. This framing enables a unified analysis of expressiveness, robustness, and computational efficiency in meta-learned dynamics. We adopt standard architectures in robotics, namely Trans-formers [12] and CNNs [24], instantiated within the meta-learning framework described above. 
+
+a) Transformer (RoboMorph) : RoboMorph [10] serves as a deterministic baseline based on an encoder– decoder Transformer [12]. The context (u1: m, y1: m) is encoded and cross-attended with future inputs um:N to predict ˆym:N . While effective in simple in-distribution settings, it performs deterministic regression, approximating E[ym:N | um:N , Dctx ]. Consequently, it yields a single point estimate that fails to quantify epistemic or aleatoric uncertainty, fundamentally limiting its applicability in safety-critical robotic tasks where uncertainty is required. 
+
+b) Inpainting Diffusion (Diffuser) : To address the above limitation, we introduce a generative approach based on diffusion models. The Diffuser [17] models the joint distribution over input–observation trajectories using aDDPM [18] with a U-Net backbone [24]. Known values 
+
+(u1: N , y1: m) are enforced via inpainting at each denoising step. By modeling p(u, y | u1: N , y1: m), Diffuser captures rich input–observation correlations, yielding expressive and multi-modal predictions with strong robustness, especially out-of-distribution. This increased expressiveness, however, comes with higher computational cost and greater sensitivity to truncated (warm-started) inference. 
+
+c) Conditioned Diffusion (CDCNN and CDT) : We also propose conditioned diffusion, which models p(ym:N |
+
+u1: N , y1: m), reducing the complexity of the generative task. Control inputs are injected via FiLM conditioning [25], following recent approaches for generative policies [6]. We instantiate this formulation with both CNN (CDCNN) and Transformer (CDT) backbones. CNN-based models enforce local temporal smoothness through convolutional filtering, producing physically coherent trajectories, while Transformer-based models capture long-range dependencies but may introduce higher-frequency oscillations due to the lack of local inductive bias. Despite these differences, both variants retain multi-modal expressiveness and benefit from more efficient and stable inference compared to Diffuser. Overall, these architectures define a clear trade-off. Deter-ministic Transformers are fast but brittle under distribution shifts. Inpainting diffusion maximizes expressiveness and robustness by modeling full state distributions, but is compu-tationally heavier. Conditioned diffusion provides an effec-tive middle ground, achieving strong robustness in trajectory prediction of ym:N with significantly improved efficiency. 
+
+D. Datasets 
+
+We train our black-box meta-models over a wide range of geometric configurations and dynamical parameters of the Franka Emika Panda, using nominal values from [26]. System parameters are randomized and 3 × 10 5–10 6 robots are simulated in parallel using IsaacGym [27]. For feedforward excitation, joint torques are gener-ated using chirp (CH) and multi-sinusoidal (MS) signals. The chirp excitation is defined as uCH (t) = A cos  ω1(1 + 
+
+> 14
+
+cos (ω2t)) t + φ , where A and φ are randomized amplitude and phase, and ω1 = 2π f1, ω2 = 2π f2 control the time-varying frequency. The multi-sinusoidal input is defined as uMS (t) = ∑3 
+
+> k=0
+
+Ak ψk(ωkt), where ψk ∈ { sin , cos }, ωk ∈{ω0, 1.5ω0, 2ω0, 3ω0}, ω0 = 2π f0, and Ak are randomized amplitudes. Each dataset consists of 7-dimensional input sequences 
+
+u1: N (joint torques) and 7-dimensional observations y1: N
+
+(joint observations), with straightforward extensions to                                                                    
+
+> TABLE I SIMULATION PARAMETERS RANDOMIZATION
+> Dataset and Signal A[Nm ]f[Hz ]
+> D1–CH [−4,4]0.3
+> D2–CH [−4,4][0.2,0.4]
+> D3–CH [−4,4][0.2,0.6]
+> D4–CH [−4,4][0.1,0.7]
+> D1–MS [−30 f,30 f]0.15
+> D2–MS [−30 f,30 f][0.05 ,0.15 ]
+> D3–MS [−30 f,30 f][0.05 ,0.25 ]
+> D4–MS [−30 f,30 f][0.01 ,0.30 ]
+
+higher-dimensional representations including Cartesian and end-effector dynamics. The inputs, initial conditions, and dynamical parameters are randomized; the corresponding amplitude and frequency ranges for each training dataset are summarized in Table I, from which all signal parameters (i.e., A, f1, f2 for CH, and 
+
+Ak, f0 for MS) are sampled. 
+
+E. Training Procedures 
+
+To optimize the meta-models, we minimize the empirical formulations of the expected losses defined in Equations 2 and 4. Because the true mathematical expectations over the system distribution are analytically intractable, they are approximated via Monte Carlo sampling across discrete mini-batches of size 64. Specifically, all architectures are trained over 3 .5 × 10 6 fully randomized robotic trajectories, spanning 10 full training epochs each (as illustrated in Fig. 1). Each trajectory consists of N = 400 time steps, which are partitioned into a 320-step context window and an 80-step prediction horizon. Optimization is performed using the Adam optimizer coupled with a cosine annealing learning rate scheduler, which gracefully decays the learning rate to one-tenth of its initial value by the end of training. The initial learning rate is set to 6 × 10 −4 for RoboMorph and Diffuser, and 1 × 10 −4 for the conditioned architectures (CDCNN and CDT). All training procedures were executed on a single NVIDIA A100 GPU. Regarding architectural configurations, both RoboMorph and CDT employ 12 MLP layers, 8 attention heads, and an embedding dimension of 384, directly adopting the opti-mized hyperparameters established in [10]. Conversely, the fully convolutional architectures (Diffuser and CDCNN) are configured with 128 initial convolution layers and 3 down-sampling/upsampling steps. For generative inference, all three diffusion models (Diffuser, CDCNN, and CDT) utilize a 100-step denoising schedule and are explicitly optimized to predict the injected Gaussian noise. The hyperparameters governing the diffusion processes were selected following a systematic ablation study to ensure optimal predictive performance. Under these configurations, the total offline training times were approximately 4 .5 hours for RoboMorph, 3.7 hours for Diffuser, 2 .0 hours for CDCNN, and 6 .7 hours for CDT. CHMSFig. 2. Meta-modeling of joint dynamics for chirp and multi-sinusoidal joint torques with fCH = 1.0Hz , fMS = 0.45 Hz master frequencies (OOD), trained on D1. The results indicate one prediction per signal among 100 randomized scenarios. Diffusion-based architectures seem to better capture global complexity, particularly in OOD signals, such as in this example. 
+
+III. S IMULATION RESULTS AND ANALYSIS 
+
+In this section, we evaluate the performance of the pro-posed framework across diverse simulation scenarios. All ex-periments are evaluated in both in-distribution (ID) and out-of-distribution (OOD) settings. We first assess performance by evaluating the accuracy and adaptability of different archi-tectures across datasets. We then analyze inference time and compare the models from a closed-loop control perspective. 
+
+A. Forward Dynamics Meta-Model Performance 
+
+Here, we consider a wide range of CH and MS signals. CH signals are generally easier to model, as at both low and high frequencies they tend to converge to stationary or monotonically increasing trajectories, which are relatively simple for neural networks to learn, as shown in Fig. 2. In contrast, MS signals do not reach a steady-state plateau. This persistent transient excitation becomes more pronounced at higher frequencies (around 0 .3–0 .5 Hz), resulting in jagged and rapidly varying dynamics that pose a greater predictive challenge. Fig. 2 illustrates this behavior, highlighting how the continuous superposition of sinusoidal components com-plicates prediction across the entire trajectory. By meta-modeling the forward dynamics, we are able to accurately predict most of the challenging signals in our dataset with errors bounded by 3 .5 degrees in joint space as Fig. 2 shows. Nevertheless, not all architectures behave the same. Trajectories predicted by CNN-based diffusion models are inherently smooth, whereas RoboMorph and CDT, are highly prone to high-frequency oscillatory estimations. This behavior aligns with the fundamental architectural differ-ences between the models. While the Transformer decoder employs causal attention to enforce strict temporal direc-tionality, it still relies on a global self-attention mechanism over the past sequence. Because it lacks a strict inductive bias for local temporal continuity, adjacent time steps can fluctuate independently. Conversely, CNNs possess a strong local inductive bias; their convolutional kernels act as local filters over sliding temporal windows. This explicitly ties CHMS                          
+
+> Fig. 3. By selectively covering parts of the domain, it is possible to meta-learn the class of frequency response. For chirp signals of different randomization: fD1=0.30, fD2= [ 0.02 ,0.4],fD3= [ 0.2,0.6],fD4= [ 0.1,0.7]
+> and sinusoidal signals of different randomization bounds fD1=0.15, fD2=[0.05 ,0.15 ],fD3= [ 0.05 ,0.25 ],fD4= [ 0.01 ,0.30 ]the ID and OOD regions shift which effectively enlarges the accuracy of the predictive domain. This improvement on the edges of the domain minimally affects the accuracy observed for the centering points.
+
+adjacent observations together, enforcing temporal coherence and yielding naturally smooth trajectories. In applications where Transformer-induced high-frequency jitter is problem-atic, applying a standard low-pass denoising filter as a post-processing step could effectively recovers signal continuity. Fig. 3 illustrates the predictive performance of the eval-uated architectures across varying nominal frequencies, cor-responding to the parameter ranges detailed in Table I. The shaded gray regions denote the ID training domains, while the white regions correspond to OOD scenarios. A primary observation is that the RoboMorph experiences severe performance degradation in OOD regimes for both chirp and sinusoidal signals. In contrast, the diffusion-based models exhibit significantly greater robustness, maintaining stable accuracy even well outside the training distribution. At lower frequencies in the MS tasks, RoboMorph performs on par with the other models, with no statistically significant gap in accuracy. Because all evaluated architectures possess sufficient capacity to model slow, quasi-stationary dynamics, no specific architectural advantage is evident in these low-frequency regimes. However, at higher frequencies, most notably in the MS tasks, RoboMorph’s performance dete-riorates sharply compared to the diffusion-based models. This disparity highlights the advantage of the diffusion formulations, whose generative modeling capabilities provide superior generalization and robustness in challenging OOD scenarios. Furthermore, expanding the training dataset from a narrow to a broader frequency domain substantially enhances the predictive accuracy of the deterministic RoboMorph base-line. This behavior highlights a core limitation of standard deterministic meta-learning: robust OOD generalization re-quires exposing the model to exhaustive dynamical varia-tions, otherwise the framework collapses into narrow, task-specific memorization [28]. Conversely, this degradation is far less pronounced in the diffusion-based architectures. By explicitly modeling the generative probability distribution rather than regressing a single point estimate, diffusion models inherently capture broader dynamical representations. Consequently, they maintain robust predictive performance even when subjected to limited training diversity. Overall, the diffusion-based architectures consistently outperform the classic RoboMorph across varied scenarios, including several ID cases. Beyond predictive accuracy, it is necessary to consider the computational trade-offs. In our experiments, Robo-Morph demanded significantly longer offline training times, to achieve convergence, compared to the fully convolutional architectures. However, this front-loaded computational cost is ultimately offset during deployment, as the deterministic baseline operates at substantially faster online inference than the iterative denoising processes required by the genera-tive models. As shown in Fig. 4, faster inference allows Transformer-based models to be readily deployed in real-time control scenarios [2], and sampling techniques can be further employed to minimize the inference latency gap. 
+
+B. Inference Comparison in Control Perspective 
+
+Inference latency in diffusion models is inherently high, as they require a full forward pass at every denoising timestep. Naively reducing the number of timesteps during training degrades prediction accuracy. Instead, we adopt a more flexible strategy: we train on a dense diffusion schedule and accelerate inference via warm-starting [17]. The reverse process is initialized from a prior trajectory estimate (e.g., the solution from the previous control step) rather than from pure noise, so that only the final fraction of denoising steps must be executed. This substantially reduces latency while preserving most of the predictive performance, making diffusion architectures compatible with real-time receding-horizon control. Fig. 4 reports the resulting inference times. We impose a conservative inference latency threshold of approximately 40 ms, which corresponds to about 5% of the original diffusion steps (5 warm-started iterations in our implementation). The RMSE degradation induced by this truncation is shown in   
+
+> Fig. 4. Diffusion-based inference is about 2 order of magnitude larger than non-diffusion-based inference and is a bottleneck of predictive latency. This can be alleviated by warm-starting diffusion models from past trajectories, bringing the inference time to about 40 ms with 5 denoising steps.
+
+Fig. 5. For this analysis, we focus exclusively on models trained on dataset D2. This choice is empirically justified by the results in Fig. 3, which demonstrate that expanding the training distribution to D3 yields only marginal accuracy improvements, indicating that the generalization performance has largely plateaued. The CNN-based diffusion architectures are the most affected, particularly the inpainting variant, suggesting a stronger dependence on the full denoising chain. In contrast, the CDT remains largely insensitive to warm-starting, retaining superior OOD performance while only underperforming the RoboMorph in the ID region. From a control perspective, Transformer-based models are naturally well suited to high-frequency operation once their inference pipeline is optimized, and we regard low-level control implementations with strict latency constraints as a straightforward extension. In such settings, diffusion models should be systematically warm-started to comply with tight real-time budgets. On the other hand, diffusion models, being inherently multi-modal over the trajectory space, are particularly well suited to robotics settings characterized by highly complex and diverse trajectories, where accurate, long-horizon, and explicit dynamic modeling is desirable; they are especially attractive when OOD generalization is critical. IV. C ONCLUSION 
+
+In this work, we studied black-box meta-modeling for robotic system identification through a systematic compar-ison of deterministic and generative sequence models. By casting dynamics learning as an in-context meta-learning problem, we evaluated how implementation choices impact accuracy, robustness, and control-oriented deployment. Our results highlight three main findings. First, determin-istic Transformer-based models such as RoboMorph perform well in-distribution settings but degrade under distributional shifts, especially for complex multi-frequency dynamics. Second, diffusion-based models significantly improve ro-bustness by modeling trajectory distributions; among them, the inpainting joint formulation (Diffuser) achieves the best performance in our experiments due to its richer input– Fig. 5. As an example, we focus on architectures trained on D2 for chirp and sinusoidal signals with 5 diffusion steps corresponding to about 40 ms 
+
+inference time: Transformer-based models sustain warm-started trajectories relatively well whereas convolution-based models suffer drastically. Among Transformer-based models, diffusion processes provide more versatile repre-sentations in modeling high frequency responses whereas for low frequency responses this versatility is practically insignificant. 
+
+observation representation. Third, conditioned diffusion pro-vides the best trade-off between performance and efficiency, retaining strong robustness while enabling warm-started in-ference compatible with real-time control. Overall, the choice between inpainting and conditioned diffusion governs the balance between expressiveness and de-ployability. While inpainting diffusion is the most expressive, conditioned diffusion emerges as the most practical solution for control-oriented applications. Future work will focus on real-world validation and inte-gration within MPC pipelines, enabling data-driven receding-horizon control on physical systems. Additionally, exploring mechanistic interpretability to extract physically meaningful parameters from learned models offers a promising direction to bridge deep meta-learning with classical system identifi-cation. REFERENCES [1] P. K. Khosla and T. Kanade, “Parameter identification of robot dynamics,” in 1985 24th IEEE Conference on Decision and Control ,1985, pp. 1754–1760. [2] Y. Wang and S. Boyd, “Fast model predictive control using online optimization,” IEEE Transactions on Control Systems Technology ,vol. 18, no. 2, pp. 267–278, 2010. [3] L. Hewing, K. P. Wabersich, M. Menner, and M. N. Zeilinger, “Learning-based model predictive control: Toward safe learning in control,” Annual Review of Control, Robotics, and Autonomous Sys-tems , vol. 3, no. 1, pp. 269–296, 2020. [4] T. M. Moerland, J. Broekens, A. Plaat, and C. M. Jonker, “Model-based reinforcement learning: A survey,” Foundations and Trends in Machine Learning , vol. 16, no. 1, pp. 1–118, 2023. [5] A. Ramesh and B. Ravindran, “Physics-informed model-based rein-forcement learning,” in Learning for Dynamics and Control Confer-ence . PMLR, 2023, pp. 26–37. [6] C. Chi, Z. Xu, S. Feng, E. Cousineau, Y. Du, B. Burchfiel, R. Tedrake, and S. Song, “Diffusion policy: Visuomotor policy learning via action diffusion,” The International Journal of Robotics Research , vol. 44, no. 10-11, pp. 1684–1704, 2025. [7] B. Ai, S. Tian, H. Shi, Y. Wang, T. Pfaff, C. Tan, H. I. Christensen, H. Su, J. Wu, and Y. Li, “A review of learning-based dynamics models for robotic manipulation,” Science Robotics , vol. 10, no. 106, p. eadt1497, 2025. [8] N. Hansen, H. Su, and X. Wang, “Td-mpc2: Scalable, robust world models for continuous control,” in International Conference on Learn-ing Representations (ICLR) , 2024. [9] G. Giacomuzzo, R. Carli, D. Romeres, and A. Dalla Libera, “A black-box physics-informed estimator based on gaussian process regression for robot inverse dynamics identification,” IEEE Transactions on Robotics , vol. 40, pp. 4820–4836, 2024. [10] M. B. Bazzi, A. A. Shahid, C. Agia, J. Alora, M. Forgione, D. Piga, F. Braghin, M. Pavone, and L. Roveda, “Robomorph: In-context meta-learning for robot dynamics modeling,” International Conference on Informatics in Control, Automation and Robotics (ICINCO) , 2025. [11] M. Forgione, F. Pura, and D. Piga, “From system models to class models: An in-context learning paradigm,” IEEE Control Systems Letters , vol. 7, pp. 3513–3518, 2023. [12] A. Vaswani, N. Shazeer, N. Parmar, J. Uszkoreit, L. Jones, A. N. Gomez, Ł. Kaiser, and I. Polosukhin, “Attention is all you need,” 
+
+Advances in neural information processing systems , vol. 30, 2017. [13] D. Piga, M. Rufolo, G. Maroni, M. Mejari, and M. Forgione, “Syn-thetic data generation for system identification: leveraging knowledge transfer from similar systems,” in 2024 IEEE 63rd Conference on Decision and Control (CDC) . IEEE, 2024, pp. 6383–6388. [14] M. Rufolo, D. Piga, and M. Forgione, “Distributionally robust min-imization in meta-learning for system identification,” IEEE Control Systems Letters , 2025. [15] M. Elseiagy, T. T. Alemayoh, R. Bezerra, S. Kojima, and K. Ohno, “Data-driven dynamic parameter learning of manipulator robots,” in 
+
+2026 IEEE/SICE International Symposium on System Integration (SII) .IEEE, 2026, pp. 193–198. [16] J. Vanschoren, “Meta-learning: A survey,” arXiv preprint arXiv:1810.03548 , 2018. [17] M. Janner, Y. Du, J. Tenenbaum, and S. Levine, “Planning with diffusion for flexible behavior synthesis,” in International Conference on Machine Learning , 2022. [18] J. Ho, A. Jain, and P. Abbeel, “Denoising diffusion probabilistic models,” Advances in neural information processing systems , vol. 33, pp. 6840–6851, 2020. [19] Z. Wang, Y. Jiang, Y. Lu, P. He, W. Chen, Z. Wang, M. Zhou, 
+
+et al. , “In-context learning unlocked for diffusion models,” Advances in Neural Information Processing Systems , pp. 8542–8562, 2023. [20] W. Meng, H. Ju, T. Ai, R. Gomez, E. Nichols, and G. Li, “Trans-ferring meta-policy from simulation to reality via progressive neural networks,” IEEE Robotics and Automation Letters , 2024. [21] M. Forgione and D. Piga, “dynonet: A neural network architecture for learning dynamical systems,” International Journal of Adaptive Control and Signal Processing , vol. 35, no. 4, pp. 612–626, 2021. [22] J. Von Oswald, E. Niklasson, E. Randazzo, J. Sacramento, A. Mord-vintsev, A. Zhmoginov, and M. Vladymyrov, “Transformers learn in-context by gradient descent,” in International Conference on Machine Learning . PMLR, 2023, pp. 35 151–35 174. [23] M. Rufolo, D. Piga, G. Maroni, and M. Forgione, “Enhanced trans-former architecture for in-context learning of dynamical systems,” in 
+
+2025 European Control Conference (ECC) . IEEE, 2025, pp. 819–824. [24] O. Ronneberger, P. Fischer, and T. Brox, “U-net: Convolutional networks for biomedical image segmentation,” in International Confer-ence on Medical image computing and computer-assisted intervention .Springer, 2015, pp. 234–241. [25] E. Perez, F. Strub, H. De Vries, V. Dumoulin, and A. Courville, “Film: Visual reasoning with a general conditioning layer,” in Proceedings of the AAAI conference on artificial intelligence , vol. 32, no. 1, 2018. [26] C. Gaz, M. Cognetti, A. Oliva, P. Robuffo Giordano, and A. De Luca, “Dynamic identification of the franka emika panda robot with re-trieval of feasible parameters using penalty-based optimization,” IEEE Robotics and Automation Letters , vol. 4, no. 4, pp. 4147–4154, 2019. [27] V. Makoviychuk et al. , “Isaac gym: High performance GPU based physics simulation for robot learning,” in Thirty-fifth Conference on Neural Information Processing Systems Datasets and Benchmarks Track , 2021. [28] L. Kirsch, J. Harrison, J. Sohl-Dickstein, and L. Metz, “General-purpose in-context learning by meta-learning transformers,” in Sixth Workshop on Meta-Learning at the Conference on Neural Information Processing Systems , 2022.

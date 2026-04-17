@@ -1,0 +1,923 @@
+Title: ImVideoEdit: Image-learning Video Editing via 2D Spatial Difference Attention Blocks
+
+URL Source: https://arxiv.org/pdf/2604.07958v1
+
+Published Time: Fri, 10 Apr 2026 00:56:16 GMT
+
+Number of Pages: 21
+
+Markdown Content:
+## ImVideoEdit: Image-learning Video Editing via 2D Spatial Difference Attention Blocks 
+
+Jiayang Xu *, Fan Zhuo ∗ , Majun Zhang ∗ , Changhao Pan , Zehan Wang †, Siyu Chen , Xiaoda Yang , Tao Jin , Zhou Zhao ‡
+
+Zhejiang University  
+
+> jiayangxu@zju.edu.cn zhaozhou@zju.edu.cn
+
+Abstract 
+
+Current video editing models often rely on expensive paired video data, which limits their practical scalability. In essence, most video editing tasks can be formulated as a decoupled spatiotemporal process, where the temporal dy-namics of the pretrained model are preserved while spatial content is selectively and precisely modified. Based on this insight, we propose ImVideoEdit, an efficient framework that learns video editing capabilities entirely from image pairs. By freezing the pre-trained 3D attention modules and treating images as single-frame videos, we decouple the 2D spatial learning process to help preserve the original tem-poral dynamics. The core of our approach is a Predict-Update Spatial Difference Attention module that progres-sively extracts and injects spatial differences. Rather than relying on rigid external masks, we incorporate a Text-Guided Dynamic Semantic Gating mechanism for adaptive and implicit text-driven modifications. Despite training on only 13K image pairs for 5 epochs with exceptionally low computational overhead, ImVideoEdit achieves editing fi-delity and temporal consistency comparable to larger mod-els trained on extensive video datasets. 
+
+1. Introduction 
+
+Diffusion models, particularly 3D Diffusion Transformers (3D DiTs), have achieved revolutionary breakthroughs in video generation, as demonstrated by cutting-edge models like Seedance [7, 27] and Veo [5]. However, generating high-quality videos is merely the first step. Real-world con-tent creation demands not only superior generation but also robust editing capabilities that strike a balance between se-mantic manipulation and structural preservation. Specifi-cally, this requires the ability to execute precise modifica-
+
+> *Equal Contribution.
+> †Project Leader.
+> ‡Corresponding Author.
+
+tions on existing videos guided by textual prompts. Despite significant progress in recent video editing, existing approaches face a fundamental dilemma when adapted to 3D DiTs. Direct fine-tuning or feature injec-tion into the highly coupled 3D spatio-temporal attention modules severely disrupts the delicate motion priors of pre-trained models, typically culminating in background drift and temporal flickering. To circumvent this instability, current pipelines frequently resort to external foundation segmentation models or manually annotated masks. Yet, this reliance compromises the elegance of end-to-end, text-driven editing and proves fundamentally brittle when han-dling complex non-rigid deformations, thereby sacrificing the potential for zero-shot interaction. Compounding these architectural challenges is a severe bottleneck in data acquisition. Constructing large-scale, diverse paired datasets—comprising source videos, target videos, and text instructions—imposes a prohibitive cost barrier. While scaling up massive amounts of data can unde-niably yield models with strong generalization capabilities, the inherent complexity of dynamic video scenes makes ac-quiring and synthesizing such paired data prohibitively ex-pensive and time-consuming. This inherent data scaling bottleneck significantly inflates the computational and tem-poral costs required to develop open-domain video editing models. Returning to the essence of the video editing task, it fun-damentally revolves around the precise reorganization and modification of the original video’s features. Many video editing applications, such as style transfer and object addi-tion, removal, or modification, primarily entail the recon-struction of spatial features while rigorously preserving the underlying temporal dynamics. Consequently, the heavily coupled spatiotemporal features inherent in video data are, to some extent, temporally redundant for training these pre-dominantly spatial editing tasks. Fortunately, as demon-strated by recent pioneering works such as ViFeEdit [43], image editing data, which naturally isolates and focuses ex-clusively on spatial feature transformations, has proven to 1     
+
+> arXiv:2604.07958v1 [cs.CV] 9 Apr 2026 Edit Prompt:
+> Remove the vintage car
+> parked by the curb from the historic district
+> scene, and seamlessly inpaint the revealed cobblestone street and curb area to match
+> the surrounding environment. Preserve the warm antique street lamp glow, the 19th -
+> century ornate building facades, and the strolling pedestrians…
+> Edit Prompt:
+> Transform into Makoto Shinkai anime style
+> with breathtaking skies and
+> luminous cinematic lighting; preserve the original playground composition exactly:
+> early evening, street -lamp glow, children on a seesaw, fallen leaves, crisp calm
+> atmosphere, unchanged structure and layout.
+> Edit Prompt:
+> Transform the scene from a cool, starry night into early dawn with soft
+> golden sunrise light
+> breaking over the horizon. Replace the harsh floodlit nighttime
+> atmosphere with natural morning illumination, long gentle shadows stretching across
+> the rubble, tents, and emergency vehicles…
+> Edit Prompt:
+> Make the drone appear broken
+> , with one rotor visibly damaged and
+> sparking, while keeping all other elements unchanged. A drone testing field during a
+> heavy rainstorm, with puddles forming on the muddy ground. Engineers in waterproof
+> gear huddle under a tarp, monitoring a drone as it navigates through…
+
+Figure 1. Illustration of four of ImVideoEdit ’s basic editing task. Zoom in for best viewing. 
+
+be a highly effective surrogate to facilitate the training of video editing models. Building upon this insight, we fur-ther propose ImVideoEdit , an innovative method learning video editing from images via 2D spatial difference atten-tion blocks. In order to generate a high-quality dataset, we design a three-stage pipeline: scene-conditioned prompt construc-tion, paired image synthesis, and data filtering. This process produces approximately 13K high-quality image pairs that provide dense supervision for learning video editing. The dataset encompasses a wide variety of scene compositions and editing tasks, offering diverse and robust training sig-nals for spatial feature transformation. Since our paradigm treats images as single-frame videos to learn 2D spatial feature reorganization, it is impera-tive to preserve the model’s inherent spatiotemporal model-ing capabilities. Following established practices, we com-pletely freeze the backbone of the pre-trained video diffu-sion model (Wan2.1-T2V-1.3B). This strategy safely safe-guards the robust spatiotemporal priors and motion dynam-ics encapsulated within its 3D self-attention mechanisms, which were learned during large-scale pre-training. Thus, the crux of the problem converges on a singular, critical challenge: how to optimally extract and inject the 2D spa-tial features of the source video without temporal interfer-ence? 
+
+To address this, drawing inspiration from the predictive-corrective paradigms utilized in camera-control video gen-eration [41], we introduce an innovative Predict-Update Spatial Difference Attention Module . This architecture decouples the spatial feature reconstruction into a pro-gressive two-step process. First, the Predict phase estab-lishes a coarse-grained spatial structural alignment. Sub-sequently, the Update phase precisely captures and fits the high-frequency spatial residual differences. This Predict-Update mechanism empowers ImVideoEdit to achieve ex-ceptionally high-fidelity extraction and editing of the source video’s spatial features. Furthermore, since our spatial module precedes the native cross-attention layers and in-herently lacks text awareness, we introduce Text-Guided Dynamic Semantic Gating to enable prompt-driven, pre-cise semantic modulation. In summary, our main contributions are multi-fold: • Dataset Construction: We provide a curated dataset of 13K image pairs that supports learning spatial transfor-mations in video editing tasks, offering rich supervision without relying on full video sequences. • Video-Free Training Paradigm & Architectural Evo-lution: Moving beyond computationally prohibitive video-based training, we pioneer an efficient paradigm that learns video editing entirely from static images. To enable this, we propose the Predict-Update Spatial Dif-ference Attention module. By seamlessly treating im-ages as single-frame videos and establishing a spatial residual stream, it achieves coarse-to-fine spatial feature extraction while safeguarding the fragile 3D spatiotempo-2ral priors. • Zero-Shot Text-Driven Semantic Modulation: To fa-cilitate fine-grained and prompt-faithful video editing, we introduce the Text-Guided Dynamic Semantic Gating .Without relying on external masks, this design provides strong text-driven guidance during spatial feature learn-ing. • State-of-the-Art Performance: Extensive evaluations demonstrate the superiority of ImVideoEdit . This proves that robust, fine-grained video editing can be accom-plished with minimal computational overhead and data dependency. 
+
+2. Related Work 
+
+2.1. Video Generation with Diffusion Models 
+
+Early approaches to video generation, including GANs and RNN-based methods [6, 35], were limited by poor tempo-ral coherence and low visual fidelity. The introduction of diffusion-based architectures, particularly 3D U-Net vari-ants [8, 11, 29], significantly improved spatiotemporal mod-eling and enabled the generation of high-quality short video clips. More recently, Diffusion Transformers (DiTs) and large-scale generative architectures [24] have driven rapid advancements in video foundation models. Representative systems such as HunyuanVideo [14], Cosmos [1], Wan [36], and Kling [34] demonstrate strong capabilities in synthesiz-ing high-resolution, and physically plausible videos. These models benefit from scaling model capacity, improved ar-chitecture design, and training on large-scale curated video datasets, leading to substantial gains in realism, motion con-sistency, and multimodal alignment. 
+
+2.2. Video Editing 
+
+Early diffusion-based video editing paradigms primarily adapted Text-to-Image (T2I) models for the video domain, employing strategies such as cross-attention map injec-tion or deterministic DDIM inversion [25, 32]. How-ever, directly applying these T2I inversion techniques to native Text-to-Video (T2V) architectures often introduces severe color flickering and structural distortions due to tightly coupled spatio-temporal representations. To over-come the flickering and structural distortions inherent in early inversion-based methods, recent works have shifted towards the end-to-end training of native video generative models. Approaches such as [13, 31, 37, 44] integrate Mul-timodal Large Language Models (MLLMs) with Diffusion Transformers to unify diverse editing tasks into a single ar-chitecture. Moreover, to overcome the data scarcity bottle-neck in training end-to-end video editing models, methods like [3, 9, 18] have proposed large-scale synthetic video generation pipelines. However, end-to-end training on such massive video datasets inevitably incurs substantial compu-tational overhead and high data generation costs. To cir-cumvent this heavy reliance on exhaustive video-level op-timization, we propose a novel approach that effectively achieves temporally coherent video editing by training ex-clusively on image editing data. 
+
+2.3. Attention Control and Spatial Adapters 
+
+Achieving fine-grained, high-fidelity synthesis in generative models relies heavily on manipulating internal representa-tions, predominantly through attention control and spatial adapters. Building upon the foundational cross-attention manipulation of Prompt-to-Prompt [10], recent advance-ments in attention control enable training-free semantic editing while strictly preserving structural integrity. Tech-niques leveraging localized and relative guidance [39, 45], alongside region-selective denoising [26, 42], effectively mitigate identity blending and anchor background fidelity during complex foreground transformations. Complemen-tary to these internal mechanisms, spatial adapters [21, 30] provide parameter-efficient paradigms to inject external structural priors into pre-trained latents. These integrated priors encompass a wide spectrum of conditioning signals, ranging from dense visual maps to sparse grounding tokens [15] and relational scene graphs [28], which eventually culminate in unified frameworks for precise dual-control [22]. While these methodologies have established excep-tional spatial layout guidance and high-fidelity semantic editing in the image domain, extending such granular con-trol to videos remains notoriously difficult due to the lack of robust temporal consistency. Motivated by the rich spa-tial and semantic priors encapsulated in these image-based frameworks, our work proposes to leverage image editing data to train a robust video editing model, effectively trans-ferring sophisticated frame-level control to the temporal do-main. 
+
+3. Dataset 
+
+To enable instruction-driven video editing under image-level supervision, we construct a paired image dataset that explicitly captures diverse editing operations together with their resulting visual outcomes. As illustrated in Fig. 3, our data pipeline consists of three stages: scene-conditioned prompt construction, paired image synthesis, and data filter-ing. 
+
+Scene-Conditioned Prompt Construction. We first define a set of base environments (or entities) E =
+
+{e1, e 2, . . . , e n} , together with a set of compositional con-ditions C = {c1, c 2, . . . , c m} . For each environment 
+
+e ∈ E , we randomly sample conditions from C and combine them to form a base scene description. This compositional construction enables scalable generation of diverse scenes while maintaining controllability. However, arbitrary com-binations often yield semantically implausible or visually 3Layer Norm  
+
+> FFN
+> Attention Block
+> Cross -Attention
+> Layer Norm
+> 3D Self -Attention
+> Layer Norm
+> 2D Self -Attention
+> Zero -Linear
+> Zero -Linear
+> 2D Self -Attention
+> Text Gate
+> [2B, F ×H×W, D ][B, F ×H×2W, D ]
+
+N×   
+
+> DiT Block 1
+> DiT Block N
+> DiT Block 2
+> VAE
+
+… 
+
+> Predicted
+> Velocity
+> Timstep  t
+> 𝓛 𝑹𝑭 Target
+> Velocity
+> Text Encoder
+> Convert the scene into
+> pixel art style, preserving
+> the exact composition …
+> Noise
+> Predict &
+> Update
+> Predict &
+> Update
+> Predict &
+> Update
+> Predict Module
+> Update Module
+> 𝐇 𝐮𝐩𝐝𝐚𝐭𝐞
+> 𝐇 𝐩𝐫𝐞𝐝
+> 𝐇 𝐝𝐢𝐟𝐟
+> 𝐇 𝐫𝐞𝐬
+
+Figure 2. Overview of ImVideoEdit . Left: The overall pipeline processes latents from single image through a frozen 3D DiT, featuring a Predict-Update module parallel to each attention block. Right: Detailed design of the Predict & Update Module. The frozen 3D self-attention safeguards spatiotemporal priors, while the parallel 2D branch extracts spatial features from the reference latent. The Predict Module generates a coarse alignment ( Hpred ) via a Zero-Linear layer. The spatial difference ( Hres ) is then processed by the Update Module and a Text Gate, which implicitly modulates the editing intensity to yield Hdif f . The final output ( Hupdate ) achieves precise text-driven spatial reconstruction. During training stage, the numbers of frame F maintains 1.
+
+incoherent scenes. To mitigate this, we leverage Gemini 3.1 Pro [4] for semantic validation, filtering out descriptions that violate physical principles, defy commonsense, or lack clear visual depictability. Given the filtered scene pool, we assign each scene mul-tiple editing tasks T , with task categories illustrated in Fig. 4a. For each (scene, task) pair, we use GPT-5.3 [23] to generate both a source prompt describing the original scene and an edited prompt corresponding to the desired transfor-mation. Importantly, instead of specifying only the editing instruction, the edited prompt is required to explicitly de-scribe the post-edit visual state. This design is motivated by the observation that text-to-video backbones are often in-sensitive to sparse editing instructions due to the lack of such supervision during pretraining. By augmenting the edited prompts with comprehensive visual descriptions of the target scene, we establish more robust and informative supervisory signals for learning complex editing behaviors. 
+
+Paired Image Synthesis. Based on the constructed prompts, we synthesize paired images using text-to-image and image editing models. We adopt Qwen-Image [38] and Qwen-Image-Edit to ensure high visual fidelity and consistency between source and edited images. This pro-cess results in a collection of paired samples of the form 
+
+{(xsrc 
+
+i , x edit 
+
+i , p src 
+
+i , p edit 
+
+i )}.
+
+Data Filtering. To further improve data quality, we uti-lize a combination of automated and human-in-the-loop fil-tering. Gemini 3.1 Pro is used to filter samples based on instruction faithfulness, visual quality, and the consistency of non-edited regions. In addition, we incorporate human verification on a subset of samples to ensure reliability and Environment   
+
+> Condition
+> river
+> valley
+> at sunset
+> with neon
+> lights
+> Filtered Scene
+> desert with neon
+> lights ×
+> river valley at
+> sunset √
+> …
+
+… 
+
+> Task: Style Transfer
+> Source image prompt:
+> A hospital room under
+> harsh midday sunlight.
+> The white walls and
+> sterile ...
+> Edited image prompt:
+> Convert the hospital
+> room scene into pixel
+> art style ...
+> Task
+> 1. consistent style
+> transfer
+> 2. object addition
+> 3. object removal
+> …
+> with neon
+> lights
+> pine
+> forest
+> classroom
+
+…
+
+> Human
+> Verification
+> MLLM
+> Evaluation
+
+Stage 1: Scene -Conditioned Prompt Construction 
+
+Stage 2: Paired Image Synthesis Stage 3: Data Filtering      
+
+> Source Prompt: …
+> Edited Prompt: …
+> Total: 13k Pairs
+> Task: … Scene: …
+> Based on the scene…
+> 12
+> 3
+
+Figure 3. Overview of the dataset construction pipeline. 
+
+calibrate the automatic filtering criteria. After filtering, we obtain a dataset containing approximately 13k high-quality paired samples covering diverse scenes and editing opera-tions, as illustrated in Fig. 4b and Fig. 4a. We provide representative visual samples from our dataset in the Supplementary Material. To validate the effectiveness of our VLM-assisted filtering and mitigate any single-model bias, we also present comprehensive cross-validation results across different VLMs in the Supplementary Material. 420.5%  
+
+> 7.9%
+> 10.6%
+> 10.4% 6.5%
+> 8.4%
+> 7.7%
+> 5.6%
+> 9.3% 6.3% (a) Distribution of editing tasks in our dataset.
+> (b) Word cloud of scene descriptions in our dataset.
+> Figure 4. Dataset statistics.
+
+4. Methodology 
+
+The overall architecture of ImVideoEdit is illustrated in Figure 2. Section 4.1 presents the theoretical foundation of our framework, formulating the specific training objec-tives based on Flow Matching. Section 4.2 then introduces the core Predict-Update spatial mechanism, which incor-porates images as single-frame videos to extract coarse-to-fine spatial residuals while preserving the pre-trained spa-tiotemporal priors. Finally, Section 4.3 describes the Text-Guided Dynamic Semantic Gating module for precise se-mantic modulation driven by text prompts. 
+
+4.1. Preliminaries 
+
+We formulate our video editing framework based on Trans-port Flow Matching [19, 20]. Flow Matching generates data by learning a continuous-time vector field vθ (xt, t, c ) that transports samples from a tractable prior distribution p0(x0)
+
+to the empirical data distribution q(x1), conditioned on c.The generative process is governed by an Ordinary Differ-ential Equation (ODE): 
+
+dx t
+
+dt = vθ (xt, t, c ), x0 ∼ p0(x0) (1) To bypass the intractable marginal vector field, Condi-tional Flow Matching constructs the objective using per-sample conditional paths. Following the Rectified Flow [20] formulation, we adopt a straight-line probability path interpolating between the noise x0 and the clean data x1:
+
+xt = tx 1 + (1 − t)x0, t ∈ [0 , 1] (2) The corresponding conditional target vector field driving this linear interpolation is the constant velocity ut(xt|x1) = 
+
+x1 − x0. The neural network vθ , instantiated as a 3D Dif-fusion Transformer in our work, is trained to approximate this target field by minimizing the standard flow matching objective: 
+
+LFM = Et,x 0,x 1,c 
+
+∥vθ (xt, t, c ) − (x1 − x0)∥22
+
+ (3) where t ∼ U (0 , 1) . In conventional video generation tasks, Eq. 3 applies a uniform penalty across all spatial-temporal tokens. 
+
+4.2. Predict-Update Spatial Difference Attention Module 
+
+Driven by the insight discussed in Section 1 that video edit-ing is inherently a reconstruction task conditional on tem-poral consistency, we strategically decouple spatial refine-ment from spatiotemporal awareness. Specifically, the 3D spatiotemporal layers within the main video DiT branch are frozen during fine-tuning. This allows us to leverage the robust and powerful spatiotemporal correspondence ca-pabilities they have already learned through extensive pre-training on massive video corpora. 
+
+Predict-Update Spatial Difference Attention Module is meticulously designed to extract and refine purely spatial features from each frame. It does not possess any tempo-ral interaction layers, focusing solely on dense spatial cor-respondence within the frame. This decoupled architec-ture yields a critical advantage regarding data efficiency: during fine-tuning, our module requires only static image pairs (source and target edited images) rather than full video sequences to learn the necessary geometric and structural mappings. The frozen spatiotemporal layers of the main branch then naturally and stably generalize the learned spa-tial edits across the temporal dimension. To systematically model the spatial correspondences without disrupting the temporal dynamics, we formu-late a shared 2D spatial interaction operator, denoted as 
+
+Φ( ·, Attn2D ). Given a batched sequence tensor X ∈
+
+R2B×(F HW )×d containing both source and target la-tents, Φ first partitions it into source and target chunks 
+
+RB×(F HW )×d. By folding the temporal dimension F into the batch dimension B, these chunks are reshaped into their 2D spatial layouts R(BF )×H×W ×d and concatenated along the width dimension to construct a joint spatial observation space M ∈ R(BF )×H×2W ×d. After flattening M into se-quences of length 2HW , the specific 2D self-attention is 5applied. The output is subsequently split and reshaped back to the original 3D sequence format R2B×(F HW )×d.
+
+Predict: Dense Spatial Observation. We first apply the in-teraction operator on the normalized hidden states to extract the initial spatial guidance: 
+
+H(1)  
+
+> 2D
+
+= Φ( LN 1(X), Attn2D 1) (4) where LN 1(·) represents a layer-norm operator. This dense spatial prior is then fused with the standard 3D spatial-temporal attention output H3D to formulate the predictive state: 
+
+Hpred = H3D + ZeroLin 1(H(1)  
+
+> 2D
+
+) (5) where ZeroLin 1(·) is a linear projection initialized with zero weights and bias. 
+
+Update: Spatial Conflict Estimation. To prevent struc-tural distortions caused by direct injection, we estimate the spatial conflict by subtracting the initial 2D observation from the predictive state: 
+
+Hres = Hpred − H(1)  
+
+> 2D
+
+(6) This residual tensor Hres ∈ R2B×(F HW )×d is layer-normalized and fed into the second interaction block to compute the structural refinement offset: 
+
+Hdiff = Φ( LN 2(Hres ), Attn2D 2) (7) where LN 2(·) represents another layer-norm operator. While a naive addition of Hdiff to Hpred can globally cal-ibrate structural discrepancies, it treats all spatial features equally, largely ignoring the semantic intent of the edit. Be-cause targeted video editing demands localized, prompt-aware modifications rather than rigid global shifts, these structural residuals must be selectively incorporated. To achieve this fine-grained control, we design a Text-Guided Dynamic Semantic Gating module. 
+
+4.3. Text-Guided Dynamic Semantic Gating 
+
+Let C denote the textual embeddings from the prompt encoder. We utilize the normalized refinement offset to query the textual features via cross-attention, extracting a semantic-aware context Hctx . This context is then processed by a simple two-layer multi-layer perceptron (MLP), de-noted as GateProj, to generate a gating matrix G:
+
+Hctx = CrossAttn (LN 3(Hdiff ), C) (8) 
+
+G = GateProj (Hctx ) (9) where G ∈ (0 , 1) 2B×(F HW )×d. Finally, we employ this textual gate to modulate the structural residual via element-wise multiplication before adding it back to the predictive state: 
+
+Hupdate = Hpred + G ⊙ ZeroLin 2(Hdiff ) (10) where ⊙ denotes element-wise multiplication. By integrat-ing this text-driven gate, our model dynamically decides 
+
+where and how much of the structural prior should be pre-served or overwritten based on the semantic editing intent, effectively decoupling structural retention from semantic generation. 
+
+5. Experiments 
+
+5.1. Experimental Setup 
+
+Implementation Details. We implement our ImVideoEdit 
+
+framework on the pre-trained Wan-T2V-1.3B backbone. Specifically, the Predict-Update modules are seamlessly in-tegrated into every Transformer block of the frozen 3D DiT. To preserve strong visual priors and accelerate convergence, the self- and cross-attention weights within these newly in-troduced modules are directly inherited from their corre-sponding pre-trained layers in the base model. We format the training image pairs as single-frame videos at a spatial resolution of 480 × 832 . We optimize the model for 5 epochs on 8 NVIDIA A100 GPUs, leverag-ing ZeRO-2 optimization with a learning rate of 1 × 10 −5
+
+and a global batch size of 16. Owing to our image-based design, the training is memory-efficient. It consumes only approximately 20 GB of VRAM per GPU, making it acces-sible to train ImVideoEdit even on a single 3090 GPU. 
+
+Baseline Settings To comprehensively evaluate the su-periority of ImVideoEdit , we benchmark our framework against several recent state-of-the-art video editing mod-els, including VACE(1.3B & 14B) [13], OmniVideo2-1.3B [31, 40], Lucy-Edit-Dev [33], Kiwi-Edit [17], DITTO [2], and ICVE [16]. To ensure a strictly fair comparison, all baseline methods are evaluated utilizing their official code-bases and default inference hyperparameters. 
+
+Evaluation Dataset. We construct a meticulously curated testing benchmark encompassing 10 predefined video edit-ing categories, with 25 high-quality samples allocated for each task. To guarantee a diverse range of scenes and high-fidelity visuals, the source videos in our test set are synthe-sized using Seedance 1.5 Pro [7, 27]. Furthermore, to guar-antee the semantic validity and rigorousness of the bench-mark, we leverage Gemini 3.1 Pro to evaluate and ensure the precise contextual alignment between each source video and its corresponding editing prompt. 
+
+Evaluation Metrics. Recognizing the inherently semantic-driven nature of video editing tasks, where traditional met-rics often struggle to capture complex prompt alignments, we adopt a VLM-based evaluation protocol leveraging Gemini 3.1 Pro. This VLM-based judge evaluates gener-ated videos on a 100-point scale across four meticulously designed dimensions: Instruction Adherence (30 pts), Tem-poral Consistency (30 pts), Visual Fidelity (25 pts), and Ar-tifact Absence (15 pts). The exact prompts utilized for this 6Table 1. Quantitative Results of VLM across all subtasks. The best are highlighted in bold .                                                                                 
+
+> Method Bg. Rep. Cam. Trans. Color/Texture Trans. Style Trans. Relight Local Edit Rigid/Non Rep. Obj. Add./Rem. AVG.
+> 13B & 14B Parameter Models
+> Vace (14B) 52.3 58.6 58.0 69.7 79.7 56.0 60.8 50.5 59.68 DITTO (14B) 57.7 61.8 60.6 74.7 78.6 50.1 62.0 55.4 61.82 ICVE (13B) 55.7 59.5 75.6 69.0 67.7 57.6 77.1 55.7 65.04
+> 5B Parameter Models
+> Kiwi-Edit (5B) 46.8 64.4 81.9 69.4 87.4 67.4 81.3 65.3 71.13
+> Lucy-Edit-Dev (5B) 34.8 46.2 33.9 39.7 49.0 44.8 58.9 38.9 44.51
+> 1.3B Parameter Models
+> Vace (1.3B) 46.2 57.0 60.2 64.0 77.7 56.2 50.9 52.4 56.79 OmniVideo2 (1.3B) 30.5 37.8 48.2 43.2 45.5 46.7 57.4 48.6 47.00
+> Ours (1.3B Based) 49.0 59.4 73.9 74.4 75.6 60.4 67.5 62.4 65.24
+
+Table 2. Quantitative Results on VBench. The best are highlighted in bold .                                                            
+
+> Method Subject Consist. ↑Background Consist. ↑Motion Smooth. ↑Dynamic Deg. ↑Aesthetic Qual. ↑Imaging Qual. ↑
+> 13B & 14B Parameter Models
+> Vace(14B) 0.973 0.973 0.990 0.296 0.685 0.715
+> DITTO(14B) 0.979 0.968 0.994 0.140 0.655 0.670 ICVE(13B) 0.972 0.959 0.991 0.404 0.629 0.697
+> 5B Parameter Models
+> Kiwi-Edit(5B) 0.976 0.959 0.993 0.140 0.616 0.716
+> Lucy-Edit-Dev(5B) 0.974 0.950 0.993 0.220 0.601 0.648
+> 1.3B Parameter Models
+> Vace(1.3B) 0.971 0.970 0.989 0.292 0.682 0.707
+> OmniVideo2(1.3B) 0.964 0.967 0.984 0.393 0.647 0.691
+> Ours (1.3B Based) 0.964 0.951 0.990 0.204 0.630 0.701
+
+VLM evaluator are detailed in the Supplementary Material. While the VLM-based judge excels at assessing the complex semantic execution specific to the editing task, it is equally important to independently evaluate the funda-mental video generation quality of the outputs. To fulfill this need and ensure benchmarking alignment with com-munity standards, we adopt six diverse dimensions from the comprehensive VBench [12, 46] suite: Subject Consis-tency , Background Consistency , Motion Smoothness , Dy-namic Degree , Aesthetic Quality , and Imaging Quality .
+
+5.2. Quantitative Results 
+
+VLM-based Evaluation. Table 1 details subtask perfor-mance averaged across dimensions, whereas Table 3 shows dimension scores averaged across tasks. Our framework gets an impressive Total Score of 65.24. ImVideoEdit 
+
+significantly outperforms well-established baselines such as VACE-1.3B (56.79) by substantial margins. Although Kiwi-Edit secures the highest score, it is crucial to note that ImVideoEdit delivers comparable results in a strictly 
+
+video-free manner. By leveraging solely image data and our lightweight Predict-Update mechanism, our method effec-tively bypasses the massive computational and data costs typically associated with top-ranking models. 
+
+VBench. As reported in Table 2, we include objective eval-uations using the VBench suite. However, VBench is de-signed for open-domain text-to-video generation and pri-marily emphasizes visual quality and pixel-level stability, it does not capture instruction fidelity or the preservation of source video dynamics, both of which are essential for evaluating editing performance. Consequently, these met-rics cannot adequately reflect the true effectiveness of video editing. Therefore, we treat VBench as a secondary san-ity check rather than a primary metric for editing perfor-mance. From this perspective, ImVideoEdit demonstrates strong stability in physical dynamics and motion smooth-ness (0.990), which provides a reliable foundation for its core capability of precise semantic editing. 
+
+5.3. Qualitative Results 
+
+As illustrated in Figure 5, ImVideoEdit achieves strong per-formance across diverse editing tasks, including color trans-formation, non-rigid object replacement, and background replacement. Although VACE can achieve high scores on VBench, such evaluation may be misleading for editing tasks. In practice, it tends to preserve the original content with min-imal changes, resulting in high visual quality but poor ad-herence to editing instructions. A closer qualitative analysis reveals distinct failure modes across different methods. For color and texture transformation, some models like VACE unintentionally al-7Origin 
+
+Background Replacement 
+
+> Edit Prompt:
+> Change all background elements
+> , including the sky,
+> skyline, horizon, and distant environment, to a completely different
+> scene, while maintaining a natural, realistic composite…
+
+Non -rigid Object Replacement 
+
+> Edit Prompt:
+> Replace one of the scientists in a lab coat with a
+> realistic humanoid robot in a matching working pose
+> , preserving the
+> same body position, orientation, scale, and interaction…
+
+Color/Texture Transformation 
+
+> Edit Prompt:
+> Change only the leather seats so they appear as deep
+> emerald green velvet upholstery
+> , keeping their exact shape, size,
+> position, and overall geometry unchanged…
+
+VACE 
+
+Lucy 
+
+Kiwi 
+
+Ours Figure 5. Qualitative Results of ImVideoEdit and baselines. Table 3. Quantitative Results of VLM. Metrics: IA (Instruction Adherence), TC (Temporal Consistency), VF (Visual Fidelity) and AA 
+
+(Artifact Absence). 
+
+Method IA ↑ TC ↑ VF ↑ AA ↑ Total ↑
+
+13B & 14B Parameter Models 
+
+Vace (14B) 10.67 23.99 14.41 10.62 59.68 DITTO (14B) 14.14 23.40 13.88 10.40 61.82 ICVE (13B) 15.64 22.85 16.04 10.51 65.04 
+
+5B Parameter Models 
+
+Kiwi-Edit (5B) 19.15 23.87 16.86 11.26 71.13 
+
+Lucy-Edit-Dev (5B) 10.77 17.17 10.11 6.46 44.51 
+
+1.3B Parameter Models 
+
+Vace (1.3B) 11.34 21.55 13.92 9.98 56.79 OmniVideo2 (1.3B) 12.46 15.35 12.12 7.07 47.00 
+
+Ours (1.3B Based) 16.21 21.93 16.32 10.78 65.24 
+
+ter global appearance, affecting irrelevant regions through changes in contrast or saturation. For non-rigid object re-placement, methods such as Lucy struggle to preserve iden-tity consistency, leading to distorted or inconsistent human appearances across frames. In both background replace-ment and non-rigid editing tasks, Kiwi often performs only partial edits, for example, modifying the sky while leaving the urban structures unchanged, or failing to fully replace the target subject (e.g., the scientist is not successfully re-placed by a robot). In contrast, ImVideoEdit performs precise, localized, and semantically complete edits. For instance, in the Back-ground Replacement example with the instruction “Change all background elements,” our model replaces both the sky-line and sky, achieving a coherent and complete transfor-mation. These results demonstrate that ImVideoEdit better aligns with editing instructions while maintaining temporal consistency and visual realism. 
+
+5.4. Ablation Studies 
+
+To validate the efficacy and necessity of our core architec-tural designs in ImVideoEdit , we conduct comprehensive ablation studies. Specifically, we investigate the following three degraded baselines: 
+
+w/o Text Gate (Removal of Dynamic Gating): We dis-able the Text-Guided Dynamic Semantic Gating mecha-nism by fixing the gating weight matrix to an all-ones tensor (wgate = 1 ). 
+
+w/o Update Module (Single-layer 2D Extraction): We re-move the Update module, degrading the dual spatial resid-8Table 4. Quantitative Ablation Results. 
+
+Method PA ↑ BP ↑ TC ↑ VQ ↑ Total ↑
+
+w/o Text Gate 15.29 20.37 14.31 9.76 59.73 w/o Update Module 9.71 18.10 11.09 7.59 47.29 Naive Parallel 2D (ViFedit[43]) 12.04 16.82 12.24 7.72 48.81 
+
+ImVideoEdit (Ours) 16.21 21.93 16.32 10.78 65.24 Origin   
+
+> Edit Prompt:
+> Add a military supply crate partially buried in the snow beside the vehicle
+> , placed
+> naturally within the scene. The sky is dark and heavy with snow, the ground covered in…
+> Viewpoint Transformation
+> Edit Prompt:
+> Change the viewpoint to a high -angle aerial perspective
+> , looking down over the moonlit
+> wedding venue with a wider zoom that captures the full white gazebo adorned with…
+> w/o Text Gate
+> w/o Update Module
+> Naive Parallel 2D Attention
+> Ours
+> Origin
+> Ours
+> Object Addition
+> w/o Text Gate
+> w/o Update Module
+> Naive Parallel 2D Attention
+
+Figure 6. Qualitative Ablation Results. 
+
+ual stream into a single-pass 2D attention extraction. 
+
+Naive Parallel 2D: To validate the necessity of our progres-sive Predict-Update design, we construct a degraded base-line using a naive parallel 2D topology. In this configura-tion, spatial features are extracted simultaneously by two independent attention blocks and subsequently subtracted, which is used in ViFedit[43]. As qualitatively demonstrated in Table 4 and Figure 6, our full ImVideoEdit framework significantly outperforms all degraded variants, confirming that each proposed com-ponent is indispensable. Most notably, the direct compari-son with the Naive Parallel 2D configuration yields a crit-ical insight: Despite being optimized on the exact same training dataset and under identical experimental configu-rations, our full model achieves a substantially higher Total Score (64.51 vs. 48.81). This substantial performance mar-gin robustly validates that ImVideoEdit is fundamentally su-perior to naive parallel decoupling architectures. 
+
+5.5. User Study 
+
+While VLM-based metrics provide valuable quantitative assessments, human perception remains the ultimate gold 
+
+Table 5. User Study Results. ± denotes the standard deviation. 
+
+Method Overall Editing Quality ↑
+
+VACE (1.3B) 2.18 ± 0.17 
+
+Kiwi-Edit (5B) 3.08 ± 0.13 
+
+ImVideoEdit (1.3B Based) 3.06 ± 0.11 
+
+standard for evaluating the holistic quality of generative video editing. To this end, we conduct a blind user study to collect Mean Opinion Scores (MOS). We recruit 5 indepen-dent evaluators to participate in the assessment. To provide a straightforward and highly reliable assessment of human preference, evaluators are instructed to rate the videos on a standard 5-point Likert scale (ranging from 1: Poor to 5: 
+
+Excellent ) based on a metric: Overall Editing Quality .As summarized in Table 5, ImVideoEdit achieves highly competitive results in human perceptual evaluation. Specif-ically, our framework significantly outperforms the estab-lished Vace-1.3B by a substantial margin. While its scores slightly trail behind those of Kiwi-Edit, it is important to 9emphasize that ImVideoEdit achieves this top-tier visual and editing quality through a training paradigm that requires no video data and remains highly efficient. Furthermore, these subjective human preference trends closely align with our VLM-based quantitative assessments. This strong correla-tion robustly validates the reliability and human-alignment of our automated semantic scoring protocol, proving its ef-fectiveness in capturing true generative video editing qual-ity. 
+
+6. Conclusion 
+
+In this work, we present ImVideoEdit , an advanced gen-erative video editing framework that significantly pushes the boundaries of the video-free training paradigm. The core insight of our study is that most video editing tasks fundamentally rely on decoupled spatiotemporal modeling, where the pretrained model’s temporal priors are preserved while spatial content is adaptively edited. To realize this, we introduce the Predict-Update spatial difference atten-tion, which performs hierarchical and adaptively modulated spatial modifications through coarse-to-fine residual injec-tion while strictly safeguarding the 3D spatiotemporal pri-ors of the frozen backbone. Extensive evaluations con-firm that ImVideoEdit achieves top-tier editing fidelity and strong temporal consistency, while requiring no video data and maintaining high efficiency throughout the training pro-cess. 
+
+References 
+
+[1] Niket Agarwal, Arslan Ali, Maciej Bala, Yogesh Balaji, Erik Barker, Tiffany Cai, Prithvijit Chattopadhyay, Yongxin Chen, Yin Cui, Yifan Ding, et al. Cosmos world foun-dation model platform for physical ai. arXiv preprint arXiv:2501.03575 , 2025. 3 [2] Qingyan Bai, Qiuyu Wang, Hao Ouyang, Yue Yu, Hanlin Wang, Wen Wang, Ka Leong Cheng, Shuailei Ma, Yanhong Zeng, Zichen Liu, Yinghao Xu, Yujun Shen, and Qifeng Chen. Scaling instruction-based video editing with a high-quality synthetic dataset. arXiv preprint arXiv:2510.15742 ,2025. 6 [3] Qingyan Bai, Qiuyu Wang, Hao Ouyang, Yue Yu, Hanlin Wang, Wen Wang, Ka Leong Cheng, Shuailei Ma, Yanhong Zeng, Zichen Liu, et al. Scaling instruction-based video editing with a high-quality synthetic dataset. arXiv preprint arXiv:2510.15742 , 2025. 3 [4] Google DeepMind. Gemini 3.0 pro, 2025. 4 [5] Google DeepMind. Veo 3 technical report. Technical report, Google DeepMind, 2025. 1 [6] Emily Denton and Rob Fergus. Stochastic video generation with a learned prior. In International conference on machine learning , pages 1174–1183. PMLR, 2018. 3 [7] Yu Gao, Haoyuan Guo, Tuyen Hoang, Weilin Huang, Lu Jiang, Fangyuan Kong, Huixia Li, Jiashi Li, Liang Li, Xi-aojie Li, et al. Seedance 1.0: Exploring the boundaries of video generation models. arXiv preprint arXiv:2506.09113 ,2025. 1, 6 [8] Yuwei Guo, Ceyuan Yang, Anyi Rao, Zhengyang Liang, Yaohui Wang, Yu Qiao, Maneesh Agrawala, Dahua Lin, and Bo Dai. Animatediff: Animate your personalized text-to-image diffusion models without specific tuning. arXiv preprint arXiv:2307.04725 , 2023. 3 [9] Haoyang He, Jie Wang, Jiangning Zhang, Zhucun Xue, Xingyuan Bu, Qiangpeng Yang, Shilei Wen, and Lei Xie. Openve-3m: A large-scale high-quality dataset for instruction-guided video editing. arXiv preprint arXiv:2512.07826 , 2025. 3 [10] Amir Hertz, Ron Mokady, Jay Tenenbaum, Kfir Aberman, Yael Pritch, and Daniel Cohen-Or. Prompt-to-prompt im-age editing with cross attention control. arXiv preprint arXiv:2208.01626 , 2022. 3 [11] Jonathan Ho, Tim Salimans, Alexey Gritsenko, William Chan, Mohammad Norouzi, and David J Fleet. Video dif-fusion models. Advances in neural information processing systems , 35:8633–8646, 2022. 3 [12] Ziqi Huang, Yinan He, Jiashuo Yu, Fan Zhang, Chenyang Si, Yuming Jiang, Yuanhan Zhang, Tianxing Wu, Qingyang Jin, Nattapol Chanpaisit, Yaohui Wang, Xinyuan Chen, Limin Wang, Dahua Lin, Yu Qiao, and Ziwei Liu. VBench: Com-prehensive benchmark suite for video generative models. In 
+
+Proceedings of the IEEE/CVF Conference on Computer Vi-sion and Pattern Recognition , 2024. 7 [13] Zeyinzi Jiang, Zhen Han, Chaojie Mao, Jingfeng Zhang, Yulin Pan, and Yu Liu. Vace: All-in-one video creation and editing. In Proceedings of the IEEE/CVF International Con-ference on Computer Vision , pages 17191–17202, 2025. 3, 6[14] Weijie Kong, Qi Tian, Zijian Zhang, Rox Min, Zuozhuo Dai, Jin Zhou, Jiangfeng Xiong, Xin Li, Bo Wu, Jianwei Zhang, et al. Hunyuanvideo: A systematic framework for large video generative models. arXiv preprint arXiv:2412.03603 , 2024. 3[15] Yuheng Li, Haotian Liu, Qingyang Wu, Fangzhou Mu, Jian-wei Yang, Jianfeng Gao, Chunyuan Li, and Yong Jae Lee. Gligen: Open-set grounded text-to-image generation. In Pro-ceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 22511–22521, 2023. 3 [16] Xinyao Liao, Xianfang Zeng, Ziye Song, Zhoujie Fu, Gang Yu, and Guosheng Lin. In-context learning with unpaired clips for instruction-based video editing. arXiv preprint arXiv:2510.14648 , 2025. 6 [17] Yiqi Lin, Guoqiang Liang, Ziyun Zeng, Zechen Bai, Yanzhe Chen, and Mike Zheng Shou. Kiwi-edit: Versatile video edit-ing via instruction and reference guidance, 2026. 6 [18] Yiqi Lin, Guoqiang Liang, Ziyun Zeng, Zechen Bai, Yanzhe Chen, and Mike Zheng Shou. Kiwi-edit: Versatile video edit-ing via instruction and reference guidance. arXiv preprint arXiv:2603.02175 , 2026. 3 [19] Yaron Lipman, Ricky TQ Chen, Heli Ben-Hamu, Maximil-ian Nickel, and Matt Le. Flow matching for generative mod-eling. arXiv preprint arXiv:2210.02747 , 2022. 5 
+
+10 [20] Xingchao Liu, Chengyue Gong, and Qiang Liu. Flow straight and fast: Learning to generate and transfer data with rectified flow. arXiv preprint arXiv:2209.03003 , 2022. 5 [21] Chong Mou, Xintao Wang, Liangbin Xie, Yanze Wu, Jian Zhang, Zhongang Qi, and Ying Shan. T2i-adapter: Learning adapters to dig out more controllable ability for text-to-image diffusion models. In Proceedings of the AAAI conference on artificial intelligence , pages 4296–4304, 2024. 3 [22] Kiet T Nguyen, Chanhyuk Lee, Donggyun Kim, Dong Hoon Lee, and Seunghoon Hong. Universal few-shot spatial con-trol for diffusion models. arXiv preprint arXiv:2509.07530 ,2025. 3 [23] OpenAI. Gpt 5.3, 2025. 4 [24] William Peebles and Saining Xie. Scalable diffusion models with transformers. In Proceedings of the IEEE/CVF inter-national conference on computer vision , pages 4195–4205, 2023. 3 [25] Chenyang Qi, Xiaodong Cun, Yong Zhang, Chenyang Lei, Xintao Wang, Ying Shan, and Qifeng Chen. Fatezero: Fus-ing attentions for zero-shot text-based video editing. In 
+
+Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 15932–15942, 2023. 3 [26] Zhibin Qin, Zhenxiong Tan, Zeqing Wang, Songhua Liu, and Xinchao Wang. Spotedit: Selective region editing in diffu-sion transformers. arXiv preprint arXiv:2512.22323 , 2025. 3[27] Team Seedance, Heyi Chen, Siyan Chen, Xin Chen, Yan-fei Chen, Ying Chen, Zhuo Chen, Feng Cheng, Tianheng Cheng, Xinqi Cheng, et al. Seedance 1.5 pro: A native audio-visual joint generation foundation model. arXiv preprint arXiv:2512.13507 , 2025. 1, 6 [28] Guibao Shen, Luozhou Wang, Jiantao Lin, Wenhang Ge, Chaozhe Zhang, Xin Tao, Yuan Zhang, Pengfei Wan, Zhongyuan Wang, Guangyong Chen, et al. Sg-adapter: En-hancing text-to-image generation with scene graph guidance. 
+
+arXiv preprint arXiv:2405.15321 , 2024. 3 [29] Uriel Singer, Adam Polyak, Thomas Hayes, Xi Yin, Jie An, Songyang Zhang, Qiyuan Hu, Harry Yang, Oron Ashual, Oran Gafni, et al. Make-a-video: Text-to-video generation without text-video data. arXiv preprint arXiv:2209.14792 ,2022. 3 [30] Zhenxiong Tan, Songhua Liu, Xingyi Yang, Qiaochu Xue, and Xinchao Wang. Ominicontrol: Minimal and univer-sal control for diffusion transformer. In Proceedings of the IEEE/CVF International Conference on Computer Vision ,pages 14940–14950, 2025. 3 [31] Zhiyu Tan, Hao Yang, Luozheng Qin, Jia Gong, Meng-ping Yang, and Hao Li. Omni-video: Democratizing uni-fied video understanding and generation. arXiv preprint arXiv:2507.06119 , 2025. 3, 6 [32] Zineng Tang, Ziyi Yang, Chenguang Zhu, Michael Zeng, and Mohit Bansal. Any-to-any generation via composable diffu-sion. Advances in Neural Information Processing Systems ,36:16083–16099, 2023. 3 [33] DecartAI Team. Lucy edit: Open-weight text-guided video editing, 2025. 6 [34] Kling Team, Jialu Chen, Yuanzheng Ci, Xiangyu Du, Zipeng Feng, Kun Gai, Sainan Guo, Feng Han, Jingbin He, Kang He, et al. Kling-omni technical report. arXiv preprint arXiv:2512.16776 , 2025. 3 [35] Carl Vondrick, Hamed Pirsiavash, and Antonio Torralba. Generating videos with scene dynamics. Advances in neu-ral information processing systems , 29, 2016. 3 [36] Team Wan, Ang Wang, Baole Ai, Bin Wen, Chaojie Mao, Chen-Wei Xie, Di Chen, Feiwu Yu, Haiming Zhao, Jianx-iao Yang, et al. Wan: Open and advanced large-scale video generative models. arXiv preprint arXiv:2503.20314 , 2025. 3[37] Cong Wei, Quande Liu, Zixuan Ye, Qiulin Wang, Xintao Wang, Pengfei Wan, Kun Gai, and Wenhu Chen. Univideo: Unified understanding, generation, and editing for videos. 
+
+arXiv preprint arXiv:2510.08377 , 2025. 3 [38] Chenfei Wu, Jiahao Li, Jingren Zhou, Junyang Lin, Kaiyuan Gao, Kun Yan, Sheng ming Yin, Shuai Bai, Xiao Xu, Yilei Chen, Yuxiang Chen, Zecheng Tang, Zekai Zhang, Zhengyi Wang, An Yang, Bowen Yu, Chen Cheng, Dayiheng Liu, De-qing Li, Hang Zhang, Hao Meng, Hu Wei, Jingyuan Ni, Kai Chen, Kuan Cao, Liang Peng, Lin Qu, Minggang Wu, Peng Wang, Shuting Yu, Tingkun Wen, Wensen Feng, Xiaoxiao Xu, Yi Wang, Yichang Zhang, Yongqiang Zhu, Yujia Wu, Yuxuan Cai, and Zenan Liu. Qwen-image technical report, 2025. 4 [39] Guangxuan Xiao, Tianwei Yin, William T Freeman, Fr´ edo Durand, and Song Han. Fastcomposer: Tuning-free multi-subject image generation with localized attention. Interna-tional Journal of Computer Vision , 133(3):1175–1194, 2025. 3[40] Hao Yang, Zhiyu Tan, Jia Gong, Luozheng Qin, Hesen Chen, Xiaomeng Yang, Yuqing Sun, Yuetan Lin, Mengping Yang, and Hao Li. Omni-video 2: Scaling mllm-conditioned diffu-sion for unified video generation and editing. arXiv preprint arXiv:2602.08820 , 2026. 6 [41] Liudi Yang, George Eskandar, Fengyi Shen, Mohammad Al-tillawi, Yang Bai, Chi Zhang, Ziyuan Liu, and Abhinav Val-ada. Confctrl: Enabling precise camera control in video dif-fusion via confidence-aware interpolation, 2026. 2 [42] Zixin Yin, Ling-Hao Chen, Lionel Ni, and Xili Dai. Con-sistedit: Highly consistent and precise training-free visual editing. In Proceedings of the SIGGRAPH Asia 2025 Con-ference Papers , pages 1–11, 2025. 3 [43] Ruonan Yu, Zhenxiong Tan, Zigeng Chen, Songhua Liu, and Xinchao Wang. Vifeedit: A video-free tuner of your video diffusion transformer, 2026. 1, 9 [44] Shoubin Yu, Difan Liu, Ziqiao Ma, Yicong Hong, Yang Zhou, Hao Tan, Joyce Chai, and Mohit Bansal. Veg-gie: Instructional editing and reasoning video concepts with grounded generation. In Proceedings of the IEEE/CVF In-ternational Conference on Computer Vision , pages 15147– 15158, 2025. 3 [45] Xuanpu Zhang, Xuesong Niu, Ruidong Chen, Dan Song, Jianhao Zeng, Penghui Du, Haoxiang Cao, Kai Wu, and An-an Liu. Group relative attention guidance for image editing. 
+
+arXiv preprint arXiv:2510.24657 , 2025. 3 [46] Dian Zheng, Ziqi Huang, Hongbo Liu, Kai Zou, Yinan He, Fan Zhang, Yuanhan Zhang, Jingwen He, Wei-Shi Zheng, Yu 
+
+11 Qiao, and Ziwei Liu. VBench-2.0: Advancing video genera-tion benchmark suite for intrinsic faithfulness. arXiv preprint arXiv:2503.21755 , 2025. 7 
+
+12 A. Robustness of VLM-Assisted Dataset Con-struction 
+
+The cross-validation results of the evaluated VLMs are pre-sented in Table 6. While we derive the Pearson correlation from the raw API predictions to capture global trends, the MAE and Variance metrics are intentionally computed on binarized outputs using a threshold of 6. This thresholding ensures our evaluation strictly mimics the real-world filter-ing protocol, where 6 acts as the absolute acceptance crite-rion for sampling valid training pairs.                
+
+> Table 6. Quantitative Cross-Validation of VLM Evaluators.
+> We report the linear correlation (Pearson r), Mean Absolute Er-ror (MAE), and Inter-model Variance of various models against Gemini-3.1-Pro (the default evaluator in our pipeline).
+> Evaluator Model Pearson r↑MAE ↓Variance ↓
+> GPT-5.4 0.720 0.185 0.113 Gemini-2.5-Pro 0.843 0.137 0.068
+
+B. Definition of Subtasks 
+
+We categorize instruction-driven video editing into ten rep-resentative task types, each corresponding to a distinct form of spatial or appearance manipulation while preserv-ing overall scene coherence. 
+
+Consistent Style Transfer. Applies a unified target visual style (e.g., Pixar-style animation, pixel art, or watercolor) to the entire scene, preserving composition and semantics while altering global rendering characteristics such as color, texture, and shading. 
+
+Color/Texture Transformation. Modifies the color or material properties of specific objects or regions (e.g., wood to marble), without affecting their geometry, position, or the surrounding scene structure. 
+
+Object Addition. Introduces new objects into the scene in a physically and semantically consistent manner, ensur-ing proper alignment with lighting, scale, and perspective. 
+
+Object Removal. Removes existing objects and recon-structs the exposed regions through coherent inpainting, maintaining structural, lighting, and textural continuity. 
+
+Rigid Object Replacement. Replaces rigid objects (e.g., furniture, vehicles, or buildings) with alternatives of similar spatial extent and geometry, preserving layout and perspec-tive while changing object identity. 
+
+Non-rigid Object Replacement. Replaces deformable entities (e.g., humans or animals) with semantically differ-ent subjects under consistent pose and placement. Com-pared to rigid replacement, this requires handling articu-lation and shape variability, making temporal consistency more challenging in video settings. 
+
+Camera/Viewpoint Transformation. Alters the camera perspective, viewpoint, or framing (e.g., aerial, low-angle, or zoomed-out views) while preserving all scene elements and maintaining consistent spatial relationships. 
+
+Local Attribute/State Editing. Adjusts localized at-tributes or states of objects (e.g., expressions, wetness, or damage) without changing object identity or global scene composition. 
+
+Lighting & Relighting Reconstruction. Modifies global illumination conditions, including time of day, light direc-tion, and color temperature, while preserving scene geome-try and ensuring consistent shadows and reflections. 
+
+Background Replacement. Substitutes the entire back-ground with a new environment while keeping foreground subjects unchanged in identity, pose, and placement, requir-ing coherent integration in lighting and perspective. 
+
+C. Detailed VLM Evaluation Result 
+
+C.1. Detailed Prompt 
+
+As detailed in Table 7, we provide the exact system prompt employed by the VLM to evaluate all baseline models. 
+
+C.2. Task-level Total Scores 
+
+To complement the task-level total scores reported in the main paper, we further provide a fine-grained breakdown of the VLM-based evaluation in this appendix. For each editing task, we report the four sub-dimensions in our eval-uation protocol, namely Instruction Adherence (IA), Tem-poral Consistency (TC), Visual Fidelity (VF), and Artifact Absence (AA). The detailed results for the first five task cat-egories are presented in Table 8, and those for the remaining five task categories are reported in Table 9. These results offer a more comprehensive view of the relative strengths and weaknesses of different methods across diverse editing scenarios. 
+
+D. Dataset Visualizations and Examples 
+
+A core motivation of ImVideoEdit is to break the depen-dency on expensive paired video datasets by learning dy-namic editing entirely from static image pairs. As illustrated in Figure 7 and Figure 8, we present representative visual 13 samples from our curated training datasets. Each subtask has 3 samples. 
+
+E. Expanded Qualitative Results 
+
+Building upon the qualitative results presented in the main text, Figure 9 and Figure 10 provide an expanded set of edit-ing results. 14 Table 7. System Prompt for VLM Evaluation. 
+
+Prompt Template 
+
+# Role 
+
+You are an expert video quality assessor and professional video editor. Your task is to evaluate the quality of an AI-edited video based on a specific user instruction, comparing it to the original unedited video. 
+
+# Inputs 
+
+• Original Video: [Insert pre-edited video] 
+
+• Edited Video: [Insert post-edited video] 
+
+• Editing Instruction: ” {Insert the editing instruction here }”
+
+# Evaluation Criteria 
+
+Please evaluate the edited video rigorously based on the following four dimensions. Provide a distinct score for each dimension based on its maximum point value. 
+
+1. Instruction Adherence (Max: 30 points): 
+
+• Did the editing strictly follow the given instruction? 
+
+• Are the requested changes accurately reflected without altering unintended elements? 
+
+2. Temporal Consistency & Micro-Stability (Max: 30 points) - STRICT DEDUCTION RULES :
+
+• VLM Warning: Do not just look at the overall subject. You must zoom in on high-frequency details. 
+
+• Scoring Anchor: - 28-30 pts: Perfect stability, identical to the physics of a real camera. - 20-27 pts: Overall stable, but minor ”AI boiling” (micro-flickering of pixels) on edges or complex patterns during movement. - 10-19 pts: Noticeable morphing, shifting of textures (e.g., embroidery changing shape frame-by-frame), or jittery outlines. - 0-9 pts: Severe flickering or structural collapse. 
+
+3. Texture Sharpness & Anti-Smoothing (Max: 25 points) - CALIBRATED FOR AI :
+
+• Do not compare this to an 8K cinema camera. Evaluate the AI rendering quality. We are looking for SHARPNESS vs. PLASTICITY. 
+
+• Focus on the materials: the velvet texture of the blue dress, the individual threads of the embroidery, and the natural pores/lighting on the skin. 
+
+• Scoring Anchor: - 21-25 pts: Excellent sharpness. Fabrics look like real cloth with distinct threads. Lighting has depth and natural contrast. - 15-20 pts: Good, but slightly soft. - 10-14 pts: The ”Plastic AI” look. Textures are overly smoothed, faces look like wax or airbrushed, and fine details (like embroidery) look like flat paint rather than raised threads. (DEDUCT HEAVILY HERE). - 0-9 pts: Extremely blurry or washed out. 
+
+4. Artifact Absence (Max: 15 points): 
+
+• Are there any visible AI generation artifacts (e.g., floating pixels, anatomical distortions, weird edge blending)? 
+
+• The edited areas should blend seamlessly with the original unedited parts. 
+
+# Output Format 
+
+Provide your response strictly in the following JSON format. Do not include a total score, only the sub-scores for each dimension. 
+
+{
+
+”Reasoning”: ”Provide a concise step-by-step analysis evaluating the video against the 4 criteria. Explicitly mention your observations on temporal stability and texture details.”, ”Scores”: {
+
+”Instruction Adherence”: <int between 0 and 30 >,”Temporal Consistency”: <int between 0 and 30 >,”Visual Fidelity”: <int between 0 and 25 >,”Artifact Absence”: <int between 0 and 15 >
+
+}}
+
+15 Table 8. Fine-grained VLM evaluation results for the first five task categories. IA, TC, VF, and AA denote Instruction Adherence, Temporal Consistency, Visual Fidelity, and Artifact Absence, respectively. 
+
+Task Method IA ↑ TC ↑ VF ↑ AA ↑ Total ↑
+
+Background Replacement VACE (14B) 4.4 25.6 12.2 10.0 52.3 DITTO (14B) 10.1 24.3 12.6 10.7 57.7 ICVE (13B) 7.3 22.9 15.7 9.8 55.7 Kiwi-Edit (5B) 8.0 18.4 12.8 7.5 46.8 Lucy-Edit-Dev (5B) 5.1 15.5 8.7 5.4 34.8 OmniVideo2 (1.3B) 4.4 12.0 9.1 5.0 30.5 VACE (1.3B) 5.5 19.8 11.9 9.0 46.2 Ours (1.3B Based) 5.1 20.8 13.8 9.2 49.0 Camera/Viewpoint Transformation VACE (14B) 9.1 24.8 13.1 11.6 58.6 DITTO (14B) 12.1 25.1 13.2 11.4 61.8 ICVE (13B) 10.3 23.5 15.0 10.5 59.5 Kiwi-Edit (5B) 12.7 24.6 15.4 11.6 64.4 Lucy-Edit-Dev (5B) 10.7 18.8 9.6 7.1 46.2 OmniVideo2 (1.3B) 13.6 10.1 9.2 4.9 37.8 VACE (1.3B) 8.8 23.8 13.4 10.9 57.0 Ours (1.3B Based) 13.6 21.2 14.3 10.4 59.4 Color/Texture Transformation VACE (14B) 13.6 20.8 14.3 9.3 58.0 DITTO (14B) 13.4 23.8 13.8 9.6 60.6 ICVE (13B) 22.3 23.6 18.1 11.6 75.6 Kiwi-Edit (5B) 23.0 25.9 19.8 13.2 81.9 Lucy-Edit-Dev (5B) 7.5 13.6 8.4 4.5 33.9 OmniVideo2 (1.3B) 11.0 17.4 12.5 7.2 48.2 VACE (1.3B) 14.7 20.8 15.2 9.6 60.2 Ours (1.3B Based) 20.9 23.3 17.7 12.0 73.9 Consistent Style Transfer VACE (14B) 16.4 24.5 16.6 12.1 69.7 DITTO (14B) 20.7 22.6 18.5 12.8 74.7 ICVE (13B) 18.2 21.9 17.6 11.3 69.0 Kiwi-Edit (5B) 19.8 20.3 17.8 11.5 69.4 Lucy-Edit-Dev (5B) 12.4 11.9 9.2 6.1 39.7 OmniVideo2 (1.3B) 10.6 13.4 12.5 6.8 43.2 VACE (1.3B) 18.0 20.3 15.0 10.6 64.0 Ours (1.3B Based) 21.8 21.2 19.4 12.0 74.4 Lighting & Relighting Reconstruction VACE (14B) 23.8 25.8 18.4 11.8 79.7 DITTO (14B) 22.5 27.1 16.3 12.7 78.6 ICVE (13B) 19.2 22.6 16.0 9.9 67.7 Kiwi-Edit (5B) 27.8 27.2 18.9 13.5 87.4 Lucy-Edit-Dev (5B) 15.0 18.9 9.0 6.1 49.0 OmniVideo2 (1.3B) 15.0 12.5 11.2 6.7 45.5 VACE (1.3B) 24.4 23.8 17.3 12.2 77.7 Ours (1.3B Based) 21.7 23.4 18.6 11.8 75.6 
+
+16 Table 9. Fine-grained VLM evaluation results for the remaining five task categories and the overall average. IA, TC, VF, and AA denote Instruction Adherence, Temporal Consistency, Visual Fidelity, and Artifact Absence, respectively. 
+
+Task Method IA ↑ TC ↑ VF ↑ AA ↑ Total ↑
+
+Local Attribute/State Editing VACE (14B) 7.2 25.4 13.0 10.5 56.0 DITTO (14B) 9.8 20.8 11.6 7.9 50.1 ICVE (13B) 9.4 23.8 14.6 9.8 57.6 Kiwi-Edit (5B) 15.8 24.6 15.8 11.2 67.4 Lucy-Edit-Dev (5B) 8.5 18.3 11.3 6.6 44.8 OmniVideo2 (1.3B) 10.0 16.9 12.3 7.5 46.7 VACE (1.3B) 8.0 24.0 13.8 10.4 56.2 Ours (1.3B Based) 14.3 21.6 14.3 10.2 60.4 Non-rigid Object Replacement VACE (14B) 3.3 21.0 13.3 9.4 47.0 DITTO (14B) 13.7 18.8 13.1 8.8 54.3 ICVE (13B) 12.1 17.8 14.1 8.4 52.3 Kiwi-Edit (5B) 15.8 18.7 13.6 7.7 55.8 Lucy-Edit-Dev (5B) 7.6 12.5 8.4 3.9 32.4 OmniVideo2 (1.3B) 10.8 15.3 12.9 7.0 46.0 VACE (1.3B) 4.8 22.1 14.8 10.3 52.0 Ours (1.3B Based) 16.0 20.4 16.6 10.1 63.2 Object Addition VACE (14B) 4.0 22.1 13.2 9.1 48.4 DITTO (14B) 14.4 24.2 13.2 10.2 62.1 ICVE (13B) 21.0 25.8 18.8 12.1 77.7 Kiwi-Edit (5B) 22.0 26.5 19.4 12.3 80.2 Lucy-Edit-Dev (5B) 13.8 22.9 15.7 10.6 63.0 OmniVideo2 (1.3B) 15.9 19.4 13.4 8.0 56.6 VACE (1.3B) 5.6 19.3 12.2 7.6 44.6 Ours (1.3B Based) 8.6 20.7 14.3 9.9 53.5 Object Removal VACE (14B) 15.8 28.6 16.9 11.8 73.1 DITTO (14B) 14.6 23.2 14.2 10.0 61.9 ICVE (13B) 23.7 25.2 16.0 11.6 76.5 Kiwi-Edit (5B) 26.0 26.8 17.5 12.0 82.3 Lucy-Edit-Dev (5B) 16.6 19.0 10.8 8.3 54.7 OmniVideo2 (1.3B) 17.2 18.0 14.4 8.5 58.1 VACE (1.3B) 13.4 21.4 12.8 9.5 57.2 Ours (1.3B Based) 25.5 25.4 18.4 12.2 81.5 Rigid Object Replacement VACE (14B) 9.0 21.4 13.1 10.4 54.0 DITTO (14B) 10.2 24.0 12.4 9.8 56.4 ICVE (13B) 13.9 20.7 14.6 9.9 59.0 Kiwi-Edit (5B) 20.4 25.3 17.4 11.8 74.8 Lucy-Edit-Dev (5B) 10.4 19.3 9.8 5.9 45.4 OmniVideo2 (1.3B) 14.8 16.2 12.3 8.0 51.2 VACE (1.3B) 10.3 20.2 12.8 9.6 52.8 Ours (1.3B Based) 14.6 21.3 15.7 10.0 61.6 
+
+> 17
+
+Edit Prompt: Transform into Claude Monet impressionist style, preserving the exact 
+
+composition, structure, and layout: cattle ranch under golden afternoon sun, oak -dotted 
+
+field, winding dirt road, cattle at tranquil pond, rancher on horseback, and nearby log 
+
+cabin with chimney smoke. 
+
+Consistent Style Transfer 
+
+Edit Prompt: Transform the patio scene into a traditional Chinese ink wash painting, 
+
+preserving the exact composition, furniture, plants, shadows, silhouetted trees, and 
+
+sunset layout. Use expressive ink brushwork, soft washes, subtle orange -pink tones, 
+
+atmospheric simplicity, and elegant negative space. 
+
+Edit Prompt: Transform the scene into a watercolor painting style, preserving the exact 
+
+composition, structure, and layout: a lone pedestrian crossing a quiet street beneath a 
+
+starry sky, framed by tall silent buildings, with crisp nocturnal atmosphere and soft 
+
+ethereal starlight. Edit Prompt: Add a weathered wooden camel caravan cart partially resting beside the 
+
+lone cactus, with its shadow falling sharply across the sand to match the bright midday 
+
+sun. Keep it naturally integrated into the vast arid desert scene, consistent with the 
+
+golden dunes, sparse vegetation, and clear blue sky. 
+
+Object Addition 
+
+Edit Prompt: Add a small weathered wooden rowboat pulled up along the lakeshore, 
+
+partially nestled among the tall grasses and fallen leaves, integrated naturally into the 
+
+serene photorealistic windy lake scene with realistic lighting, scale, and subtle autumnal 
+
+details. 
+
+Edit Prompt: Add a yellow caution wet floor sign near the center of the grand aquarium 
+
+hall, placed naturally on the glistening reflective floor after the rain. Keep the aquarium 
+
+tanks, colorful fish and corals, patrons admiring the marine life, high ceiling with 
+
+skylights, ambient natural light, and serene tranquil atmosphere unchanged. Edit Prompt: Remove the chefs in white uniforms from the bustling commercial kitchen 
+
+scene and seamlessly inpaint the background so the stainless steel countertops, hanging 
+
+pots and pans, shelves of fresh ingredients, soft diffused lighting, light mist, steam, and 
+
+warm inviting atmosphere remain natural and continuous. 
+
+Object Removal 
+
+Edit Prompt: Remove the large, unfinished wooden table from the center of the 
+
+carpentry workshop and seamlessly inpaint the floor and surrounding background to 
+
+match the dimly lit nighttime workshop, preserving the overhead lamp lighting, 
+
+scattered wood shavings and tools, stacks of lumber, and the shelves of woodworking 
+
+tools and materials with consistent shadows and perspective. 
+
+Edit Prompt: Remove the crew member who is checking the camera focus from the 
+
+scene, and seamlessly inpaint the background so the professional camera setup, green 
+
+screen studio interior, softbox lights, and snowy landscape visible through the large 
+
+windows remain natural and uninterrupted. Edit Prompt: A grand, ornate cinema hall nestled in a snowy landscape, with the cinema 
+
+hall’s exterior recolored to a rich deep red velvet -like texture while keeping the 
+
+building’s exact geometry and shape unchanged. The exterior remains adorned with 
+
+vintage movie posters and twinkling fairy lights, contrasting the soft, white snow. People 
+
+are warmly dressed, walking towards the entrance, their breath visible in the cold air. 
+
+The sky is a serene twilight blue, casting a gentle glow on the scene. 
+
+Color/Texture Transformation 
+
+Edit Prompt: A medical lab under harsh midday sunlight, with sterile white walls, 
+
+stainless steel equipment, and scientists in lab coats working at benches. The light casts 
+
+sharp shadows, emphasizing the clean, clinical environment. Test tubes, microscopes, and 
+
+computer screens are visible, adding to the scientific atmosphere. Change the stainless 
+
+steel equipment to a brushed copper texture, keeping all equipment shapes, sizes, 
+
+positions, and geometry exactly the same .
+
+Edit Prompt: A drone testing field with soft lighting, featuring a variety of drones in 
+
+mid -flight, engineers observing from a control station, and detailed ground markers. 
+
+Change the grass from lush green to golden dry grass texture, while keeping its shape, 
+
+coverage, and all other scene elements unchanged. The sky remains a gentle pastel blue, 
+
+preserving the serene and focused atmosphere. Edit Prompt: Change the scene to a high aerial bird’s -eye view, zoomed out to show the 
+
+entire cozy lake house, wooden dock, small boat, surrounding tall pine trees, calm 
+
+reflective lake, and the misty mountains in the distance, with the family still visible 
+
+sitting on the porch. 
+
+Camera/Viewpoint Transformation 
+
+Edit Prompt: View the same cozy patio scene from a high, slightly overhead angle with a 
+
+wider zoom, revealing more of the surrounding potted plants and the clear starry night 
+
+sky while keeping the wooden table for two, fresh roses, wicker chairs, and warm string 
+
+lights intact. 
+
+Edit Prompt: A serene river delta viewed from a high aerial, bird’s -eye perspective with 
+
+a wider zoom, bathed in soft, diffused light. The calm, winding waterways spread across 
+
+the landscape, surrounded by lush green vegetation and patches of sandy banks. A few 
+
+wading birds forage in the shallows, while gentle mist rises from the water, enhancing 
+
+the tranquil atmosphere. Figure 7. visualizations of datasets (Part 1). 
+
+18 Edit Prompt: Transform the scene from a heavy overcast daytime setting to a warm 
+
+golden -hour sunset. Replace the soft, diffused light with rich, low -angle sunlight casting 
+
+long, gentle shadows across the lush rice field. Tint the sky with glowing orange and pink 
+
+hues breaking through the clouds, and illuminate the green rice stalks with warm 
+
+highlights while keeping the distant farmer visible in the serene landscape. 
+
+Lighting & Relighting Reconstruction 
+
+Edit Prompt: A harbor dock on a wet surface, with glistening puddles reflecting a bright 
+
+golden sunrise sky instead of twilight. Warm early morning light streams across the 
+
+scene, casting long soft shadows from the wooden posts, seagulls, and moored fishing 
+
+boats. The distant city lights have faded in the daylight, and the tranquil water glows 
+
+with a fresh, luminous morning atmosphere. 
+
+Edit Prompt: A scenic overlook at bright midday, with a panoramic view of a city skyline 
+
+under a clear sunlit sky. Replace the dusk gradient of deep blue and orange with a vivid 
+
+blue sky and bright daylight, casting crisp, short shadows across the overlook and railing. 
+
+Illuminate the people by the railing with direct sunlight instead of silhouette lighting, 
+
+while keeping the panoramic city view, nearby trees, and clear, breezy atmosphere 
+
+intact. Edit Prompt: In the foreground, replace the large, jagged rock formation with a large 
+
+lunar rover of similar size and prominence, its metallic surface reflecting the faint 
+
+sunlight. A desolate lunar surface bathed in the soft, eerie glow of a distant sun. The 
+
+terrain is rugged with craters and boulders casting long shadows. 
+
+Rigid Object Replacement 
+
+Edit Prompt: Replace the small swinging chair on the cabin’s porch with a wooden rocking 
+
+chair of similar size and rustic style, keeping the cabin, oak tree, overcast sky, lush 
+
+green forest, rising mist, weathered wood, and serene mysterious atmosphere 
+
+unchanged. 
+
+Edit Prompt: Replace the tall, sleek control tower with a tall, sleek observation tower of 
+
+similar shape and scale, keeping the snowy airport setting, the steel -and -glass 
+
+construction, the red and white striped top, the gently falling snow, the thick pristine 
+
+snow cover, and the overcast soft diffused lighting unchanged. Edit Prompt: Replace the lone figure trudging through the drifts with a wolf in a 
+
+matching forward -moving pose, its body angled naturally as it pushes through the snow, 
+
+while preserving the tattered, desolate atmosphere and the rest of the scene 
+
+unchanged. A post -apocalyptic cityscape, with crumbling buildings and debris scattered 
+
+across a snowy landscape. The sky is overcast, casting a dim, cold light on the desolate 
+
+scene. A rusted, abandoned car sits half -buried in the snow. 
+
+Non -rigid Object Replacement 
+
+Edit Prompt: Replace the lone figure wrapped in a heavy coat standing near the tracks 
+
+with a large dog in a plausible standing, waiting pose near the tracks, while keeping the 
+
+rest of the scene unchanged. A railway crossing in a snowy setting, with wooden tracks 
+
+and a red and white crossing sign. Snowflakes gently fall from the grey sky, covering the 
+
+ground in a thick, white blanket. 
+
+Edit Prompt: In the distance, replace the lone cactus with a standing camel in a natural, 
+
+plausible upright pose, adding a touch of life to the otherwise tranquil and desolate 
+
+landscape. A vast, serene desert under a starry sky, with dunes gently sloping and 
+
+casting long shadows. The cool, clear night air is filled with the soft glow of countless 
+
+stars, illuminating the fine, golden sand. Edit Prompt: A weathered wooden fence line stretches across a lush, green meadow on a 
+
+cloudy day, but make the wooden fence visibly broken in several sections with cracked 
+
+and splintered boards. The sky remains a soft, overcast gray, casting gentle, diffused 
+
+light over the landscape. Wildflowers and tall grasses still sway in the mild breeze, 
+
+adding vibrant splashes of color to the serene scene. 
+
+Local Attribute/State Editing 
+
+Edit Prompt: Modify the magician’s local facial expression so he has a wide, mischievous 
+
+grin, while keeping all other elements unchanged. A dimly lit magic show stage with a 
+
+magician in a black tuxedo and top hat, performing a card trick. The audience is 
+
+captivated, with spotlights illuminating the magician's hands. Rich, dark red velvet 
+
+curtains frame the stage, and a hint of smoke adds to the mystical atmosphere. 
+
+Edit Prompt: Make one of the photovoltaic panels visibly broken, with a cracked glass 
+
+surface, while keeping the rest of the scene unchanged. A vast solar farm stretches 
+
+across the rolling hills, with rows of photovoltaic panels glinting under an overcast sky. 
+
+The muted light casts a soft, diffused glow on the green grass and the metallic surfaces. 
+
+A few maintenance workers in bright yellow vests walk between the panels, checking 
+
+connections. Edit Prompt: Replace the entire background of the scene with a new setting while 
+
+preserving the main foreground subjects exactly as they are, including the medical staff, 
+
+patients, poses, expressions, clothing, and all foreground details. Keep the foreground 
+
+intact and only change the background environment completely. 
+
+Background Replacement 
+
+Edit Prompt: Replace the entire background with a vibrant daytime sky filled with golden 
+
+sunrise clouds and distant mountain peaks visible through the windshield, while 
+
+preserving the main foreground subjects exactly: the pilot in uniform focused on the 
+
+controls, the co -pilot reviewing a flight chart, the cockpit interior, instrument panels, 
+
+their positions, poses, expressions, and all foreground details. 
+
+Edit Prompt: Replace the entire background with a bright, minimalist Scandinavian -style 
+
+interior featuring white walls, soft natural daylight, and clean architectural details, 
+
+while preserving the main foreground subjects exactly as they are: the dark wooden 
+
+desk with papers, laptop, and coffee mug, the leather swivel chair, and the potted plants. Figure 8. visualizations of datasets (Part 2). 
+
+19 Edit Prompt: Transform the scene into an oil painting in Renaissance style, preserving the exact courtroom layout, judge’s bench, empty sp ect ator rows, ornate ceiling, arched windows, moonlight, long shadows, polished wooden floors, and antique furniture; keep 
+
+composition and structural content strictly unchanged. 
+
+Consistent Style Transfer Edit Prompt: Change only the grand piano’s finish from its original look to a glossy white lacquer texture, preserving the piano’s exact g eom etry, shape, size, position, and all other scene elements. A cozy music studio with wooden floors, vintage instruments, and 
+
+soundproof walls. Rain pours heavily outside the large window, casting a soft, diffused light on the room. A musician sits at a grand piano, sheet music scattered around, engrossed in playing. 
+
+Color/Texture Transformation Edit Prompt: Add a solitary camel standing on one of the midground sand dunes, naturally integrated into the serene desert scene and lit b y t he warm golden light of the setting sun, with realistic shadows and scale. 
+
+Object Addition Edit Prompt: Change the pipelines from weathered steel to glossy red -painted metal, preserving their exact geometry, shape, size, and placeme nt while keeping the rest of the scene unchanged. A sprawling oil refinery with towering metal structures and pipelines, 
+
+set on a glistening wet surface after a recent rain. The sky is overcast, casting a somber, gray light over the industrial sc ene .
+
+Color/Texture Transformation Edit Prompt: Replace the focused human editor wearing headphones and sitting in the ergonomic chair with a chimpanzee in a similarly plaus ibl e seated pose, naturally positioned at the desk as if editing, with the headphones adapted realistically. A bright, sunlit 
+
+editing room with large windows and natural light flooding in. A long, sleek desk with multiple computer monitors showing edi tin g software, and a professional -grade camera on a tripod. Shelves lined with hard drives, books, and film reels. 
+
+Non -rigid Object Replacement Figure 9. Additional qualitative result (Part 1). 20 Edit Prompt: Replace the small fires in the refugee camp with metal barrel heaters of similar size and placement, keeping the snowy tents, hu ddled people, overcast sky, snow -covered trees, and the serene yet somber atmosphere unchanged. 
+
+Rigid Object Replacement Edit Prompt: A night city skyline under moonlight, viewed from a high aerial bird’s -eye perspective with a wider zoom that captures more of t he river and surrounding trees. Tall skyscrapers with twinkling lights stretch below, their reflections shimmering across the 
+
+water. The sky remains deep blue and star -filled, and the moon casts a silvery sheen over the entire scene. 
+
+Camera/Viewpoint Transformation Edit Prompt: Edit the scene so that one of the computer monitors has a visibly cracked, broken screen, while all other elements, lighting, co mposition, and the rest of the room remain unchanged. A cozy gaming room bathed in the soft, early morning light. The room 
+
+features a large, L -shaped desk with multiple monitors, a high -end gaming PC, and an ergonomic chair. Shelves are filled with co llectibles and games. A plush rug covers the hardwood floor, and a window lets in the gentle, warm sunlight. 
+
+Local Attribute/State Editing Edit Prompt: A playground in windy conditions, with children playing on swings and slides, now transformed to golden -hour sunset lighting. Th e overcast sky is replaced with a warm late -afternoon sky, casting long dramatic shadows across the playground. Sunlight 
+
+breaks through from a low angle, illuminating the swirling leaves and small debris with a golden glow while preserving the wi ndy , dynamic atmosphere. The colors shift from muted grays and blues to warm amber, orange, and soft blue tones. 
+
+Lighting & Relighting Reconstruction Edit Prompt: Replace the entire background with a completely different setting while preserving the main foreground subjects exactly: keep th e rustic log cabin, stone chimney, smoke curling from the chimney, warm golden light from the windows, and the overall 
+
+cozy feel. Remove the dense forest, stormy rain, lightning sky, and wind -whipped trees, and place the cabin in a wide open snowy mountain landscape at sunrise with distant peaks, soft pastel clouds, and fresh snow covering the ground. 
+
+Background Replacement Figure 10. Additional qualitative result (Part 2). 21

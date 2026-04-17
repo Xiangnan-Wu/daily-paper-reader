@@ -1,0 +1,1540 @@
+Title: Differentiable Environment-Trajectory Co-Optimization for Safe Multi-Agent Navigation
+
+URL Source: https://arxiv.org/pdf/2604.06972v1
+
+Published Time: Thu, 09 Apr 2026 01:10:08 GMT
+
+Number of Pages: 15
+
+Markdown Content:
+# Differentiable Environment-Trajectory Co-Optimization for Safe Multi-Agent Navigation 
+
+Zhan Gao †,∗, Gabriele Fadini ∗, Stelian Coros, and Amanda Prorok 
+
+Abstract —The environment plays a critical role in multi-agent navigation by imposing spatial constraints, rules, and limitations that agents must navigate around. Traditional approaches treat the environment as fixed, without exploring its impact on agents’ performance. This work considers environment configurations as decision variables, alongside agent actions, to jointly achieve safe navigation. We formulate a bi-level problem, where the lower-level sub-problem optimizes agent trajectories that minimize nav-igation cost and the upper-level sub-problem optimizes environ-ment configurations that maximize navigation safety. We develop a differentiable optimization method that iteratively solves the lower-level sub-problem with interior point methods and the upper-level sub-problem with gradient ascent. A key challenge lies in analytically coupling these two levels. We address this by leveraging KKT conditions and the Implicit Function Theorem to compute gradients of agent trajectories w.r.t. environment param-eters, enabling differentiation throughout the bi-level structure. Moreover, we propose a novel metric that quantifies navigation safety as a criterion for the upper-level environment optimization, and prove its validity through measure theory. Our experiments validate the effectiveness of the proposed framework in a variety of safety-critical navigation scenarios, inspired from warehouse logistics to urban transportation. The results demonstrate that optimized environments provide navigation guidance, improving both agents’ safety and efficiency. 
+
+Index Terms —Multi-agent systems, safe navigation, differen-tiable optimization, connected and autonomous vehicles 
+
+I. I NTRODUCTION 
+
+Multi-agent systems consist of multiple interactive agents that act within a shared environment, providing an effective framework for addressing spatially distributed tasks [1], [2], [3]. Ensuring safe and efficient navigation of multi-agent systems represents a fundamental challenge with broad appli-cability, encompassing domains such as autonomous vehicles, robotic systems, crowd simulation, and warehouse automation [4], [5], [6], [7], [8]. Multi-agent navigation requires agents to move from initial positions to designated goals while minimizing traveled distance or energy consumption, and simultaneously avoiding collisions with obstacle regions and other agents. Navigation performance is typically evaluated from two aspects: safety and efficiency. The former concerns the agents’ ability to avoid collisions with obstacles, hazards, and other agents, while the latter pertains to their capability of moving towards goals in an optimal manner. Existing literature primarily focuses on developing effective navigation algorithms, while these algorithms consider the agents’ environment as fixed spatial constraints that must be     
+
+> †Corresponding Author, ∗these Authors contributed equally. Z. Gao and A. Prorok are with the Department of Computer Science and Technology, University of Cambridge, UK. G. Fadini is with the Zurich University of Applied Sciences, ZHAW, Winterthur, Swizerland. S. Coros is with the Computational Robotics Lab, Department of Computer Science, ETH Zurich, Switzerland. This work is supported by ERC Project 949940 (gAIa).
+> (a) Poorly-designed environment (b) Well-designed environment
+
+Figure 1. Environment configurations can impact the safety and efficiency of agent trajectories. Moving obstacle regions further apart in the environment of Fig. 1b allows to generate agent trajectories that are less likely to collide and exhibit improved path efficiency, compared to those in the environment of Fig. 1a. 
+
+circumvented. A crucial, yet frequently overlooked, aspect lies in the interplay between environment configurations and agent behaviors, i.e., the layout of obstacle regions can profoundly influence the agents’ ability to reach their goals safely and efficiently. In particular, spatial constraints of poorly-designed environments may result in irresolvable navigation outcomes, such as dead-locks, live-locks, and prioritization conflicts, even for state-of-the-art algorithms [9], [10]. To handle such bottle-necks, spatial structures (e.g., intersections and roundabouts) and markings (e.g., lanes) are used to facilitate agent de-confliction. However, their designs are often rooted in legacy mobility paradigms and ignore agent–environment interactions as well as system-level optimization. Reconfigurable environments are emerging as a new trend, in which environment configurations can be adjusted intelli-gently to better support multi-agent systems [11], [12], [13]. For instance, shelf locations in warehouses can be adjusted using rack pulleys or sliding track systems, and traffic routes in smart cities can be redesigned through urban planning initiatives. This creates opportunities to reconfigure the spatial layout of the environment as an additional means to improve the performance of multi-agent navigation, which is particu-larly appealing when agents are expected to perform repetitive tasks in structured environments (e.g., warehouses, factories, urban transportation systems). It is common practice to hand-design environment configurations, even though this may be inefficient and sub-optimal, especially in the continuous domain encountered in practical applications [14]. This work aims to consider environment configurations as decision variables, alongside agent trajectories, in a system-level optimization framework to jointly improve the perfor-mance of multi-agent navigation. Specifically, optimizing en-vironment configurations and generating agent trajectories are 
+
+> arXiv:2604.06972v1 [cs.RO] 8 Apr 2026
+
+deeply interdependent problems within multi-agent navigation. As showcased in Fig. 1, spatial locations of obstacles can have a significant impact on agent trajectories, compromising their safety and efficiency. Conversely, agent trajectories can reveal how suitable an environment is for executing navigation tasks and guide the optimal tuning of environment configurations. Applications include warehouse logistics (e.g., determining optimal shelf positions for collision-free cargo transportation [15]), city planning (e.g., designing road layouts for safe multi-vehicle driving [16]), search and rescue (e.g., clearing optimal passages for trapped victims to safely escape [17]), and digital entertainment (e.g., creating optimal gaming scenes for smooth movement of non-player characters [18]). Towards this end, we propose an environment-trajectory co-optimization framework tailored for safe multi-agent naviga-tion. The goal is to optimize the spatial layout of obstacle regions to facilitate the generation of collision-free agent trajectories. More in detail, our contributions are: 
+
+(i) We define a bi-level environment-trajectory co-optimization problem, which considers both environment configurations and agent trajectories as decision variables. The lower level gen-erates collision-free agent trajectories to improve efficiency, while the upper level builds upon the former and optimizes obstacle regions to enhance safety. This bi-level formulation preserves the optimality of the lower-level trajectory optimiza-tion, while accounting for this optimality during the upper-level environment optimization. 
+
+(ii) We develop a principled differentiable optimization method for the bi-level problem. It solves the lower-level trajectory optimization with interior point methods, computes gradients of the generated trajectories w.r.t. environment parameters with Karush–Kuhn–Tucker (KKT) conditions and the Implicit Function Theorem (IFT), and solves the upper-level environ-ment optimization with gradient-based methods. This char-acterizes explicitly the relationship between the environment and agents by computing analytic gradients, which enables to connect the lower-level sub-problem with the upper-level sub-problem for differentiable bi-level optimization. 
+
+(iii) We propose a novel safety metric that quantifies an explicit safety level of the environment w.r.t. multi-agent navigation in a continuous manner. The metric transcends the binary definition of navigation safety in the literature and allows to distinguish environments with higher or lower collision risks. Moreover, it satisfies fundamental properties grounded in measure theory, which ensures its mathematical validity as a criterion for the upper-level environment optimization. 
+
+(iv) We validate our framework with extensive experiments across diverse scenarios of safe multi-agent navigation. The results corroborate theoretical findings and demonstrate sub-stantial improvements in navigation safety, efficiency, and computational cost. This highlights the potential of our method to inform the practical design of traffic systems and smart cities, paving the way for safer and more reliable multi-agent systems. 
+
+Related Works. The concept of co-optimization in robotics originates from research on embodied cognitive science [19], which advocates designing intelligent systems in which control policies, physical structures, and environmental interactions are co-optimized to achieve task efficiency. The works in [20], [21], [22] explore this concept to jointly design sensing strategies and motion controllers for achieving desired per-formance, while [23], [24] leverage evolutionary approaches to simultaneously optimize manufacturing, morphology, and control of embodied robots. More recent works use bi-level optimization to efficiently decouple the problem of agent design and control [25], [26], [27], and exploit sensitivity analysis to recover meaningful optimization gradients [28], [29], [30], [31]. In the domain of multi-agent systems, [32] presents a joint equilibrium policy search method that en-courages agents to cooperate to reach states maximizing a global reward. The authors in [33] develop a multi-abstraction search approach to co-optimize agent placement with task assignment and scheduling, while [34], [35] consider joint optimization of mobility and communication, and design coor-dination strategies to minimize the total energy. However, these works cover only the design of robot bodies and controllers, leaving the problem of jointly optimizing agent behaviors and environment configurations rather unexplored. Environment configurations have a significant impact on agent behaviors [36], [37], [38]. The works in [39], [40] demonstrate that there exist congestion and dead-locks in un-desirable environments, and develop methods that coordinate agents to avoid potential dead-locks. The authors in [14], [41] propose the concept of “well-formed environment” in which navigation tasks of agents can be carried out successfully without collisions, while [42] identifies the impact of the environment shape on agent trajectories and generates distinct path prospects for different agents to coordinate their motion. Gur et al. [43] study adversarial environments and develop resilient navigation algorithms in these environments. While these works acknowledge that the design of robotic agents cannot be isolated from the environment in which they operate, none of them consider environment configurations as decision variables, as well as agent trajectories, to improve performance in a system-level optimization framework. More similar to our work, [44], [45] remove obstacle constraints from the environment to improve navigation perfor-mance, but focus on a single agent scenario. Bellusci et al. [46] extend the concept to multi-agent systems and search over all possible environment configurations to find the best solution for agents, but focus on discrete settings and consider only obstacle removal in experiments. The works in [36], [37], [38] consider the continuous domain and leverage reinforcement learning to optimize environment configurations for multi-agent navigation. However, these works do not characterize an explicit relationship among the environment, agents, and performance, but consider this relationship as a black box and use search-based or learning-based mechanisms to guide environment optimization in a model-free manner, which can be computationally expensive and sub-optimal. II. P ROBLEM FORMULATION 
+
+We consider an environment E(ϑ) with M obstacle regions 
+
+{∆j (ϑ)}Mj=1 parametrized by variables ϑ and a multi-agent system A with N agents {Ai}Ni=1 . The agents follow anavigation strategy from starting positions S = [ s1, . . . , sN ]
+
+towards goals G = [ g1, . . . , gN ], while avoiding collisions with both obstacle regions and other agents. Specifically, let 
+
+x(t) 
+
+> i
+
+, u(t) 
+
+> i
+
+be the state and action of Ai at time step t, T the total number of time steps, xi = {x(t) 
+
+> i
+
+}Tt=0 and ui = {u(t) 
+
+> i
+
+}Tt=0 the sequences of states and actions across time steps, and dt the duration of each time step – see Fig. 1 for an illustration. We assume that agent dynamics take the general form of 
+
+x(t) 
+
+> i
+
+= Φ( x(t−1)  
+
+> i
+
+, u(t−1)  
+
+> i
+
+, dt ), for i = 1 , . . . , N, (1) where Φ( ·) is the state transition map from the current state 
+
+x(t−1)  
+
+> i
+
+to the next state x(t) 
+
+> i
+
+under the control action u(t−1)  
+
+> i
+
+.The goal of this work is twofold: (i) generate agent trajec-tories x, u = {xi}Ni=1 , {ui}Ni=1 that maximize navigation effi-ciency while ensuring agents’ safety in the environment E(ϑ),and (ii) optimize the layout of obstacle regions {∆j (ϑ)}Mj=1 
+
+in the environment E(ϑ) to further facilitate safe multi-agent navigation. That is, we seek to design the optimal environ-ment E(ϑ⋆), in which the optimal trajectories {x⋆, u⋆} are generated to jointly maximize navigation performance across sub-objectives of path efficiency, control effort, and safety. Environment parameters ϑ and agent trajectories {x, u} are implicitly dependent, i.e. {x, u} are generated under spatial constraints determined by ϑ, while ϑ need to be optimized based on the performance of the generated {x, u}. This motivates to formulate a bi-level problem, where the upper-level environment optimization builds upon the lower-level trajectory optimization. In the following, we first introduce the two sub-problems and then formulate the bi-level problem. 
+
+A. Multi-Agent Trajectory Optimization 
+
+Collision-free multi-agent navigation can be achieved via trajectory optimization, which minimizes destination distance and energy consumption subject to system dynamics and collision-avoidance constraints as 
+
+min 
+
+> x∈X
+> u∈U
+
+f (x, u) = X
+
+> i,t
+
+gi − x(t)
+
+> i
+> 2
+> R1
+
++ X
+
+> i,t
+
+u(t)
+
+> i
+> 2
+> R2
+
+(2) s.t. Agent dynamics x(t) 
+
+> i
+
+= Φ( x(t−1)  
+
+> i
+
+, u(t−1)  
+
+> i
+
+, dt ) 
+
+> Obstacle avoidance
+
+go,i 
+
+ x(t) 
+
+> i
+
+, ϑ ≤ 0 
+
+> Agent avoidance
+
+ga(x(t) 
+
+> i
+
+, x(t) 
+
+> i′
+
+) ≤ 0 for i̸ = i′ 
+
+> Initial conditions
+
+x(0)  
+
+> i
+
+= si,
+
+where i, i ′ ∈ { 1, ..., N } are the agent indices, t ∈ { 1, ..., T }
+
+the time-step index, R1 and R2 the weighting matrices for regularization, U and X the control and state feasible spaces, and go,i (x(t) 
+
+> i
+
+, ϑ) and ga(x(t) 
+
+> i
+
+, x(t) 
+
+> i′
+
+) the collision avoidance constraints w.r.t. obstacle regions and among agents. The objective f (x, u) minimizes the distances to goal states (first term) and the magnitudes of agent actions (second term), cor-responding respectively to path efficiency and control effort, while the constraints ensure dynamics compliance, obstacle avoidance, inter-agent avoidance, and initial conditions. In problem (2), both agent and obstacle avoidance con-straints take general forms, which may have different formu-lations depending on agent and obstacle specifications. In this work, we focus on simplified differentiable representations of agents and obstacles. For example, ga(x(t) 
+
+> i
+
+, x(t) 
+
+> i′
+
+) ≤ 0 takes the form of a quadratic constraint if agents can be encircled by a convex-hull outer approximation. Similarly, go,i 
+
+ x(t) 
+
+> i
+
+, ϑ ≤ 0
+
+is also quadratic if the obstacle can be approximated by a circular region. In the case of road boundaries, we can impose constraints in the form of perpendicular line constraints. For irregular obstacle regions, we may assume, without loss of generality, that they can either be encircled by an outer circular approximation to compute a conservative distance or obtained by the composition of simpler differentiable constraints. 
+
+B. Environment Optimization 
+
+The optimal trajectories {x⋆(ϑ), u⋆(ϑ)} of problem (2) depend on obstacle regions {∆j (ϑ)}Mj=1 and thus, are func-tions of environment parameters ϑ. This implies that a well-designed environment with appropriate obstacle regions has the potential to facilitate safe multi-agent navigation and ease trajectory optimization. In this context, we formulate the sub-problem of environment optimization as max  
+
+> ϑ∈O
+
+F  x⋆(ϑ), u⋆(ϑ), ϑ (3) s.t. G x⋆(ϑ), u⋆(ϑ), ϑ ≤ 0,
+
+where F is a metric w.r.t. safe multi-agent navigation, which will be detailed in Section IV, O is the feasible space of envi-ronment parameters ϑ, and the constraints G represent both: 
+
+(i) conditions involving agent states (e.g., obstacle regions do not overlap with starting and goal positions of agents) and (ii) 
+
+conditions about the design space itself (e.g. related to feasible locations of obstacles). Problem (3) builds upon the optimal trajectories of problem (2), i.e., F and G are functions of 
+
+{x⋆(ϑ), u⋆(ϑ)}. Such a relationship among agents’ optimal trajectories x⋆(ϑ), u⋆(ϑ) and environment parameters ϑ is not generally expressible with any closed-form formulation, resulting in the need of a bi-level framework. 
+
+C. Bi-Level Optimization 
+
+We combine the sub-problems in Sections II-A and II-B to propose a bi-level environment-trajectory co-optimization problem for safe multi-agent navigation as 
+
+Upper-level problem (environment) 
+
+max  
+
+> ϑ∈O
+
+F (x⋆(ϑ), u⋆(ϑ), ϑ) (4) s.t. Obstacle compliance G x⋆(ϑ), u⋆(ϑ), ϑ ≤ 0
+
+Lower-level problem (trajectories) 
+
+x⋆(ϑ), u⋆(ϑ) = argmin 
+
+> x∈X,u∈U
+
+f (x, u)
+
+s.t. Agent dynamics x(t) 
+
+> i
+
+= Φ( x(t−1)  
+
+> i
+
+, u(t−1)  
+
+> i
+
+, dt )
+
+Obstacle avoidance go,i 
+
+ x(t) 
+
+> i
+
+, ϑ ≤ 0
+
+Agent avoidance ga(x(t) 
+
+> i
+
+, x(t) 
+
+> i′
+
+) ≤ 0 for i̸ = i′
+
+Initial conditions x(0)  
+
+> i
+
+= si.
+
+It co-optimizes environment parameters ϑ, agent states x,and agent actions u, comprising the upper-level sub-problem of environment optimization (3) and the lower-level sub-problem of trajectory optimization (2). Specifically, x, u are first computed via the lower-level sub-problem given ϑ, which determines the upper-level sub-problem, and then ϑ is opti-mized based on the computed x, u.This bi-level formulation decomposes the joint optimization into two sub-problems, which decouples the space of decision variables and reduces the problem complexity. Moreover, it preserves the lower-level optimality of trajectory optimization and allows the upper-level sub-problem taking this optimal-ity into account during environment optimization. However, solving the bi-level problem (4) faces three key challenges: 
+
+(i) The two sub-problems are tightly intertwined, with updates in one propagating through and reshaping the other. This induces deep mutual dependencies that render the bi-level optimization problem complex and difficult to solve. 
+
+(ii) The upper-level metric F depends on the optimal trajecto-ries {x⋆(ϑ), u⋆(ϑ)}, which implicitly depends on the environ-ment parameters ϑ. However, no closed-form solution exists for {x⋆(ϑ), u⋆(ϑ)} in the lower-level trajectory optimization (2), rendering the upper-level environment optimization (3) analytically intractable and challenging to handle. 
+
+(iii) Both upper- and lower-level sub-problems may be non-convex, which complicates the bi-level optimization problem. III. D IFFERENTIABLE OPTIMIZATION METHODOLOGY 
+
+In light of the aforementioned challenges, we develop a differentiable optimization method. It first solves the lower-level trajectory optimization with interior point methods, and then leverages Karush–Kuhn–Tucker (KKT) conditions and the Implicit Function Theorem (IFT) to compute gradients of agent states / actions w.r.t. environment parameters. These parametric sensitivities are then used to improve environment parameters in the upper-level environment optimization with gradient-based methods. Moreover, these gradients offer ana-lytical insights into the relationship between agents and their surrounding environment, which is conventionally considered unknown in the literature. 
+
+A. Assembling KKT Conditions 
+
+From the bi-level formulation (4), the metric of the upper-level environment optimization depends on the solution of the lower-level trajectory optimization, i.e., F (x⋆(ϑ), u⋆(ϑ), ϑ) is a function of {x⋆(ϑ), u⋆(ϑ)}. This indicates that solving the bi-level problem requires first characterizing the relationship between agent trajectories {x⋆(ϑ), u⋆(ϑ)} and environment parameters ϑ. We approach this by computing the gradients of {x⋆(ϑ), u⋆(ϑ)} w.r.t. ϑ using KKT conditions and the IFT. Specifically, we start by formulating the Lagrangian of the lower-level trajectory optimization (2) as 
+
+L(x, u, ϑ, λ, β, α, ξ) = f (x, u) (5) 
+
++
+
+> T
+
+X
+
+> t=1
+> N
+
+X
+
+> i=1
+
+λ(t)
+
+> i
+> ⊤
+
+ x(t) 
+
+> i
+
+− Φ( x(t−1)  
+
+> i
+
+, u(t−1)  
+
+> i
+
+, dt )
+
++
+
+> T
+
+X
+
+> t=0
+> N
+
+X
+
+> i=1
+
+β(t) 
+
+> i
+
+go,i (x(t) 
+
+> i
+
+, ϑ)+
+
+> T
+
+X
+
+> t=0
+
+X
+
+> i̸=i′
+
+α(t) 
+
+> i,i ′
+
+ga(x(t) 
+
+> i
+
+, x(t) 
+
+> i′
+
+)+ 
+
+> N
+
+X
+
+> i=1
+
+ξi⊤(x(0)  
+
+> i
+
+− si),
+
+where {λ(t) 
+
+> i
+
+}i,t , {β(t) 
+
+> i
+
+}i,t , {α(t) 
+
+> i,i ′
+
+}i̸=i′,t , and {ξ(t) 
+
+> i
+
+}i,t are dual variables corresponding to the constraints of system dynamics, collision avoidance, and initial conditions in (2), and λ, β, α, ξ
+
+represent the concatenated dual variable vectors. In this con-text, we can formulate the KKT conditions as 
+
+∇xL(x,u,ϑ,λ,β,α,ξ) = 0, ∇uL(x,u,ϑ,λ,β,α,ξ) = 0, (6) 
+
+λ(t)
+
+> i
+
+ x(t) 
+
+> i
+
+− Φ( x(t−1)  
+
+> i
+
+, u(t−1)  
+
+> i
+
+, dt ) = 0, ∀ i and t, (7) 
+
+β(t) 
+
+> i
+
+go,i (x(t) 
+
+> i
+
+, ϑ) = 0 , ∀ i and t, (8) 
+
+α(t) 
+
+> i,i ′
+
+ga(x(t) 
+
+> i
+
+, x(t) 
+
+> i′
+
+) = 0 , ∀ i̸ = i′ and t, (9) 
+
+ξi(x(0)  
+
+> i
+
+− si) = 0, ∀ i. (10) These conditions (6)-(10) enable to leverage the IFT to compute the gradients of primal and dual variables 
+
+(x, u, λ, β, α, ξ) w.r.t. environment parameters ϑ.
+
+B. Implicit Function Theorem 
+
+When system states are linked to problem parameters through equality constraints, the IFT provides a tool that allows to compute gradients of system states w.r.t. prob-lem parameters, which guarantees local differentiability and enables efficient computational approaches for differentiable optimization [47]. Specifically, we consider agent trajectories, i.e., primal variables, and dual variables as functions of en-vironment parameters x(ϑ), u(ϑ), λ(ϑ), β(ϑ), α(ϑ), ξ(ϑ),and rewrite the KKT conditions as 
+
+C ϑ, x(ϑ), u(ϑ), λ(ϑ), β(ϑ), α(ϑ), ξ(ϑ) = 0, (11) where C(·) represents the concatenated KKT condition func-tions in (6)-(10). We can compute the partial derivatives of (11) w.r.t. environment parameters ϑ as 
+
+Dϑ = ∂C ∂ϑ . (12) The matrix dimension of Dϑ is the number of primal and dual variables times the number of environment parameters. The partial derivatives of (11) w.r.t. primal and dual variables 
+
+x, u, λ, β, α, ξ can be computed as 
+
+Dagent = ∂C ∂(x, u, λ, β, α, ξ) , (13) which is a square matrix. We define the partial derivatives of 
+
+x(ϑ), u(ϑ), λ(ϑ), β(ϑ), α(ϑ), and ξ(ϑ) w.r.t. ϑ as Dagt  
+
+> ϑ
+
+.By using the IFT with a first-order Taylor expansion, we get 
+
+Dϑ + Dagent Dagent  
+
+> ϑ
+
+= 0. (14) Algorithm 1: Differentiable Bi-Level Optimization 
+
+Input: Initial environment parameters ϑ0, starting positions S, goal positions G, system dynamics 
+
+Φ, weighting matrices R1 and R2
+
+Output: Optimized environment parameters ϑ⋆, agent trajectories x⋆, and agent actions u⋆
+
+for κ = 1 , 2, . . . K do 
+
+// Lower-level 
+
+Solve the sub-problem of trajectory optimization (2) with interior point methods to obtain x⋆(ϑκ)
+
+and u⋆(ϑκ) ;Assemble the KKT conditions (5); Compute the gradients of x⋆(ϑκ) and u⋆(ϑκ)
+
+w.r.t. ϑκ, i.e., Dagent  
+
+> κ, ϑ
+
+, via the IFT (15); 
+
+// Upper-level 
+
+Compute the gradients of the metric function F
+
+w.r.t. ϑκ, i.e., ∇ϑF (x⋆(ϑκ), u⋆(ϑκ), ϑκ) (16); Update environment parameters as 
+
+ϑκ+1 = ϑκ + ∆ α∇ϑF (x⋆(ϑκ), u⋆(ϑκ), ϑκ);
+
+end return ϑ⋆ = ϑK, x⋆ = x⋆(ϑK), and u⋆ = u⋆(ϑK)
+
+Assuming Dagent is invertible, we obtain 
+
+Dagent  
+
+> ϑ
+
+= −D−1
+
+> agent
+
+Dϑ. (15) This provides the gradients of agent trajectories w.r.t. envi-ronment parameters. These gradients characterize an explicit relationship among agent states x, actions u, and environment parameters ϑ, a relationship that is conventionally unknown, and allow us to connect the lower-level trajectory optimization (2) with the upper-level environment optimization (3). 
+
+C. Differentiable Bi-Level Optimization 
+
+With the gradients Dagent  
+
+> ϑ
+
+obtained from Section III-B, we solve the bi-level problem with a differentiable optimization method, as explained in Algorithm 1. Specifically, it consists of multiple iterations, where each iteration contains two phases: 
+
+(I) lower-level interior point optimization and (II) upper-level gradient ascent. Details are presented as follows. 
+
+Phase I. At each iteration κ with environment parameters 
+
+ϑκ, we formulate the lower-level sub-problem of trajectory optimization [cf. (2)]. Given the non-linear nature of (2), we solve this sub-problem using interior point methods, which are standard to tackle non-convex optimization problems. This procedure yields an optimal solution {x⋆(ϑκ), u⋆(ϑκ)} for multi-agent navigation in the environment E(ϑκ).1
+
+With the optimal solution, we follow Sections III-A-III-B to compute the gradients of the solution w.r.t. environment parameters Dagent  
+
+> κ, ϑ
+
+instantiated at {x⋆(ϑκ), u⋆(ϑκ)} and ϑκ.Then, we complete Phase I and step into Phase II. 
+
+Phase II. We formulate the upper-level sub-problem of envi-ronment optimization. Leveraging the gradients Dagent  
+
+> κ, ϑ
+
+from 
+
+> 1The solution may be locally optimal due to the non-convexity of the lower-level sub-problem.
+
+Phase I and the chain rule, we compute the gradients of the metric function F w.r.t. environment parameters as 
+
+∇ϑF (x⋆(ϑκ), u⋆(ϑκ), ϑκ) = DFκ, agent Dagent  
+
+> κ, ϑ
+
++ DFκ, ϑ, (16) where DFκ, agent and DFκ, ϑ are partial derivatives of F w.r.t. agent trajectories and environment parameters, respectively, instantiated at {x⋆(ϑκ), u⋆(ϑκ)} and ϑκ. Here, DFκ, agent and 
+
+DFκ, ϑ can be computed directly because the explicit expression of F is known by design choice, which will be introduced in Section IV, while Dagent  
+
+> κ, ϑ
+
+is computed using KKT conditions and the IFT as detailed in Sections III-A-III-B. This allows us to update ϑk with gradient ascent as 
+
+ϑκ+1 = ϑκ + ∆ α∇ϑF (x⋆(ϑκ), u⋆(ϑκ), ϑκ) (17) with ∆α the step size. This completes iteration κ and forwards the updated environment parameters ϑκ+1 into iteration κ+1 .
+
+D. Motivation for a Safety Metric 
+
+The proposed differentiable bi-level optimization encodes navigation efficiency (i.e., path efficiency and energy con-sumption) in the objective f of the lower-level trajectory optimization. The metric F of the upper-level environment optimization (3) allows to account for performance assessment that explicitly depends on environment parameters ϑ, beyond the objective f of the lower-level trajectory optimization. While any valid metric can be applied in our framework, we focus on the safety of multi-agent navigation. In particular, we aim to optimize environment configurations to facilitate agent de-confliction and ease collision-free trajec-tory generation. While the lower-level trajectory optimization incorporates hard constraints for collision avoidance, it does not reveal an explicit safety level of the environment w.r.t. multi-agent navigation. For example, in Fig. 1, agents can navigate from s1, s2 to g1, g2 without collisions in both environments (a) and (b). However, in environment (a), agents are more likely to collide with either the obstacle region or each other, and it is more challenging to solve the lower-level sub-problem with trajectory optimization, compared with environment (b). This necessitates defining a new safety metric that explicitly measures collision risk of multi-agent naviga-tion to serve as a criterion for the upper-level environment optimization. IV. S AFETY METRIC DESIGN 
+
+The safety definition commonly found in the literature is binary, i.e., the environment is safe if agents do not collide with obstacle regions or each other throughout navigation and vice versa, providing no explicit way to quantify its safety level. For example, two environments may both be collision-free yet pose different collision risks , which binary safety definitions cannot distinguish. In this section, we propose a safety metric that quantifies a scalar and continuous safety level of the environment w.r.t. multi-agent navigation. This metric will serve as our evaluation criterion for the upper-level environment optimization. Specifically, the safety of multi-agent navigation depends both on the spatial constraints of obstacle regions {∆j }Mj=1 and on the interactions among Figure 2. Agent Ai starts from the initial position si and moves towards the goal position gi by following its trajectory xi, and avoids collisions with obstacle regions {∆j }3 
+
+> j=1
+
+in the environment E.
+
+agents {Ai}Ni=1 . This motivates to define the safety metric from two aspects: (i) safety w.r.t. obstacle regions and (ii) 
+
+safety among agents. 
+
+A. Safety w.r.t. Obstacle Regions 
+
+Safety w.r.t. obstacle regions characterizes collision risks of agents from obstacle regions of the environment, which is a direct environmental impact on agents’ safety. Specifically, assume agent Ai with trajectory xi = [ x(0)  
+
+> i
+
+, . . . , x(T ) 
+
+> i
+
+] in the environment E with obstacle regions {∆j }Mj=1 – see Fig. 2 for an illustration. At time step t, we quantify its safety w.r.t. obstacle region ∆j using a repulsive potential function as 
+
+p∆j (x(t) 
+
+> i
+
+) = 
+
+( wd(x(t)   
+
+> i,∆j)+ ϵ
+
+, if d(x(t) 
+
+> i
+
+, ∆j ) ≤ τ, 
+
+0, if d(x(t) 
+
+> i
+
+, ∆j ) > τ (18) for j = 1 , . . . , M , where d(x(t) 
+
+> i
+
+, ∆j ) is the shortest distance between the boundaries of Ai and ∆j , w and ϵ are constants of design choice, and τ > 0 is a safety threshold. Here, ϵ > 0
+
+prevents infinite values when d(x(t) 
+
+> i
+
+, ∆j ) → 0 and τ represents a safe distance with no collision risk. The value of p∆j (x(t) 
+
+> i
+
+)
+
+quantifies how close Ai is to ∆j and, in turn, characterizes its collision risk w.r.t. ∆j , i.e., a larger p∆j (x(t) 
+
+> i
+
+) indicates a higher risk. 2 Following this rational, we quantify the safety of agent trajectory xi w.r.t. obstacle regions {∆j }Mj=1 as 
+
+˜p∆(xi) = 1
+
+M (T + 1) 
+
+> T
+
+X
+
+> t=0
+> M
+
+X
+
+> j=1
+
+p∆j (x(t) 
+
+> i
+
+). (19) Normalizing ˜p∆(xi) yields p∆(xi) = p∆(xi)/(w/ϵ ) ∈ [0 , 1] ,where a larger value represents more collision risks and a lower safety level. We refer to p∆(xi) as the unsafety mass w.r.t. obstacle regions of agent Ai in the environment E.The unsafety mass w.r.t. obstacle regions of the multi-agent system A is the expected unsafety over all agents, i.e., 
+
+p∆(A) = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+p∆(xi), (20)                             
+
+> 2For invalid trajectories in which x(t)
+> ilies inside ∆j,we define
+> d(x(t)
+> i,∆j)as the negative of the shortest distance between the boundaries of Aiand ∆jto ensure consistency with the safety metric definition, and assume an appropriate ϵsuch that d(x(t)
+> i,∆j)+ ϵ > 0for all t.
+
+Figure 3. Agents Ai, Ai′ start from initial positions si, si′ and move towards goal positions gi, gi′ by following their trajectories xi, xi′ ,and avoid collisions with obstacle regions {∆j }3 
+
+> j=1
+
+and each other. 
+
+which is also normalized in [0 , 1] . Then, we define the corre-sponding safety mass w.r.t. obstacle regions as 
+
+s∆(A) = 1 − p∆(A). (21) A larger s∆(A), instead, represents a higher level of safety w.r.t. obstacle regions of A in E. The pair {p∆(A), s ∆(A)}
+
+together provides a complete and unified safety quantification w.r.t. obstacle regions of the environment. 
+
+B. Safety among Agents 
+
+Safety among agents characterizes collision risks of agents from other agents, which depends on inter-agent coordination. This is an indirect environmental impact on agents’ safety, as their trajectories are generated under spatial constraints of the environment. For example, a well-designed environment may lead to agent trajectories away from each other, while a poorly-designed environment may result in agent trajectories close to or even colliding with each other. Specifically, assume agents 
+
+A = {Ai}Ni=1 with trajectories {xi}Ni=1 in the environment E.These agents may pass through the same area at different time steps and come into close proximity, although without direct collisions, i.e., there may exist intersection areas among agent trajectories {xi}Ni=1 – see Fig. 3. We define the collision zone between Ai and Ai′ as 
+
+Tii ′ = {t | d(x(t) 
+
+> i
+
+, x(t) 
+
+> i′
+
+) ≤ τ } (22) for i̸ = i′ ∈ { 1, . . . , N }, where d(x(t) 
+
+> i
+
+, x(t) 
+
+> i′
+
+) is the shortest distance between the boundaries of Ai and Ai′ , and τ > 0 is a safety threshold as in (18). The value of τ can be selected depending on the degree of safety we want to achieve. The collision zone Tii ′ assumes that Ai is safe w.r.t. Ai′ with no collision risk if the distance between two agents at the same time step t exceeds τ . Following the same rational, we quantify the pair-wise safety of Ai w.r.t. Ai′ at time step t as 
+
+pxi′ (x(t) 
+
+> i
+
+) = 
+
+( wd(x(t)   
+
+> i,x(t)
+> i′)+ ϵ
+
+, if t ∈ T ii ′ ,
+
+0, if t / ∈ T ii ′ . (23) This allows to quantify the safety of agent trajectory xi w.r.t. other agents as 
+
+˜pA(xi) = 1(N − 1)( T + 1) 
+
+X 
+
+> i′̸=iT
+
+X
+
+> t=0
+
+pxi′ (x(t) 
+
+> i
+
+). (24) Fig. 1 b Fig. 1 a
+
+> Safety metric
+> Higher = Better
+
+Figure 4. Safety metric as a function of environment parameters in the example environment of Fig. 1, where environment parameters are the y-axis positions of the left and right obstacle regions. 
+
+Normalizing ˜pA(xi) yields pA(xi) = ˜ pA(xi)/(w/ϵ ) ∈ [0 , 1] .We refer to pA(xi) as the unsafety mass w.r.t. other agents of agent Ai in the environment E, where a larger value represents more collision risks and a lower safety level among agents. The unsafety mass among agents of the multi-agent system 
+
+A is averaged over all agents as 
+
+pA(A) = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+pA(xi) (25) and the corresponding safety mass among agents is 
+
+sA(A) = 1 − pA(A), (26) which are normalized in [0 , 1] as well. A larger sA(A) implies a higher level of safety among agents of A in E. The pair 
+
+{pA(A), s A(A)} together provides a complete and unified safety quantification among agents in the environment. 
+
+C. A Comprehensive Safety Metric 
+
+We define the safety metric by combining safety w.r.t. obstacle regions in Section IV-A and safety among agents in Section IV-B. Specifically, define a pair of unsafety and safety masses {P E (A), SE (A)} by aggregating {p∆(A), s ∆(A)} [cf. (21)] and {pA(A), s A(A)} [cf. (26)] with weighted fusion operations as 
+
+(
+
+PE (A) = p∆(A) · M + pA(A) · (N − 1) ,
+
+SE (A) = s∆(A) · M + sA(A) · (N − 1) , (27) where M represents the number of obstacle regions and N −1
+
+represents the number of the other agents w.r.t. each agent itself. The unsafety mass PE (A) (or the safety mass SE (A))maps a multi-agent system A to a real value, which quantifies an explicit safety level of the multi-agent system A in the environment E.
+
+Properties. We show that this is a valid metric satisfying the following properties grounded in measure theory: 
+
+(i) For any environment E and multi-agent system A, the unsafety mass is non-negative PE (A) ≥ 0.
+
+(ii) For any environment E and two multi-agent sys-tems A1 with trajectories {x1,i }Ni=1 and A2 with trajectories 
+
+{x2,i ′ }N ′
+
+> i′=1
+
+, we say A1 and A2 are disjoint if there is no collision zone between any x1,i of A1 and x2,i ′ of A2 [cf.  
+
+> (a) Poorly-designed environment (b) Well-designed environment
+
+Figure 5. (a) Multi-agent navigation in a poorly-designed environ-ment. While two agents may navigate from si, si′ to gi, gi′ without collisions, there are higher collision risks and they are more likely to collide around the intersection of their trajectories (red circle). (b) 
+
+Multi-agent navigation in a well-designed environment. By refining the spatial constraint of the obstacle region, it implicitly de-conflicts agents by guiding agent A1 to move faster than A2. This avoids potential collisions of two agents and improves the safety level of the environment, while not compromising their navigation performance. 
+
+(22)]. For a countable collection of pairwise disjoint multi-agent systems {A k}Kk=1 of {Nk}Kk=1 agents with trajectories 
+
+{{ xk,i }Nk
+
+> i=1
+
+}Kk=1 , we have 
+
+ KX
+
+> k=1
+
+Nk
+
+
+
+· P E (A) = 
+
+> K
+
+X
+
+> k=1
+
+
+
+Nk · P E (Ak)
+
+
+
+, (28) where A = ∪Kk=1 Ak is the union of {A k}Kk=1 .
+
+(iii) For any environment E and a countable collection of multi-agent systems {A k}Kk=1 , which are not necessarily disjoint, we have 
+
+> K
+
+X
+
+> k=1
+
+
+
+Nk · P E (Ak)
+
+
+
+≤
+
+ KX
+
+> k=1
+
+Nk
+
+
+
+· P E (A). (29) Proofs of properties (i) -(iii) are summarized in Appendix A. Property (i) is a basic property for metric definition. Prop-erty (ii) guarantees that PE (A) satisfies the fundamental requirement PE (A ∪ ∅ ) = PE (A), where ∅ is a null multi-agent system with no agent trajectory. Specifically, for any A
+
+of N agents and a null system ∅, it holds that 
+
+(N +0) ·P E (A ∪ ∅ ) (ii) 
+
+= N ·P E (A)+0 ·P E (∅) = N ·P E (A) (30) and thus, PE (A ∪ ∅ ) = PE (A). Property (iii) follows our intuition that the safety level of the environment is lower, i.e., the environment is less safe, for larger systems with more inter-agent interactions. Properties (i) -(iii) justify that the designed metric is valid to quantify safety levels of environments for multi-agent navigation. As we aim to maximize navigation safety, we set the safety mass SE (A) as the metric of the upper-level environment optimization in (3), i.e., 
+
+F (x∗(ϑ), u∗(ϑ), ϑ) := RSE (A), (31) where R is a regularization constant. This allows us to optimize obstacle regions {∆j }Mj=1 to maximize the safety level for multi-agent navigation and to ease the task of (a) Warehouse (b) Roundabout (c) Narrow passage (d) Highway exit ramp (e) Road intersection (f) Track design            
+
+> Figure 6. The six scenarios considered in our experiments. (a) Optimization of shelf positions in a warehouse for safe multi-robot navigation.
+> (b) Optimization of the radius of a roundabout in an urban transportation system for safe multi-vehicle driving. (c) Optimization of narrow passage angles to facilitate vehicles safely passing through the narrow passage. (d) Optimization of the exit angle of a highway to facilitate vehicles safely leaving the highway. (e) Optimization of the intersection angle of two roads for safe multi-vehicle driving. (f) Optimization of the track centerline to facilitate vehicles safely driving on the track.
+
+collision-free trajectory optimization. Fig. 4 displays how 
+
+F (x∗(ϑ), u∗(ϑ), ϑ) with R = 1 /(M + N − 1) varies as environment parameters change in the example environment of Fig. 1, where the environment parameters are the locations (i.e., Y-axis positions) of two obstacle regions. It follows our intuition that environments with obstacle regions at the same Y-axis position along the diagonal (e.g., Fig. 1a) create narrow passages, increase collision risks, and have smaller metric values with lower safety levels; environments with obstacle regions at different Y-axis positions (e.g., Fig. 1b) provide more space to coordinate agents for collision avoidance and have larger metric values with higher safety levels. 
+
+D. Discussion 
+
+With the proposed safety metric, the upper-level sub-problem optimizes environment parameters ϑ that refine spa-tial constraints imposed by obstacle regions to improves the safety level from two aspects: (i) reducing collision risks of agents w.r.t. obstacle regions – see Section IV-A; (ii) providing spatial guidance that implicitly de-conflicts agents to reduce inter-agent collision risks among themselves – see Section IV-B. For example, in Fig. 5, a well-designed environment (b) tunes the spatial constraint of the circular obstacle to prioritize and de-conflict agents A1 and A2, which guides A1 moving faster than A2 to avoid their potential collisions, while not compromising navigation performance. Both aspects facilitate agents to generate collision-free trajectories, improving the safety level of the environment. Moreover, the optimized environment E⋆ eases the task of safe multi-agent navigation, because it requires less inter-agent coordination or agent-environment interaction for collision avoidance and allows agents to focus more on their own navigation tasks. In this context, the optimized environment not only reduces collision risks, but also implicitly lowers the task difficulty (i.e., computational burden) of trajectory optimization and improves the performance of multi-agent navigation, which we corroborate in our experiments of Section V. 
+
+Remark 1: The proposed method requires computing par-tial derivatives of the metric function F , i.e., the safety metric 
+
+SE (A), w.r.t. agent trajectories and environment parameters [cf. (16)]. From the definition of SE (A), this is equivalent to requiring that the distances d(x(t) 
+
+> i
+
+, ∆j ) and d(x(t) 
+
+> i
+
+, x(t) 
+
+> j
+
+)
+
+between agents and obstacles can be expressed by differen-tiable functions. For example, if obstacle regions are circular obstacles, we can use quadratic functions; if obstacle regions are line boundaries (e.g., traffic roads), we can use perpen-dicular distance functions. For irregular obstacle regions, we may assume, without loss of generality, that each obstacle can be encircled by an outer circular approximation to compute a conservative distance with a quadratic function. V. E XPERIMENTS 
+
+In this section, we evaluate our differentiable environment-trajectory co-optimization framework in a variety of safe navigation scenarios. 
+
+A. Experiment Setup 
+
+We consider six scenarios of safe multi-agent navigation showcased in Fig. 6, which correspond to different real-world applications and are detailed in Section V-B. In these scenarios, agents are circular of radius ra = 0 .3m and the agent collision avoidance is a quadratic constraint of the form 
+
+r2 
+
+> a
+
+− ∥ x(t) 
+
+> i
+
+− x(t) 
+
+> j
+
+∥22 ≤ 0. (32) We assume agents with double integrator dynamics in the default setting, and investigate the impact of using different agent dynamics in additional experiments of Appendix B. The results are obtained on a computer with an Intel Core i7-8700 CPU and a NVIDIA GeForce GTX 1080 Ti GPU. We measure the performance w.r.t. four aspects: (i) safety metric in Section IV [cf. (31)]; (ii) average number of col-lisions (NumCOLL); (iii) computation time required by the lower-level trajectory optimization; and (iv) Success weighted by Path Length (SPL) and percentage to the maximal speed (PCTSpeed) [48]. Specifically, (i) measures the safety level of the environment, which indicates how safe an environment is w.r.t. multi-agent navigation and is used to validate the effectiveness of the proposed method. To ease exposition, we normalize the safety metric over obstacles and agents; 
+
+(ii) counts the number of collisions averaged over agents, which results from the fact that trajectory optimization may not find feasible solutions in challenging environments; (iii) 
+
+measures the complexity of the multi-agent navigation task in the environment, which implies how much inter-agent coor-dination and agent-environment interaction must be handled by trajectory optimization for safe navigation. Both (ii) and 
+
+(iii) also correspond to the safety level of the environment, as agents in a safer environment are less likely to collide Table I: Performance of the proposed method and baselines in our scenarios. Larger values of the safety metric or SPL and smaller values of NumCOLL, computation time, PCTSpeed, or distance ratio represent higher safety and efficiency of multi-agent navigation. Mean and standard deviation, where specified, are computed over 20 random navigation tasks.                                                                                                                                                                                           
+
+> Scenario Safety metric ↑SPL ↑NumCOLL ↓Computation time ↓PCTSpeed ↓
+> 1-1 Warehouse ( 4agents) Optimized environment (ours) 0.932 ±0.030 0.948 ±0.030 0±06.554 ±5.135 0.825 ±0.035
+> Standard environment with a regular layout 0.878 ±0.049 0.930 ±0.030 0±034.384 ±41.470 0.836 ±0.042 Baseline environment with a random layout 0.870 ±0.073 0.934 ±0.022 0±051.817 ±61.533 0.838 ±0.034 1-2 Warehouse ( 8agents) Optimized environment (ours) 0.944 ±0.019 0.944 ±0.029 0±040.677 ±38.371 0.793 ±0.030
+> Standard environment with a regular layout 0.909 ±0.027 0.916 ±0.019 0.063 ±0.134 93.067 ±75.022 0.814 ±0.022 Baseline environment with a random layout 0.913 ±0.030 0.909 ±0.025 0.144 ±0.334 98.649 ±98.703 0.822 ±0.022 2 Roundabout Optimized environment (ours) 0.652 0.891 025.226 0.727
+> Empty environment with no roundabout 0.586 0.885 045.716 0.729 Baseline environment with a large roundabout 0.607 0.793 026.123 0.733 3 Narrow Passage Optimized environment (ours) 0.787 0.979 0184.417 0.278 Narrow environment 0.767 0.732 0236.160 0.248
+> Wide environment 0.741 0.979 0259.853 0.276 4 Highway exit ramp Optimized environment (ours) 0.860 0.948 086.437 0.575
+> Baseline with an exit angle π
+> 40.797 0.928 0353.658 0.590 Baseline with an exit angle π
+> 30.808 0.941 0355.082 0.579 5 Road intersection Optimized environment (ours) 0.947 0.990 03.316 0.702
+> Baseline environment with an intersection angle π
+> 40.906 0.978 015.906 0.705 Baseline environment with an intersection angle 3π
+> 40.936 0.984 012.361 0.707
+> Safety metric ↑Distance ratio ↓NumCOLL ↓Computation time ↓PCTSpeed ↓
+> 6 Track design Optimized environment (ours) 0.908 0.952 07.856 0.574
+> Initial environment 0.876 1011.300 0.604
+
+with obstacle regions or each other and trajectory optimization requires less time to find feasible solutions. For (iv) , SPL is the gold standard to measure the efficiency of robot navigation defined as [48], [49], [50] SPL = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+Ii
+
+ℓi
+
+max {Li, ℓ i} , (33) where Ii is a binary indicator for the success of agent Ai,
+
+Li is the traveled distance, and ℓi is the shortest distance. It is a stringent metric that combines success rates with path efficiency. PCTSpeed is the ratio of the average speed to the maximal one, which represents how fast agents move along their trajectories and provides supplementary information for the navigation procedure, complementary to SPL. The first three metrics characterize navigation safety in the environment, which is the objective of the upper-level environment optimization and the main focus of this work. A higher value of safety metric [Section IV] or lower values of NumCOLL and computation time represent a higher safety level of the environment and an easier task of collision-free multi-agent navigation. The fourth metric characterizes navigation efficiency in the environment, which is the objective of the lower-level trajectory optimization. From (2), a higher SPL represents a higher success rate and improved path efficiency, while a lower PCTSpeed represents lower energy consumption indicating less control effort. These metrics pro-vide a comprehensive evaluation for our method. 
+
+B. Performance Evaluation 
+
+We evaluate our differentiable bi-level optimization method in the six scenarios of Fig. 6 and show the results in Table I. Additional experiments investigating the impact of agent dynamics and exploring an extension to stochastic co-optimization are presented in Appendix B. 
+
+(a) Optimized (b) Standard (c) Random 
+
+Figure 7. (a) Optimized environment of our method that creates obstacle-free trajectories and prioritizes / de-conflicts agents for safe navigation. (b) Standard environment with a regular shelf layout. (c) 
+
+Random environment with randomly generated shelf positions. 
+
+Scenario 1 Warehouse. This scenario considers agents as robots in a warehouse with a set of shelves. The environment is of size [−10m , 10m] × [−10m , 10m] , and we set w = 1 ,
+
+γ = 0 .1 and τ = 2 .5m for the safety metric. Four robots are initialized at random positions on one side of the environment and targeted towards goals on the opposite side. The shelves are 9 circular obstacles of radius ro = 1 .5m, and randomly distributed in the environment – see Fig. 6a for an illustration. The environment is parametrized by the center positions of the shelves {oj }9
+
+> j=1
+
+, and the constraint of shelf collision avoidance is a quadratic constraint as 
+
+ ra + ro
+
+2
+
+2
+
+− ∥ x(t) 
+
+> i
+
+− oj ∥22 ≤ 0. (34) The goal is to optimize the shelf placement to facilitate safe multi-robot navigation. We consider two baselines: (i) a standard environment with a regular shelf layout as in Fig. 7b, which is widely deployed in practice; (ii) a random environment with randomly generated shelf positions. The results are averaged over 20 random navigation tasks. We see that the proposed method outperforms the baselines significantly. First , it exhibits the highest safety metric, which indicates that the optimized environment improves the safety level of multi-agent navigation and corroborates the effec-tiveness of differentiable environment optimization. Second ,it takes the least computation time to solve the navigation task with trajectory optimization. This is because our method adapts the obstacle layout to provide a safer environment for agents, which reduces collision risks not only between agents and obstacles but also among agents themselves. The latter reduces requirements of inter-agent coordination and agent-obstacle interaction, relaxes constraints of collision avoidance in trajectory optimization, and thus needs less computation time to solve the problem. Lastly , it is interesting to find that our method also achieves the highest SPL and the lowest PCTSpeed. This implies that while we aim to optimize the environment to enhance the safety, it implicitly improves the performance as well with higher path efficiency and less con-trol effort, i.e., the objective of trajectory optimization in (2). We attribute this behavior to the fact that a safer environment not only reduces collision risks, but also facilitates multi-agent operations and reduces energy consumption. All environments achieve no collision with zero NumCOLL, demonstrating the effectiveness of the lower-level trajectory optimization. Figs. 7a-7c show an example. The optimized environment in Fig. 7a: (i) creates collision-free spaces for agent trajectories to enhance the safety w.r.t. obstacles (Section IV-A); (ii) exhibits an irregular structure that prioritizes and de-conflicts the agents to enhance the safety among agents (Section IV-B). For example, the top-left obstacle is placed in a way that prioritizes the top-right agent in Fig. 7a moving first and the top-left agent moving later, to avoid potential inter-agent collisions. Moreover, the obstacle-free agent trajectories in the optimized environment are path efficient, which are close to the shortest trajectories between starting and goal positions. These aspects together yield enhanced safety and improved performance of multi-agent navigation, compared to the baselines. Then, we evaluate our method in a larger system with 8
+
+agents and 9 obstacles, where the scenario becomes more cluttered. We similarly observe that our method improves the performance with a higher safety level, less computation time, a larger SPL, and a lower PCTSpeed. The performance improvement introduced by our method increases from smaller to larger multi-agent systems. This indicates that our method is applicable to larger systems, and can provide more benefits in these systems. We also note that the optimized environment maintains no collision with zero NumCOLL, while the base-line environments lead to collisions in some challenging cases. This further validates that our method can ease navigation tasks by improving environment safety, which makes it easier for trajectory optimization to find feasible solutions. 
+
+Scenario 2 Roundabout. This scenario replicates an urban transportation system. We consider agents as vehicles and the obstacle as a roundabout at the intersection of multiple roads. Twelve vehicles are initialized all around the roundabout, which are assumed coming from different roads. They need to cross the roundabout towards the opposite side and drive into the opposite roads, while avoiding collisions with the roundabout and each other. The roundabout is circular and parametrized by the radius ro – see Fig. 6b. The goal is         
+
+> (a) Optimized (b) Empty (c) Large
+> Figure 8. (a) Optimized environment that guides agents to move clockwise towards their goal positions. (b) Empty environment with no roundabout that provides no navigation guidance for agents, although imposing no obstacle hindrance. (c) Baseline environment with a large roundabout that blocks efficient pathways, although providing navigation guidance.
+
+to optimize ro to facilitate safe multi-vehicle driving. We consider two baselines: (i) an empty environment without roundabout, which is often considered ideal with no obstacle hindrance; (ii) an environment with a large roundabout. Table I shows the performance, and Figs. 8a-8c display the optimized environment and the baseline environments. The op-timized environment improves the safety level of multi-agent navigation and reduces the computation time of trajectory optimization, while achieving better navigation performance than the baselines. The presence of the roundabout with an appropriate radius provides navigation guidance for agents to move clockwise towards their destinations, which reduces the requirement of inter-agent coordination for collision avoidance and facilitates agent de-confliction for safe navigation. The empty environment with no roundabout degrades the safety and increases the computation time significantly, despite no obstacle hindrance along agent trajectories. This is because agents have to coordinate their trajectories by themselves and receive no guidance from the empty environment. The latter makes it challenging for de-confliction, reduces the safety level of multi-agent navigation, and complicates the problem of trajectory optimization, especially in a cluttered case with a large number of agents. The baseline environment with a large roundabout results in a lower SPL with less path efficiency and a higher PCTSpeed with more energy consumption, because it reduces the amount of reachable space and imposes more restrictions on the feasible solution. The latter blocks the shortest pathways and forces agents to move along inefficient trajectories towards destinations. These results corroborate that an appropriate obstacle layout offers guidance and aids in de-conflicting agents for safe navigation, not only hindrance in the traditional view. 
+
+Scenario 3 Narrow Passage. This scenario mimics narrow passages in the real world. Agents are distributed outside a workspace and aim to pass through a narrow passage to get into it. For example, drive vehicles moving towards a toll station in a highway and control ground robots moving into a warehouse through a narrow gate – see Fig. 6c. As the reachable space and the environment size decrease, we set 
+
+τ = 1 m. The obstacle regions are the workspace boundaries, each expressed as a linear function R1x + R2y + R3 = 0 , and the constraint of obstacle collision avoidance is a quadratic (a) Optimized (b) Narrow (c) Wide       
+
+> Figure 9. (a) Optimized environment that creates an asymmetric structure to prioritize / de-conflict agents to pass through the narrow passage. Blue dashed boundaries mirror the lower passage boundaries to demonstrate the asymmetry. (b) Baseline environment with narrow passage angles. (c) Baseline environment with wide passage angles. Both baselines are designed with human intuition and commonly used in practice, while their symmetric structures do not provide de-confliction guidance.
+
+constraint as 
+
+I(x(t) 
+
+> i
+
+)
+
+"
+
+r2 
+
+> a
+
+− (R1[x(t) 
+
+> i
+
+]x + R2[x(t) 
+
+> i
+
+]y + R3)2
+
+R21 + R22
+
+#
+
+≤ 0, (35) where I(x(t) 
+
+> i
+
+) is an indicator function that identifies if x(t) 
+
+> i
+
+is in the range of the boundary constraint. The width of the passage is fixed, and the goal is to optimize the passage angles θ1 and 
+
+θ2 that facilitate agents to safely passing through the narrow passage into the workspace. We consider two baselines, where the first has narrow passage angles as in Fig. 9b and the second has wide passage angles as in Fig. 9c. Table I shows the results. Our method achieves the highest safety level and the least computation time with comparable navigation performance. Notably, the optimized environment outperforms the baseline environment with wide passage an-gles, although the wide baseline has the largest amount of reachable space and is generally believed ideal as in common practice. This challenges traditional design assumptions and demonstrates the value of automatic optimization. The baseline environment with narrow passage angles has the least obstacle-free space and imposes the strictest constraints on agent motion. In this context, not all agents complete their navigation tasks, resulting in a significantly lower SPL. Figs. 9a-9c show the optimized environment of our method. Different from the baseline environments, it exhibits an asym-metric structure with a narrower upper angle θ1 and a wider lower angle θ2. This structural asymmetry prioritizes agents and provides navigation guidance for agent de-confliction. Specifically, the narrower upper angle θ1 guides the top agent to move more quickly towards the center, allowing it to arrive earlier and take the space to gain priority when traversing the narrow passage; hence, reducing potential collision risks. These aspects improve the safety level and make it easier to solve multi-agent navigation by trajectory optimization. 
+
+Scenario 4 Highway. This scenario is inspired by a decelera-tion ramp in the real world, which considers agents as vehicles on a highway and obstacle regions as highway boundaries. Vehicles are initialized in parallel lanes on the highway and aim to exit via the ramp, while avoiding collisions with highway boundaries and each other – see Fig. 6d. The goal is to optimize the exit angle of the ramp θ that facilitates vehicles to safely leave the highway. We consider two baselines: (i) a             
+
+> (a) Optimized (b) π/ 4(c) π/ 3
+> Figure 10. (a) Optimized environment that guides agents to leave the highway smoothly towards their goal positions. (b) Baseline environment with an exit angle π/ 4.(c) Baseline environment with an exit angle π/ 3. Both baselines follow common design practice. Blue dashed boundaries in Figs. 10b-10c represent the optimized environment for reference.
+
+highway with an exit angle π/ 4; (ii) a highway with an exit angle π/ 3, both following our intuition for good exit designs. Table I shows the performance. Our method exhibits the highest safety level and requires the least computation time, while delivering the best navigation performance with the highest SPL and the lowest PCTSpeed. The optimized exit angle differs from the intuitive π/ 4 and π/ 3 baselines, which demonstrates the challenge of manually designing environ-ments in the continuous domain, corroborates the necessity of environment optimization, and validates the effectiveness of the proposed differentiable method. Figs. 10a-10c illustrate the optimized environment and the baseline environments. The optimized highway guides agents to exit smoothly, reducing collision risks either with highway boundaries or among agents. While not significantly changing the exit angle, it effec-tively improves the safety level and reduces the computation time. This indicates that we can facilitate safe and efficient navigation with no need of large environment changes. 
+
+Scenario 5 Road Intersection. This scenario aims to capture real-world urban traffic, which considers agents as vehicles and obstacle regions as road boundaries. Vehicles are initialized at two different but intersecting roads. They aim to pass through the intersection to keep moving along their roads, while avoiding collisions with road boundaries and each other – see Fig. 6e. The goal is to optimize the intersection angle 
+
+θ that facilitates safe multi-vehicle driving. 3 We consider two baselines: (i) two roads with an intersection angle π/ 4; (ii) two roads with an intersection angle 3π/ 4. The first follows our intuition that more parallel roads may reduce agent conflicts and help collision avoidance, while the second is the opposite case for comparison. The results are shown in Table I. The proposed method outperforms the baselines, achieving the highest safety level, the lowest computation time, and the best navigation performance. This similarly indicates that an appropriate intersection angle provides guidance for agents to enhance safety and facilitate navigation, which correspond to Scenarios 1-4 and corroborate the effectiveness of our method. Figs. 11a-11c display the optimized environment and the baseline environments. The optimal intersection angle is larger than expected, challenging the intuition that smaller angles, i.e., more parallel roads, reduce agent conflicts and benefit safe               
+
+> 3Following real-world settings, as initial and goal positions of vehicles are distributed on roads and roads rotate with the intersection angle θ, initial and goal positions change with θas well. (a) Optimized (b) π/ 4(c) 3π/ 4
+> Figure 11. (a) Optimized environment that guides agents to pass through the intersection smoothly towards their goal positions. (b)
+> Baseline environment with an intersection angle π/ 4.(c) Baseline environment with an intersection angle 3π/ 4.
+
+navigation. This highlights the difficulty of hand-designing environments and the significance of automatic optimization. 
+
+Scenario 6 Track design. This scenario involves the design of a track, which considers agents as vehicles and obstacle regions as track boundaries. The track is built by offsetting the centerline with a half-width of 1.25 m to form track boundaries. Vehicles are initialized in different lanes of the track and aim to navigate the track in opposite directions. The task is to complete one loop, while avoiding collisions with track boundaries and each other. The agents’ states (positions and velocities) and actions (accelerations) are expressed in polar coordinates ( ρ, θ ) as 
+
+x(t) 
+
+> i
+
+= [ ρ(t) 
+
+> i
+
+, θ (t) 
+
+> i
+
+, ˙ρ(t) 
+
+> i
+
+, ˙θ(t) 
+
+> i
+
+]⊤, u(t) 
+
+> i
+
+= [¨ ρ(t) 
+
+> i
+
+, ¨θ(t) 
+
+> i
+
+]⊤. (36) The position of agent Ai can be recovered in Cartesian space as p(t) 
+
+> i
+
+= [ ρ(t) 
+
+> i
+
+cos( θ(t) 
+
+> i
+
+), ρ(t) 
+
+> i
+
+sin( θ(t) 
+
+> i
+
+)] ⊤. The environment is parameterized by seven waypoints equally distributed in 
+
+[0 , 2π], which construct a centerline following trigonometric interpolation that ensures periodicity. We consider that the radii of two waypoints are fixed, while those of the other waypoints are reconfigurable within ±20% of the initial track. A visualization of the envelope of all possible centerlines is shown in Fig. 12. The goal is to optimize the radii of recon-figurable waypoints to facilitate safe multi-vehicle driving. Table I compares the performance, and Figs. 13a-13b show the optimized track and the initial track. In this scenario, since agents’ starting and goal positions overlap, the minimum traveled distance is cumbersome to compute. We replace SPL with the ratio of traveled distances between the optimized and baseline environments, where a lower value represents higher navigation efficiency. Our method improves the safety level, decreases the traveled distance, and reduces the energy con-sumption, while, at the same time, requiring less computation time for trajectory optimization. Moreover, the optimized track guides agents to move more smoothly along the track, with fewer abrupt changes in moving directions and velocities. VI. C ONCLUSION 
+
+This paper formulated a bi-level environment-trajectory co-optimization problem, which comprises a lower-level sub-problem of trajectory optimization and an upper-level sub-problem of environment optimization. The former generates agent trajectories that maximize path efficiency and minimize control effort, while the latter builds upon the former to optimize environment configurations that maximize the safety level of multi-agent navigation. We proposed a continuous        
+
+> Figure 12. Approximation of the ensemble of possible tracks’ cen-terlines. In grey 50 random track designs are selected by picking points within the boundaries of the minumum and maximum black control points at equally spaced angular locations. We also showcase the initial and optimized track designs for reference.
+> (a) Optimized (b) Baseline
+> Figure 13. (a) Optimized environment that guides agents to move smoothly along the track. (b) Baseline environment.
+
+metric for the upper-level environment optimization, which measures an explicit safety level of the environment w.r.t. multi-agent navigation. By incorporating the proposed safety metric, we developed a differentiable optimization method, which iteratively tackles the lower-level trajectory optimization with interior point methods and the upper-level environment optimization with gradient ascent. Due to the challenge of modeling the relationship between the environment and agents, the connection between the upper-and lower-level sub-problems is unclear. To overcome this issue, we leverage KKT conditions and the IFT to compute the gradients of agent trajectories w.r.t. environment parameters, bridging the two sub-problems in a differentiable manner. Results across Scenarios 1-6 demonstrate the applicability of the developed method in various practical applications inspired from warehouse logistics to urban transportation. These experiments corroborate the theoretical findings and show the effectiveness of our method, i.e., co-optimizing environment configurations and agent trajectories facilitates safe multi-agent navigation. Moreover, our results indicate that appropriately designed obstacles can provide “positive” guidance for agent de-confliction, rather than merely imposing “negative” hindrance as traditionally assumed. Future work will consider the following aspects. First, we can consider more advanced gradient-based methods for the upper-level environment optimization, such as Newton’s method, quasi-Newton method, and momentum gradient as-cent. This allows us to increase convergence rates and further improve performance. Second, we plan to impose constraints on the upper-level environment optimization, such as re-strictions on obstacle changes, and incorporate a primal-dual mechanism to handle these constraints. Table II: Performance of the proposed method and baselines with unicycle dynamics.                                           
+
+> Scenario Safety metric ↑SPL ↑NumCOLL ↓Computation time ↓PCTSpeed ↓
+> Narrow Passage (unicycle) Optimized environment (ours) 0.833 0.981 041.275 0.227
+> Narrow environment 0.777 0.756 0.167 57.331 0.229 Wide environment 0.784 0.987 074.580 0.275 Road intersection (unicycle) Optimized environment (ours) 0.949 0.990 026.043 0.701
+> Baseline environment with an intersection angle π/ 40.932 0.984 056.251 0.705 Baseline environment with an intersection angle 3π/ 40.944 0.988 029.213 0.701
+
+APPENDIX APROOFS OF SAFETY METRIC PROPERTIES 
+
+We prove the three properties in Section IV-C. 
+
+(i) From the definitions of safety w.r.t. obstacle regions s∆(A)
+
+[cr. (21)] and safety among agents sA(A) [cf. (26)], we have 
+
+p∆(A) ≥ 0, p A(A) ≥ 0. (37) From the definition of the safety metric [cf. (27)] and (37), we complete the proof PE (A) ≥ 0.
+
+(ii) For any agent Ai in a multi-agent system Ak, we have 
+
+Ai ∈ A k ∈ A , (38) where A = ∪Kk=1 Ak is the union of the multi-agent systems 
+
+{A k}Kk=1 . With the same obstacle regions {∆j }Mj=1 , we have 
+
+X
+
+> i∈A
+> M
+
+X
+
+> j=1
+> T
+
+X
+
+> t=0
+
+p∆j (x(t) 
+
+> i
+
+) = 
+
+> K
+
+X
+
+> k=1
+
+X
+
+> i∈A k
+> M
+
+X
+
+> j=1
+> T
+
+X
+
+> t=0
+
+p∆j(x(t) 
+
+> i
+
+). (39) From the definition of the unsafety mass w.r.t. obstacle regions [cf. (20)], it holds that 
+
+ KX
+
+> k=1
+
+Nk
+
+
+
+M · p∆(A) = 
+
+> K
+
+X
+
+> k=1
+
+
+
+NkM · p∆(Ak)
+
+
+
+. (40) For any other agent Ai′ in a different multi-agent system 
+
+Ak′ with k′̸ = k, since Ak′ and Ak are disjoint, there is no collision zone between agents Ai′ and Ai, we have 
+
+PTt=0 pxi′ (x(t) 
+
+> i
+
+) = 0 by definition [cf. (23)] and thus, we have 
+
+X 
+
+> i′̸=i∈A
+> T
+
+X
+
+> t=0
+
+pxi′ (x(t) 
+
+> i
+
+) = X 
+
+> i′′ ̸=i∈A k
+> T
+
+X
+
+> t=0
+
+pxi′′ (x(t) 
+
+> i
+
+). (41) From the definition of the unsafety mass among agents [cf. (25)], it holds that 
+
+ KX
+
+> k=1
+
+Nk
+
+ KX
+
+> k=1
+
+Nk −1
+
+
+
+·pA
+
+ A =
+
+> K
+
+X
+
+> k=1
+
+
+
+Nk(Nk −1) ·pAk(Ak)
+
+
+
+.
+
+(42) By using (40) and (42) in the definition of the safety metric [cf. (27)], we complete the proof 
+
+ KX
+
+> k=1
+
+Nk
+
+
+
+· P E (A) = 
+
+> K
+
+X
+
+> k=1
+
+
+
+Nk · P E (Ak)
+
+
+
+. (43) 
+
+(iii) For any agent Ai in a multi-agent system Ak, we have 
+
+Ai ∈ A k ⊆ A , (44) 
+
+(a) (b) 
+
+Figure 14. (a) Optimized environment with unicycle dynamics in the scenario of Narrow Passage. (b) Optimized environment with unicycle dynamics in the scenario of Road Intersection. 
+
+where A = ∪Kk=1 Ak is the union of the multi-agent systems 
+
+{A k}Kk=1 . For any other agent Ai′ in a different multi-agent system Ak′ with k′̸ = k, we have 
+
+X 
+
+> i′̸=i∈A
+> T
+
+X
+
+> t=0
+
+pxi′ (x(t) 
+
+> i
+
+) (45) 
+
+= X 
+
+> i′̸=i∈A k
+> T
+
+X
+
+> t=0
+
+pxi′ (x(t) 
+
+> i
+
+)+ X  
+
+> i′̸=i∈(A\A k)
+> T
+
+X
+
+> t=0
+
+pxi′ (x(t) 
+
+> i
+
+).
+
+Since pxi′ (x(t) 
+
+> i
+
+) ≥ 0 for any i, i ′ and t, it holds that 
+
+X 
+
+> i′̸=i∈A
+> T
+
+X
+
+> t=0
+
+pxi′ (x(t) 
+
+> i
+
+) ≥ X 
+
+> i′̸=i∈A k
+> T
+
+X
+
+> t=0
+
+pxi′ (x(t) 
+
+> i
+
+). (46) From the definition of the unsafety mass among agents [cf. (25)], it holds that 
+
+ KX
+
+> k=1
+
+Nk
+
+ KX
+
+> k=1
+
+Nk −1
+
+
+
+·pA
+
+ A ≥
+
+> K
+
+X
+
+> k=1
+
+
+
+Nk(Nk −1) ·pAk(Ak)
+
+
+
+.
+
+(47) By using (40) and (47) in the definition of the safety metric [cf. (27)], we complete the proof 
+
+> K
+
+X
+
+> k=1
+
+
+
+Nk · P E (Ak)
+
+
+
+≤
+
+ KX
+
+> k=1
+
+Nk
+
+
+
+· P E (A). (48) APPENDIX BADDITIONAL EXPERIMENTS 
+
+We conduct additional experiments to study the role of agent dynamics [cf. (1)] in environment-trajectory co-optimization and to explore an extension of our bi-level framework to stochastic environment-trajectory co-optimization. Table III: Performance of the proposed method and baselines for stochastic environment-trajectory co-optimization.                                                        
+
+> Stochastic environment optimization Safety metric ↑SPL ↑NumCOLL ↓Computation time ↓PCTSpeed ↓
+> Optimized environment (ours) 0.929 ±0.013 0.943 ±0.019 0±010.465 ±9.490 0.816 ±0.029
+> Standard environment with a regular layout 0.896 ±0.029 0.916 ±0.020 0±036.572 ±42.818 0.826 ±0.021 Baseline environment with a random layout 0.894 ±0.035 0.923 ±0.022 0.075 ±0.225 71.270 ±86.946 0.821 ±0.027
+
+A. System Dynamics 
+
+System dynamics determine how agents’ states transit with their actions between successive time steps, and have asignificant impact on the lower-level trajectory optimization. Since the upper-level environment optimization relies heavily on agent trajectories, different dynamics may require distinct environment configurations for safe multi-agent navigation. To investigate this impact, we switch from double integrator dynamics to unicycle dynamics, and evaluate our method in narrow passage and road intersection scenarios. Table II shows the performance comparison and Fig. 14 displays the optimized environments in two scenarios. We see that different dynamics lead to distinct optimal environments and agent trajectories, corroborating the impact of agent dy-namics. The optimized environment outperforms the baselines for unicycle dynamics as well, corresponding to that for double integrator dynamics in Section V-B. These results demonstrate the general applicability of our method in varying dynamics and emphasize the benefits of differentiable environment-trajectory co-optimization for safe multi-agent navigation. 
+
+B. Stochastic Co-Optimization 
+
+The proposed differentiable bi-level framework can be ex-tended for environment-trajectory co-optimization over ran-dom multi-agent navigation tasks, referred to as stochastic environment-trajectory co-optimization. Specifically, for ran-dom tasks with initial and goal positions sampled from a distri-bution D, we can formulate a stochastic bi-level optimization problem as 
+
+max  
+
+> θ∈O
+
+ED [F (x⋆(θ), u⋆(θ), θ)] (49) s.t. Random task {si, gi}Ni=1 ∼ D 
+
+Obstacle compliance G x⋆(θ), u⋆(θ), θ ≤ 0
+
+x⋆(θ), u⋆(θ) = argmin 
+
+> x∈X,u∈U
+
+f (x, u)
+
+s.t. Agent dynamics x(t) 
+
+> i
+
+= Φ( x(t−1)  
+
+> i
+
+, u(t−1)  
+
+> i
+
+, dt )
+
+Obstacle avoidance go,i 
+
+ x(t) 
+
+> i
+
+, θ ≤ 0
+
+Agent avoidance ga
+
+ x(t) 
+
+> i
+
+, x(t)
+
+> i′
+
+ ≤ 0 for i̸ = i′
+
+Initial conditions x(0)  
+
+> i
+
+= si.
+
+The upper-level goal becomes to optimize environment pa-rameters θ⋆ that maximize the expected safety metric over random multi-agent navigation tasks ED [F (x⋆(θ), u⋆(θ), θ)] .We consider Scenario 1 Warehouse with 4 agents and 9
+
+obstacles. There are 19 possible starting positions distributed along the left & top boundaries, and 19 possible goal positions distributed along the bottom & right boundaries. Two agents are randomly initialized at the left boundary and tasked towards the right boundary, while the other two agents are 
+
+Figure 15. Optimized environment w.r.t. random navigation tasks, where the agent trajectories shown in the figure are generated based on one sampled navigation task. 
+
+randomly initialized at the top boundary and tasked towards the bottom boundary, ensuring non-trivial navigation tasks. Table III shows the results and Fig. 15 displays the opti-mized environment. Our method outperforms the baselines in the stochastic setting as well. It demonstrates a higher safety level, a lower NumCOLL, and less computation time, which validates the effectiveness of our method over random naviga-tion tasks, and achieves a higher SPL and a lower PCTSpeed, which improves the expected navigation performance in the meantime. Moreover, the optimized environment exhibits an irregular / asymmetric obstacle layout to a certain degree, which differs from the regular / symmetric environment as is common practice. This emphasizes the challenge of hand-designing environments with human intuition and highlights the significance of our differentiable optimization method. REFERENCES [1] T. Arai, E. Pagello, L. E. Parker, et al., “Advances in multi-robot systems,” IEEE Transactions on Robotics and Automation , vol. 18, no. 5, pp. 655–661, 2002. [2] Z. H. Ismail, N. Sariff, and E. G. Hurtado, “A survey and analysis of cooperative multi-agent robot systems: Challenges and directions,”                         
+
+> Applications of Mobile Robots , vol. 5, pp. 8–14, 2018. [3] Z. Gao, G. Yang, and A. Prorok, “Online control barrier functions for decentralized multi-agent navigation,” in IEEE International Sympo-sium on Multi-Robot and Multi-Agent Systems (MRS) , 2023. [4] M. C. De Gennaro and A. Jadbabaie, “Formation control for a coop-erative multi-agent system using decentralized navigation functions,” in IEEE American Control Conference (ACC) , 2006. [5] J. Van den Berg, M. Lin, and D. Manocha, “Reciprocal velocity obstacles for real-time multi-agent navigation,” in IEEE International Conference on Robotics and Automation (ICRA) , 2008. [6] V. R. Desaraju and J. P. How, “Decentralized path planning for multi-agent teams with complex constraints,” Autonomous Robots , vol. 32, no. 4, pp. 385–403, 2012. [7] G. Sartoretti et al., “Primal: Pathfinding via reinforcement and imi-tation multi-agent learning,” IEEE Robotics and Automation Letters ,vol. 4, no. 3, pp. 2378–2385, 2019. [8] Z. Gao, G. Yang, J. Bayrooti, and A. Prorok, “Provably safe online multi-agent navigation in unknown environments,” in Conference on Robot Learning (CoRL) , 2024. [9] N. Mani, V. Garousi, and B. H. Far, “Search-based testing of multi-agent manufacturing systems for deadlocks based on models,”
+> International Journal on Artificial Intelligence Tools , vol. 19, no. 04, pp. 417–437, 2010. [10] A. Ruderman et al., “Uncovering surprising behaviors in reinforce-ment learning via worst-case analysis,” 2019.
+
+[11] Q. Wang, R. McIntosh, and M. Brain, “A new-generation auto-mated warehousing capability,” International Journal of Computer Integrated Manufacturing , vol. 23, no. 6, pp. 565–573, 2010. [12] H. Bier, “Robotic building (s),” Next Generation Building , vol. 1, no. 1, 2014. [13] L. Custodio and R. Machado, “Flexible automated warehouse: A literature review and an innovative framework,” The International Journal of Advanced Manufacturing Technology , vol. 106, no. 1, pp. 533–558, 2020. [14] M. ˇ C´ ap, P. Nov´ ak, A. Kleiner, and M. Seleck` y, “Prioritized planning algorithms for trajectory coordination of multiple mobile robots,” 
+
+IEEE Transactions on Automation Science and Engineering , vol. 12, no. 3, pp. 835–849, 2015. [15] P. R. Wurman, R. D’Andrea, and M. Mountz, “Coordinating hundreds of cooperative, autonomous vehicles in warehouses,” AI Magazine ,vol. 29, no. 1, pp. 9–9, 2008. [16] Z. Drezner and G. O. Wesolowsky, “Selecting an optimum configura-tion of one-way and two-way routes,” Transportation Science , vol. 31, no. 4, pp. 386–394, 1997. [17] S. Karma et al., “Use of unmanned vehicles in search and rescue operations in forest fires: Advantages and limitations observed in a field trial,” International Journal of Disaster Risk Reduction , vol. 13, pp. 307–312, 2015. [18] D. Johnson and J. Wiles, “Computer games with intelligence,” in 
+
+IEEE International Conference on Fuzzy Systems (FUZZ-IEEE) ,2001. [19] A. Clark, Being there: Putting brain, body, and world together again .MIT press, 1998. [20] S. Tatikonda and S. Mitter, “Control under communication con-straints,” IEEE Transactions on Automatic Control , vol. 49, no. 7, pp. 1056–1068, 2004. [21] T. Tanaka and H. Sandberg, “Sdp-based joint sensor and controller design for information-regularized optimal lqg control,” in IEEE Conference on Decision and Control (CDC) , 2015. [22] V. Tzoumas, L. Carlone, G. J. Pappas, and A. Jadbabaie, “Lqg control and sensing co-design,” IEEE Transactions on Automatic Control ,vol. 66, no. 4, pp. 1468–1483, 2020. [23] H. Lipson and J. B. Pollack, “Automatic design and manufacture of robotic lifeforms,” Nature , vol. 406, no. 6799, pp. 974–978, 2000. [24] N. Cheney, J. Bongard, V. SunSpiral, and H. Lipson, “Scalable co-optimization of morphology and control in embodied machines,” 
+
+Journal of The Royal Society Interface , vol. 15, no. 143, p. 20 170 937, 2018. [25] G. Fadini et al., “Co-designing versatile quadruped robots for dynamic and energy-efficient motions,” Robotica , vol. 42, no. 6, pp. 2004– 2025, 2024. [26] G. Fadini, T. Flayols, A. Del Prete, N. Mansard, and P. Sou` eres, “Computational design of energy-efficient legged robots: Optimizing for size and actuators,” in IEEE International Conference on Robotics and Automation (ICRA) , 2021. [27] G. Fadini, T. Flayols, A. Del Prete, and P. Sou` eres, “Simulation aided co-design for robust robot optimization,” IEEE Robotics and Automation Letters , vol. 7, no. 4, pp. 11 306–11 313, 2022. [28] F. De Vincenti, D. Kang, and S. Coros, “Control-aware design optimization for bio-inspired quadruped robots,” in IEEE/RSJ Inter-national Conference on Intelligent Robots and Systems (IROS) , 2021. [29] S. Ha, S. Coros, A. Alspach, J. Kim, and K. Yamane, “Computational co-optimization of design parameters and motion trajectories for robotic systems,” The International Journal of Robotics Research ,vol. 37, no. 13-14, pp. 1521–1536, 2018. [30] S. Ha, S. Coros, A. Alspach, J. Kim, and K. Yamane, “Joint optimization of robot design and motion parameters using the implicit function theorem.,” in Robotics: Science and systems (RSS) , 2017. [31] K. M. Digumarti, C. Gehring, S. Coros, J. Hwangbo, and R. Sieg-wart, “Concurrent optimization of mechanical design and locomotion control of a legged robot,” Mobile Service Robotics , pp. 315–323, 2014. [32] T. Gabel and M. Riedmiller, “Joint equilibrium policy search for multi-agent scheduling problems,” in German Conference on Mul-tiagent System Technologies (MATES) , 2008. [33] C. Zhang and J. A. Shah, “Co-optimizating multi-agent placement with task assignment and scheduling,” in International Joint Confer-ences on Artificial Intelligence (IJCAI) , 2016. [34] H. Jaleel and J. S. Shamma, “Decentralized energy aware co-optimization of mobility and communication in multiagent systems,” in IEEE Conference on Decision and Control (CDC) , 2016. [35] U. Ali, H. Cai, Y. Mostofi, and Y. Wardi, “Motion-communication co-optimization with cooperative load transfer in mobile robotics: An optimal control perspective,” IEEE Transactions on Control of Network Systems , vol. 6, no. 2, pp. 621–632, 2018. [36] Z. Gao and A. Prorok, “Environment optimization for multi-agent navigation,” in IEEE International Conference on Robotics and Au-tomation (ICRA) , 2023. [37] Z. Gao and A. Prorok, “Constrained environment optimization for prioritized multi-agent navigation,” IEEE Open Journal of Control Systems , vol. 2, pp. 337–355, 2023. [38] Z. Gao, G. Yang, and A. Prorok, “Co-optimizing reconfigurable environments and policies for decentralized multiagent navigation,” 
+
+IEEE Transactions on Robotics , vol. 41, pp. 4741–4760, 2025. [39] M. Jager and B. Nebel, “Decentralized collision avoidance, deadlock detection, and deadlock resolution for multiple mobile robots,” in 
+
+IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS) , 2001. [40] M. Bennewitz, W. Burgard, and S. Thrun, “Finding and optimizing solvable priority schemes for decoupled path planning techniques for teams of mobile robots,” Robotics and Autonomous Systems , vol. 41, no. 2-3, pp. 89–99, 2002. [41] M. ˇ C´ ap, J. Vokˇ r´ ınek, and A. Kleiner, “Complete decentralized method for on-line multi-robot trajectory planning in well-formed infras-tructures,” in International Conference on Automated Planning and Scheduling (ICAPS) , 2015. [42] W. Wu, S. Bhattacharya, and A. Prorok, “Multi-robot path deconflic-tion through prioritization by path prospects,” in IEEE International Conference on Robotics and Automation (ICRA) , 2020. [43] I. Gur, N. Jaques, K. Malta, M. Tiwari, H. Lee, and A. Faust, “Adversarial environment generation for learning to navigate the web,” arXiv preprint arXiv:2103.01991 , 2021. [44] K. K. Hauser, “Minimum constraint displacement motion planning.,” in Robotics: Science and Systems (RSS) , 2013. [45] K. Hauser, “The minimum constraint removal problem with three robotics applications,” The International Journal of Robotics Re-search , vol. 33, no. 1, pp. 5–17, 2014. [46] M. Bellusci, N. Basilico, F. Amigoni, et al., “Multi-agent path finding in configurable environments,” in International Joint Conference on Autonomous Agents and Multiagent Systems (AAMAS) , 2020. [47] W. Rudin, Principles of mathematical analysis , 3rd edition. McGraw-Hill, 2008. [48] P. Anderson et al., “On evaluation of embodied navigation agents,” 
+
+arXiv preprint arXiv:1807.06757 , 2018. [49] T. Gervet, S. Chintala, D. Batra, J. Malik, and D. S. Chaplot, “Navigating to objects in the real world,” Science Robotics , vol. 8, no. 79, eadf6991, 2023. [50] X. Wang et al., “Reinforced cross-modal matching and self-supervised imitation learning for vision-language navigation,” in IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) ,2019.

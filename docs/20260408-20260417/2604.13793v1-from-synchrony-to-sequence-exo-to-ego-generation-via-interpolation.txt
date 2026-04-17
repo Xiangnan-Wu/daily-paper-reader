@@ -1,0 +1,359 @@
+Title: From Synchrony to Sequence: Exo-to-Ego Generation via Interpolation
+
+URL Source: https://arxiv.org/pdf/2604.13793v1
+
+Published Time: Thu, 16 Apr 2026 01:04:15 GMT
+
+Number of Pages: 24
+
+Markdown Content:
+# From Synchrony to Sequence: Exo-to-Ego Generation via Interpolation 
+
+Mohammad Mahdi 1 Nedko Savov 1 Danda Pani Paudel 1⋆ Luc Van Gool 1
+
+1 INSAIT, Sofia University “St. Kliment Ohridski” 
+
+Abstract. Exo-to-Ego video generation aims to synthesize a first-person video from a synchronized third-person view and corresponding cam-era poses. While paired supervision is available, synchronized exo-ego data inherently introduces substantial spatio-temporal and geometric discontinuities, violating the smooth-motion assumptions of standard video generation benchmarks. We identify this synchronization-induced jump as the central challenge and propose Syn2Seq-Forcing, a sequen-tial formulation that interpolates between the source and target videos to form a single continuous signal. By reframing Exo2Ego as sequential signal modeling rather than a conventional condition–output task, our approach enables diffusion-based sequence models, e.g. Diffusion Forc-ing Transformers (DFoT), to capture coherent transitions across frames more effectively. Empirically, we show that interpolating only the videos, without performing pose interpolation already produces significant im-provements, emphasizing that the dominant difficulty arises from spatio-temporal discontinuities. Beyond immediate performance gains, this for-mulation establishes a general and flexible framework capable of unify-ing both Exo2Ego and Ego2Exo generation within a single continuous sequence model, providing a principled foundation for future research in cross-view video synthesis. 
+
+Keywords: Exo-to-Ego video generation · Interpolation · Diffusion Forc-ing Transformers 
+
+## 1 Introduction 
+
+Given temporally synchronized exocentric (third-person) and egocentric (first-person) videos of the same scene, denoted as the source video x and the target video g, along with their corresponding per-frame camera poses p = [ px, p g ], the Exo2Ego generation task aims to learn a parametric mapping fθ that synthesizes the target egocentric observation conditioned on the available source view and camera geometry: 
+
+min  
+
+> θ
+
+∥fθ (x, p ) − g∥. 
+
+> ⋆
+
+Corresponding author 
+
+> arXiv:2604.13793v1 [cs.CV] 15 Apr 2026
+
+2 Mahdi et al. ...      
+
+> ...
+> Discontinuous Trajectory
+> Discontinuous
+> Bad Results
+> Good Results
+> (Video Generator: condition-output style)
+> (Syn2Seq-forcing: sequential)
+> Exo part: Source, Condition Ego part: Target, Output
+> Interpolate
+> inputs outputs Ggenerated
+> (learned)
+> GG
+> ...
+
+Fig. 1: Top: Standard video generators struggle with discontinuous camera poses and missing transitions from exo to ego. Bottom: Syn2Seq-Forcing (ours) interpolates be-tween views and camera poses to form a single continuous sequence, enabling smooth exo2ego generation; the same framework naturally extends to ego2exo. 
+
+Exo2Ego generation is practically significant in applications such as robotics, augmented reality, and virtual reality [12, 19, 25, 26, 32, 49], where systems must reconstruct or predict a first-person experience from third-person observations to enable accurate perception, interaction, and immersive feedback. The problem is inherently challenging: it not only requires transferring viewpoint information but also necessitates capturing fine-grained spatial and temporal cues, includ-ing body dynamics, hand-object interactions, and scene elements that may be only partially observable from the exocentric perspective. Moreover, maintain-ing temporal coherence and visual fidelity across frames further increases the complexity of the task. While temporal synchronization provides paired supervision, it also intro-duces two fundamental challenges that make Exo2Ego generation qualitatively different from standard video generation. First, from a frame-coherence perspec-tive, the viewpoint gap between x and g is often substantial, resulting in a large spatio-temporal discontinuity between the end of the source video and the begin-ning of the target video. Second, from a geometric perspective, the corresponding camera poses can exhibit significant discontinuities: the configuration of px at the end of the source sequence may differ sharply from pg at the start of the target sequence. In contrast, most conventional video generation benchmarks [2, 52] assume smooth motion and continuous trajectories. Consequently, models trained under these assumptions, e.g., [2], often struggle to handle the abrupt spatial and geo-metric transitions inherent in synchronized exo-ego video pairs. These challenges highlight the need for methods that explicitly account for both viewpoint jumps 
+
+and pose discontinuities to produce temporally coherent and visually accurate egocentric outputs. Syn2Seq-Forcing 3
+
+Prior work has largely followed a condition–output paradigm, exploring dif-ferent strategies to condition on x and p [27,31] within various architectures [32], or leveraging multiple exocentric views to enrich spatial cues [25]. In this paper, however, we take a step back to address the fundamental challenge introduced by synchronization. Our key idea is to replace the traditional synchronized but discontinuous formulation with a sequential one: we interpolate between x and g
+
+to generate a single continuous signal that effectively bridges the spatio-temporal and geometric gaps, as illustrated in Fig1. This transformation, moving from condition-output modeling to sequential signal modeling, not only produces measurable improvements in performance but also opens up new avenues for flexible and controllable video generation. By treating the source, interpolated, and target sequences as a unified signal, where past frames condition future frames, our approach enables the network to capture smooth transitions, maintain temporal coherence, and better handle abrupt viewpoint and pose changes inherent in exo–ego video pairs. We demonstrate that even interpolating only the video frames without per-forming interpolation on the camera poses, already leads to substantial gains, emphasizing that the primary challenge in Exo2Ego generation stems from the spatio-temporal discontinuities introduced by synchronization. Beyond these per-formance improvements, the sequential formulation offers significant conceptual flexibility: in principle, it could be extended to generate longer sequences, such as transitioning from egocentric back to exocentric views, thereby enabling both Exo2Ego and Ego2Exo generation within a single unified framework. Although we do not explore this extended flexibility in the present work, the results high-light the broader potential of our approach as a general framework for exo/ego-centric video generation. 
+
+Contributions. 
+
+1. We study and identify synchronization-induced discontinuities as the core obstacle in Exo2Ego video generation. 2. We resolve this obstacle by reframing the task as sequential modeling with interpolation, yielding significant performance gains even without pose in-terpolation. 3. We introduce a general-purpose paradigm that can unify both Exo2Ego and Ego2Exo generation within a single continuous sequence model. 
+
+## 2 Related Works 
+
+Diffusion-based Video Generation. 
+
+Recent advances in diffusion models and large-scale datasets have rapidly improved the quality and diversity of video generation [4, 13, 14, 17, 28, 29, 34, 38, 40,51,53,54]. Representative systems such as Tune-A-Video [47], Video Diffusion Models [14], Stable Video Diffusion [3], AnimateDiff [9], LTX 2 [10], Hunyan-Video [21] and WAN2.2 [45] demonstrate the ability of diffusion models to gen-erate temporally coherent and visually realistic videos. Recently, long-horizon 4 Mahdi et al.                                              
+
+> Model gt Cnd. Text Cnd. Exo Views HOI Cnd. 3D Prior Transitional
+> Trj-Crafter [52] No Yes 1No Yes No PMYS [31] No No 1Yes No No Exo2Ego-V [26] No No 4No Yes No EgoExo-Gen [49] Yes Yes 1Yes No No Exo2EgoSyn [32] No No 4No No No
+> Ours No No 1No No Yes
+> Table 1: Comparison of structural assumptions in different Exo2Ego methods. gt Cnd. indicates use of any signal, e.g., the first frame, from ego ground-truth signals,
+> Text Cnd. indicates text-based conditioning, HOI Cnd. denotes use of hand–object interaction information, and Transitional shows if the model can generate exo-to-ego transitions.
+
+video generation has been advanced by autoregressive and diffusion-based ap-proaches, including Diffusion Forcing Transformers [42], SelfForcing [18], and SelfForcing++ [5], which enable stable generation over extended sequences. To offer fine-grained control beyond an initial text prompt, recent work has introduced mechanisms for explicit camera control in video generation. Methods such as CameraCtrl [11], MotionCtrl [46], Direct-a-Video [50], and CamTrol [15] enable controllable camera trajectories during generation. ReCam-Master [2] achieve fine-grained camera control by directly manipulating tem-poral attention within large video generators. World models enable interactive environments with real-time camera control: WorldPlay [43], Genie 3 [37], and LingBot [44]. Long-horizon video generators, such as Diffusion Forcing Trans-formers [42] and MotionStream [41] have been demonstrated to follow camera controls as well. SPMem [48], VMem [24], Gen3C [39], and TrajectoryCrafter [52] maintain 3D representations during video generation, to produce consistent con-tent throughout viewpoints. These camera-controlled video generation methods synthesize videos by fol-lowing a continuous camera motion trajectory during generation. However, they do not address the task of transforming the viewpoint of an existing video, leav-ing cross-view camera pose transfer largely unexplored. 
+
+Ego-Exo Cross-View Learning. Cross-view learning studies how models can relate, interpret, and synthesize observations of the same scene captured from dif-ferent viewpoints, such as egocentric and exocentric perspectives. Exocentric un-derstanding has been advanced by the emergence of ego–exo dual-view datasets - Ego-ExoLearn [19], Ego-Exo4D [8]. Existing work has largely focused on per-ception and reasoning tasks, including ego–exo object correspondence [6,7,33,35] and ego–exo visual question answering [12, 23]. In this work, we instead address ego–exo video generation [27], which poses a substantially more challenging prob-lem that requires synthesizing realistic egocentric observations rather than only understanding them. Despite its importance, ego–exo video generation has received relatively lim-ited attention. Luo et al. [31] propose a two-stage pipeline (PMYS) that first pre-dicts hand trajectories and subsequently generates egocentric videos conditioned Syn2Seq-Forcing 5...  WFLF        
+
+> ...
+> Dataset Construction: Store (X,I,G)
+> ...
+> ... ...
+> ... ...
+> Heads
+> Tails
+> DFoT
+> Training:
+> Inference:
+> DFoT
+> ...
+> ...
+> ... ... ...
+
+Fig. 2: Syn2Seq-Forcing framework. Top-left: Using the last exo frame and first ego frame, we generate and cache pseudo-ground-truth interpolations with the WFLF model. Bottom-left: During training, a random pair of either (Exo–Interpolated) or (Interpolated–Ego) transitions is selected to train a DFoT conditioned on the corre-sponding camera poses. Right: During inference, the model receives the exo video and all camera poses to generate both the exo-to-ego transition and the final ego video. 
+
+on exocentric inputs. EgoWorld [36] reconstructs egocentric views using exocen-tric depth, 3D hand pose estimates, and textual descriptions through point-cloud reprojection followed by diffusion-based inpainting. EgoExo-Gen [49] conditions egocentric video synthesis on action descriptions together with the first ego-centric frame. Complementary work studies the inverse direction of generation: intention-driven approaches focus on synthesizing exocentric videos from ego-centric inputs [30]. In our approach for exo-to-ego video synthesis, we only rely on camera poses, and do not require extra labels or building explicit representa-tions, as demonstrated on Tab. 1. Exo2Ego-V [27] instead leverages multi-view exocentric observations and camera poses within a PixelNeRF-based diffusion framework to generate egocentric videos. In contrast, our method only requires a single exo view and no 3D prior, as shown on Tab. 1. Finally, Exo2EgoSyn [32] demonstrates how large pretrained video generators can be repurposed for the Exo2Ego task. While benefiting from strong pretrained representations, their approach relies on a single predicted egocentric frame to guide generation and applies per-frame camera control despite the model’s tem-porally coupled attention. In contrast, we train a model better suited for per-frame pose conditioning and make use of full exocentric video inputs, while still leveraging large-scale pretrained knowledge through pose interpolation during data collection. 6 Mahdi et al. 
+
+## 3 Methodology 
+
+3.1 Preliminaries Diffusion Forcing Transformer. Diffusion Forcing Transformer (DFoT) is a video diffusion framework designed to support flexible history conditioning, i.e ., the ability to condition generation on an arbitrary subset or length of previous frames. Unlike standard video diffusion pipelines that assume fixed conditioning layouts, DFoT applies the diffusion process with independent noise levels for each frame. This generalizes the noising-as-masking principle: heavily noised frames effectively act as masked (removed) conditioning inputs, whereas lightly noised frames retain usable historical information, allowing the model to dynamically leverage past context. This design enables a classifier-free guidance (CFG)-style formulation over the history during sampling. Specifically, the unconditional branch corresponds to fully noising (masking) the historical frames, while the conditional branch preserves selected history frames. Combining these score estimates provides a controllable trade-off between fidelity, temporal consistency, and diversity, now extended to handle variable-length and variable-structure histories. DFoT can be implemented using transformer-based video backbones (e.g., DiT or U-ViT) and is fully compatible with fine-tuning from pretrained video diffusion models, making it a flexible and practical choice for complex video generation tasks that require adaptive temporal conditioning. Built on top of DFoT, History Guidance (HG) introduces structured mech-anisms to exploit flexible history conditioning: Vanilla History Guidance (HG-v): applies CFG with an arbitrary history window. Temporal History Guidance (HG-t): combines score estimates from multiple history windows across time. 
+
+Fractional History Guidance (HG-f ): uses partially noised history to modulate information by frequency content (e.g., low-pass or band-pass effects). HG-tf: ajoint time-frequency guidance strategy that combines HG-t and HG-f. In Exo2Ego generation, we identify the primary challenge as the severe dis-continuity between synchronized exocentric and egocentric sequences, both in vi-sual content and camera poses. This abrupt spatio-temporal and geometric jump significantly degrades generation quality, as it violates the smooth-transition as-sumptions underlying standard video diffusion models. By explicitly bridging this gap through interpolation, we transform the synchronized pair into a sin-gle continuous signal. Such a formulation naturally aligns with DFoT, which is designed to flexibly process arbitrary history subsets within a unified sequence. 
+
+WAN2.2 First/Last Frame (WFLF). WAN2.2 is a powerful foundational video Latent Diffusion Model(LDM) designed for high-quality video generation conditioned on text and/or images. Wan2.2-Lightning is a distilled Wan2.2 vari-ant designed for efficient sampling with very few diffusion steps and without requiring CFG. WFLF is the boundary-conditioned baseline built on Wan2.2-Lightning 8-step LoRA, while following the FLF2V setup (conditioning on the first and last frames) to preserve global structure and temporal consistency. Syn2Seq-Forcing 7
+
+This design makes WFLF a compact and efficient frame interpolator, capable of generating temporally coherent transitions with minimal diffusion steps. 
+
+3.2 Task Definition 
+
+Given an exocentric video sequence X = {x1, . . . , x T } ∈ RT ×C×H×W , with 
+
+T frames, per-frame exocentric camera poses Px = {px 
+
+> 1
+
+, . . . , p xT } ∈ RT ×v , and per-frame egocentric camera poses Pg = {pg
+
+> 1
+
+, . . . , p gT } ∈ RT ×v , our goal is to synthesize a temporally synchronized egocentric video G = {g1, . . . , g T } ∈ 
+
+RT ×C×H×W , while preserving temporal alignment and scene-level consistency across viewpoints. This cross-view generation problem is intrinsically challenging due to the large appearance and geometric gap between exocentric and egocentric observa-tions, especially at the exo-to-ego transition (e.g., from  xT to  g1). The difficulty is further amplified by substantial viewpoint change and camera-motion mis-match between the two domains. In our setting, this becomes particularly severe because the exocentric camera is often static, i.e.,  px 
+
+> 1
+
+= · · · = pxT , which provides limited multi-view geometric cues and weak 3D observability. Consequently, the model must infer missing scene structure and plausible ego-view dynamics from highly under-constrained exocentric evidence. 
+
+3.3 Our Framework 
+
+Instead of learning a direct cross-view mapping 
+
+G = fθ (X, P x, P g ) ,
+
+we cast the task as diffusion-based sequential modeling and propose Syn2Seq-Forcing , as shown in Fig2. We build a unified temporal stream  S by concate-nating exocentric frames, an intermediate interpolated segment, and egocentric frames. The interpolated segment is introduced to bridge the large exo-to-ego transition gap and enforce a smoother appearance and motion trajectory. In parallel, we interpolate camera poses to form a unified pose sequence 
+
+P = ( Px, P i, P g ),
+
+where  Pi denotes interpolated transition poses. Following DFoT, we apply per-frame independent noise levels and feed the model the corrupted sequence  Sn,while conditioning on  P :
+
+ˆϵ = S2S ϕ(Sn, P ) .
+
+This design offers three practical benefits. First, ego-view generation is con-ditioned not only on exo observations but also on transition-aware interpolated visual and pose cues, which is difficult to obtain in a direct one-shot formula-tion. Second, during sampling, the model jointly synthesizes both the transition segment and the target ego sequence in a temporally coherent manner. Third, because the formulation is sequence-centric rather than direction-specific, it nat-urally extends to the reverse setting (Ego →Exo) within the same framework. 8 Mahdi et al. 
+
+Video Interpolation. To construct the unified stream  S = [ X, I, G ], we syn-thesize an intermediate segment  I that bridges the last exocentric frame  xT and the first egocentric frame  g1. We use the frozen WFLF model for this purpose. Managing to require  |I| = T (matching the lengths of  X and  G), we query WFLF to generate only the interior transition frames: 
+
+I′ = WFLF( xT , g 1, prompt ), |I′| = T − 2,
+
+and then explicitly attach the boundary frames: 
+
+I = [ xT , I ′, g 1], |I| = T. 
+
+Here,  prompt  is a dataset-specific text prompt used to steer generation. The resulting  I is treated as a pseudo-interpolation signal: WFLF is not updated during training, and its outputs serve as supervisory transition targets within our S2S training pipeline. The details for querying WFLF is provided in supplementary materials. 
+
+Pose Interpolation. Given  Px = {pxt }Tt=1  and  Pg = {pgt }Tt=1 , with  pt ∈ Rv , we define an intermediate pose trajectory 
+
+Pi = {pij }Tj=1 ,
+
+that connects the boundary poses  pxT and  pg
+
+> 1
+
+. Each pose is decomposed as 
+
+p = ( k, [R | t]) ,
+
+where  k denotes camera intrinsics,  R ∈ SO (3)  is rotation, and  t ∈ R3 is trans-lation. For normalized time  τj = j−1  
+
+> T−1
+
+, we interpolate 
+
+Rij = Slerp( RxT , R g 
+
+> 1
+
+; τj ) , tij = (1 − τj )txT + τj tg
+
+> 1
+
+,
+
+and form 
+
+pij =  kij , [Rij | tij ], j = 1 , . . . , T. 
+
+In practice,  kij is fixed to the exocentric intrinsics for all  j. We also enforce boundary consistency: 
+
+pi 
+
+> 1
+
+= pxT , piT = pg
+
+> 1
+
+.
+
+The final conditioning pose sequence is 
+
+P = ( Px, P i, P g ),
+
+which provides a smooth camera-geometry transition between the exocentric and egocentric segments. Details of  Slerp( ·) are provided in the supplementary material. Syn2Seq-Forcing 9
+
+Training. We adopt a two-stage pretraining–finetuning paradigm, optimizing the following loss function for both stages: 
+
+L = ∥ϵ − S2S ϕ(Sn, P )∥2 .
+
+Pretraining. In the pretraining stage, the model is trained on 356k video clips collected from all available categories. Each sample consists of a direct Exo →Ego pair, without any interpolation. The pretraining runs for 20 epochs (approxi-mately 4 days) on 8 NVIDIA H200 GPUs, providing a strong initialization for subsequent fine-tuning. 
+
+Finetuning. Building upon the pretrained weights, we finetune category-specific models using 40k videos per category, enabling interpolation, for 150 epochs (roughly 3.5 days) on 8 NVIDIA H200 GPUs. Training samples are con-structed as paired triplets (S = ( X, I, G ), P = ( Px, P i, P g ) with  I and  Pi rep-resenting interpolated pseudo ground-truth visual and pose sequences. At each training step, we randomly select one of two sequential sub-tasks: either 
+
+D =  (X, I ), (Px, P i), or D =  (I, G ), (Pi, P g ).
+
+This stochastic decomposition allows the model to jointly learn both transitions, Exo →Interp and Interp →Ego, within a unified training framework. More details regarding implementation and hyperparameters are provided in the supplemen-tary material. 
+
+Inference. During inference, we condition the model on clean exocentric frames and append a noise-only suffix of length  2T . The first  T noise slots are denoised into the transition segment, and the remaining  T noise slots are denoised into the egocentric segment. Formally, the generated sequence is 
+
+ˆS = X, ˆI, ˆG, | ˆI| = | ˆG| = T, 
+
+where  ˆI and  ˆG are produced in a single denoising process conditioned on  X and the corresponding pose stream. 
+
+## 4 Experiments 
+
+4.1 Experimental Setup Dataset. We evaluate our approach in three categories of the Ego-Exo4D [8] benchmark: Bike, Health, and Cooking. For each egocentric video, the dataset provides four exocentric videos (this study uses only one exo video randomly taken from the available ones) along with the corresponding camera poses for the fixed exocentric cameras and for every frame of the egocentric video. Our experiments process 363 videos from the Bike category, 678 videos from the Cooking category, and 397 videos from the Health category. Both egocentric and exocentric videos are spatially resized to a resolution of  H = W = 256 .10 Mahdi et al.                                
+
+> Method Health Bike Cooking
+> PSNR ↑SSIM ↑LPIPS ↓PSNR SSIM LPIPS PSNR SSIM LPIPS Trj-Crafter [52] 14.3091 0.4176 0.5623 14.0102 0.3409 0.6001 13.7554 0.3729 0.6003 Wan-FCtrl [1] 13.8993 0.4319 0.5734 13.5699 0.3312 0.6197 13.4200 0.3599 0.6071 Wan VACE [20] 14.1922 0.4299 0.5966 13.2104 0.3329 0.6156 13.3680 0.3689 0.6129 Exo2EgoSyn [32] 15.6234 0.4821 0.4991 15.1319 0.3895 0.5052 13.9011 0.4039 0.6125
+> Ours 16.7139 0.5728 0.4828 15.6301 0.4721 0.5012 14.3897 0.4531 0.5854
+> Table 2: Main comparisons: Quantitative evaluation of Exo2Ego generation methods across three categories.
+
+Since the WFLF architecture requires the number of frames to satisfy  4n + 1 , we sample 9 frames per video. We use a skip-frame step of 4 during preprocessing, ensuring that sufficient motion is captured in the sampled frames. For testing splits, we follow the partitions released by [8]. 
+
+Baseline Construction. To benchmark against prior Exo-to-Ego methods and reflect recent progress in controllable video generation, we include comparisons with Trajectory Crafter [52], Wan Fun Control [1], and Wan VACE [20], which utilize different conditioning strategies. Exo2Ego-V [27] is limited to scenarios with four exocentric views, and EgoExo-Gen (X-Gen) [49] lacks a publicly avail-able implementation; therefore, both methods are omitted from our experiments. 
+
+Evaluation Metrics. To quantitatively assess our method, we report perfor-mance using PSNR, SSIM, and LPIPS (AlexNet [22]), following the evaluation protocol described in [27]. This ensures a consistent and fair comparison with baseline methods while providing complementary measures of both pixel-level fidelity and perceptual similarity for the generated egocentric videos. 
+
+4.2 Comparison with Baselines 
+
+We present a comparison with the proposed baselines in Table 2. Across all cat-egories, Syn2Seq-Forcing(ours) consistently achieves superior results, highlight-ing the robustness of our approach. To ensure a fair comparison with methods that cannot produce smooth exocentric-to-egocentric transitions, only the Ego-generated portion of Syn2Seq-Forcing is taken in to account for metric computa-tion, excluding the interpolated segments. Qualitative results are shown in Fig 3, and additional visual examples are available in the supplementary material. 
+
+4.3 Ablation Studies Interpolation. We demonstrate that interpolating only the video frames al-ready provides a substantial performance boost. In this setup, no pose interpo-lation is performed; we use the egocentric poses directly and fill the remaining camera poses with zero vectors. We further evaluate the effect of including pose interpolation, with results summarized in Table 3. Qualitative examples illus-trating the impact of both frame-only and frame-plus-pose interpolation are presented in Fig 4. Syn2Seq-Forcing 11 N/A  N/A  N/A  N/A 
+
+N/A  N/A  N/A  N/A 
+
+N/A N/A N/A N/A 
+
+N/A  N/A  N/A  N/A  
+
+> Input (Exo)
+> gt Ours Wan-FCtrl Trj-Crafter Trj-Crafter  Wan-FCtrl  Ours  gt
+> Input (Exo)
+> Interpolated frames Ego frames
+
+Fig. 3: Comparison of different methods against ground-truth. Bettter viewed zoomed. 12 Mahdi et al. 
+
+Model Health Bike Cooking 
+
+PSNR ↑ SSIM ↑ LPIPS ↓ PSNR SSIM LPIPS PSNR SSIM LPIPS Exo2Ego-Direct 13.5419 0.4176 0.5822 14.0091 0.3552 0.5866 13.1609 0.3831 0.6176 Exo2Ego-FI 16.1003 0.5427 0.4902 15.1245 0.4405 0.5387 14.2131 0.4401 0.5899 Exo2Ego-FPI 16.7139 0.5728 0.4828 15.6301 0.4721 0.5012 14.3897 0.4531 0.5854 
+
+Table 3: Interpolation effect: Direct predicts the ego view directly from the exo view without interpolation. FI applies only frame interpolation, and uses ego camera poses with setting other poses to zero. FPI applies both frame and pose interpolation. gt Exo2Ego-FPI Exo2Ego-FI Exo2Ego-Direct 
+
+Fig. 4: Comparison illustrating the effect of interpolation on the generated outputs. 
+
+Type of Video Interpolation. We, as reported in Table4, investigate the ef-fectiveness of our interpolator, WFLF, in comparison to DFoT’s native inference-time interpolation. As mentioned earlier, typical video generator models alone cannot adequately handle the large viewpoint gap between exocentric and ego-centric frames, resulting in inferior performance. We report quantitative results separately for the first T generated frames (interpolated frames), the next T
+
+frames (egocentric frames), and for both segments combined, providing a com-prehensive evaluation of the interpolator’s contribution. 
+
+Setup Bike-INT Bike-EGO Bike-Both 
+
+PSNR ↑ SSIM ↑ LPIPS ↓ PSNR SSIM LPIPS PSNR SSIM LPIPS WFLF 15.6933 0.4754 0.5022 15.6301 0.4721 0.5012 15.6522 0.4736 0.5016 DFoT-INTRPL 13.1109 0.3203 0.6327 13.9012 0.3335 0.6192 13.4801 0.3276 0.6258 
+
+Table 4: Video interpolator: DFoT-INTRPL denotes DFoT’s native interpolation ca-pability during inference. Syn2Seq-Forcing 13 
+
+Type of Pose Embedding We perform an ablation study on the type of pose embedding, comparing three variants, according to Table5: the Global version, which represents camera poses as 16-dimensional vectors per frame; Ray En-coding , which encodes per-pixel rays in a 180-dimensional space; and Plücker 
+
+embeddings, a per-pixel 6-dimensional representation of camera poses. Across experiments, we consistently observe, that Plücker embeddings yield the best performance, demonstrating superior compatibility with our interpolation frame-work.                     
+
+> Setup Bike-INT Bike-EGO
+> PSNR ↑SSIM ↑LPIPS ↓PSNR SSIM LPIPS Global 15.0799 0.4588 0.5116 15.0197 0.4571 0.5184 Ray Encoding 15.6028 0.4739 0.5097 15.5702 0.4729 0.5051 Pluckers(ours) 15.6933 0.4754 0.5022 15.6301 0.4721 0.5012
+> Table 5: Effect of different methods for embedding camera poses.
+
+## 5 Conclusion 
+
+In this work, we revisited Exo2Ego video generation task from a synchronization-aware perspective and demonstrated that the primary bottleneck is not simply the quality of conditioning, but the abrupt spatio-temporal and geometric dis-continuities between synchronized exocentric and egocentric segments. To ad-dress this challenge, we replaced the traditional condition–output formulation with a sequential signal approach that explicitly bridges these gaps through interpolation and models the resulting sequence as a continuous signal under diffusion-based forcing. This reformulation yields clear empirical improvements and remains effective even when only video interpolation is applied, highlighting that mitigating temporal discontinuity is a key factor driving performance. Beyond these results, our framework provides a unified perspective on cross-view video generation: by treating the source, transitional, and target segments as a single structured sequence, it inherently supports flexible conditioning and points toward bidirectional view translation (Exo2Ego and Ego2Exo) within a single model. We anticipate that this approach will inspire future research on longer-horizon cross-view video synthesis and more comprehensive multi-view sequential modeling. 
+
+## References   
+
+> 1. AIGC-Apps: Videox-fun: A flexible framework for video generation. https:// github.com/aigc-apps/VideoX-Fun (2024), accessed: 2026-03-05
+
+14 Mahdi et al. 2. Bai, J., Xia, M., Fu, X., Wang, X., Mu, L., Cao, J., Liu, Z., Hu, H., Bai, X., Wan, P., et al.: Recammaster: Camera-controlled generative rendering from a single video. arXiv preprint arXiv:2503.11647 (2025) 3. Blattmann, A., Dockhorn, T., Kulal, S., Mendelevitch, D., Kilian, M., Lorenz, D., Levi, Y., English, Z., Voleti, V., Letts, A., et al.: Stable video diffusion: Scaling latent video diffusion models to large datasets. arXiv preprint arXiv:2311.15127 (2023) 4. Blattmann, A., Rombach, R., Ling, H., Dockhorn, T., Kim, S.W., Fidler, S., Kreis, K.: Align your latents: High-resolution video synthesis with latent diffusion mod-els. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. pp. 22563–22575 (2023) 5. Cui, J., Wu, J., Li, M., Yang, T., Li, X., Wang, R., Bai, A., Ban, Y., Hsieh, C.J.: Self-forcing++: Towards minute-scale high-quality video generation. arXiv preprint arXiv:2510.02283 (2025) 6. Fu, Y., Wang, R., Fu, Y., Paudel, D.P., Van Gool, L.: Cross-view multi-modal segmentation @ ego-exo4d challenges 2025 (2025), ego-Exo4D Challenge 7. Fu, Y., Wang, R., Ren, B., Sun, G., Gong, B., Fu, Y., Paudel, D.P., Huang, X., Van Gool, L.: Objectrelator: Enabling cross-view object relation understanding across ego-centric and exo-centric perspectives. In: Proceedings of the IEEE/CVF International Conference on Computer Vision. pp. 6530–6540 (2025) 8. Grauman, K., Westbury, A., Torresani, L., Kitani, K., Malik, J., Afouras, T., Ashutosh, K., Baiyya, V., Bansal, S., Boote, B., et al.: Ego-exo4d: Understanding skilled human activity from first-and third-person perspectives. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 19383–19400 (2024) 9. Guo, Y., Yang, C., Rao, A., Liang, Z., Wang, Y., Qiao, Y., Agrawala, M., Lin, D., Dai, B.: Animatediff: Animate your personalized text-to-image diffusion models without specific tuning. arXiv preprint arXiv:2307.04725 (2023) 10. HaCohen, Y., Brazowski, B., Chiprut, N., Bitterman, Y., Kvochko, A., Berkowitz, A., Shalem, D., Lifschitz, D., Moshe, D., Porat, E., et al.: Ltx-2: Efficient joint audio-visual foundation model. arXiv preprint arXiv:2601.03233 (2026) 11. He, H., Xu, Y., Guo, Y., Wetzstein, G., Dai, B., Li, H., Yang, C.: Cameractrl: En-abling camera control for text-to-video generation. arXiv preprint arXiv:2404.02101 (2024) 12. He, Y., Huang, Y., Chen, G., Pei, B., Xu, J., Lu, T., Pang, J.: Egoexobench: A benchmark for first-and third-person view video understanding in mllms. arXiv preprint arXiv:2507.18342 (2025) 13. Ho, J., Chan, W., Saharia, C., Whang, J., Gao, R., Gritsenko, A., Kingma, D.P., Poole, B., Norouzi, M., Fleet, D.J., et al.: Imagen video: High definition video generation with diffusion models. arXiv preprint arXiv:2210.02303 (2022) 14. Ho, J., Salimans, T., Gritsenko, A., Chan, W., Norouzi, M., Fleet, D.J.: Video diffusion models. Advances in neural information processing systems 35 , 8633– 8646 (2022) 15. Hou, C., Chen, Z.: Training-free camera control for video generation. arXiv preprint arXiv:2406.10126 (2024) 16. Huang, J., Zhou, Q., Rabeti, H., Korovko, A., Ling, H., Ren, X., Shen, T., Gao, J., Slepichev, D., Lin, C.H., et al.: Vipe: Video pose engine for 3d geometric perception. arXiv preprint arXiv:2508.10934 (2025) 17. Huang, S., Gong, B., Feng, Y., Chen, X., Fu, Y., Liu, Y., Wang, D.: Learning disen-tangled identifiers for action-customized text-to-image generation. In: Proceedings Syn2Seq-Forcing 15 of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 7797–7806 (2024) 18. Huang, X., Li, Z., He, G., Zhou, M., Shechtman, E.: Self forcing: Bridging the train-test gap in autoregressive video diffusion. arXiv preprint arXiv:2506.08009 (2025) 19. Huang, Y., Chen, G., Xu, J., Zhang, M., Yang, L., Pei, B., Zhang, H., Dong, L., Wang, Y., Wang, L., et al.: Egoexolearn: A dataset for bridging asynchronous ego-and exo-centric view of procedural activities in real world. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 22072– 22086 (2024) 20. Jiang, Z., Han, Z., Mao, C., Zhang, J., Pan, Y., Liu, Y.: Vace: All-in-one video creation and editing. In: Proceedings of the IEEE/CVF International Conference on Computer Vision. pp. 17191–17202 (2025) 21. Kong, W., Tian, Q., Zhang, Z., Min, R., Dai, Z., Zhou, J., Xiong, J., Li, X., Wu, B., Zhang, J., et al.: Hunyuanvideo: A systematic framework for large video generative models. arXiv preprint arXiv:2412.03603 (2024) 22. Krizhevsky, A., Sutskever, I., Hinton, G.E.: Imagenet classification with deep con-volutional neural networks. Advances in neural information processing systems 25 
+
+(2012) 23. Lee, I., Park, W., Jang, J., Noh, M., Shim, K., Shim, B.: Towards comprehen-sive scene understanding: Integrating first and third-person views for lvlms. arXiv preprint arXiv:2505.21955 (2025) 24. Li, R., Torr, P., Vedaldi, A., Jakab, T.: Vmem: Consistent interactive video scene generation with surfel-indexed view memory. In: Proceedings of the IEEE/CVF International Conference on Computer Vision. pp. 25690–25699 (2025) 25. Li, Y.M., Huang, W.J., Wang, A.L., Zeng, L.A., Meng, J.K., Zheng, W.S.: Egoexo-fitness: Towards egocentric and exocentric full-body action understanding. In: Eu-ropean Conference on Computer Vision. pp. 363–382. Springer (2024) 26. Liu, G., Tang, H., Latapie, H., Yan, Y.: Exocentric to egocentric image generation via parallel generative adversarial network. In: ICASSP 2020-2020 IEEE Inter-national Conference on Acoustics, Speech and Signal Processing (ICASSP). pp. 1843–1847. IEEE (2020) 27. Liu, J.W., Mao, W., Xu, Z., Keppo, J., Shou, M.Z.: Exocentric-to-egocentric video generation. Advances in Neural Information Processing Systems 37 , 136149–136172 (2024) 28. Liu, Y., Pan, J., Yang, J., Chen, T., Zhou, P., Zhang, B.: Diverse instance genera-tion via diffusion models for enhanced few-shot object detection in remote sensing images. IEEE Geoscience and Remote Sensing Letters (2025) 29. Liu, Y., Pan, J., Zhang, B.: Control copy-paste: Controllable diffusion-based aug-mentation method for remote sensing few-shot object detection. arXiv preprint arXiv:2507.21816 (2025) 30. Luo, H., Zhu, K., Zhai, W., Cao, Y.: Intention-driven ego-to-exo video generation. arXiv preprint arXiv:2403.09194 (2024) 31. Luo, M., Xue, Z., Dimakis, A., Grauman, K.: Put myself in your shoes: Lifting the egocentric perspective from exocentric videos. In: European Conference on Computer Vision. pp. 407–425. Springer (2024) 32. Mahdi, M., Fu, Y., Savov, N., Pan, J., Paudel, D.P., Van Gool, L.: Exo2egosyn: Unlocking foundation video generation models for exocentric-to-egocentric video synthesis. arXiv preprint arXiv:2511.20186 (2025) 16 Mahdi et al. 33. Mur-Labadia, L., Santos-Villafranca, M., Bermudez-Cameo, J., Perez-Yus, A., Martinez-Cantin, R., Guerrero, J.J.: O-mama: Learning object mask matching between egocentric and exocentric views. In: ICCV (2025) 34. Pan, J., Lei, S., Fu, Y., Li, J., Liu, Y., Sun, Y., He, X., Peng, L., Huang, X., Zhao, B.: Earthsynth: Generating informative earth observation with diffusion models. arXiv preprint arXiv:2505.12108 (2025) 35. Pan, J., Wang, R., Qian, T., Mahdi, M., Fu, Y., Xue, X., Huang, X., Van Gool, L., Paudel, D.P., Fu, Y.: V ²-sam: Marrying sam2 with multi-prompt experts for cross-view object correspondence. arXiv preprint arXiv:2506.05856 (2025) 36. Park, J., Ye, A.S., Kwon, T.: Egoworld: Translating exocentric view to egocentric view using rich exocentric observations. arXiv preprint arXiv:2506.17896 (2025) 37. Parker-Holder, J., Fruchter, S.: Genie 3: A new frontier for world models. URL https://deepmind. google/discover/blog/genie-3-a-new-frontier-for-world-models/. Blog post (2025) 38. Peebles, W., Xie, S.: Scalable diffusion models with transformers. In: Proceedings of the IEEE/CVF international conference on computer vision. pp. 4195–4205 (2023) 39. Ren, X., Shen, T., Huang, J., Ling, H., Lu, Y., Nimier-David, M., Müller, T., Keller, A., Fidler, S., Gao, J.: Gen3c: 3d-informed world-consistent video generation with precise camera control. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 6121–6132 (2025) 40. Rombach, R., Blattmann, A., Lorenz, D., Esser, P., Ommer, B.: High-resolution image synthesis with latent diffusion models. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. pp. 10684–10695 (2022) 41. Shin, J., Li, Z., Zhang, R., Zhu, J.Y., Park, J., Shechtman, E., Huang, X.: Motion-stream: Real-time video generation with interactive motion controls. arXiv preprint arXiv:2511.01266 (2025) 42. Song, K., Chen, B., Simchowitz, M., Du, Y., Tedrake, R., Sitzmann, V.: History-guided video diffusion. arXiv preprint arXiv:2502.06764 (2025) 43. Sun, W., Zhang, H., Wang, H., Wu, J., Wang, Z., Wang, Z., Wang, Y., Zhang, J., Wang, T., Guo, C.: Worldplay: Towards long-term geometric consistency for real-time interactive world modeling. arXiv preprint arXiv:2512.14614 (2025) 44. Team, R., Gao, Z., Wang, Q., Zeng, Y., Zhu, J., Cheng, K.L., Li, Y., Wang, H., Xu, Y., Ma, S., et al.: Advancing open-source world models. arXiv preprint arXiv:2601.20540 (2026) 45. Wan, T., Wang, A., Ai, B., Wen, B., Mao, C., Xie, C.W., Chen, D., Yu, F., Zhao, H., Yang, J., et al.: Wan: Open and advanced large-scale video generative models. arXiv preprint arXiv:2503.20314 (2025) 46. Wang, Z., Yuan, Z., Wang, X., Li, Y., Chen, T., Xia, M., Luo, P., Shan, Y.: Mo-tionctrl: A unified and flexible motion controller for video generation. In: ACM SIGGRAPH 2024 Conference Papers. pp. 1–11 (2024) 47. Wu, J.Z., Ge, Y., Wang, X., Lei, S.W., Gu, Y., Shi, Y., Hsu, W., Shan, Y., Qie, X., Shou, M.Z.: Tune-a-video: One-shot tuning of image diffusion models for text-to-video generation. In: Proceedings of the IEEE/CVF international conference on computer vision. pp. 7623–7633 (2023) 48. Wu, T., Yang, S., Po, R., Xu, Y., Liu, Z., Lin, D., Wetzstein, G.: Video world models with long-term spatial memory. arXiv preprint arXiv:2506.05284 (2025) 49. Xu, J., Huang, Y., Pei, B., Hou, J., Li, Q., Chen, G., Zhang, Y., Feng, R., Xie, W.: Egoexo-gen: Ego-centric video prediction by watching exo-centric videos. arXiv preprint arXiv:2504.11732 (2025) Syn2Seq-Forcing 17 50. Yang, S., Hou, L., Huang, H., Ma, C., Wan, P., Zhang, D., Chen, X., Liao, J.: Direct-a-video: Customized video generation with user-directed camera movement and object motion. In: ACM SIGGRAPH 2024 Conference Papers. pp. 1–12 (2024) 51. Yang, Z., Teng, J., Zheng, W., Ding, M., Huang, S., Xu, J., Yang, Y., Hong, W., Zhang, X., Feng, G., et al.: Cogvideox: Text-to-video diffusion models with an expert transformer. arXiv preprint arXiv:2408.06072 (2024) 52. Yu, M., Hu, W., Xing, J., Shan, Y.: Trajectorycrafter: Redirecting camera trajec-tory for monocular videos via diffusion models. In: Proceedings of the IEEE/CVF international conference on computer vision. pp. 100–111 (2025) 53. Zhang, D.J., Wu, J.Z., Liu, J.W., Zhao, R., Ran, L., Gu, Y., Gao, D., Shou, M.Z.: Show-1: Marrying pixel and latent diffusion models for text-to-video generation. International Journal of Computer Vision 133 (4), 1879–1893 (2025) 54. Zhou, D., Wang, W., Yan, H., Lv, W., Zhu, Y., Feng, J.: Magicvideo: Efficient video generation with latent diffusion models. arXiv preprint arXiv:2211.11018 (2022) Supplementary Materials From Synchrony to Sequence: Exo-to-Ego Generation via Interpolation 
+
+Mohammad Mahdi 1 Nedko Savov 1 Danda Pani Paudel 1⋆ Luc Van Gool 1
+
+> 1 INSAIT, Sofia University “St. Kliment Ohridski”
+
+## 1 Frame Interpolator, WFLF 
+
+WAN2.2 is a powerful foundational video Latent Diffusion Model (LDM) de-signed for high-quality video generation conditioned on text and/or images. The model supports rich spatiotemporal generation and has demonstrated strong performance across diverse motion and scene dynamics. Wan2.2-Lightning is a distilled variant of the Wan2.2 family that is optimized for efficient inference. Through distillation, it significantly reduces the number of required diffusion steps while maintaining visual fidelity and motion quality. In particular, Wan2.2-Lightning enables fast video generation with only a small number of sampling steps and does not require classifier-free guidance (CFG), making it suitable for lightweight generation pipelines. In our experiments, we adopt the WAN2.2 First/Last Frame (WFLF) con-figuration, which follows the FLF2V setup where the model is conditioned on the first and last frames of a video sequence. The model then generates the in-termediate frames that connect these two boundary conditions. We implement WFLF using the Wan2.2-Lightning 8-step LoRA variant within the Diffusers framework, which provides an efficient and stable inference pipeline. 
+
+Pseudo-Label Frame Generation with WFLF. To generate pseudo-labeled inter-polated frames using the WFLF pipeline, we condition the model on the last frame of the exocentric (exo) video and the first frame of the egocentric (ego) video. These two boundary frames define the endpoints of the transition, and WFLF is tasked with generating the intermediate frames that smoothly connect them. Importantly, no camera pose information is provided during this process. Instead, the generation relies solely on the visual boundary conditions and a tex-tual prompt describing the intended transition from third-person to first-person perspective. Because the scenes in our experiments belong to distinct semantic categories, we use category-specific prompts to guide the generation. These prompts remain fixed for all samples within each category to ensure consistency across the gen-erated pseudo-labels. Below we list the prompts used for each category.   
+
+> ⋆Corresponding author Syn2Seq-Forcing 19
+
+Prompt for Bike category. A man is fixing a bike. The camera starts in third-person view and smoothly moves toward the person, pushing in until it reaches his head and seamlessly transitions into a first-person perspective, showing the bike from his point of view. Prompt for Cooking category. A person is cooking. The camera starts in third-person view and smoothly moves toward the person, pushing in until it reaches his head and seam-lessly transitions into a first-person perspective, showing the environment from his point of view. Prompt for Health CPR category. A person is performing Cardiopulmonary Resuscitation (CPR) on some-one. The camera starts in third-person view and smoothly moves toward the person, pushing in until it reaches their head and seamlessly transi-tions into a first-person perspective, showing the CPR action from their point of view. Prompt for Health Covid category. A person is taking a COVID test. The camera starts in third-person view and smoothly moves toward the person, pushing in until it reaches their head and seamlessly transitions into a first-person perspective, showing the test kit and surroundings from their point of view. 
+
+## 2 Rotation Interpolator: Spherical Linear Interpolation (SLERP) 
+
+To obtain smooth transitions between camera orientations, we interpolate the rotations between the last exocentric frame and the first egocentric frame us-ing Spherical Linear Interpolation (SLERP) . SLERP is a standard technique for interpolating rotations represented as unit quaternions. Unlike naive linear interpolation in Euclidean space, SLERP respects the geometry of the unit hy-persphere on which quaternions lie, producing constant angular velocity and smooth rotational motion between two orientations. Let q0, q 1 ∈ R4 denote two unit quaternions representing the starting and ending rotations, respectively. These quaternions lie on the unit 3-sphere S3.SLERP computes intermediate rotations by moving along the shortest geodesic path on this sphere. Given an interpolation parameter t ∈ [0 , 1] , the interpolated quaternion q(t) is defined as 
+
+q(t) = sin((1 − t)θ)sin( θ) q0 + sin( tθ )sin( θ) q1, (1) 20 Mahdi et al. 
+
+where θ is the angular distance between the two quaternions: 
+
+θ = arccos( ⟨q0, q 1⟩), (2) and ⟨q0, q 1⟩ denotes the dot product between the quaternions. Because unit quaternions q and −q represent the same rotation, we first ensure interpolation follows the shortest path on the sphere. If ⟨q0, q 1⟩ < 0, we negate one quaternion (e.g., q1 ← − q1), which keeps the represented rotation unchanged but avoids traversing the long arc on S3.For numerical stability, when the two quaternions are extremely close ( ⟨q0, q 1⟩ ≈ 
+
+1), the denominator sin( θ) becomes very small. In this case we fall back to nor-malized linear interpolation: 
+
+q(t) = (1 − t)q0 + tq 1
+
+∥(1 − t)q0 + tq 1∥ . (3) In our pipeline, the rotation matrices from the boundary frames are first converted to unit quaternions. Given the quaternion of the last exocentric frame 
+
+qexo and the quaternion of the first egocentric frame qego , we sample a set of interpolation coefficients t1, . . . , t N and apply SLERP to generate a sequence of intermediate quaternions. These interpolated quaternions are then converted back to rotation matrices and combined with the corresponding translations to form the camera poses used in our interpolated sequence. 
+
+## 3 Framework Setup 
+
+Our framework consists of three main stages: (1) Dataset Construction , (2) Training , and (3) Inference . In this section, we describe the practical setup and implementation details used for each stage of the pipeline. 
+
+3.1 Dataset Construction 
+
+For each of the three evaluated categories, we construct a dataset containing 40k samples. Each sample consists of three components: the source exocentric video, the interpolated transition frames generated by WFLF, and the target egocentric video. These samples form the training data used during the category-specific fine-tuning stage. To obtain high-quality interpolations from WFLF, we found it beneficial to perform generation at a higher spatial resolution. Specifically, we generate frames at a resolution of H = 480 and W = 832 . After generation, the interpolated frames are resized to the training resolution of H = W = 256 to match the input resolution used by the video diffusion model. For each sequence, we query the WFLF model to generate 49 frames be-tween the boundary frames. From these generated frames, we uniformly sample 9 frames to construct the interpolated transition segment used in our training data. The dataset generation process for each category takes approximately 1 day using 8 NVIDIA H200 GPUs. Syn2Seq-Forcing 21 
+
+3.2 Training 
+
+For the training stage, we largely follow the setup proposed in the Diffusion Forc-ing Transformer (DFoT) [42] framework, adapting it to our Exo2Ego scenario. Our sequences are trained with a maximum token length of 18 frames, of which 9 frames are designated as context frames. This configuration allows the model to effectively leverage temporal dependencies while generating future frames. We employ a batch size of 8 per GPU and distribute training across 8 GPUs, resulting in an effective batch size of 64. This setup ensures stable optimization and sufficient gradient statistics for learning across long video sequences. For the model backbone, we use a 3D variant of the U-ViT architecture (U-ViT3D), which is capable of incorporating additional conditioning informa-tion—in our case, per-frame camera poses—using the Feature-wise Linear Mod-ulation (FiLM) technique. The FiLM layers condition the hidden features on the camera pose signals, allowing the model to adapt its representation to geometric changes across views. Within the intermediate blocks of the UNet backbone, we perform self-attention between all video token embeddings, enabling the model to capture long-range temporal and spatial dependencies. For the earliest UNet blocks, which operate on high-resolution, low-level features, we instead employ standard ResNet layers to efficiently process fine-grained spatial details before projecting them into the attention-based space. We optimize the model using the AdamW optimizer with a learning rate of 5 × 10 −5, carefully balancing convergence speed and stability. 
+
+3.3 Inference 
+
+During inference, we query the model with a maximum token length of 27 frames. Out of these, the first 9 frames correspond to the context video—the exocentric input sequence—while the remaining 18 frames, including both interpolated and egocentric frames, are generated in a single pass. To guide generation, we apply Fractional History Guidance (HG-f) with a scale factor of 3.0. This guidance modulates the influence of previous frames across different frequency components, improving temporal coherence and pre-serving motion dynamics in the generated sequence. The diffusion process is run for 50 backward steps, providing sufficient denoising while maintaining fidelity to the context frames. Generating all subsequent 18 frames simultaneously allows each token to leverage the attention matrices learned during the diffusion steps. This is partic-ularly beneficial once the tokens move away from pure noise and start acquiring semantic structure. By attending to both the context frames and the partially denoised frames, the model can produce temporally consistent and visually co-herent transitions from the exocentric to the egocentric perspective. 22 Mahdi et al. 
+
+## 4 Visual Examples 
+
+We first present qualitative results demonstrating the model’s ability to smoothly interpolate between exocentric and egocentric videos at inference time in Fig. 1. We then provide additional qualitative examples illustrating the model’s perfor-mance on the exocentric-to-egocentric cross-view video generation task in Fig. 2 Interpolated Frames 
+
+Fig. 1: The model’s ability to generate intermediate frames bridging the last frame of the exocentric video and the first frame of the egocentric video. 
+
+## 5 Future Work 
+
+While our experiments demonstrate that frame interpolation significantly im-proves Exo2Ego generation, there remains potential for further gains. For in-Syn2Seq-Forcing 23  
+
+> Fig. 2: The model’s ability to perform cross-view generation of egocentric video from exocentric video.
+
+stance, increasing the number of backward diffusion steps when querying WFLF could produce higher-quality interpolated frames, though this would come at the cost of longer generation times. Regarding pose estimation, our current approach performs linear interpo-lation between the last exocentric frame and the first egocentric frame. This assumes a smooth and consistent progression between frames, which may not always hold in practice. Although interpolating poses separately from the video frames already improves performance compared to using no pose interpolation, a more integrated approach could be beneficial. One possibility is to leverage tools such as ViPE [16] to directly extract camera poses from the generated interpolated frames, aligning the pose trajectory more closely with the actual video content. However, this approach may introduce significant computational overhead. 24 Mahdi et al. 
+
+Finally, our current fine-tuning is performed using only a subset of each cate-gory. Generating additional synthetic data for fine-tuning could further enhance model performance, particularly for categories with high variability in motion or interactions. Exploring these directions could lead to even more robust and realistic Exo2Ego video synthesis in future work.
