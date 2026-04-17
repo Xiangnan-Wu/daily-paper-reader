@@ -1,0 +1,546 @@
+Title: Advantage-Guided Diffusion for Model-Based Reinforcement Learning
+
+URL Source: https://arxiv.org/pdf/2604.09035v1
+
+Published Time: Mon, 13 Apr 2026 00:34:13 GMT
+
+Number of Pages: 8
+
+Markdown Content:
+# Advantage-Guided Diffusion for Model-Based Reinforcement Learning 
+
+Daniele Foffano 1, Arvid Eriksson 1, David Broman 2, Karl H. Johansson 1, Alexandre Proutiere 1
+
+Abstract — Model-based reinforcement learning (MBRL) with autoregressive world models suffers from compounding errors, whereas diffusion world models mitigate this by generating tra-jectory segments jointly. However, existing diffusion guides are either policy-only—discarding value information—or reward-based, which becomes myopic when the diffusion horizon is short. We introduce Advantage-Guided Diffusion for MBRL (AGD-MBRL), which steers the reverse diffusion process using the agent’s advantage estimates so that sampling concentrates on trajectories expected to yield higher long-term return beyond the generated window. We develop two guides: (i) Sigmoid Advantage Guidance (SAG) and (ii) Exponential Advantage Guidance (EAG) . We prove that a diffusion model guided through SAG or EAG allows us to perform reweighted sampling of trajectories with weights increasing in state–action advan-tage—implying policy improvement under standard assump-tions. Additionally, we show that the trajectories generated from AGD-MBRL follow an improved policy (that is, with higher value) compared to an unguided diffusion model. AGD inte-grates seamlessly with PolyGRAD-style architectures by guiding the state components while leaving action generation policy-conditioned, and requires no change to the diffusion training objective. On MuJoCo control tasks (HalfCheetah, Hopper, Walker2D and Reacher), AGD-MBRL improves sample effi-ciency and final return over PolyGRAD, an online Diffuser-style reward guide, and model-free baselines (PPO/TRPO), in some cases by a margin of 2×. These results show that advantage-aware guidance is a simple, effective remedy for short-horizon myopia in diffusion-model MBRL. 
+
+I. I NTRODUCTION 
+
+Reinforcement learning (RL) has produced agents that ex-ceed human performance on a diverse range of domains [1], [2], [3], [4], [5]. Model-based RL (MBRL) improves sample efficiency by learning a world model and planning within it. However, one-step autoregressive world models suffer from compounding errors: the model predicts state st+1 from previous state and action (st, a t), then conditions on its own predictions thereafter; small one-step errors accumulate then over long horizons, leading to performance degradation. Prior work in the literature focuses on maintaining the autoregres-sive nature while trying to mitigate the compounding error via ensembles [6], stronger function approximation [7], [8], [9], or planning in latent space [10]. Diffusion models offer a complementary approach: rather than predicting one step at a time, a denoising diffusion model learns a distribution over entire trajectories, sampled 
+
+> 1Daniele Foffano, Arvid Eriksson, Karl H. Johansson and Alexandre Proutiere are in the Division of Decision and Control Systems of the EECS School at KTH Royal Institute of Technology, Stockholm, Sweden.
+
+{foffano, arveri, kallej, alepro }@kth.se  
+
+> 2David Broman is in the Division of Software and Computer Systems of the EECS School at KTH Royal Institute of Technology, Stockholm, Sweden.
+
+dbro@kth.se 
+
+> All authors are affiliated with Digital Futures.
+
+through an iterative denoising procedure [11], [12]. Since the diffusion model generates all the steps at the same time, the compounding error effect is drastically reduced. In practice, diffusion world models are trained with a denoising score-matching objective (equivalent to maximum likelihood under Gaussian perturbations). In other words, they learn to mimic a trajectory distribution induced by a given behavior policy. A diffusion model will therefore generate trajectories similar to the one it was trained on. However, it might be useful to steer the sampling process towards specific areas of the distribution domain. For exam-ple, by sampling trajectories that are close to the current estimated policy [12], [13], that have higher cumulative reward [11], or that are more challenging for the RL agent [14]. Steering the sampling process can be achieved using a guided diffusion model . For instance, PolyGRAD [12] integrates a policy guide that favors trajectories following the current policy, effectively making the training algorithm on-policy. This guiding style does not leverage the value functions estimated by the RL agent, therefore discarding important information for the underlying sequential decision-making problem. On the other hand, Diffuser [11] steers sampling towards high-return trajectories through reward-based guidance. However, since this guide is based solely on the rewards of the generated steps, it can be myopic if the diffusion trajectory samples have a short horizon, as it is often the case for diffusion MBRL. This happens because the cumulative reward over a short horizon does not account for the value of future states, beyond the generated window, and ignores the long-term return of the current policy. 
+
+Contributions. We propose Advantage-Guided Diffusion for MBRL (AGD-MBRL). Using the advantage function learned by the RL agent, we can steer the generative process towards trajectories where the agent is expecting to learn more useful information. In addition, because advantage is formulated through expected values of current and future states, it accounts for rewards beyond the sampled horizon. We introduce two guidance mechanisms: (i) Exponential Advantage Guidance (EAG) , where we use exponential tilting to generate trajectories with a higher advantage; and (ii) 
+
+Sigmoid Advantage Guidance (SAG) , where we define the likelihood of a trajectory to provide useful information using the sigmoid function of the advantage function. Both variants can easily be integrated with PolyGRAD-style architectures by applying guidance to the state components of the reverse diffusion process. We make the following specific contributions: 1) We show why steering sampling using cumulative 
+
+> arXiv:2604.09035v1 [cs.AI] 10 Apr 2026
+
+returns results in myopic data generation and why the advantage function can help solving this problem. To this end, we introduce Advantage-Guided Diffusion (AGD) with two different formulations: EAG and SAG (Section V). 2) We formally show that guiding the diffusion pro-cess with EAG and SAG is equivalent to perform reweighted sampling of trajectories generated by an improved policy, compared to one of an unguided diffusion model. The weights are higher for trajectories encountering states with higher advantage (Proposi-tions V.1 and V.2). These formal results provide a principled explanation for the faster and more stable learning of AGD-MBRL. 3) We empirically validate our method, AGD-MBRL, on Gym/MuJoCo tasks; we show improved performance, sample efficiency, and final return compared to other diffusion model-based and model-free baselines (Sec-tion VII). II. R ELATED WORK 
+
+We review prior work on MBRL and diffusion models for trajectory generation. We focus on approaches that mitigate compounding errors and on guided-diffusion methods most closely related to our setting. 
+
+Model-Based reinforcement learning. In MBRL, the agent uses a world model to generate imaginary trajectories, allowing for planning with reduced interactions with the environment. This is essential for settings where collecting new data is too expensive, dangerous, illegal, or otherwise impractical. Deep neural networks are effective to approxi-mate the environment dynamics [15], [16], [17], [18], [19]. Specifically, variational autoencoders [20] and transformers [21] have been successfully employed for world modeling [7], [8], [9], [22], [23], leading to state-of-the-art methods in terms of sample efficiency and performance [10]. However, these methods rely on bootstrapping to generate trajectory samples. The state prediction generated by the model is fed again as input to the model to predict the next state. As a result, these methods accumulate error along a trajectory, compounding prediction inaccuracies over time. This is com-monly known as the compounding error problem of model-based methods. Several works in the literature have addressed this problem [6], [10], [24], trying to reduce compounding errors by focusing on minimizing the step-wise error or adapting the horizon so that the prediction error lies within an acceptable range. Another line of work revolves around multi-step predic-tion, where multiple steps are predicted simultaneously. One such example is learning H models to look H steps in the future [25], but this approach results in significantly higher learning complexity compared to single-model approaches. Only recently, diffusion models have emerged as efficient multi-step MBRL methods [11], [12]. 
+
+Diffusion models in RL. Diffusion models generate data through an iterative denoising process [26], [27]. In addition to being powerful function approximators, they also provide a natural way to condition the data generation based on other information useful to the prediction task, through guided diffusion [28], [29]. Recently, diffusion models have gained significant attention in the RL community, where they have been used to learn a model of the system dynamics and generate trajectory segments by predicting sequences of states [30], [31], actions [32], [33], or both [11], [34], [13]. Additionally, diffusion models have been employed for policy modeling [35], [36] and value function approximation [37]. While most prior work focuses on the offline RL setting, we develop an online method. Our implementation directly builds on the PolyGRAD architecture [12], a Dyna-inspired [38] MBRL method using policy-guided diffusion to approximate the environment dynamics. III. P RELIMINARIES 
+
+We formalize the online MBRL setup, introduce notation for value and advantage functions, and review the guided-diffusion framework on which AGD-MBRL builds. 
+
+Markov decision processes and RL. Consider a Markov decision process (MDP) M = ⟨S, A, P, r, γ, ρ ⟩, where S and 
+
+A are the state and action spaces, respectively, P (·| s, a ) is the transition probability function, r(s, a ) the reward function, 
+
+γ the discount factor, and ρ the initial state distribution. By interacting with the MDP, an RL agent is able to collect sequences of states, actions, and rewards, forming trajectories τ = ( s0, a 0, r 0, . . . , s H , a H , r H ) over a horizon 
+
+H > 0. The objective of the RL agent is to learn an optimal policy π⋆ maximizing the policy value Vπ (s) = 
+
+Eπ [P∞ 
+
+> i=0
+
+γirt+i+1 |st = s]. Alternatively, we can define the optimal policy as the one maximizing the Q-value function 
+
+Qπ (s, a ) = Eπ [P∞ 
+
+> i=0
+
+γirt+i+1 |st = s, a t = a]. Several Policy Gradient methods combine the two value functions into a new objective [39], [40], the advantage function, defined as Aπ (s, a ) = Qπ (s, a ) − Vπ (s). The advantage function can be considered as a state–action value function using Vπ as a baseline to reduce the variance. The value of a policy π can be defined as J(π) = Es∼ρ[Vπ (s)] . In this paper, we consider an MBRL setting, where we use a diffusion model to approximate the distribution of trajectories under a given policy. Specifically, if pπ denotes the true distribution of the trajectories τ under policy π, the diffusion model samples trajectories with distribution pθ close to pπ .We adopt a Dyna-style approach [38], where the diffusion model and the policy are iteratively updated. The diffusion model is updated using samples gathered from the target environment under the current policy, while the policy is improved using data generated by the model. 
+
+Diffusion models. To generate trajectories we use aparametrized diffusion model pθ (τ 0), from which we sample synthetic trajectories to perform policy training. The generative process of diffusion models is performed by progressively refining noisy inputs through iterative de-noising steps, pθ (τ i−1|τ i), which reverse the forward dif-fusion process, q(τ i|τ i−1). Each forward step gradually corrupts real data by adding random Gaussian noise. The 
+
+i-th denoising step is typically parameterized as a Gaussian distribution 
+
+pθ (τ i−1|τ i) = N (μθ (τ i, i ), Σi), (1) with learned mean and fixed covariance. The joint probability of the denoised trajectories is defined as 
+
+pθ (τ 0: N ) = p(τ N )
+
+> N
+
+Y
+
+> i=1
+
+pθ (τ i−1|τ i), (2) where p(τ N ) ≈ N (0, I) and τ 0 is the reconstructed noise-less trajectory. Diffusion models optimize the variational lower bound on the negative log likelihood: 
+
+θ⋆ = arg min 
+
+> θ
+
+Eτ 0 [− log pθ (τ 0)] , (3) where pθ (τ 0) = R pθ (τ 0: N )dτ 1: N .
+
+Guided diffusion. By introducing an additional classifier 
+
+p(y|τ 0) we define the conditional diffusion model 
+
+pθ (τ 0|y) ∝ pθ (τ 0)p(y|τ 0). (4) By leveraging the information provided by the classifier, we can improve the generative performance of the diffusion model [28]. Through the classifier’s gradient, we can guide the denoising process toward sampling data points that align with the classifier’s output. This method, called classifier-guided diffusion, follows a denoising procedure with the following step 
+
+pθ (τ i−1|τ i, y ) = N (μθ (τ i, i ) + αΣigi, Σi) (5) where gi = ∇τ log p(y|τ )|τ =μθ (τ i,i ) and α is a hyperpa-rameter determining the intensity of the guide. Guided diffusion has received growing attention in the RL community, finding several applications both in the online and offline setting [11], [12], [14], [41], [42], [43], [44]. 
+
+Problem statement. In MBRL, an RL agent learns the optimal policy using data generated by an MDP model. In this paper, we focus on using a diffusion model pθ (τ 0) to approximate the trajectory distribution under a given policy 
+
+π, that is, p(τ 0) = pθ (s1) QHt=1 p(st+1 |st, a t)π(at|st). Gen-erating data according to the model pθ (τ 0) ≈ p(τ 0) mimics generating trajectories under the policy π. We are interested in how to improve the learning process of the RL agent by leveraging information provided by the advantage function 
+
+Aπ (s, a ). Using classifier-guided diffusion, we can steer the sampling process towards trajectories with a higher advan-tage, where the RL agent is expected to learn information that is more useful to converge to the optimal policy. With AGD-MBRL, we address the problem of steering the diffusion sampling process of short-horizon trajectories. Given a policy π and its advantage Aπ , we steer the diffusion process toward trajectory segments with higher long-term value beyond the diffusion horizon, yielding more informa-tive data for improving π.
+
+Fig. 1: MDP illustrating the negative effects of short-sighted planning. IV. M OTIVATING EXAMPLE 
+
+To motivate our contribution, we study the diffusion guide proposed in the Diffuser architecture [11] on the MDP presented in Figure 1. In Diffuser, the authors rely on the control-as-inference graphical model [45]. By introducing a binary random variable Ot, they define the probability of a single trajectory step (st, a t, r t) being optimal 1 as 
+
+p(Ot = 1 |st, a t) = exp ( rt). The optimality for an entire trajectory τ is then naturally defined as p(O0: H = 1 |τ ) = QHt=0 p(Ot = 1|st, a t) = exp ( PHt=0 rt). The classifier-guided diffusion model can then be formulated according to (4), taking p(y|τ 0) = p(O0: H = 1|τ 0) and gi =PHt=1 ∇(st,a t)r(st, a t)|(st,a t)∈μθ (τi,i ). Using the cumulative reward as an estimate for the value of a trajectory works when H corresponds to the real horizon H⋆ of the problem. However, this assumption does not hold for most diffusion applications in the RL setting, where H ≪ H⋆ because of high computational costs. In that case, the model might steer the sampling process toward suboptimal areas of the domain by overestimating the value of a trajectory. The guiding method we propose in this paper avoids this by incorporating long-term rewards through the advantage function. We can see the myopic effect of the guide based on cumulative reward by analyzing the MDP in Figure 1. Suppose the diffusion model has a horizon H = 3,and that we follow a policy π for which π(a1|s1) =
+
+π(a2|s1) = 0.5 and then π(a1|s) = 1, ∀s̸ = s1. Two trajectories can be sampled from the diffusion model when starting in s1: τ 1 = ( s1, a 1, r, s 2, a 1, ¯r, s 3, a 1, r ) and τ 2 =(s1, a 2, r, s 6, a 1, r, s 7, a 1, r ). If the guide of our diffusion model steers the sampling towards the trajectory with highest cumulative reward, then we will more likely sample τ 1.However, the optimal trajectory to follow is τ 2 due to the unobserved future reward r⋆ = 10 . However, if we look at the advantage of each state–action pair after 4 steps of value iteration with discount factor γ = 1 , we get Aπ (s1, a 1) = −7
+
+and Aπ (s, a ) = 0 , ∀(s, a )̸ = ( s1, a 1). The advantage that is propagated along τ 2 is therefore much higher than the one along τ 1. This observation leads to the core idea of our paper: making the guided diffusion process less myopic by leveraging an advantage-based guide.      
+
+> 1Meaning that taking action atwhen observing stleads to the highest reward rt.
+
+V. A DVANTAGE -GUIDED DIFFUSION 
+
+We propose two guidance methods: Sigmoid Advan-tage Guidance (SAG) and Exponential Advantage Guidance (EAG). 
+
+Sigmoid Advantage Guidance. In Diffuser [11], the optimality variable is defined via control-as-inference as a Bernoulli with parameter p(Ot=1 | st, a t) = exp( rt). This identity is exact under the assumption that rewards are shifted so that rt ≤ 0 (hence exp( rt) ∈ (0 , 1] ). This assumption is not easily transferable when defining the Bernoulli probabil-ity using the advantage function Aπ (st, a t), since it can be both positive and negative, and it might not be bounded. Instead of an exponential density, we instead propose to use the sigmoid function to model the step optimality probability. That is, we define 
+
+p(Ot = 1 |st, a t) = σ(At) = 11 + exp ( −At)
+
+p(O1: H = 1 |τ ) = 
+
+> H
+
+Y
+
+> t=1
+
+p(Ot|st, a t) = 1
+
+QHt=1 (1 + exp ( −At)) 
+
+where, with a slight abuse of notation, we have At =
+
+Aπ (st, a t). If we define a diffusion model pθ (τ 0) as in Section III, we can use classifier guided diffusion to derive a model pθ (τ 0|Aπ ) that approximates the distribution of trajectories with high advantage as 
+
+pθ (τ 0|O1: H = 1) ∝ pθ (τ 0)p(O1: H = 1 |τ 0),
+
+where the denoising steps are taken according to (5) with gi = ∇τ log p(O1: H = 1|τ )|τ =μθ (τ i,i ) =
+
+PHt=1 11+exp ( Aπ (st,a t)) ∇(st,a t)Aπ (st, a t). Note that the right-hand side is proportional up to a normalization con-stant. We now proceed to show that, given a diffusion model pθ
+
+approximating the trajectory distribution under policy πθ ,using SAG to steer the sampling process is equivalent to perform reweighted sampling of trajectories generated using a policy πσ 
+
+> θ
+
+for which J(πσ 
+
+> θ
+
+) ≥ J(πθ ), with a higher weight for trajectories that encounter states with a higher advantage. 
+
+Proposition V.1. Define a diffusion model pθ (τ 0) as in Section III, approximating the trajectory distribution under policy π. Then, sampling trajectories from 
+
+pθ (τ 0|O1: H ) ∝ pθ (τ 0)p(O1: H |τ 0)
+
+is equivalent to perform reweighted sampling with weights 
+
+Zθ (τ ) = QHt=1 Ea∼πθ (·| st) [σ(Aπθ (st, a ))] of trajectories generated under a policy πσ 
+
+> θ
+
+for which it holds J(πσ 
+
+> θ
+
+) ≥
+
+J(πθ ).Proof. Since pθ (τ 0) approximates the trajectory distribution under policy πθ , we can write 
+
+pθ (τ 0) = pθ (s1)
+
+> H
+
+Y
+
+> t=1
+
+pθ (st+1 |st, a t)πθ (at|st)
+
+So when steering the sampling with SAG we obtain 
+
+pθ (τ 0|O1: H ) ∝ pθ (τ 0)p(O1: H |τ 0)= p(O1: H |τ 0)pθ (s1)
+
+> H
+
+Y
+
+> t=1
+
+pθ (st+1 |st, a t)πθ (at|st)= pθ (s1)
+
+> H
+
+Y
+
+> t=1
+
+pθ (st+1 |st, a t)πθ (at|st)p(Ot|st, a t)= pθ (s1)
+
+> H
+
+Y
+
+> t=1
+
+pθ (st+1 |st, a t)πσ 
+
+> θ
+
+(at|st)Zθ (st)
+
+where πσ 
+
+> θ
+
+(at|st) = 1  
+
+> Zθ(st)
+
+πθ (at|st)p(Ot|st, a t) and 
+
+Zθ (st) = Ea∼πθ (·| st) [σ(Aπθ (st, a ))] .From the policy improvement theorem [46, Section 4.2] we know that if Ea∼πσ  
+
+> θ(·| st)
+
+[Aπθ (st, a )] ≥ 0 then J(πσ 
+
+> θ
+
+) ≥
+
+J(πθ ). We can rewrite the expectation as 
+
+Ea∼πσ 
+
+> θ
+
+[Aπθ (st, a )] = Ea∼πθ (·| st) [σ(Aπθ (st, a )) Aπθ (st, a )] 
+
+Ea∼πθ (·| st) [σ(Aπθ (st, a ))] 
+
+Since Ea∼πθ (·| st) [Aπθ (st, a )] = 0 by definition of the advantage, then Ea∼πθ (·| st) [σ(Aπθ (st, a )) Aπθ (st, a )] ≥ 0
+
+by Chebyshev’s integral inequality. By definition of the sigmoid function we also have Ea∼πθ (·| st) [σ(Aπθ (st, a ))] ≥
+
+0, so Ea∼πσ  
+
+> θ(·| st)
+
+[Aπθ (st, a )] ≥ 0 holds. By the policy improvement theorem we then have J(πσ 
+
+> θ
+
+) ≥ J(πθ ), which concludes the proof. 
+
+Exponential Advantage Guidance. When dealing with trajectory generation, defining optimality based on a single step is not straightforward. Here, we follow an energy-based approach to steer the generative process towards trajectories with high advantage. More specifically, define the energy function E(τ ) = PHt=1 Aπ (st, a t). Then, we can define the energy-guided diffusion model pθ (τ 0|E(τ 0)) ∝
+
+pθ (τ 0) exp ( E(τ 0)) . Intuitively, the sampling process of this energy-guided diffusion model is steered towards trajectories with a high cumulative advantage. That is, we will generate more trajectories where the agent is expected to improve its behavior towards an optimal solution. Using the guided diffusion framework, as we did for SAG, we can sample from pθ (τ 0|E(τ 0)) by taking diffusion steps according to (5) with gi = ∇τ log exp ( E(τ )) = ∇τ
+
+PHt=1 Aπ (st, a t) = 
+
+PHt=1 ∇(st,a t)Aπ (st, a t). Following an argument similar to Proposition V.1, we can show that using EAG to steer the generative process leads to a reweighted sampling method for trajectories generated with an improved policy πexp for which J(πexp  
+
+> θ
+
+) ≥ J(πθ ).
+
+Proposition V.2. Define a diffusion model pθ (τ 0) as in Section III, approximating the trajectory distribution under policy π. Then, sampling trajectories from 
+
+pθ (τ 0|E(τ 0)) ∝ pθ (τ 0) exp ( E(τ 0)) 
+
+is equivalent to perform reweighted sampling with weights 
+
+Zθ (τ ) = QHt=1 Ea∼πθ (·| st) [exp( Aπθ (st, a )))] of trajectories generated under a policy πexp  
+
+> θ
+
+for which it holds J(πexp  
+
+> θ
+
+) ≥
+
+J(πθ ).Proof. As in Proposition V.1, we write 
+
+pθ (τ 0|E(τ 0)) ∝ pθ (τ 0) exp ( E(τ 0)) = exp ( E(τ 0)) pθ (s1)
+
+> H
+
+Y
+
+> t=1
+
+pθ (st+1 |st, a t)πθ (at|st)= pθ (s1)
+
+> H
+
+Y
+
+> t=1
+
+pθ (st+1 |st, a t)πθ (at|st) exp ( Aπθ (st, a t)) = pθ (s1)
+
+> H
+
+Y
+
+> t=1
+
+pθ (st+1 |st, a t)πexp  
+
+> θ
+
+(at|st)Zθ (st)
+
+where πexp  
+
+> θ
+
+(at|st) = 1  
+
+> Zθ(st)
+
+πθ (at|st) exp ( Aπθ (st, a t)) and 
+
+Zθ (st) = Ea∼πθ (·| st) [exp ( Aπθ (st, a ))] . Following the same reasoning as in Proposition V.1, we have 
+
+Ea∼πexp   
+
+> θ(·| st)
+
+[Aπθ (st, a t)] = = Ea∼πθ (·| st) [exp( Aπθ (st, a )) Aπθ (st, a )] 
+
+Ea∼πθ (·| st) [exp( Aπθ (st, a ))] ,
+
+and Ea∼πexp   
+
+> θ(·| st)
+
+[Aπθ (st, a t)] ≥ 0. So, by the policy im-provement theorem, we have J(πexp  
+
+> θ
+
+) ≥ J(πθ ), concluding the proof. 
+
+Why exponential and sigmoid functions? Both guides apply a monotonically increasing transformation of the ad-vantage A(st, a t) so that the generative process will be steered toward higher-advantage state–action pairs. While other functions can be used to accomplish this task, we chose the sigmoid and the exponential for their simple implemen-tation and their statistical and optimization properties. 
+
+a) Sigmoid function: through the sigmoid function we are able to express the probability of a step being optimal as a Bernoulli probability p(Ot|st, a t) = σ(Aπ (st, a t)) =   
+
+> 11+exp ( −Aπ(st,a t))
+
+. This bounded function leads to a con-servative preference weighting for each state-action pair, based on its estimated advantage. For very high advantage values, the sigmoid function will tend to 1: intuitively, this compensates for an overestimate of the advantage function learned by the RL agent. 
+
+b) Exponential function: this approach follows an op-posite direction with respect to that of the sigmoid function. As the probability of generating state-action pairs with a high advantage exponentially increases, it strongly steers the sampling process toward more promising regions of the state-action space. While this method might converge faster to an optimal policy in the case of a good estimate of the advantage function, it is more vulnerable to overestimation (or underestimation). VI. A LGORITHMS 
+
+In this section we present AGD-MBRL 2, a Dyna-style al-gorithm that iteratively improves the dynamics model pθ (τ )
+
+> 2The official implementation for AGD-MBRL can be found on GitHub:
+> https://github.com/danielefoffano/AGD-MBRL
+
+and the RL agent’s policy πϕ. By leveraging the advantage guides presented in the previous section, AGD-MBRL is able to generate trajectories with a higher advantage, allowing the RL agent to observe trajectories that achieve higher expected rewards more often. Our implementation is based on the PolyGRAD architecture [12]. AGD-MBRL is presented in Algorithm 1. Using policy πϕ
+
+we collect trajectory rollouts from the real environment (line 3) which are then used to improve the diffusion model pθ .The diffusion model is trained by minimizing the negative log-likelihood as in (3). Note, however, that (3) is a simplified training objective with respect to the one used by diffusion implementations. In practice, the mean μθ (τ i, i ) for (1) is computed in closed form [27] using a noise prediction network ϵθ (ˆ τ i, i ), trained by minimizing the following loss, derived from (3), 
+
+L(θ) = Ei,ϵ, τ 0 [|| ϵ − ϵθ (τ i, i )|| 2], (6) where i ∼ U ({1, . . . , N }) is the diffusion step, ϵ ∼ N (0 , 1) 
+
+is the target noise and τ i is the corrupted data point derived from trajectory τ 0 ∼ D , after i steps of the forward diffusion process adding noise ϵ. With advantage-guided diffusion, we are able to sample new trajectories, on which we will improve our RL agent using Advantage Actor-Critic [47] (respectively line 5 and 6 of Algorithm 1). Advantage-guided sampling is presented in Algorithm 2. Notice that in line 5
+
+we use a general gradient formula gi ← ∇ ˆτ i log f (ˆ τ i). For EAG and SAG we have, respectively, f (ˆ τ i) = exp ( E(ˆ τ i)) 
+
+and f (ˆ τ i) = p(O1: H |ˆτ i). The sampling procedure follows naturally from classifier guided diffusion theory, as seen in Section III and in Section V. At every step of the denoising process we perform inpainting [48] by setting the starting state ˆs0 of the generated trajectory ˆτ i to the real state s0. To ensure that the generated actions are consistent with the generated states, we combine our method with the PolyGRAD diffusion guide [12], which generates a sequence of actions guided by the gradient of the policy πϕ.VII. E XPERIMENTS 
+
+We evaluate the performance of AGD-MBRL (with SAG and EAG) on four environments from the continuous control suite of Mujoco, namely: HalfCheetah, Hopper, Walker2D, and Reacher. These are some of the most common envi-ronments used to evaluate RL algorithms, and allow us to easily compare our method with a broad range of baselines. The proposed methods and baselines are trained on 1.5Menvironment steps. We compare AGD-MBRL with four base-lines, equally divided between model-based (with a diffusion model) and model-free methods. We describe them briefly for completeness:  
+
+> •
+
+PolyGRAD, [12], a diffusion-based MBRL algorithm, on which AGD-MBRL is based. PolyGRAD uses policy-guided diffusion to generate trajectories, training an RL policy in an online model-based setting. It improves sample efficiency but does not account for the trajectory value when sampling from the diffusion model. Algorithm 1 AGD-MBRL 
+
+Require: environment E
+
+Ensure: policy πϕ, advantage function Aω , denoising model ¯pθ , data buffer D 
+
+> 1:
+
+Initialize: πϕ, ¯pθ , D 
+
+> 2:
+
+repeat  
+
+> 3:
+
+Sample τ ∼ E using πϕ, add τ to D 
+
+> 4:
+
+Improve pθ on D 
+
+> 5:
+
+Sample {ˆτ } ∼ pθ with EAG or SAG ▷ Algorithm 2  
+
+> 6:
+
+Improve πϕ on {ˆτ } using RL  
+
+> 7:
+
+until convergence or budget exhausted 
+
+Algorithm 2 Advantage-Guided Trajectory Sampling 
+
+Require: denoising model pθ ; steps N ; buffer D; scale α
+
+Ensure: Sample ˆτ 0 
+
+> 1:
+
+ˆτ N ∼ N (0, I) 
+
+> 2:
+
+s0 ∼ D  
+
+> 3:
+
+for i = N to 1 do  
+
+> 4:
+
+Set ˆs0 ← s0 in ˆτ i 
+
+> 5:
+
+Set gi ← ∇ ˆτ i log f (ˆ τ i) ▷ EAG or SAG  
+
+> 6:
+
+ˆτ i−1 ∼ N  μθ (ˆ τ i, i ) + αΣigi, Σi
+
+ 
+
+> 7:
+
+end for  
+
+> 8:
+
+return ˆτ 0 
+
+> •
+
+Online Diffuser is our adaptation of the Diffuser ar-chitecture [11] to the online setting. Leveraging the PolyGRAD architecture, we steer the diffusion sampling process using the Diffuser guide described in Section IV. This baseline guides the diffusion model using the cumulative reward of the generated trajectory as an estimate of its future value. This might result in myopic planning, as described in Section IV.  
+
+> •
+
+TRPO [39] and PPO [40], are two efficient model-free baselines. TRPO constrains policy updates through a KL-divergence trust region. PPO uses a clipped surro-gate objective, improving its computational efficiency. Our implementation builds directly on top of PolyGRAD, adding the relevant guides by adding only a few lines of code. We follow the same training procedure and use the same MLP-based diffusion model, trained by minimizing the L2 loss from (6) with ADAM as optimizer. The MDP uses a learnable embedding of the diffusion step i, which is common for diffusion methods [11]. We implemented our version of Online Diffuser in the same way, changing the diffusion guide accordingly. For TRPO and PPO we used the implementation from Stable-Baselines3 [49], with their fine-tuned hyperparameters. 
+
+Results and analysis. Table I presents the final per-formance of the guides and the comparison methods. For HalfCheetah, Walker, and Reacher, we observe a clear pat-tern: AGD-MBRL constantly outperforms all the other base-lines, sometimes by a large margin (as in HalfCheetah). Poly-GRAD serves as a solid baseline and outperforms model-free methods. This is expected since model-based methods are more sample efficient than their model-free alternatives, while requiring increased computational resources. The Dif-fuser guide helps improving the PolyGRAD performance, indicating that generating trajectories with a higher cumula-tive reward helps the agent to converge to a more optimal solution. However, AGD-MBRL is able to learn policies that lead to higher cumulative reward, showing that leveraging the learned value function leads to better planning for the RL agent. In the Hopper environment we see that the advantage-based guides perform slightly worse than PolyGRAD. We believe this is due to stochasticity, as Hopper is the easiest environment among the ones we chose, where all algorithms, even the model-free ones, seem to converge to similarly performing policies. When closely observing the results of the two EAG and SAG guides, we can see that in a task like HalfCheetah EAG is able to significantly outperform SAG. We believe this is a confirmation of the analysis provided at the end of section V: EAG greatly increases the sampling frequency of trajectories with a high advantage, while SAG is more conservative, due to the bounded sigmoid function. In an environment like HalfCheetah, where the value function is realatively easy to estimate and exploit, EAG is expected to quickly reach a better performance than SAG. However, in environments where the optimal value function is harder to approximate, like Walker, a more conservative sampling leads SAG to outperform EAG already in the early training stages. This can be clearly observed in Figure 2, where we provide the training curves for all methods in the considered environments. In Figure 2, AGD-MBRL shows more stable learning than the other diffusion-based baselines. On Hopper and Reacher, both EAG and SAG reduce the magnitude and frequency of performance regressions. A plausible explana-tion is that advantage-guided sampling induces optimistic yet directed exploration: it biases the generating process toward states and actions with high estimated value while updating the advantage estimate by collecting new data, keeping syn-thetic rollouts aligned with the on-policy improvement direc-tion. By contrast, PolyGRAD generates trajectories aligned with the current policy but ignores value information, so it will sample low-advantage actions more often and suffer more instability. Diffuser-style reward guidance helps, but is affected by its short-horizon: without accounting for the policy value it increases the risk of suboptimal exploration. TABLE I: Final training return for MuJoCo continuous-control tasks.                                                                            
+
+> Hopper HalfCheetah Walker Reacher
+> AGD-MBRL (EAG) 3328.61 ±39.45 4864.80 ±156.83 3794.24 ±165.03 -3.90 ±0.13
+> AGD-MBRL (SAG) 3268.42 ±24.68 4642.25 ±162.52 3844.67 ±361.58 -3.87 ±0.37
+> PolyGRAD + Diffuser Guide 3353.97 ±25.30 4188.43 ±489.66 3777.73 ±294.98 -3.96 ±0.40 PolyGRAD 3346.99 ±52.39 3879 .16 ±626 .40 3489 .48 ±456 .70 −4.48 ±0.13
+> PPO 2998 .90 ±432 .28 2408 .20 ±546 .33 1894 .03 ±349 .06 −5.17 ±0.57
+> TRPO 3270 .27 ±273 .04 2014 .91 ±539 .64 3090 .80 ±267 .79 −6.22 ±0.85
+
+VIII. C ONCLUSIONS AND FUTURE WORK 
+
+We introduced Advantage-Guided Diffusion as a way to enhance trajectory generation in MBRL by guiding the 0.0 0.2 0.4 0.6 0.8 1.0 1.2 1.4 
+
+1e6 
+
+0
+
+2
+
+4
+
+> Average Return
+
+1e3 HalfCheetah 
+
+0.0 0.2 0.4 0.6 0.8 1.0 1.2 1.4 
+
+1e6 
+
+0
+
+1
+
+2
+
+3
+
+4 1e3 Hopper 
+
+0.0 0.2 0.4 0.6 0.8 1.0 1.2 1.4 
+
+Step 1e6 
+
+−6 
+
+−4 
+
+−2 
+
+> Average Return
+
+1e1 Reacher 
+
+0.0 0.2 0.4 0.6 0.8 1.0 1.2 1.4 
+
+Step 1e6 
+
+0
+
+1
+
+2
+
+3
+
+4
+
+1e3 Walker 
+
+ADG-MBRL (EAG) ADG-MBRL (SAG) Online Diffuser PolyGrad PPO TRPO Fig. 2: Training curves for the Mujoco environments: HalfCheetah, Hopper, Walker and Reacher. Shaded areas indicate the standard error. The curves have been smoothed by a running average for better readability. diffusion generative process toward regions of high long-term reward. We showed that the proposed guides, SAG and EAG, can significantly improve the performance of existing frameworks on complex optimal control tasks. As we discussed in Section V, other functions could be used to steer the generative diffusion process. We believe that an exciting future research avenue lies in exploring different guiding functions that might lead to additional benefits for the agent learning process. The key limitation with using diffusion models for gen-erating trajectories is the generation time. Diffusion models are computationally expensive, as the iterative forward pro-cess for generating trajectories requires a significant number of generative steps. Interesting future research directions include how to make generation faster, for example by generating samples in a latent space [50] or using flow matching [51]. ACKNOWLEDGEMENTS 
+
+The computations were enabled by resources provided by the National Academic Infrastructure for Supercomputing in Sweden (NAISS), partially funded by the Swedish Research Council through grant agreement no. 2022-06725. This work was supported in part by Swedish Research Council Distin-guished Professor Grant 2017-01078, Project Grant 2024-05043, Knut and Alice Wallenberg Foundation Wallenberg Scholar Grant, and Swedish Strategic Research Foundation FUSS SUCCESS Grant. REFERENCES [1] A. Mirhoseini, A. Goldie, M. Yazgan, J. W. Jiang, E. Songhori, S. Wang, Y.-J. Lee, E. Johnson, O. Pathak, A. Nazi, et al. , “A graph placement methodology for fast chip design,” Nature , vol. 594, no. 7862, pp. 207–212, 2021. [2] O. Vinyals, I. Babuschkin, W. M. Czarnecki, M. Mathieu, A. Dudzik, J. Chung, D. H. Choi, R. Powell, T. Ewalds, P. Georgiev, et al. ,“Grandmaster level in starcraft ii using multi-agent reinforcement learning,” nature , vol. 575, no. 7782, pp. 350–354, 2019. [3] D. Silver, T. Hubert, J. Schrittwieser, I. Antonoglou, M. Lai, A. Guez, M. Lanctot, L. Sifre, D. Kumaran, T. Graepel, et al. , “Mastering chess and shogi by self-play with a general reinforcement learning algorithm,” arXiv preprint arXiv:1712.01815 , 2017. [4] D. Silver, A. Huang, C. J. Maddison, A. Guez, L. Sifre, G. Van Den Driessche, J. Schrittwieser, I. Antonoglou, V. Panneershelvam, M. Lanctot, et al. , “Mastering the game of go with deep neural networks and tree search,” nature , vol. 529, no. 7587, pp. 484–489, 2016. [5] V. Mnih, K. Kavukcuoglu, D. Silver, A. A. Rusu, J. Veness, M. G. Bellemare, A. Graves, M. Riedmiller, A. K. Fidjeland, G. Ostrovski, 
+
+et al. , “Human-level control through deep reinforcement learning,” 
+
+nature , vol. 518, no. 7540, pp. 529–533, 2015. [6] T. Kurutach, I. Clavera, Y. Duan, A. Tamar, and P. Abbeel, “Model-ensemble trust-region policy optimization,” arXiv preprint arXiv:1802.10592 , 2018. [7] V. Micheli, E. Alonso, and F. Fleuret, “Transformers are sample-efficient world models,” arXiv preprint arXiv:2209.00588 , 2022. [8] J. Robine, M. H¨ oftmann, T. Uelwer, and S. Harmeling, “Transformer-based world models are happy with 100k interactions,” arXiv preprint arXiv:2303.07109 , 2023. [9] I. Schubert, J. Zhang, J. Bruce, S. Bechtle, E. Parisotto, M. Riedmiller, J. T. Springenberg, A. Byravan, L. Hasenclever, and N. Heess, “A gen-eralist dynamics model for control,” arXiv preprint arXiv:2305.10912 ,2023. [10] D. Hafner, J. Pasukonis, J. Ba, and T. Lillicrap, “Mastering diverse domains through world models,” arXiv preprint arXiv:2301.04104 ,2023. [11] M. Janner, Y. Du, J. B. Tenenbaum, and S. Levine, “Plan-ning with diffusion for flexible behavior synthesis,” arXiv preprint arXiv:2205.09991 , 2022. [12] M. Rigter, J. Yamada, and I. Posner, “World models via policy-guided trajectory diffusion,” arXiv preprint arXiv:2312.08533 , 2023. [13] M. T. Jackson, M. T. Matthews, C. Lu, B. Ellis, S. Whiteson, and J. Fo-erster, “Policy-guided diffusion,” arXiv preprint arXiv:2404.06356 ,2024. [14] D. Foffano, A. Russo, and A. Proutiere, “Adversarial diffusion for ro-bust reinforcement learning,” arXiv preprint arXiv:2509.23846 , 2025. [15] A. Nagabandi, G. Kahn, R. S. Fearing, and S. Levine, “Neural network dynamics for model-based deep reinforcement learning with model-free fine-tuning,” in 2018 IEEE International Conference on Robotics and Automation (ICRA) , pp. 7559–7566, IEEE, 2018. [16] K. Chua, R. Calandra, R. McAllister, and S. Levine, “Deep rein-forcement learning in a handful of trials using probabilistic dynamics models,” Advances in neural information processing systems , vol. 31, 2018. [17] L. Kaiser, M. Babaeizadeh, P. Milos, B. Osinski, R. H. Camp-bell, K. Czechowski, D. Erhan, C. Finn, P. Kozakowski, S. Levine, 
+
+et al. , “Model-based reinforcement learning for Atari,” arXiv preprint arXiv:1903.00374 , 2019. [18] T. Jafferjee, E. Imani, E. Talvitie, M. White, and M. Bowling, “Hallucinating value: A pitfall of dyna-style planning with imperfect environment models,” arXiv preprint arXiv:2006.04363 , 2020. [19] E. van der Pol, T. Kipf, F. A. Oliehoek, and M. Welling, “Plannable approximations to mdp homomorphisms: Equivariance under actions,” 
+
+arXiv preprint arXiv:2002.11963 , 2020. [20] D. P. Kingma, “Auto-encoding variational bayes,” arXiv preprint arXiv:1312.6114 , 2013. [21] A. Vaswani, “Attention is all you need,” Advances in Neural Informa-tion Processing Systems , 2017. [22] D. Hafner, T. Lillicrap, M. Norouzi, and J. Ba, “Mastering Atari with discrete world models,” arXiv preprint arXiv:2010.02193 , 2020. [23] D. Ha and J. Schmidhuber, “Recurrent world models facilitate pol-icy evolution,” Advances in neural information processing systems ,vol. 31, 2018. [24] C. Xiao, Y. Wu, C. Ma, D. Schuurmans, and M. M¨ uller, “Learning to combat compounding-error in model-based reinforcement learning,” 
+
+arXiv preprint arXiv:1912.11206 , 2019. [25] K. Asadi, D. Misra, S. Kim, and M. L. Littman, “Combating the compounding-error problem with a multi-step model,” arXiv preprint arXiv:1905.13320 , 2019. [26] J. Sohl-Dickstein, E. Weiss, N. Maheswaranathan, and S. Ganguli, “Deep unsupervised learning using nonequilibrium thermodynamics,” in International conference on machine learning , pp. 2256–2265, PMLR, 2015. [27] J. Ho, A. Jain, and P. Abbeel, “Denoising diffusion probabilistic models,” Advances in neural information processing systems , vol. 33, pp. 6840–6851, 2020. [28] P. Dhariwal and A. Nichol, “Diffusion models beat gans on image synthesis,” Advances in neural information processing systems , vol. 34, pp. 8780–8794, 2021. [29] J. Ho and T. Salimans, “Classifier-free diffusion guidance,” arXiv preprint arXiv:2207.12598 , 2022. [30] A. Ajay, Y. Du, A. Gupta, J. Tenenbaum, T. Jaakkola, and P. Agrawal, “Is conditional generative modeling all you need for decision-making?,” arXiv preprint arXiv:2211.15657 , 2022. [31] Z. Zhu, M. Liu, L. Mao, B. Kang, M. Xu, Y. Yu, S. Ermon, and W. Zhang, “Madiff: Offline multi-agent learning with diffusion models,” arXiv preprint arXiv:2305.17330 , 2023. [32] C. Chi, Z. Xu, S. Feng, E. Cousineau, Y. Du, B. Burchfiel, R. Tedrake, and S. Song, “Diffusion policy: Visuomotor policy learning via action diffusion,” The International Journal of Robotics Research ,p. 02783649241273668, 2023. [33] X. Li, V. Belagali, J. Shang, and M. S. Ryoo, “Crossway diffu-sion: Improving diffusion-based visuomotor policy via self-supervised learning,” in 2024 IEEE International Conference on Robotics and Automation (ICRA) , pp. 16841–16849, IEEE, 2024. [34] Z. Liang, Y. Mu, M. Ding, F. Ni, M. Tomizuka, and P. Luo, “Adapt-diffuser: Diffusion models as adaptive self-evolving planners,” arXiv preprint arXiv:2302.01877 , 2023. [35] T. Wang, X. Bao, I. Clavera, J. Hoang, Y. Wen, E. Langlois, S. Zhang, G. Zhang, P. Abbeel, and J. Ba, “Benchmarking model-based rein-forcement learning,” arXiv preprint arXiv:1907.02057 , 2019. [36] P. Hansen-Estruch, I. Kostrikov, M. Janner, J. G. Kuba, and S. Levine, “IDQL: Implicit q-learning as an actor-critic method with diffusion policies,” arXiv preprint arXiv:2304.10573 , 2023. [37] B. Mazoure, W. Talbott, M. A. Bautista, D. Hjelm, A. Toshev, and J. Susskind, “Value function estimation using conditional diffusion models for control,” arXiv preprint arXiv:2306.07290 , 2023. [38] R. S. Sutton, “Dyna, an integrated architecture for learning, planning, and reacting,” ACM Sigart Bulletin , vol. 2, no. 4, pp. 160–163, 1991. [39] J. Schulman, “Trust region policy optimization,” arXiv preprint arXiv:1502.05477 , 2015. [40] J. Schulman, F. Wolski, P. Dhariwal, A. Radford, and O. Klimov, “Proximal policy optimization algorithms,” arXiv preprint arXiv:1707.06347 , 2017. [41] Y. Zheng, J. Li, D. Yu, Y. Yang, S. E. Li, X. Zhan, and J. Liu, “Safe offline reinforcement learning with feasibility-guided diffusion model,” 
+
+arXiv preprint arXiv:2401.10700 , 2024. [42] D. Shribak, C.-X. Gao, Y. Li, C. Xiao, and B. Dai, “Diffusion spectral representation for reinforcement learning,” Advances in Neural Infor-mation Processing Systems , vol. 37, pp. 110028–110056, 2024. [43] D. Ki, J. Oh, S.-W. Shim, and B.-J. Lee, “Prior-guided diffu-sion planning for offline reinforcement learning,” arXiv preprint arXiv:2505.10881 , 2025. [44] H. Ma, T. Chen, K. Wang, N. Li, and B. Dai, “Efficient on-line reinforcement learning for diffusion policy,” arXiv preprint arXiv:2502.00361 , 2025. [45] S. Levine, “Reinforcement learning and control as probabilistic infer-ence: Tutorial and review,” arXiv preprint arXiv:1805.00909 , 2018. [46] R. S. Sutton, A. G. Barto, et al. , Reinforcement learning: An intro-duction . No. 1, MIT press Cambridge, 1998. [47] V. Mnih, A. P. Badia, M. Mirza, A. Graves, T. Lillicrap, T. Harley, D. Silver, and K. Kavukcuoglu, “Asynchronous methods for deep rein-forcement learning,” in International conference on machine learning ,pp. 1928–1937, PmLR, 2016. [48] A. Lugmayr, M. Danelljan, A. Romero, F. Yu, R. Timofte, and L. Van Gool, “Repaint: Inpainting using denoising diffusion prob-abilistic models,” in Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pp. 11461–11471, 2022. [49] A. Raffin, A. Hill, A. Gleave, A. Kanervisto, M. Ernestus, and N. Dor-mann, “Stable-baselines3: Reliable reinforcement learning implemen-tations,” Journal of Machine Learning Research , vol. 22, no. 268, pp. 1–8, 2021. [50] R. Rombach, A. Blattmann, D. Lorenz, P. Esser, and B. Ommer, “High-resolution image synthesis with latent diffusion models. arxiv 2022,” arXiv preprint arXiv:2112.10752 , 2021. [51] Y. Lipman, R. T. Chen, H. Ben-Hamu, M. Nickel, and M. Le, “Flow matching for generative modeling,” arXiv preprint arXiv:2210.02747 ,2022.

@@ -1,0 +1,1342 @@
+Title: Blazing the trails before beating the path: Sample-efficient Monte-Carlo planning
+
+URL Source: https://arxiv.org/pdf/2604.14974v1
+
+Published Time: Fri, 17 Apr 2026 00:58:58 GMT
+
+Number of Pages: 19
+
+Markdown Content:
+# Blazing the trails before beating the path: Sample-efficient Monte-Carlo planning 
+
+Jean-Bastien Grill Michal Valko 
+
+SequeL team, INRIA Lille - Nord Europe, France 
+
+jean-bastien.grill@inria.fr michal.valko@inria.fr 
+
+Rémi Munos 
+
+Google DeepMind, UK ∗
+
+munos@google.com 
+
+## Abstract 
+
+You are a robot and you live in a Markov decision process (MDP) with a finite or an infinite number of transitions from state-action to next states. You got brains and so you plan before you act. Luckily, your roboparents equipped you with a generative model to do some Monte-Carlo planning . The world is waiting for you and you have no time to waste. You want your planning to be efficient. Sample-efficient .Indeed, you want to exploit the possible structure of the MDP by exploring only a subset of states reachable by following near-optimal policies. You want guarantees on sample complexity that depend on a measure of the quantity of near-optimal states. You want something, that is an extension of Monte-Carlo sampling (for estimating an expectation) to problems that alternate maximization (over actions) and expectation (over next states). But you do not want to S TOP with exponential running time, you want something simple to implement and computationally efficient. You want it all and you want it now. You want T RAIL BLAZER .
+
+## 1 Introduction 
+
+We consider the problem of sampling-based planning in a Markov decision process (MDP) when a 
+
+generative model (oracle) is available. This approach, also called Monte-Carlo planning or Monte-Carlo tree search (see e.g., [ 12 ]), has been popularized in the game of computer Go [ 7, 8 , 15 ] and shown impressive performance in many other high dimensional control and game problems [ 4 ]. In the present paper, we provide a sample complexity analysis of a new algorithm called TrailBlazer .Our assumption about the MDP is that we possess a generative model which can be called from any state-action pair to generate rewards and transition samples. Since making a call to this generative model has a cost, be it a numerical cost expressed in CPU time (in simulated environments) or a financial cost (in real domains), our goal is to use this model as parsimoniously as possible. Following dynamic programming [ 2], planning can be reduced to an approximation of the (optimal) value function, defined as the maximum of the expected sum of discounted rewards: E
+
+hP 
+
+> t≥0
+
+γtrt
+
+i
+
+,
+
+where γ ∈ [0 , 1) is a known discount factor . Indeed, if an ε-optimal approximation of the value function at any state-action pair is available, then the policy corresponding to selecting in each state the action with the highest approximated value will be O (ε/ (1 − γ)) -optimal [3]. Consequently, in this paper, we focus on a near-optimal approximation of the value function for a single given state (or state-action pair). In order to assess the performance of our algorithm we measure its sample complexity defined as the number of oracle calls, given that we guarantee its 
+
+consistency , i.e., that with probability at least 1 − δ, TrailBlazer returns an ε-approximation of the value function as required by the probably approximately correct (PAC) framework. 
+
+> ∗
+
+on leave from SequeL team, INRIA Lille - Nord Europe, France 29th Conference on Neural Information Processing Systems (NIPS 2016), Barcelona, Spain. 
+
+> arXiv:2604.14974v1 [cs.LG] 16 Apr 2026
+
+We use a tree representation to represent the set of states that are reachable from any initial state. This tree alternates maximum ( MAX ) nodes (corresponding to actions) and average ( AVG ) nodes (corresponding to the random transition to next states). We assume the number K of actions is finite. However, the number N of possible next states is either finite or infinite (which may be the case when the state space is infinite), and we will report results in both the finite N and the infinite case. The root node of this planning tree represents the current state (or a state-action) of the MDP and its value is the maximum (over all policies defined at MAX nodes) of the corresponding expected sum of discounted rewards. Notice that by using a tree representation, we do not use the property that some state of the MDP can be reached by different paths (sequences of states-actions). Therefore, this state will be represented by different nodes in the tree. We could potentially merge such duplicates to form a graph instead. However, for simplicity, we choose not to merge these duplicates and keep a tree, which could make the planning problem harder. To sum up, our goal is to return, with probability 
+
+1 − δ, an ε-accurate value of the root node of this planning tree while using as low number of calls to the oracle as possible. Our contribution is an algorithm called TrailBlazer whose sampling strategy depends on the specific structure of the MDP and for which we provide sample complexity 
+
+bounds in terms of a new problem-dependent measure of the quantity of near-optimal nodes . Before describing our contribution in more detail we first relate our setting to what has been around. 
+
+1.1 Related work 
+
+Kocsis and Szepesvári [12] introduced the UCT algorithm (upper-confidence bounds for trees). UCT 
+
+is efficient in computer Go [ 7, 8 , 15 ] and a number of other control and game problems [ 4]. UCT is based on generating trajectories by selecting in each MAX node the action that has the highest upper-confidence bound, computed according to the UCB algorithm of Auer et al. [1] . UCT converges asymp-totically to the optimal solution, but its sample complexity can be worse than doubly-exponential in 2 (1 /ε ) for some MDPs [ 13 ]. One reason for this is that the algorithm can expand very deeply the apparently best branches but may lack sufficient exploration, especially when a narrow optimal path is hidden in a suboptimal branch. As a result, this approach works well in some problems with a specific structure but may be much worse than a uniform sampling in other problems. On the other hand, a uniform planning approach is safe for all problems. Kearns et al. [11] generate a sparse look-ahead tree based on expanding all MAX nodes and sampling a finite number of children from AVG nodes up to a fixed depth that depends on the desired accuracy ε. Their sample complexity is 3 of the order of (1 /ε )log(1 /ε ), which is non-polynomial in 1/ε . This bound is better than that for 
+
+UCT in a worst-case sense. However, as their look-ahead tree is built in a uniform and non-adaptive 
+
+way, this algorithm fails to benefit from a potentially favorable structure of the MDP. An improved version of this sparse-sampling algorithm by Walsh et al. [17] cuts suboptimal branches in an adaptive way but unfortunately does not come with an improved bound and stays non-polynomial even in the simple Monte Carlo setting for which K = 1 .Although the sample complexity is certainly non-polynomial in the worst case, it can be polyno-mial in some specific problems. First, for the case of finite N , the sample complexity is poly-nomial and Szörényi et al. [16] show that a uniform sampling algorithm has complexity at most 
+
+(1 /ε )2+log( KN )/(log(1 /γ )) . Notice that the product KN represents the branching factor of the look-ahead planning tree. This bound could be improved for problems with specific reward structure or transition smoothness. In order to do this, we need to design non-uniform, adaptive algorithm that captures the possible structure of the MDP when available, while making sure that in the worst case, we do not perform worse than a uniform sampling algorithm. The case of deterministic dynamics ( N = 1 ) and rewards considered by Hren and Munos [10] has a complexity of order (1 /ε )(log κ)/(log(1 /γ )) , where κ ∈ [1 , K ] is the branching factor of the subset of near-optimal nodes. 4 The case of stochastic rewards has been considered by Bubeck and Munos [5] but with the difference that the goal was not to approximate the optimal value function but the value of the best open-loop policy which consists in a sequence of actions independent of states. Their sample complexity is (1 /ε )max(2 ,(log κ)/(log 1 /γ )) .   
+
+> 2all guarantees in the form of 1/ε care up to a poly-logarithmic multiplicative factor
+> 3neglecting exponential dependence in γ
+> 4nodes that need to be considered in order to return a near-optimal approximation of the value at the root
+
+2In the case of general MDPs, Bu¸ soniu and Munos [6] consider the case of a fully known model of the MDP. For any state-action, the model returns the expected reward and the set of all next states (assuming N is finite) with their corresponding transition probabilities. In that case, the complexity is (1 /ε )log κ/ (log(1 /γ )) , where κ ∈ [0 , KN ] can again be interpreted as a branching factor of the subset of near-optimal nodes. These approaches use the optimism in the face of uncertainty principle whose applications to planning have been studied by Munos [13] . TrailBlazer is different. It is not optimistic by design: To avoid voracious demand for samples it does not balance the upper-confidence bounds of all possible actions. This is crucial for polynomial sample complexity in the infinite case. The whole Section 3 shines many rays of intuitive light on this single and powerful idea. The work that is most related to ours is StOP by Szörényi et al. [16] which considers the plan-ning problem in MDPs with a generative model. Their complexity bound is of the order of 
+
+(1 /ε )2+log κ/ (log(1 /γ ))+ o(1) , where κ ∈ [0 , KN ] is a problem-dependent quantity. However, their κ
+
+defined as lim ε→0 max( κ1, κ 2) (in their Theorem 2) is somehow difficult to interpret as a measure of the quantity of near-optimal nodes . Moreover, StOP is not computationally efficient as it requires to identify the optimistic policy which requires computing an upper bound on the value of any possible policy, whose number is exponential in the number of MAX nodes, which itself is exponential in the planning horizon. Although they suggest (in their Appendix F) a computational improvement, this version is not analyzed. Finally, unlike in the present paper, StOP does not consider the case N = ∞.
+
+1.2 Our contributions 
+
+Our main result is TrailBlazer , an algorithm with a bound on the number of samples required to return a high-probability ε-approximation of the root node whether the number of next states N is finite or infinite. The bounds use a problem-dependent quantity ( κ or d) that measures the quantity of near-optimal nodes. We now summarize the results. 
+
+Finite number of next states (N < ∞): The sample complexity of TrailBlazer is of the order of 5 (1 /ε )max(2 ,log( N κ )/ log(1 /γ )+ o(1)) , where κ ∈ [1 , K ] is related to the branching factor of the set of near-optimal nodes (precisely defined later). 
+
+Infinite number of next states ( N = ∞): The complexity of TrailBlazer is (1 /ε )2+ d, where d
+
+is a measure of the difficulty to identify the near-optimal nodes. Notice that d can be finite even if the planning problem is very challenging. 6 We also state our contributions in specific settings in comparison to previous work. • For the case N < ∞, we improve over the best-known previous worst-case bound with an exponent of 1/ε ) to max(2 , log( N K )/ log(1 /γ )) instead of 2 + log( N K )/ log(1 /γ )
+
+reported by Szörényi et al. [16]. • For the case N = ∞, we identify properties of the MDP (when d = 0 ) under which the sample complexity is of order of 1/ε 2. This is the case when there are non-vanishing action-gaps 7 from any state along near-optimal policies or when the probability of transitioning to nodes with gap ∆ is upper bounded by ∆2. This complexity bound is as good as Monte-Carlo sampling and for this reason TrailBlazer is a natural extension of Monte-Carlo sampling (where all nodes are AVG ) to stochastic control problems (where MAX and AVG 
+
+nodes alternate). Also, no previous algorithm reported a polynomial bound when N = ∞.• In MDPs with deterministic transitions ( N = 1 ) but stochastic rewards our bound is 
+
+(1 /ε )max(2 ,log κ/ (log 1 /γ )) which is similar to the bound achieved by Bubeck and Munos [5] in a similar setting (open-loop policies). • In the evaluation case without control ( K = 1 ) TrailBlazer behaves exactly as Monte-Carlo sampling (thus achieves a complexity of 1/ε 2), even in the case N = ∞.• Finally, TrailBlazer is easy to implement and is numerically efficient.        
+
+> 5neglecting logarithmic terms in εand δ
+> 6since when N=∞the actual branching factor of the set of reachable nodes is infinite
+> 7defined as the difference in values of best and second-best actions
+
+32 The algorithm 
+
+The objective We begin by defining our notations. We operate on a tree T , where each node from the root down is alternatively either an average ( AVG ) or a maximum ( MAX ) node. For any node s, let C [s] be the set of its children. We consider only trees T for which the cardinality of C [s]
+
+for any MAX node s is bounded by K. In the paper, we consider trees with potentially unbounded number of children for an AVG node. As a special case, however, we will also consider finite trees. If the cardinality of C [s] is also bounded for any AVG node s then we denote such bound as N . Our objective is to provide performance guarantees in the case N = ∞ and possibly tighter, N -dependent guarantees in the case of N < ∞.Each AVG node s is associated with a random variable τs ∈ C [s] and for any s′ ∈ C [s] we define 
+
+p (s′|s) = P [τs = s′] .
+
+Furthermore, for any node s′ and for any of its ancestors s, we define p (s′|s) as the product of the transition probabilities between the two nodes. Any AVG node s is also provided with a random variable rs ∈ [0 , 1] . For any node s, we define the value function V (s): If s is an AVG node and 
+
+γ ∈ (0 , 1) the discount factor, then 
+
+V (s) = E [rs] + γ X
+
+> s′∈C [s]
+
+p(s′|s)V (s′).
+
+If s is a MAX node, V (s) is defined as the maximum value among its children 
+
+V (s) = max  
+
+> s′∈C [s]
+
+V (s′).
+
+The planner has an access to the generative model that can be called for any AVG node s to either get a reward r or a transition τ which are two independent random variables identically distributed as 
+
+rs and τs. Using the notation above, our goal is given the root s0 of T to compute its value V (s0).More precisely, given any δ and ε, the objective of the planner is to output a value μ such that 
+
+P [|μ − V (s0)| > ε ] ≤ δ
+
+and such that the number of calls to the generative model n (ε, δ ) is as low as possible. 
+
+2.1 Description of the algorithm 
+
+TrailBlazer constructs a planning tree which is, at any time, a finite subset of the potentially infinite tree T . Only the nodes that were accessed are explicitly represented in memory. Each node of T is a persistent object with its own memory, which it may update upon being called by its parent. Therefore, any node can be potentially called several times (with different parameters) during the execution of TrailBlazer and it will reuse (some of) its stored samples. In particular, after node s
+
+receives a call from its parent s′, node s performs internal computation and potentially calls its children in order to return a real value to its parent s′.We show the pseudocode of TrailBlazer in Algorithm 3 along with the subroutines for MAX nodes in Algorithm 2 and AVG nodes in Algorithm 1. Whether a node is MAX or AVG , it is always called with two parameters m and ε. The parameter m essentially controls the requested variance of the output and parameter ε controls the requested maximum bias. 
+
+MAX nodes: A MAX node s keeps a lower and an upper bound of its children values which with high probability simultaneously hold at all time. It sequentially calls its children with different parameters in order to get more and more precise estimates on their values. Whenever the upper bound of one child becomes lower than the maximum lower bound, this child is discarded. This process can stop in two ways: 1) The set L of the remaining children shrunk enough such that there is only one child remaining in it. In this case, it calls this child with the same parameters s was called and use this output to return up as a result. 2) The precision we have on the value of the remaining children is high enough. In this case, it returns the highest estimate of the children in L.
+
+AVG nodes: Every AVG node keeps a list of all the children that it already sampled and a reward estimate r ∈ R. Note that the list may contain the same child multiple times. After receiving a call 4Algorithm 1 AVG node 
+
+Input: δ, ε
+
+Initialization: SampledNodes ← ∅ , r ← 0, μ ← 0
+
+Run: if ε ≥ 1/(2(1 − γ)) then Output: 1/(2(1 − γ)) 
+
+end if while |SampledNodes | < m do 
+
+sample a new next state and add it to SampledNodes sample a new reward and update r as the average of all sampled rewards 
+
+end while 
+
+ActiveNodes ← SampledNodes (1 : m)
+
+for all unique nodes s ∈ ActiveNodes do 
+
+k ← number of occurrences of s in ActiveNodes 
+
+ν ← call s with parameters (k, ε/γ )
+
+μ ← μ + νk/n 
+
+end for Output: r + γμ 
+
+with parameters (m, ε ) it checks if ε ≥ 1/(2(1 − γ)) . If this condition is verified, then it returns 
+
+1/(2(1 − γ)) . If not, it considers the first m sampled children (and potentially samples more children from the generative model if needed). For every child s′ in this list, the parent calls it with parameters 
+
+(k, ε/γ ), where k is the number of times a transition toward this child was sampled. It returns r + γμ ,where μ is the average of all the children estimates. 
+
+Algorithm 2 MAX node 
+
+Input: δ, ε
+
+Initialization: 
+
+η ← γ1/ max(2 ,log(1 /ε )) 
+
+ki = 0 , and μi = 0 , ∀i = 1 . . . K 
+
+L ← { i = 1 . . . K }
+
+while |{ i ∈ L : Ui > ε }| > 1 do 
+
+l ← arg min i
+
+ki : μi + 2 Ui ≥ sup j [μj − 2Uj ]
+
+kl ← kl + 1 
+
+Ul ← 4(1 −η)(1 −γ)
+
+q log ( t/δ )
+
+> kl
+
+μl ← call child l with parameters (kl, η max( Ul, ε )) 
+
+L ← i : μi + 2 Ui ≥ sup j [μj − 2Uj ]
+
+end while if |L| = 1 then Output: μ ← call child l⋆ with parameters (m, ε ) where l⋆ = arg max l∈L μl
+
+else Output: μ ← max i∈L μi
+
+end if Algorithm 3 TrailBlazer 
+
+Input: δ (global parameter), ε
+
+Set: m ← log(1 /δ )/((1 − γ)2ε2)
+
+Output: μ ← call the root with parameters (m, ε/ 2) 
+
+53 Key ideas 
+
+In this section, we explain the main ideas behind TrailBlazer . First we give some intuition about the two parameters which measure the requested precision of a call. The output estimate μ of any call with parameters (ε, m ) verifies the following property (conditioned on a high probability event) 
+
+∀λ E
+
+h
+
+eλ(μ−vs)i
+
+≤ exp 
+
+
+
+ε|λ| + σ2λ2
+
+2
+
+
+
+, with σ2 = 1
+
+m(1 − γ)2. (1) The ε-factor in the first term in the exponent is the upper bound on absolute value of the bias of our estimate μ
+
+|E [μ] − V (s)| ≤ ε. 
+
+The second term in the exponent is a variance term. The purpose of this property is to distinguish between variance and bias. This property is the core of Lemma 4, which is proved by induction 8
+
+on tree T . Applying the Lemma 4 to the root with the values of δ, ε , and m given by Algorithm 3 immediately implies Theorem 1. 
+
+3.1 Separate handling of bias and variance 
+
+Instead of maintaining two parameters, a common solution is to keep only a single parameter, representing the width of a high probability confidence set. This confidence term typically sums the bias and a term proportional to the standard deviation. Notice, however, that AVG node computes the average of independent estimates. Therefore, while the bias just sums up, it is the square of the standard deviation which we sum to get the final variance of an AVG node. Therefore, only a single confidence interval is not enough because summing them would lead to sum of a standard deviations instead of their squares. This leads to a problem in the planning setting as we would like to average high-variance and low-bias estimates. In TrailBlazer , the nodes can perform high-variance and low-bias queries but can also query for both low-variance and low-bias. TrailBlazer treats these two types of queries differently. 
+
+3.2 Picking the champion paths 
+
+We start with a simple illustration. First, imagine we want to compute an estimate of the expected value of some random variable X ∼ X , such that X ∈ [0 , 1] based on i.i.d. samples Xi ∼ X . In the second case, we modify the problem such that instead of computing the estimate of E [X] based on Xi we can only access independent but noisy values Yi ∈ [0 , 1] , such that E [Yi] = E [Xi] and such that the upper bound on the variance of Yi and Xi are the same. Even though in the first problem we have the exact values of Xi, the guarantees we are able to provide are in general not better than the ones for the second. In our planning setting, this means that if an AVG node needs m independent samples from its child, it is wasteful (it would unnecessarily increase the sample complexity) for this child to perform more than m independent samples. While the additional samples would increase the precision we have for the value of the child, they would not increase the precision we have on the value of the parent, because as in our simple illustration, the upper bound on the variance of the value of the parent stays the same. This crucial step is done in the subroutine for the AVG node with ActiveNodes ← SampledNodes (1 : m).
+
+Instead of considering all the transitions already sampled, it considers only the first m. While additional transitions were useful for some MAX node parents to decide which action to pick, they should be discarded once this choice is made. Note that they can become useful again if an ancestor becomes unsure about which action to pick and needs more precision to make a choice. This treatment enables us to provide polynomial bounds on the sample complexity for some special cases even in the infinite case. 
+
+> 8Having the proof by bottom-up induction opens a way to extend our result from the single-agent planning that we consider in the present to a two-agent planning with zero sum rewards.
+
+63.3 Tree-based algorithm 
+
+The number of policies the planner can follow is exponential in the number of states. This leads to two major challenges. First, reducing the problem to a multi-arm bandits on the set of the policies would be disadvantageous. When a reward is collected from a state, all the policies which could reach that state are affected. Therefore, it is useful to share the information between the policies. The second challenge is computational as it is infeasible to keep all potential policies in the memory. These two problems immediately vanish with just how TrailBlazer is formulated. Contrary to 16 ,we do not represent the policies explicitly or update them simultaneously to share the information, but we store all the information directly in the planning tree we construct. Indeed, by having all the nodes being independent entities that store their own information, we can share information between policies without having to enforce it explicitly. 
+
+3.4 Non-adaptive bias 
+
+Whenever an AVG node needs to furnish an estimate with bias ε, it calls its children with parameters 
+
+(k, ε ) with k being number of rounds that the child was sampled. One could think that it would be more effective to use a bias ε(k) which is a function of k. This would enable the algorithm to ask for a lower bias from the children that have been already sampled many times, and a higher bias from the children that have fewer samples. However in this case, the optimal function ε(k) depends on the difficulty of each sub-tree which is unknown. Moreover, in the infinite case the sample complexity is linear with k and then a non-adaptive bias is optimal. 
+
+## 4 TrailBlazer is good and cheap — consistency and sample complexity 
+
+In this section, we start by our consistency result, stating that TrailBlazer outputs a correct value in a PAC (probably approximately correct) sense. Later, we define a measure of the problem difficulty which we use to state our sample-complexity results. We remark that the following consistency result holds whether the state space is finite or infinite. 
+
+Theorem 1. For all ε and δ, the output με,δ of TrailBlazer called on the root s0 with (ε, δ ) verifies 
+
+P [|με,δ − V [s0]| > ε ] < δ. 
+
+4.1 Definition of the problem difficulty 
+
+We now define a measure of problem difficulty that we use to provide our sample complexity guarantees. We define a set of near-optimal nodes such that exploring only this set is enough to compute an optimal policy. Let s′ be a MAX node of tree T . For any of its descendants s, let 
+
+c→s(s′) ∈ C [s′] be the child of s′ in the path between s′ and s. For any MAX node s, we define 
+
+∆→s(s′) = max  
+
+> x∈C [s′]
+
+V [x] − V [c→s(s′)] .
+
+∆→s(s′) is the difference of the sum of discounted rewards stating from s′ between an agent playing optimally and one playing first the action toward s and then optimally. 
+
+Definition 1 (near-optimality) . We say that a node s of depth h is near-optimal, if for any even depth h′,
+
+∆→s(sh′ ) ≤ 16 γ(h−h′)/2
+
+γ(1 − γ)
+
+with sh′ the ancestor of s of even depth h′. Let Nh be the set of all near-optimal nodes of depth h.
+
+Remark 1. Notice that the subset of near-optimal nodes contains all required information to get the value of the root. In the case N = ∞, when p(s|s′) = 0 for all s and s′, then our definition of near-optimality nodes leads to the smallest subset in a sense we specify in Appendix 5.1. We prove that with probability 1 − δ, TrailBlazer only explores near-optimal nodes. Therefore, the size of the subset of near-optimal nodes directly reflects the sample complexity of TrailBlazer .
+
+In Appendix 5.1, we discuss the negatives of other potential definitions of near-optimality. 74.2 Sample complexity in the finite case 
+
+We first state our result where the set of the AVG children nodes is finite and bounded by N .
+
+Definition 2. We define κ ∈ [1 , K ] as the smallest number such that 
+
+∃C ∀h, |N 2h| ≤ CN hκh.
+
+Notice that since the total number of nodes of depth 2h is bounded by (KN )h, κ is upper-bounded by K, the maximum number of MAX ’s children. However κ can be as low as 1 in cases when the set of near-optimal nodes is small. 
+
+Theorem 2. There exists C > 0 and K such that for all ε > 0 and δ > 0, with probability 1 − δ,the sample-complexity of TrailBlazer (the number of calls to the generative model before the algorithm terminates) is 
+
+n(ε, δ ) ≤ C(1 /ε )max (2, log( N κ )log(1 /γ ) +o(1) ) (log(1 /δ ) + log(1 /ε )) α ,
+
+where α = 5 when log( N κ )/ log(1 /γ ) ≥ 2 and α = 3 otherwise. 
+
+This provides a problem-dependent sample-complexity bound, which already in the worst case (κ = K) improves over the best-known worst-case bound eO  (1 /ε )2+log( KN )/ log(1 /γ ) [ 16 ]. This bound gets better as κ gets smaller and is minimal when κ = 1 . This is, for example, the case when the gap (see definition given in Equation 2) at MAX nodes is uniformly lower-bounded by some ∆ > 0.In this case, this theorem provides a bound of order (1 /ε )max(2 ,log( N )/ log(1 /γ )) . However, we will show in Remark 2 that we can further improve this bound to (1 /ε )2.
+
+4.3 Sample complexity in the infinite case 
+
+Since the previous bound depends on N , it does not apply to the infinite case with N = ∞. We now provide a sample complexity result in the case N = ∞. However, notice that when N is bounded, then both results apply. We first define gap ∆( s) for any MAX node s as the difference between the best and second best arm, 
+
+∆( s) = V [i⋆] − max  
+
+> i∈C [s],i ̸=i⋆
+
+V [i] with i⋆ = arg max 
+
+> i∈C [s]
+
+V [i] . (2) For any even integer h, we define a random variable Sh taking values among MAX nodes of depth h,in the following way. First, from every AVG nodes from the root to nodes of depth h, we draw a single transition to one of its children according to the corresponding transition probabilities. This defines a subtree with Kh/ 2 nodes of depth h and we choose Sh to be one of them uniformly at random .Furthermore, for any even integer h′ < h we note Shh′ the MAX node ancestor of Sh of depth h′.
+
+Definition 3. We define d ≥ 0 as the smallest d such that for all ξ there exists a > 0 for which for all even h > 0,
+
+E
+
+Kh/ 21  Sh ∈ N h
+
+ Y
+
+> 0≤h′<h h′≡0(mod 2)
+
+ ξγh−h′
+
+1  
+
+> 
+> ∆( Shh′)<16 γ(h−h′)/2
+> γ(1 −γ)
+> 
+
+ ≤ aγ −dh 
+
+If no such d exists, we set d = ∞.
+
+This definition of d takes into account the size of the near-optimality set (just like κ) but unlike κ it also takes into account the difficulty to identify the near-optimal paths. Intuitively, the expected number of oracle calls performed by a given AVG node s is proportional to: (1/ε 2) × (the product of the inverted squared gaps of the set of MAX nodes in the path from the root to 
+
+s) × (the probability of reaching s by following a policy which always tries to reach s). Therefore, a near-optimal path with a larger number of small MAX node gaps can be considered 
+
+difficult . By assigning a larger weight to difficult nodes, we are able to give a better characterization of the actual complexity of the problem and provide polynomial guarantees on the sample complexity for N = ∞ when d is finite. 8Theorem 3. If d is finite then there exists C > 0 such that for all ε > 0 and δ > 0, the expected sample complexity of TrailBlazer satisfies 
+
+E [n(ε, δ )] ≤ C (log(1 /δ ) + log(1 /ε )) 3
+
+ε2+ d ·
+
+Note that this result holds in expectation only, contrary to Theorem 2 which holds in high probability. We now give an example for which d = 0 , followed by a special case of it. 
+
+Lemma 1. If there exists c > 0 and b > 2 such that for any near-optimal AVG node s,
+
+P [∆ ( τs) ≤ x] ≤ cx b,
+
+where the random variable τs is a successor state from s drawn from the MDP’s transition probabili-ties, then d = 0 and consequently the sample complexity is of order 1/ε 2.
+
+Remark 2. If there exists ∆min such that for any near-optimal MAX node s, ∆( s) ≥ ∆min then d = 0 
+
+and the sample complexity is of order 1/ε 2. Indeed, in this case as P [∆ s ≤ x] ≤ (x/ ∆min )b for any 
+
+b > 2 for which d = 0 by Lemma 1. 
+
+## 5 Discussion 
+
+5.1 On the choice of the near-optimality definition 
+
+In this part, we discuss the possible alternative choices to the near-optimality set Nh and explain the choice we made in Definition 1. From this definition, the knowledge of the rewards of the near-optimal nodes is enough to compute an optimal policy. Therefore, whatever the rewards associated with the non-near-optimal nodes are, they do not change the optimal policy. A good adaptive algorithm, would not exploring the whole tree, but would with high probability only explore a set not significantly larger than a set Nh of near-optimal nodes. There are other possible definitions of the near-optimality set satisfying this desired property that we could possible consider for the definition of Nh. Ideally, this set would be as small as possible. 
+
+Alternative definition 1 An idea could be to consider for any node s and an ancestor s′, the value of the policy starting from s′ choosing the action leading to s every time it can and playing optimally otherwise. Let Vs(s′) be this value. A natural approach would be to define Nh only based on Vs(s0)
+
+with s0 being the root. To ensure that exploring the near-optimal nodes is enough to compute the optimal policy we need any near-optimal nodes s of depth h to verify 
+
+(V (s0) − Vs(s0)) p(s|s0) ≤ γh
+
+1 − γ·
+
+When there is no AVG node, p(s) = 1 and this definition coincides with the near-optimal set defined in 
+
+OLOP [5]. Nevertheless, in our case, p(s) can be low and even 0 in the infinite case. When p(s|s0) = 0 
+
+for all s, any node would be near-optimal which is bad because then the near-optimality set is large and the sample complexity of the resulting algorithm suffers. 
+
+Alternative definition 2 There is a smarter way to define a near-optimality set. We could define it as all the nodes s of depth h such that 
+
+∀h′ ≤ h, 
+
+> h
+
+X
+
+> i=h′
+
+p(si|sh′ )γi (V (si) − V (c(si, s )) ≤ γh
+
+1 − γ ·
+
+Taking h′ = 0 , we recover the alternative definition 1. Alternative definition 2 defines a smaller near-optimality set, as the condition needs to be verified for all h′ and not just for h′ = 0 . This definition would also lead to a smaller near-optimality set than our Definition 1. Indeed, in Definition 1 we consider only the first term of the sum above. This enables the algorithm to compute its strategy from a node s only based on the value of its descendants. This is an ingredient leading to better computational efficiency of TrailBlazer . Indeed, the computational complexity of our algorithm is linear in the number of calls to the generative model. In addition, when the transition probabilities are low, both definitions are close and coincide in the infinite case, when the probability transitions are continuous and therefore p(s|s′) = 0 .95.2 Comparison of the finite and the infinite analysis 
+
+The difference between our finite and the infinite analysis lies in how do we bound the probability of reaching at least once the node s from s′ given we received m samples from s′. This probability is equal to 1 − (1 − p(s|s′)) m. In Figure 1, we show the probability function of m and the bounds we use for this function. For the infinite analysis, we use the linear approximation at m = 0 as an upper bound. This bound is tight when log(1 − p(s|s′)) ≪ m which happens in the infinite case. For the finite case we bound this quantity by 1. -0,25 0 0,25 0,5 0,75 1 1,25 1,5 1,75 2
+
+> -0,25
+> 0,25
+> 0,5
+> 0,75
+> 1
+
+Figure 1: Infinite vs. finite analysis 10 Acknowledgements The research presented in this paper was supported by French Ministry of Higher Education and Research, Nord-Pas-de-Calais Regional Council, a doctoral grant of École Normale Supérieure in Paris, Inria and Carnegie Mellon University associated-team project EduBand, and French National Research Agency projects ExTra-Learn (n.ANR-14-CE24-0010-01) and BoB (n.ANR-16-CE23-0003) 
+
+11 References 
+
+[1] Peter Auer, Nicolò Cesa-Bianchi, and Paul Fischer. Finite-time analysis of the multiarmed bandit problem. Machine Learning , 47(2-3):235–256, 2002. [2] Richard Bellman. Dynamic Programming . Princeton University Press, Princeton, NJ, 1957. [3] Dimitri Bertsekas and John Tsitsiklis. Neuro-Dynamic Programming . Athena Scientific, Belmont, MA, 1996. [4] Cameron B. Browne, Edward Powley, Daniel Whitehouse, Simon M. Lucas, Peter I. Cowling, Philipp Rohlfshagen, Stephen Tavener, Diego Perez, Spyridon Samothrakis, and Simon Colton. A survey of Monte Carlo tree search methods. IEEE Transactions on Computational Intelligence and AI in Games , 4(1):1–43, 2012. [5] Sébastien Bubeck and Rémi Munos. Open-loop optimistic planning. In Conference on Learning Theory , 2010. [6] Lucian Bu¸ soniu and Rémi Munos. Optimistic planning for Markov decision processes. In 
+
+International Conference on Artificial Intelligence and Statistics , 2012. [7] Rémi Coulom. Efficient selectivity and backup operators in Monte-Carlo tree search. Computers and games , 4630:72–83, 2007. [8] Sylvain Gelly, Wang Yizao, Rémi Munos, and Olivier Teytaud. Modification of UCT with patterns in Monte-Carlo Go. Technical report, Inria, 2006. URL https://hal.inria.fr/ inria-00117266 .[9] Arthur Guez, David Silver, and Peter Dayan. Efficient Bayes-adaptive reinforcement learning using sample-based search. Neural Information Processing Systems , 2012. [10] Jean-Francois Hren and Rémi Munos. Optimistic Planning of Deterministic Systems. In 
+
+European Workshop on Reinforcement Learning , 2008. [11] Michael Kearns, Yishay Mansour, and Andrew Y. Ng. A sparse sampling algorithm for near-optimal planning in large Markov decision processes. In International Conference on Artificial Intelligence and Statistics , 1999. [12] Levente Kocsis and Csaba Szepesvári. Bandit-based Monte-Carlo planning. In European Conference on Machine Learning , 2006. [13] Rémi Munos. From bandits to Monte-Carlo tree search: The optimistic principle applied to optimization and planning. Foundations and Trends in Machine Learning , 7(1):1–130, 2014. [14] David Silver and Joel Veness. Monte-Carlo planning in large POMDPs. In Neural Information Processing Systems , 2010. [15] David Silver, Aja Huang, Chris J. Maddison, Arthur Guez, Laurent Sifre, George van den Driess-che, Julian Schrittwieser, Ioannis Antonoglou, Veda Panneershelvam, Marc Lanctot, Sander Dieleman, Dominik Grewe, John Nham, Nal Kalchbrenner, Ilya Sutskever, Timothy Lillicrap, Madeleine Leach, Koray Kavukcuoglu, Thore Graepel, and Demis Hassabis. Mastering the game of Go with deep neural networks and tree search. Nature , 529(7587):484–489, 2016. [16] Balázs Szörényi, Gunnar Kedenburg, and Rémi Munos. Optimistic planning in Markov decision processes using a generative model. In Neural Information Processing Systems , 2014. [17] Thomas J Walsh, Sergiu Goschin, and Michael L Littman. Integrating sample-based planning and model-based reinforcement learning. AAAI Conference on Artificial Intelligence , 2010. 12 A Additional notation for the analysis 
+
+In this part, we define new quantities to be used in the other part of the appendix. For all MAX nodes i
+
+and time t, we denote μs,t i the estimate of child i at time t and (εs,t i , k s,t i ) the parameters that have been use to get μs,t i . We then define 
+
+Us,t i = 41 − γ
+
+s
+
+log( t/δ )
+
+ks,t i
+
+·
+
+## B Maximum depth of the search 
+
+Next lemma ensures that TrailBlazer terminates and bounds the maximum depth it reaches. 
+
+Lemma 2. For all m and ε > 0, a call to the root with parameters (m, ε ) never results in calls to a node of depth h > h max with 
+
+hmax = 2 
+
+ log (1 /ε ) + log (1 /(1 − γ)) log ( η/γ )
+
+
+
++ 2 .
+
+Proof. A MAX node called with parameters (m, ε ) only performs calls with parameter ε′ ≥ ηε . An 
+
+AVG node called with parameters (m, ε ) only perform calls with parameter ε′ ≥ ε/γ . Since MAX and 
+
+AVG nodes alternate, we get from an immediate induction that if the root is called with ε, then for any 
+
+h > 0 any node at depth 2h is called with parameter ε′ ≥ εη h/γ h and therefore every node at depth 
+
+h is called with parameter 
+
+ε′ ≥ ε
+
+(η/γ )⌊h/ 2⌋·
+
+For h > h max − 2 we have that 
+
+ε′ ≥ ε
+
+(η/γ )⌊(hmax −2) /2⌋ ≥ 11 − γ·
+
+By the algorithm definition, if h is an AVG node it returns 0 and does not perform any call. On the other hand, if h is a MAX node, it calls the AVG nodes of next depth and these nodes return 0 without performing any call. In any case, no node of depth h is ever called. 
+
+Lemma 3. For any set J of node, if all of them verify the two property of Lemma 4 then 
+
+P
+
+"[
+
+> t
+
+[
+
+> i∈J
+
+Bi,s (t)
+
+#
+
+≤ δ/t 
+
+with 
+
+Bi,s (t) = |μs,t i − vi| ≥ εs,t i + U s,t i ,
+
+Proof. If for some α > 0, β, M , a random variable X verifies that 
+
+E eλX  ≤ M exp 
+
+
+
+|λ|α + β2λ2
+
+2
+
+
+
+,
+
+then using Markov inequality for u > α and setting λ = u−αβ2 , we get 
+
+P [X ≥ u] ≤ E eλX 
+
+eλu ≤ M exp 
+
+
+
+|λ|α − λu + β2λ2
+
+2
+
+
+
+≤ M exp 
+
+
+
+− (u − α)2
+
+2β2
+
+
+
+·
+
+Similarly, for u < 0
+
+P [X ≤ u] ≤ M exp 
+
+
+
+− (u + α)2
+
+2β2
+
+
+
+·
+
+13 Taking a union bound, we have that for all u > 0
+
+P [|X| ≥ u] ≤ 2M exp 
+
+
+
+− (u − α)2
+
+2β2
+
+
+
+·
+
+We define a set of auxiliary events 
+
+Bi,s (t) = |μs,t i − vi| ≥ εs,t i + U s,t i ,
+
+and also define the event for which we prove the properties A and BAs(t) = \
+
+> i
+
+Ai,s (t)
+
+Notice that for all children i, j , Ai,s (t) is independent from μs,t j and Aj,s (t). It follows that for any child i and any time t,
+
+E
+
+
+
+eλ(μs,t i −vi) Ai,s (t)
+
+
+
+≤ 1(1 − δ/t )Ct(s) exp 
+
+
+
+|λ|εs,t i + λ2
+
+2(1 − γ)2ks,t i
+
+
+
+We combine this inequality with the Markov inequality to get 
+
+P
+
+
+
+Bi,s (t) As(t)
+
+
+
+≤ 2(1 − δ/t )Ct(s) exp 
+
+−
+
+> 1(1 −γ)2
+> 16 log( t/δ )
+> ks,t i
+> 2(1 −γ)2ks,t i
+
+
+
+≤ 2(1 − δ/t )t exp ( −4 log( t/δ ) − 4 log( t/δ )) (we bound Ct(s) by t)
+
+≤ 8 exp  − log( t4/δ ) − 4 log(2)  (we use that t ≥ 2)
+
+≤ δ/  2t4 .
+
+We now define 
+
+Bs(t) = \
+
+> i,t
+
+Bi,s (t)c,
+
+and use a union bound over all visited children i and all times t to get 
+
+P Bs(t)c As(t) ≤ [
+
+> i,t
+
+Bi,s (t)
+
+≤ X
+
+> t
+
+X
+
+> i
+
+δ/  2t4
+
+≤ X
+
+> t
+
+δ/  2t3 (there are at most t visited children) 
+
+≤ 2δπ 2/(6 t)
+
+≤ δ/t 
+
+## C Consistency 
+
+Lemma 4. Let Ct(s) be the number of explored nodes at time t which are descendants of s. For all nodes s, time t, ε > 0, and integer m, let μs,t be the output of a call to the node s at time t with parameters (m, ε ). There exists an event As(t) such that 
+
+Property A: P [As(t)] ≥ 1 − δ Ct(s)
+
+Ct(s0) (3) 
+
+Property B: ∀λ, E
+
+
+
+eλ(μs,t −vs) As(t)
+
+
+
+≤ 1(1 − δ/t )Ct(s) exp 
+
+
+
+ε|λ| + σ2λ2
+
+2
+
+
+
+(4) 
+
+Proof. We prove the lemma by a bottom-up induction on the tree. We know the tree is bounded, since its size is trivially bounded by t. We start proving that properties A and B hold for all the leaves and then for any node s we assume it holds for its children and prove it for s.14 Leaf node: Let s be a leaf of the tree Tt. The only case in which a node s does not perform a call to another deeper node is when it is an AVG node which has been called with parameter ε ≥ 12(1 −γ) · In this case the output 0 is deterministic and therefore the two first properties hold by choosing As,t = Ω .Furthermore, 12(1 −γ) is an upper bound on |μs,t − vs| which implies that the second property is also verified for s.
+
+MAX node: Let s be a maximum node. We define 
+
+bi = arg max 
+
+> i
+
+μs,t i and i∗ = arg max 
+
+> i
+
+V (i).
+
+We also define the random variable Ls,t as the set of the potentially good children as defined in the algorithm. Note that Ls,t is a random variable. 
+
+Ls,t =
+
+
+
+i : μs,t i + 2 ε ≥ sup 
+
+> j
+
+μs,t j − 2ε
+
+We also define G (which is not a random variable) as follows 
+
+Gs =
+
+n
+
+i : vi + ε ≥ max  
+
+> i
+
+vi − ε
+
+o
+
+.
+
+We use the definition of Bi,s (t) and Bs(t) of Lemma 3 with J = C [s] From now, we assume that 
+
+Bs(t)c holds, which means that all estimates are at all time within their confidence intervals. At the end of the while loop, any child i in Ls,t verifies 
+
+εs,t i ≤ ηε and U s,t i ≤ (1 − η)ε. 
+
+Therefore, if Bs(t)c holds we have for any child i ∈ L s,t 
+
+|μs,t i − V (i)| ≤ ε
+
+We now distinguish two cases depending on the cardinality of Gs.
+
+First case, |G s| = 1 . For all i ∈ L s,t 
+
+μs,t i ≤ V (i) + ε (because Bs(t)c holds) 
+
+≤ V (i∗) − ε (by definition of Gs)
+
+≤ μs,t i∗ (because Bs(t)c holds) If |L s,t | = 1 , then Ls,t = {i∗}, and consequently i∗ is called with parameters (m, ε ). On the other hand, if |L s,t | > 1 then i∗ is called with parameters (m′, ε ′) with 
+
+ε′ ≤ ηε ≤ ε and m′ ≥ max  ks,t i∗ , m  ≥ m. 
+
+Therefore on the event Bs(t), μs,t i is the output of a call to i∗ with parameters (m′, ε ′) with m′ ≥ m
+
+and ε′ ≤ ε. Furthermore, we have 
+
+E
+
+h
+
+eλ(μs,t i∗ −vs)|As(t)
+
+i
+
+= E
+
+h
+
+eλ(μs,t i∗ −vs)|As(t) ∩ Bs(t)
+
+i
+
+P [Bs(t)|As(t)] + E
+
+h
+
+eλ(μs,t i∗ −vs)|As(t) ∩ Bs(t)ci
+
+P [Bs(t)c|As(t)] 
+
+≥ E
+
+h
+
+eλ(μs,t i∗ −vs)|As(t) ∩ Bs(t)
+
+i
+
+(1 − δ/t )
+
+Now we use that 1 + Ct(i∗) ≤ 1 + P 
+
+> i
+
+Ct(i) = Ct(s) with the induction assumption on i∗ to get 
+
+E
+
+h
+
+eλ(μs,t −vs)|As(t) ∩ Bs(t)
+
+i
+
+≤ 11 − δ/t E
+
+h
+
+eλ(μs,t i∗ −vs)|As(t)
+
+i
+
+≤ 1(1 − δ/t )Ct(i∗)+1 exp 
+
+
+
+|λ|ε + λ2
+
+2(1 − γ)m
+
+
+
+≤ 1(1 − δ/t )t exp 
+
+
+
+|λ|ε + λ2
+
+2(1 − γ)m
+
+
+
+.
+
+15 Second case, |G s| > 1 When Bs(t)c holds, we have that 
+
+Gs ⊂ L s,t .
+
+Indeed, for all i ∈ G s,
+
+μs,t i ≥ V (i) − ε (because Bs(t)c holds) 
+
+≥ V (i∗) − 3ε (because i ∈ G s)
+
+≥ μs,t i∗ − 4ε (because Bs(t)c holds) As a result |L s,t | > |G s| > 1. The output is then the maximum of the estimates in Ls,t . The best estimate μs,t  
+
+> bi
+
+in Ls,t verifies 
+
+μs,t  
+
+> bi
+
+≥ μs,t i∗ (by definition of bi)
+
+≥ V (i∗) − ε (because Bs(t)c holds) .
+
+It also verifies that 
+
+μs,t  
+
+> bi
+
+≤ V (bi) + ε (because Bs(t)c holds) 
+
+≥ V (i∗) + ε (by definition of i∗).
+
+On event Bs(t)c, when |G s| > 1, then 
+
+|μs,t − V (s)| ≤ ε. 
+
+From this we get 
+
+E
+
+h
+
+eλ(μs,t −vs)|As(t) ∩ Bs(t)
+
+i
+
+≤ exp ( |λ|ε)
+
+≤ exp 
+
+
+
+|λ|ε + λ2
+
+2(1 − γ)m
+
+
+
+≤ 1(1 − δ/t )t exp 
+
+
+
+|λ|ε + λ2
+
+2(1 − γ)m
+
+
+
+Therefore, in both cases, whether |G s| = 1 or |G s| > 1, we proved that 
+
+E
+
+h
+
+eλ(μs,t −vs)|As(t) ∩ Bs(t)
+
+i
+
+≤ 1(1 − δ/t )t exp 
+
+
+
+|λ|ε + λ2
+
+2(1 − γ)m
+
+
+
+.
+
+Finally, we lower bound the probability of As(t) ∩ Bs(t), using Ct(s) = 1 + P 
+
+> i
+
+Ct(i).
+
+P [( As(t) ∩ Bs(t)) c] = P [As(t)c ∪ Bs(t)c]= P [As(t)c ∪ (Bs(t)c ∩ As(t)) ∪ (Bs(t)c ∩ As(t)c)] = P [As(t)c ∪ (Bs(t)c ∩ As(t))] 
+
+≤ P [As(t)c] + P [Bs(t)c ∩ As(t)] 
+
+≤ P [As(t)c] + P Bs(t)c As(t)
+
+≤ X
+
+> i
+
+δ Ct(i)
+
+Ct(s0) + δ/t ≤ δ Ct(s) − 1
+
+Ct(s0) + δ/C t(s) ≤ δ Ct(s)
+
+Ct(s0)
+
+AVG node: Let s be an average node. We define As(t) = T 
+
+> i
+
+As,i (t). By a union bound 
+
+P [As(t)] ≥ 1 − X
+
+> i
+
+P [As,i (t)c] ≥ 1 − δ Ct(s) − 1
+
+Ct(s0) ≥ 1 − δ Ct(s)
+
+Ct(s0) .
+
+16 Note that the output is the average of independent estimates. We denote by ki, the number of times the transition to child i has been made and μi the estimate of i. We have that 
+
+E
+
+
+
+eλ( 1 
+
+> m
+> P
+> ikiμi
+
+) As(t)
+
+
+
+= Y
+
+> i
+
+E
+
+
+
+eλ kim μi As(t)
+
+
+
+= Y
+
+> i
+
+E
+
+
+
+eλ kim μi As,i (t)
+
+
+
+≤ Y
+
+> i
+
+1(1 − δ/t )Ct(i) exp 
+
+
+
+|λ| ki
+
+m ε + λ2k2
+
+> i
+
+2(1 − γ)m2ki
+
+
+
+≤ 1(1 − δ/t )P  
+
+> iCt(i)
+
+exp |λ| X
+
+> i
+
+ki
+
+m ε + X
+
+> i
+
+λ2ki
+
+2(1 − γ)m2
+
+!
+
+≤ 1(1 − δ/t )Ct(s) exp 
+
+
+
+|λ|ε + λ2
+
+2(1 − γ)m
+
+
+
+.
+
+C.1 Proof of Theorem 1 
+
+The theorem is a direct application of Lemma 3 in combination with Lemma 4, taking J = {s0}.
+
+## D Sample complexity 
+
+Theorem 4. The number of calls t to the model verifies with probability 1 − δ
+
+E [T ] ≤ 4 log (1 /ε )(1 − γ)2λ+1 
+
+1
+
+ε2
+
+ 16 log ( m/δ )
+
+ε2
+
+λ
+
+·
+
+Proof. By Lemma 3 we consider the event that every output μ is within its confidence interval at all time. Any node which is clearly sub-optimal is not explored by the algorithm on this event. We are going to the maximum m parameter that a near-optimal node of depth h is called with. This is a bound on the number of called to the model this node has performed. By Lemma 2, no node of depth h > h max is ever reached by the algorithm. Let h, h ′, H be three non negative integers such that h ≤ hmax , h′ ≤ h and H < h . Furthermore, let s be a node of depth h and sh′ be the ancestor of s of depth h′, so that sh = s and s0 is the root. We also define 
+
+q (s, h ′, H ) as the number of nodes on the path from sh−H to sh′ which are s-undecidable such that 
+
+q (s, 0, H ) = q (s, H ). For any node s we note Rs the random variable of the maximal parameter ms has been called with. We we would like to prove by induction on h′ that for any h′, H 
+
+E [Rs] = E Rsh′
+
+ p (s|sh′ )
+
+ 18 log( t/δ )(1 − η)2(1 − γ)2ε2
+
+q(s,h ′,H )  18 log( t/δ )(1 − η)2γ2H
+
+H
+
+.
+
+We first fix H = 0 . For h′ = h, this is trivial as q (s, h, 0) = 0 and p (s|s) = 1 . Now let us assume that the property holds for some h′ + 1 ≤ hmax + 1 and let us prove it for h. There are two cases, either sh′ is an AVG node or sh′ is a MAX node. If sh′ is an AVG node then 
+
+E
+
+h
+
+Rsh′+1 
+
+i
+
+= E Rs′(h′)
+
+ p (sh′+1 |sh′ )
+
+Then we can use our induction assumption to get 
+
+E [Rs] = E
+
+h
+
+Rsh′+1 
+
+i
+
+p (s|sh′+1 )
+
+ 18 log( t/δ )(1 − η)2(1 − γ)2ε2
+
+q(s,h ′+1 ,0)
+
+.
+
+Furthermore, since sh′ is an AVG node, q (s, h ′ + 1 , 0) = q (s, h ′, 0) and 
+
+p (s|sh′+1 ) p (sh′+1 |sh) = p (s|sh) .
+
+17 Combining the previous equalities, we get the following 
+
+E [Rs] = E Rsh′
+
+ p (s|sh′ )
+
+ 18 log( t/δ )(1 − η)2(1 − γ)2ε2
+
+q(s,h ′,0)
+
+.
+
+If sh′ is a MAX node, then there are two sub-cases, depending on whether s is h′-decidable or h′-undecidable. If sh′ is s-decidable this means that at the end of the while loop of the MAX node, only the path towards s will remain in L because we are on the event when all outputs are within their confidence intervals. For any call with parameters (k, e ) done to sh′ a call with with the same parameters in done to sh′+1 . From this, we get that 
+
+Rsh′+1 = Rs′
+
+> h′
+
+Because s is h′-decidable, we have that q (s, h ′ + 1) = q (s, h ′). Furthermore, since sh′ is a MAX 
+
+node, we have that p (sh′+1 |sh′ ) = 1 . We combine this with our induction assumption to get 
+
+E [Rs] ≤ E
+
+h
+
+Rsh′+1 
+
+i
+
+p (s|sh′+1 )
+
+ 18 log( t/δ )(1 − η)2(1 − γ)2ε2
+
+q(s,h ′+1 )= E Rsh′
+
+ p (s|sh′ )
+
+ 18 log( t/δ )(1 − η)2(1 − γ)2ε2
+
+q(s,h ′)
+
+.
+
+If s is h′-undecidable, this means that at the end of the loop U s,t i ≤ (1 − η)ε. Also ki only increase one by one in the loop therefore 
+
+16 log( t/δ )(1 − η)2(1 − γ)2ε2 ≤ ki < 1 + 16 log( t/δ )(1 − η)2(1 − γ)2ε2
+
+As δ ≤ 1 and ε ≤ 11−γ (otherwise the problem is trivial) we have for any t ≥ 2
+
+ki < 18 log( t/δ )(1 − η)2(1 − γ)2ε2·
+
+From the above we deduce that 
+
+E
+
+h
+
+Rsh′+1 
+
+i
+
+≤ P
+
+h
+
+Rsh′+1 > 0
+
+i 18 log( t/δ )(1 − η)2(1 − γ)2ε2 ≤ E
+
+h
+
+Rsh′+1 
+
+i 18 log( t/δ )(1 − η)2(1 − γ)2ε2·
+
+Furthermore, since sh′ is s-undecidable, we have q (s, h ′, H ) = q (s, h ′ + 1 , H ) + 1 . Also, because 
+
+s − h′ is a MAX node, we have p (sh′+1 ∥sh′ ) = 1 . We combine this with our induction assumption to prove our induction property for s − h′ and that finish the induction when H = 0 . We generalize for any H with exactly the same reasoning over H. Now, taking h′ = 0 we have 
+
+E [Rs] = E [Rs0 ] p (s|s (h′)) 
+
+ 18 log( t/δ )(1 − η)2(1 − γ)2ε2
+
+q(s, 0) 
+
+= mp (s)
+
+ 18 log( t/δ )(1 − η)2(1 − γ)2ε2
+
+q(s)
+
+·
+
+Let R (h) be the number of times any node of depth h has been reached. We have that 
+
+E [R (h)] = E
+
+" X
+
+> s∈N h
+
+Rs
+
+#
+
+= X
+
+> s∈N h
+
+E [Rs] ≤ m X
+
+> s∈N h
+
+p (s)
+
+ 18 log( t/δ )(1 − η)2(1 − γ)2ε2
+
+q(s)
+
+·
+
+By the definitions of λ and C we have 
+
+∀t Es
+
+h
+
+etq (s)i
+
+≤ eλt |N h| ≤ C. 
+
+By taking et = 18 log( t/δ )(1 − η)2(1 − γ)2ε2 we have that 
+
+E [R (h)] ≤ m
+
+ 18 log( t/δ )(1 − η)2(1 − γ)2ε2
+
+λ
+
+·
+
+18 We can finally bound the total number of calls t to the generative model as 
+
+E [T ] ≤ X
+
+> h≤hmax
+
+E [R (h)] 
+
+≤ hmax m
+
+ 18 log( t/δ )(1 − η)2(1 − γ)2ε2
+
+λ
+
+≤ 2m log (1 /ε ) + log (1 / (1 − γ)) log ( η/γ )
+
+ 18 log( t/δ )(1 − η)2(1 − γ)2ε2
+
+λ
+
+≤ 2 log(1 /δ )(1 − γ)2ε2
+
+log (1 /ε ) + log (1 / (1 − γ)) log ( η/γ )
+
+ 18 log( t/δ )(1 − η)2(1 − γ)2ε2
+
+λ
+
+·
+
+Setting η = γmax (1, 1log(1 /ε ) ) gives the bound. 
+
+D.1 Proof of Theorem 2 
+
+Proof. Any near-optimal node of depth h generates at most 18 log( t/δ )(1 −η)2(1 −γ)2ε2 samples. Therefore the maximum number of samples is 
+
+n ≤ X
+
+> h≤hmax
+
+N hκh 18 log( t/δ )(1 − η)2(1 − γ)2ε2
+
+= O
+
+
+
+hmax (N κ )hmax log( t/δ )(1 − η)2ε2
+
+
+
+= O
+
+
+
+hmax (1 /ε )log( N κ )/ log( η/γ ) log( t/δ )(1 − η)2ε2
+
+
+
+·
+
+Setting η = γmax (1, 1log(1 /ε ) ) gives the bound. 19
