@@ -6,85 +6,94 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-04-17
-- 运行时间：2026-04-17 20:09:41 UTC
+- 最新运行日期：2026-04-18
+- 运行时间：2026-04-18 20:01:57 UTC
 - 运行状态：成功
-- 本次总论文数：21
-- 精读区：9
+- 本次总论文数：24
+- 精读区：12
 - 速读区：12
 
 ### 今日简报（AI）
-今日精选 21 篇前沿成果，深度解析强化学习与视觉动力学的跨界融合。
-重点关注满分论文提出的优势引导扩散模型，以及从单张静态图中挖掘物体关节运动的创新技术。
-建议优先研读扩散模型在决策优化中的应用，并关注世界模型在移动流量预测等实战场景的落地。
-- 详情：[/202604/17/README](/202604/17/README)
+今日精选 24 篇前沿成果，重点攻克零样本世界模型的发育效率与可控视频生成的空间推理难题。
+满分论文证实了高效学习者的零样本潜力，CT-1 则展示了相机控制如何赋能视频生成。
+推荐深入探索具身智能与视觉大模型的结合，特别是 VLM 在 6D 位姿重排等复杂任务中的应用。
+- 详情：[/202604/18/README](/202604/18/README)
 
 ### 精读区论文标签
-1. [Advantage-Guided Diffusion for Model-Based Reinforcement Learning](/202604/17/2604.09035v1-advantage-guided-diffusion-for-model-based-reinforcement-learning)  
+1. [Zero-shot World Models Are Developmentally Efficient Learners](/202604/18/2604.10333v1-zero-shot-world-models-are-developmentally-efficient-learners)  
    标签：评分：10.0/10、query:robot
-   evidence：用于基于模型的强化学习的扩散世界模型
-2. [DailyArt: Discovering Articulation from Single Static Images via Latent Dynamics](/202604/17/2604.07758v1-dailyart-discovering-articulation-from-single-static-images-via-latent-dynamics)  
+   evidence：用于物理场景理解的零样本视觉世界模型
+2. [CT-1: Vision-Language-Camera Models Transfer Spatial Reasoning Knowledge to Camera-Controllable Video Generation](/202604/18/2604.09201v1-ct-1-vision-language-camera-models-transfer-spatial-reasoning-knowledge-to-camera-controllable-video-generation)  
+   标签：评分：9.0/10、query:profile-2
+   evidence：用于视频生成的视觉-语言-相机模型
+3. [Rays as Pixels: Learning A Joint Distribution of Videos and Camera Trajectories](/202604/18/2604.09429v1-rays-as-pixels-learning-a-joint-distribution-of-videos-and-camera-trajectories)  
+   标签：评分：9.0/10、query:profile-2
+   evidence：用于联合视频和相机轨迹生成的视频扩散模型
+4. [Adaptor: Advancing Assistive Teleoperation with Few-Shot Learning and Cross-Operator Generalization](/202604/18/2604.09462v1-adaptor-advancing-assistive-teleoperation-with-few-shot-learning-and-cross-operator-generalization)  
+   标签：评分：9.0/10、query:robot
+   evidence：融合视觉语言模型上下文以调节动作专家
+5. [RoboLab: A High-Fidelity Simulation Benchmark for Analysis of Task Generalist Policies](/202604/18/2604.09860v2-robolab-a-high-fidelity-simulation-benchmark-for-analysis-of-task-generalist-policies)  
+   标签：评分：9.0/10、query:robot
+   evidence：用于分析机器人任务通用策略的高保真仿真基准
+6. [Do LLMs Build Spatial World Models? Evidence from Grid-World Maze Tasks](/202604/18/2604.10690v1-do-llms-build-spatial-world-models-evidence-from-grid-world-maze-tasks)  
+   标签：评分：9.0/10、query:robot
+   evidence：评估大语言模型中用于规划的空间世界模型
+7. [Learning Long-term Motion Embeddings for Efficient Kinematics Generation](/202604/18/2604.11737v1-learning-long-term-motion-embeddings-for-efficient-kinematics-generation)  
    标签：评分：9.0/10、query:q10
-   evidence：用于具身智能和世界模型中发现关节结构的潜动力学
-3. [Task-Aware Bimanual Affordance Prediction via VLM-Guided Semantic-Geometric Reasoning](/202604/17/2604.08726v1-task-aware-bimanual-affordance-prediction-via-vlm-guided-semantic-geometric-reasoning)  
+   evidence：学习长期运动嵌入以实现高效的场景动力学
+8. [From Kinematics to Dynamics: Learning to Refine Hybrid Plans for Physically Feasible Execution](/202604/18/2604.12474v1-from-kinematics-to-dynamics-learning-to-refine-hybrid-plans-for-physically-feasible-execution)  
    标签：评分：9.0/10、query:robot
-   evidence：VLM引导的双臂机器人操作推理与示能性预测
-4. [Prompt Relay: Inference-Time Temporal Control for Multi-Event Video Generation](/202604/17/2604.10030v1-prompt-relay-inference-time-temporal-control-for-multi-event-video-generation)  
+   evidence：学习细化混合规划以实现物理可行的机器人执行
+9. [Beyond State Consistency: Behavior Consistency in Text-Based World Models](/202604/18/2604.13824v1-beyond-state-consistency-behavior-consistency-in-text-based-world-models)  
+   标签：评分：9.0/10、query:robot
+   evidence：交互式智能体文本世界模型中的行为一致性
+10. [Seedance 2.0: Advancing Video Generation for World Complexity](/202604/18/2604.14148v1-seedance-20-advancing-video-generation-for-world-complexity)  
    标签：评分：9.0/10、query:q7
-   evidence：多事件视频生成的时序控制
-5. [Inferring World Belief States in Dynamic Real-World Environments](/202604/17/2604.11020v1-inferring-world-belief-states-in-dynamic-real-world-environments)  
+   evidence：多模态音视频生成模型架构
+11. [ADAPT: Benchmarking Commonsense Planning under Unspecified Affordance Constraints](/202604/18/2604.14902v1-adapt-benchmarking-commonsense-planning-under-unspecified-affordance-constraints)  
    标签：评分：9.0/10、query:robot
-   evidence：推断人机协作中的世界信念状态
-6. [Ride the Wave: Precision-Allocated Sparse Attention for Smooth Video Generation](/202604/17/2604.12219v1-ride-the-wave-precision-allocated-sparse-attention-for-smooth-video-generation)  
-   标签：评分：9.0/10、query:q7
-   evidence：用于平滑视频生成的稀疏注意力机制
-7. [DINO-Explorer: Active Underwater Discovery via Ego-Motion Compensated Semantic Predictive Coding](/202604/17/2604.12933v1-dino-explorer-active-underwater-discovery-via-ego-motion-compensated-semantic-predictive-coding)  
+   evidence：具身智能体的常识规划与动作赋能基准
+12. [A Hierarchical Spatiotemporal Action Tokenizer for In-Context Imitation Learning in Robotics](/202604/18/2604.15215v1-a-hierarchical-spatiotemporal-action-tokenizer-for-in-context-imitation-learning-in-robotics)  
    标签：评分：9.0/10、query:robot
-   evidence：用于自主智能体预测短时序列的动作条件循环预测器
-8. [Evolvable Embodied Agent for Robotic Manipulation via Long Short-Term Reflection and Optimization](/202604/17/2604.13533v1-evolvable-embodied-agent-for-robotic-manipulation-via-long-short-term-reflection-and-optimization)  
-   标签：评分：9.0/10、query:robot
-   evidence：利用大型视觉语言模型 (VLM) 进行策略规划的可进化具身智能体
-9. [Blazing the trails before beating the path: Sample-efficient Monte-Carlo planning](/202604/17/2604.14974v1-blazing-the-trails-before-beating-the-path-sample-efficient-monte-carlo-planning)  
-   标签：评分：9.0/10、query:robot
-   evidence：使用生成模型进行高效样本蒙特卡洛规划
+   evidence：用于机器人模仿学习的分层时空动作分词器
 
 ### 速读区论文标签
-1. [ReconPhys: Reconstruct Appearance and Physical Attributes from Single Video](/202604/17/2604.07882v1-reconphys-reconstruct-appearance-and-physical-attributes-from-single-video)  
-   标签：评分：8.0/10、query:q10
-   evidence：从单目视频中学习物理属性估计和动力学
-2. [Beyond Static Forecasting: Unleashing the Power of World Models for Mobile Traffic Extrapolation](/202604/17/2604.08199v1-beyond-static-forecasting-unleashing-the-power-of-world-models-for-mobile-traffic-extrapolation)  
+1. [Visually-grounded Humanoid Agents](/202604/18/2604.08509v1-visually-grounded-humanoid-agents)  
    标签：评分：8.0/10、query:robot
-   evidence：用于移动网络建模动态与动作的世界模型
-3. [HiRO-Nav: Hybrid ReasOning Enables Efficient Embodied Navigation](/202604/17/2604.08232v1-hiro-nav-hybrid-reasoning-enables-efficient-embodied-navigation)  
+   evidence：3D场景中人形智能体的世界-智能体范式
+2. [ELT: Elastic Looped Transformers for Visual Generation](/202604/18/2604.09168v2-elt-elastic-looped-transformers-for-visual-generation)  
+   标签：评分：8.0/10、query:q7
+   evidence：用于视频生成的参数高效视觉生成模型
+3. [Text-Guided 6D Object Pose Rearrangement via Closed-Loop VLM Agents](/202604/18/2604.09781v1-text-guided-6d-object-pose-rearrangement-via-closed-loop-vlm-agents)  
    标签：评分：8.0/10、query:robot
-   evidence：用于具身导航和决策的大型推理模型
-4. [Novel View Synthesis as Video Completion](/202604/17/2604.08500v1-novel-view-synthesis-as-video-completion)  
-   标签：评分：8.0/10、query:profile-2
-   evidence：利用视频扩散模型进行新视角合成
-5. [Spatio-Temporal Grounding of Large Language Models from Perception Streams](/202604/17/2604.07592v1-spatio-temporal-grounding-of-large-language-models-from-perception-streams)  
+   evidence：用于3D物体重新排列和推理的闭环VLM智能体
+4. [Long-Horizon Streaming Video Generation via Hybrid Attention with Decoupled Distillation](/202604/18/2604.10103v1-long-horizon-streaming-video-generation-via-hybrid-attention-with-decoupled-distillation)  
+   标签：评分：8.0/10、query:q13
+   evidence：基于扩散模型的长序列流式视频生成
+5. [TAIHRI: Task-Aware 3D Human Keypoints Localization for Close-Range Human-Robot Interaction](/202604/18/2604.08921v1-taihri-task-aware-3d-human-keypoints-localization-for-close-range-human-robot-interaction)  
    标签：评分：7.0/10、query:robot
-   evidence：具身智能体的时空对齐与推理
-6. [On-Policy Distillation of Language Models for Autonomous Vehicle Motion Planning](/202604/17/2604.07944v1-on-policy-distillation-of-language-models-for-autonomous-vehicle-motion-planning)  
-   标签：评分：7.0/10、query:robot
-   evidence：基于大语言模型的自动驾驶运动规划
-7. [ASPECT:Analogical Semantic Policy Execution via Language Conditioned Transfer](/202604/17/2604.08355v1-aspectanalogical-semantic-policy-execution-via-language-conditioned-transfer)  
-   标签：评分：7.0/10、query:robot
-   evidence：强化学习智能体的语言条件策略执行
-8. [ASPECT:Analogical Semantic Policy Execution via Language Conditioned Transfer](/202604/17/2604.08355v2-aspectanalogical-semantic-policy-execution-via-language-conditioned-transfer)  
-   标签：评分：7.0/10、query:robot
-   evidence：利用大语言模型作为语义算子进行强化学习策略迁移
-9. [Cognitive Flexibility as a Latent Structural Operator for Bayesian State Estimation](/202604/17/2604.08130v1-cognitive-flexibility-as-a-latent-structural-operator-for-bayesian-state-estimation)  
+   evidence：用于人机交互和任务感知感知的视觉语言模型
+6. [ELT: Elastic Looped Transformers for Visual Generation](/202604/18/2604.09168v1-elt-elastic-looped-transformers-for-visual-generation)  
+   标签：评分：7.0/10、query:q7
+   evidence：用于视频生成的循环Transformer架构
+7. [Camera Artist: A Multi-Agent Framework for Cinematic Language Storytelling Video Generation](/202604/18/2604.09195v1-camera-artist-a-multi-agent-framework-for-cinematic-language-storytelling-video-generation)  
+   标签：评分：7.0/10、query:q7
+   evidence：用于叙事视频生成的多智能体框架
+8. [TinyNeRV: Compact Neural Video Representations via Capacity Scaling, Distillation, and Low-Precision Inference](/202604/18/2604.09220v1-tinynerv-compact-neural-video-representations-via-capacity-scaling-distillation-and-low-precision-inference)  
+   标签：评分：7.0/10、query:q12
+   evidence：用于高效帧重建的神经视频表示
+9. [InstrAct: Towards Action-Centric Understanding in Instructional Videos](/202604/18/2604.08762v1-instract-towards-action-centric-understanding-in-instructional-videos)  
    标签：评分：6.0/10、query:q10
-   evidence：状态空间模型中贝叶斯状态估计的潜结构算子
-10. [DiV-INR: Extreme Low-Bitrate Diffusion Video Compression with INR Conditioning](/202604/17/2604.08329v1-div-inr-extreme-low-bitrate-diffusion-video-compression-with-inr-conditioning)  
-   标签：评分：6.0/10、query:q9
-   evidence：利用生成先验的扩散视频压缩
-11. [GeRM: A Generative Rendering Model From Physically Realistic to Photorealistic](/202604/17/2604.09304v1-germ-a-generative-rendering-model-from-physically-realistic-to-photorealistic)  
-   标签：评分：6.0/10、query:q14
-   evidence：物理真实感与照片级真实感的生成渲染模型
-12. [Toward World Models for Epidemiology](/202604/17/2604.09519v2-toward-world-models-for-epidemiology)  
-   标签：评分：6.0/10、query:q8
-   evidence：用于学习潜在动力学和模拟未来的世界模型
+   evidence：视频中以动作为中心的表示和时间关系
+10. [SHIFT: Steering Hidden Intermediates in Flow Transformers](/202604/18/2604.09213v1-shift-steering-hidden-intermediates-in-flow-transformers)  
+   标签：评分：6.0/10、query:q7
+   evidence：用于图像生成的扩散模型和流变换器
+11. [VGA-Bench: A Unified Benchmark and Multi-Model Framework for Video Aesthetics and Generation Quality Evaluation](/202604/18/2604.10127v1-vga-bench-a-unified-benchmark-and-multi-model-framework-for-video-aesthetics-and-generation-quality-evaluation)  
+   标签：评分：6.0/10、query:q7
+   evidence：视频生成质量评估基准
+12. [Rethinking Video Human-Object Interaction: Set Prediction over Time for Unified Detection and Anticipation](/202604/18/2604.10397v1-rethinking-video-human-object-interaction-set-prediction-over-time-for-unified-detection-and-anticipation)  
+   标签：评分：6.0/10、query:q12
+   evidence：预测视频中人机交互的未来演变
 
 
 <div class="dpr-home-promo-card">

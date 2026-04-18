@@ -1,0 +1,573 @@
+Title: SHIFT: Steering Hidden Intermediates in Flow Transformers
+
+URL Source: https://arxiv.org/pdf/2604.09213v1
+
+Published Time: Mon, 13 Apr 2026 00:49:28 GMT
+
+Number of Pages: 36
+
+Markdown Content:
+# SHIFT: Steering Hidden Intermediates in Flow Transformers 
+
+Nina Konovalova 1,2,3, Andrey Kuznetsov 1,3, Aibek Alanov 1,2,3 
+
+> 1
+
+FusionBrain Lab  
+
+> 2
+
+HSE University  
+
+> 3
+
+AXXX 
+
+Abstract. Diffusion models have become leading approaches for high-fidelity image generation. Recent DiT-based diffusion models, in par-ticular, achieve strong prompt adherence while producing high-quality samples. We propose SHIFT , a simple but effective and lightweight framework for concept removal in DiT diffusion models via targeted ma-nipulation of intermediate activations at inference time, inspired by acti-vation steering in large language models. SHIFT learns steering vectors that are dynamically applied to selected layers and timesteps to sup-press unwanted visual concepts while preserving the prompt’s remaining content and overall image quality. Beyond suppression, the same mech-anism can shift generations into a desired style domain or bias samples toward adding or changing target objects. We demonstrate that SHIFT 
+
+provides effective and flexible control over DiT generation across diverse prompts and targets without time-consuming retraining. The code is available at https://github.com/ControlGenAI/SHIFT .
+
+1 Introduction 
+
+Diffusion models [11, 28] have established a new state-of-the-art in high-fidelity text-to-image synthesis [23]. However, as model capabilities scale, so do the risks associated with the generation of harmful, copyrighted, or prohibited content. This has motivated the development of Concept Erasure (CE): the task of reli-ably suppressing specific semantic concepts within a model’s generative manifold. Existing erasure strategies for text-to-image diffusion models mostly rely on model optimization. Approaches such as ESD [7], Concept Ablation (CA) [15], and Erase-and-Preserve (EAP) [3] require gradient-based tuning to achieve ro-bust concept removal. While these methods were computationally viable for ear-lier UNet architectures (typically < 1B parameters), they become prohibitively expensive when applied to modern Diffusion Transformers (DiTs) like FLUX [16], which contains 12B parameters. Furthermore, methods like ESD or EAP fre-quently utilize negative guidance during the optimization phase to steer the model distribution away from the target concept. This dependency presents a sig-nificant challenge for distilled models such as Flux.1[schnell], because these mod-els are guidance-distilled to operate at a fixed guidance scale. Non-optimization alternatives, such as Unified Concept Editing (UCE) [8], propose closed-form  
+
+> arXiv:2604.09213v1 [cs.CV] 10 Apr 2026 2Konovalova et al.
+
+weight edits that avoid retraining. However, these edits are often insufficient for concrete object erasure in unified architectures. In parallel, activation steering has emerged as a lightweight yet potent con-trol mechanism for Large Language Models (LLMs) [1, 19, 33]. Frameworks such as Representation Engineering [37] demonstrate that high-level semantic behav-ior can be modulated by injecting linear directions into the latent representation space at inference time, without any weights modification. While recent work like CASteer [6] has sought to adapt these principles to diffusion models, such imple-mentations remain fundamentally dependent to the cross-attention mechanisms usually presented in UNet-based architectures. However, the field is currently shifting toward Diffusion Transformers (DiTs) [22]. Architectures like FLUX [16] or SD3.5 [5] utilize Multimodal Diffusion Trans-former (MM-DiT) blocks, where the traditional decoupling of cross-attention and self-attention is replaced by a unified attention mechanism that processes text and image tokens in a shared latent space. Consequently, erasing concepts in DiTs requires a more accurate intervention capable of navigating this inte-grated representation manifold without compromising the global structure of the generated image. This raises a natural question for DiT: can we achieve ro-bust, inference-time concept removal in DiTs by directly steering these unified internal activations? We introduce SHIFT , a steering framework specifically engineered for the Multimodal Diffusion Transformer (MM-DiT) architecture. In contrast to exist-ing methodologies that necessitate complex, timestep-specific interventions, we demonstrate that SHIFT identifies temporally invariant steering vectors that re-main semantically stable, providing a concept control mechanism that does not require retraining the base model. While our primary evaluation focuses on concept erasure, we establish that this activation-level modulation extends to domain stylization and object-specific biasing. Importantly, SHIFT is positioned as a generation control framework rather than a traditional image-editing tool; it focuses on the global redirection of the model’s generative manifold rather than the preservation of spatial layouts or background consistency from a specific input image. This distinction allows SHIFT to achieve robust semantic shifts while maintaining the high-fidelity syn-thesis inherent to the FLUX backbone. Our contributions are following: 
+
+– Unified steering framework: we introduce SHIFT, the first comprehen-sive framework for steering both original and distilled DiT-based models (e.g., Flux.1[dev] and Flux.1[schnell]) through latent activation shifts, en-abling efficient and scalable concept manipulation without retraining. 
+
+– Spatial and temporal dynamics analysis: we conduct an extensive ab-lation study on the spatial and temporal aspects of steering, uncovering a remarkable temporal consistency in DiT activation spaces. Specifically, we show that a single, time-independent steering vector can be applied effec-tively across all diffusion timesteps, streamlining the steering process and SHIFT 3
+
+indicating that semantic concepts are encoded as stable, global directions in the latent manifolds of DiTs. 
+
+– Cross-distillation vector transfer: we investigate the transferability of steering vectors across distillation boundaries (e.g., from Flux.1[schnell] to Flux.1[dev]) and validate the efficacy of a unified steering vector shared across multiple timesteps, demonstrating robust performance in resource-constrained settings. 
+
+2 Related works 
+
+2.1 Concept erasure, safety, and post-training approaches. 
+
+Recent state-of-the-art text-to-image diffusion models trained on large, imper-fectly filtered datasets such as LAION [30] can generate inappropriate or copy-righted content. One mitigation is dataset filtering [28] or post-generation fil-tering [26]. However, these approaches do not fully prevent harmful content and require additional processing. Many works therefore focus on concept era-sure (CE) while preserving overall generation quality. Methods such as ESD [7] employ fine-tuning to unlearn concepts using negative guidance from a frozen teacher model, while Concept Ablation (CA) [15] optimizes cross-attention lay-ers to redirect target concepts toward neutral anchors. Subsequent approaches like Unified Concept Editing (UCE) [8] introduce closed-form edits to atten-tion projections for efficient, training-free erasure, though they may struggle to fully remove concrete objects. For modern architectures, EraseAnything [9] adapts erasure to rectified flow models via LoRA tuning and attention regu-larization, and Erasing with Adversarial Preservation (EAP) [3] incorporates adversarial concept identification to preserve unrelated generations during fine-tuning. However, these methods have limitations on modern diffusion models, including optimization overhead, reliance on guidance that must be adapted for distilled models, or dependence on LLM agents. 
+
+2.2 Activation steering in Large Language Models. 
+
+Steering in large language models (LLMs) has emerged as a practical paradigm for controlling behavior. Various approaches have been explored, including spe-cific interventions on weights [13,21,36], prompt engineering [35], and soft prompt-ing [14,17]. At the same time, one of the most promising directions involves mod-ifying activations using specifically calculated steering vectors. These vectors can be estimated using gradient descent [10, 31], PCA decomposition [37], or simply as the mean difference between activations from contrastive prompt pairs [18,32]. While these methods operate primarily on transformer-based LLMs, they pro-vide foundational insights for extending activation steering to other architec-tures, such as diffusion models. 4 Konovalova et al. 
+
+2.3 Latent space navigation and Diffusion Steering. 
+
+Diffusion models enable controllable synthesis through guidance signals and latent-space manipulations, allowing users to influence the generation process toward desired outcomes. Early works focused on semantic navigation in latent representations, such as interpolating between latent codes to blend concepts, and guidance-based conditioning, including classifier guidance [4] where an ex-ternal classifier steers the denoising process, classifier-free guidance [12] that amplifies conditioning signals without additional models or more complicated approaches introducing semantic guidance [2]. More recent methods have adapted steering techniques from large language models by intervening directly in diffusion model activations, offering finer-grained control without retraining. In UNet-based latent diffusion models, a wide-spread control mechanism is cross-attention manipulation: for instance, CASteer [6] constructs steering vectors for cross-attention layers using con-trastive prompt pairs (e.g., prompts with and without the target concept) to enable concept erasure, style transfer. Other examples include Activation Trans-port (AcT) [27], which applies optimal transport theory to transport activations between source and target distributions for precise steering in both language and diffusion models. 
+
+3 Preliminaries Image tokens X iQi     
+
+> Ki
+> Vi
+> Qt
+> Kt
+> VtQ = [Q , Q ] itAttn
+> Y = [Y , Y ] itstrength
+> Steering vector
+> K = [K , K ] it
+> V = [V , V ] itAttn operatior in double-stream block Image tokens Y i
+> Text tokens Y tText tokens Y tSoftmax( ) V QK Tdk
+
+Fig. 1: Double-stream block. 
+
+Early text-to-image diffusion models were mostly U-Net based, with ex-plicit self-attention over image latents and cross-attention for text condition-ing. However, modern diffusion mod-els adopt transformer-based architec-ture for improved scalability and mul-timodal integration. In this work we fo-cus on Flux, which combines a CLIP pooled embedding for modulation [24] and T5 token-level embeddings for prompt semantics [25]. Flux architecture consists of two block types: double-stream and single-stream . Double-stream blocks (Fig. 1) employ separate weights to process text and image tokens: 
+
+Qt = XtW tQ, Kt = XtW tK , Vt = XtW tV ,Qi = XiW iQ, Ki = XiW iK , Vi = XiW iV . (1) Then we concatenate tokens in the sequence dimension and apply one joint attention:  Q = [ Qt; Qi], K = [ Kt; Ki], V = [ Vt; Vi],A = softmax 
+
+ QK ⊤
+
+√dh
+
+
+
+, [Yt, Y i] = Y = AV.  (2) SHIFT 5
+
+Finally, Y is split back into text and image parts, followed by modality-specific output projections and MLP layer. By contrast, single-stream blocks use one shared set of weights after concate-nation. In this work, we primarily steer double-stream blocks, where interven-tions are more stable and interpretable in our experiments. 
+
+4 Method 
+
+In this work, we investigate activation steering for transformer-based diffusion models, with a primary focus on Flux.1[schnell] and Flux.1[dev] for concept era-sure. We also demonstrate the method’s applicability to diverse tasks, including stylization, adding objects, and concept switching. We begin by motivating the choice of internal representations to steer in DiT-style architectures, then de-scribe the construction of steering vectors, and finally explain their application during inference. save normals save svm save test svm scores  
+
+> strength
+> strength
+> Text encoder Text encoder trained svm
+> datasets of text encoder tokens neg concept pos concept save mean difference
+> prompt with neg concept prompt with pos concept
+> Text tokens for neg concept Image tokens concatenate image and text tokens diffusion transformer double blocks Text tokens for pos concept Image tokens collect for txt dataset
+> collect for diffusion activations dataset collect for diffusion activations dataset
+
+Dataset creation (1) 
+
+> encoder activation image activation encoder activation image activation
+
+Steering application (3) Calculate steering vector (2)   
+
+> datasets of diffusion activations each block each step neg concept pos concept
+> trained SVM estimated normal
+> mean over examples mean over tokens generated images
+> diffusion transformer double blocks Text tokens Yt
+> Image tokens Yi
+> prompt
+> Text tokens (pooled|sequence)
+> svm score steering vector
+> save mean difference save mean pooled vector generated images
+
+Steering in diffusion transformer block (4) Attn 
+
+> Apply steering in block Apply steering in block
+
+Fig. 2: Steering pipeline overview with three stages: (1) dataset construction from contrastive prompt pairs, (2) steering vector computation based on mean difference and separation plane, and (3) application of the vector during inference, (4) steering inside diffusion transformer. 
+
+4.1 Where to apply steering 
+
+As we mentioned before, in U-Net-based latent diffusion models, cross-attention layers provide an explicit interface for modulating textual influence. By con-trast, modern DiT-based models process image and text tokens within a shared attention space, making intervention points less straightforward. We thus target 6 Konovalova et al. 
+
+the two key components where text semantics are introduced and propagated throughout the generation process: (i) the text encoder pooled embedding 
+
+(specifically, we steer only the pooled vector, such as the CLIP vector token in Flux), and (ii) the diffusion transformer text tokens after shared attention layer in the DiT backbone. Concretely, for the diffusion model, we inject steering into the representa-tions of text tokens at the outputs of selected attention blocks Yt of diffusion transformer (see Fig. 1), where 
+
+A = softmax 
+
+ QK ⊤
+
+√dh
+
+
+
+, [Yt, Y i] = Y = AV.  (3) 
+
+Ysteered = Yt + α × vsteering  (4) We will give more information about steering vector vsteering application during inference time and steering strength α in the next section. For Flux, we find that steering both the text encoder pooled embedding and the diffusion transformer part enhances controllability and semantic alignment, whereas steering text encoder alone yields suboptimal results. 
+
+4.2 Steering vector construction 
+
+We construct a separate steering vector for each target concept X and for each steering location (text encoder pooled embedding and diffusion transformer to-kens). We collect a small paired dataset of n prompt pairs (p− 
+
+> k
+
+, p + 
+
+> k
+
+), where p+
+
+> k
+
+adds the target concept to an otherwise neutral prompt, e.g . “an elephant” vs. “an elephant in cyberpunk style”. Running the model on these prompts, we record activations at the chosen locations and obtain paired samples (a− 
+
+> k
+
+, a + 
+
+> k
+
+). The pro-cess of dataset construction is illustrated in Fig. 2 (1). After dataset collection we estimate steering vector (Fig. 2 (2)). 
+
+Text encoder steering vector. For the pooled text-encoder representation, we use the raw activation-difference vector as the steering direction. 
+
+Diffusion transformer steering vector. For text-token steering in the diffusion transformer, we consider two estimators of the steering direction. 1. For SVM-based estimation, we first pool token activations: 
+
+¯a+ 
+
+> k
+
+= 1
+
+T
+
+> T
+
+X
+
+> t=1
+
+a+
+
+> k,t
+
+, ¯a− 
+
+> k
+
+= 1
+
+T
+
+> T
+
+X
+
+> t=1
+
+a−
+
+> k,t
+
+, (5) where T is the number of tokens. Then we build a labeled dataset 
+
+D = {(¯ a+ 
+
+> k
+
+, 1) }nk=1 ∪ { (¯ a− 
+
+> k
+
+, 0) }nk=1 , (6) and train a linear SVM on D:
+
+SVM(¯ ak) = pcls . (7) SHIFT 7
+
+where pcls is the SVM-predicted probability of the target concept. The corre-sponding steering direction is defined by the normalized normal vector of the separating hyperplane, 
+
+vsvm = w
+
+∥w∥ ∈ Rc, (8) where w denotes the SVM weight vector and c is the channel dimension. 2. The second estimator is the mean-difference direction, 
+
+vdiff = 1
+
+n
+
+> n
+
+X
+
+> k=1
+
+ a+ 
+
+> k
+
+− a−
+
+> k
+
+ , (9) with optional token averaging for sequence activations to reduce sensitivity to prompt length. We further normalize vdiff along the channel dimension to control steering magnitude. 
+
+vdiff = vdiff 
+
+∥vdiff ∥ ∈ RT ×c, (10) 
+
+4.3 Inference-time Steering 
+
+At inference time, we steer the model by adding a concept-specific direction to selected activations. Let a denote an activation (either the pooled text embedding or a text-token activation in the diffusion transformer), and let v denote the corresponding steering vector. The intervention is defined as 
+
+˜a = a + α v,  (11) where α is the steering strength. The estimation of α is described in the following paragraph. 
+
+Text encoder steering strength. For the text encoder, we steer only the pooled embedding. We set the steering strength based on the cosine similarity between the initial-prompt embedding einit and the target-concept embedding etarget ,scaled by a user-defined coefficient γ:
+
+αpool = γ cos  einit , e target 
+
+. (12) This cosine-based scaling helps preserve non-target concepts while suppressing the target concept. 
+
+Diffusion transformer steering strength. For diffusion-transformer steering, we further regularize the steering strength using a lightweight classifier (SVM) signal that reflects whether the target concept is still present in the current activations (Fig. 2 (4)). Specifically, we convert the target-class score pcls into a nonnegative scaling factor 
+
+ηcls = clip 
+
+ 1(1 − pcls ) + ε − 1, 0, η max 
+
+
+
+, (13) 8 Konovalova et al. 
+
+where ε is a small constant for numerical stability and ηmax is an upper bound. We then modulate the base steering strength γ as 
+
+αdiff = γ η cls . (14) This mechanism suppresses steering when activations are far from the target class (small pcls ) and amplifies steering when target-concept evidence remains strong (large pcls ), thereby reducing over-steering in weakly separated layers or timesteps. Overall, this provides a lightweight, inference-time control mechanism that does not modify model weights and can be applied on demand for concept removal, domain/style shifts, and object-level interventions. 
+
+5 Experiments 
+
+5.1 Overview 
+
+We evaluate SHIFT on a diverse set of tasks covering both abstract and concrete 
+
+concepts. In particular, we focus on (i) erasing safety-critical abstract concepts (e.g., nudity), (ii) concrete defined concepts, and (iii) steering generations away from predefined styles. We additionally include small local objects removal ex-amples (e.g., hats and glasses) to provide visually interpretable results. 
+
+5.2 Implementation Details SHIFT We compute steering vectors as activation differences between prompts with and without the target concept. For concrete-object and style erasure we use 20 prompt pairs; for nudity erasure we use 135 pairs. The examples of prompts are presented in Appendix. We also train a linear SVM and use its score as a regularizer during generation. Unless stated otherwise, we fix the steering strength to 6 for text pooled text-encoder activations and 250 or 500 for diffusion-transformer activations. We use block-specific steering vectors, and apply a single vector across all timesteps starting from step 0. We evaluate on Flux.1[dev] and Flux.1[schnell]. For Flux.1[dev] we use 28 steps with guidance scale 3.5; for Flux.1[schnell] we use 4 steps with guidance scale 0.0. Our main experiments use 1024 resolution, for nudity erase we use 512 following EraseAny-thing [9] recommendation. 
+
+Baselines We compare SHIFT against several concept-erasure baselines. Sev-eral of these methods were originally introduced for SD1.5 and later adapted to FLUX without explicitly recommended hyperparameters, which makes repro-duction more challenging. Therefore, in each corresponding experimental section and Appendix, we explicitly report all training details used for these baselines. SHIFT 9
+
+5.3 Results Abstract Concept Erasure In this section, we study abstract concept era-sure on the I2P benchmark [29]. I2P contains 4,703 prompts and corresponding seeds designed to generate inappropriate generations, including nudity. Following prior work, we use NudeNet with a threshold of 0.6 to detect nude body parts for the nudity-erasure task. We evaluate both FLUX.1[dev] and FLUX.1[schnell]. For FLUX.1[schnell], we compare against EAP [3], CA [15], and UCE [8] using the recommended public configurations. All models are evaluated at 512 × 512 
+
+resolution. For additional evaluation of our method impact on overall image quality generation we validate our method on selected 5,000 captions from MS-COCO with corresponding seed following EraseAnything [9] recommendation. Flux.1[dev] SHIFT* (Ours) SHIFT (Ours)     
+
+> Fig. 3: Flux.1[dev] origin and steered generation. * denotes that we use steering vector from Flux.1[schnell] activations to steer Flux.1[dev]
+
+The results are presented in Table 1. SHIFT clearly outperforms all base-lines on safety-related metrics, achiev-ing more than 3× and 4× stronger sup-pression at different steering strengths. At the same time, CLIP remains nearly unchanged, indicating good prompt alignment. We observe only a minor degradation in FID compared to the best baseline, which highlights a favor-able trade-off between aggressive con-cept erasure and overall image quality. The table also shows that increasing steering strength improves erasure but reduces FID. For FLUX.1[dev], we report the baseline metrics from EraseAnything [9]. We further evaluate FLUX.1[dev] using steering vectors computed from both its own activations and FLUX.1[schnell] activations. As shown in Table 2, our method remains effective for the non-distilled model even when the steering vector is transferred from the distilled model. We additionally provide a qualitative comparison in Fig. 4 for Flux.1[schnell] and Fig. 3 for Flux.1[dev], showing that our method can erase undesirable con-cepts while preserving overall image quality. 
+
+Concrete Concept Erasure We additionally evaluate our method on concrete concept erasure. Following the protocol established by SPM [20], we assess con-crete concept removal using 80 fixed prompts and 9 different seeds. Specifically, we evaluate erasure of the Snoopy concept while preserving five related con-cepts: Mickey, SpongeBob, Pikachu, dog, and legislator. For quality evaluation, we compute CLIP scores between the target prompt and the generated image, 10 Konovalova et al. h! Flux.1[schnell] SHIFT (Ours) UCE CA 
+
+Fig. 4: Qualitative Comparison with Baselines: the first row – original generation of FLUX.1[schnell], from top to bottom – UCE, CA and SHIFT (Ours) 
+
+Table 1: (Left) Quantity of explicit content detected using the NudeNet detector on the I2P benchmark for Flux.1 [schnell]. (Right) Comparison of FID and CLIP on MS-COCO 5K sampled images. 
+
+Method Detected Nudity (Quantity) MS-COCO 5K Common Female Male Total ↓ FID ↓ CLIP ↑
+
+ESD 280 121 25 426 31.88 30.86 EAP 373 175 10 558 32.02 31.51 CA 234 98 10 342 31.81 31.25 UCE 232 127 5 364 31.65 31.55 
+
+SHIFT (ours, strength 250) 87 32 3 122 33.9 31.22 SHIFT (ours, strength 500) 73 23 1 97 34.5 31.09 FLUX.1 [schnell] 412 190 10 612 31.63 31.59 
+
+and FID between original and erased generations. For non-target concepts, we expect lower FID and higher CLIP, while for the erased target concept we expect a decrease in CLIP. We conduct these experiments on Flux.1[schnell]. Results for Flux.1[dev] are provided in the Appendix and Qualitative is presented on Fig. 5. 
+
+Style Steering To evaluate style removal, we focused on two main tasks follow-ing ESD. First, we assessed the ability to remove the style of a famous artist like Van Gogh while preserving similar artists (Picasso, Rembrandt, Warhol, Car-SHIFT 11 
+
+Table 2: Quantity of explicit content detected using the NudeNet detector on the I2P benchmark for Flux.1 [dev] 
+
+Method Detected Nudity (Quantity) Common Female Male Total ↓
+
+CA 253 65 26 344 ESD 329 145 32 506 UCE 122 39 12 173 MACE 173 55 28 256 EAP (Bui et al., 2024) 287 86 13 386 Meta-Unlearning (Gao et al., 2024) 355 140 26 521 EraseAnything 129 48 22 199 SHIFT (ours, dev acts) 155 43 17 215 SHIFT (ours, schnell acts) 106 31 15 152 
+
+FLUX.1 [dev] 406 161 38 605 h! Flux.1[schnell] CA SHIFT Flux.1[dev] ESD SHIFT SHIFT * 
+
+Fig. 5: Qualitative Comparison with Baselines for Flux.1[dev] (left) and Flux.1[schnell] (right). * denotes that we use steering vector from Flux.1[schnell] activations to steer Flux.1[dev] 
+
+Table 3: Quantitative evaluation of concrete object erasure for Flux.1[schnell] model. Snoopy Mickey Spongebob Pikachu Dog Legislator Method CS ↓ FID CS ↑ FID ↓ CS ↑ FID ↓ CS ↑ FID ↓ CS ↑ FID ↓ CS ↑ FID ↓                                    
+
+> CA 22.49 168.37 24.25 129.91 28.25 131.78 27.44 129.54 22.86 96.94 21.18 83.83 SHIFT (ours) 18.57 136.20 26.06 55.56 27.35 63.27 26.25 74.24 24.18 56.43 21.77 47.08
+> FLUX.1 [schnell] 28.01 –26.72 –27.94 –27.15 –24.62 –21.89 –
+
+avaggio). For the second task, we evaluated the removal of a modern artist style like McKernan, while preserving Kinkade, Edlin, Eng, and Ajin: Demi-Human. Following the ESD recommendation, we tested our method and baselines on 100 prompts for each task; each group of prompts contains 20 prompts for each of the artists with predefined seeds. The evaluation details and results are provided in Appendix. 12 Konovalova et al. 
+
+Small object erase Additionally, we evaluate our method for domain shifting, where we suppress small objects in generated images. For example, we prevent generations of people with hats, glasses, or red lipstick. These experiments are conducted on Flux.1[schnell] with 4 inference steps. Qualitative results are shown in Fig. 6. Our method can erase not only global concepts but also small local objects. However, it is not an image-editing method, and background consistency is not preserved. concept: glasses  
+
+> Origin image steered image
+> concept: hat concept: red lipstick
+
+Fig. 6: Steering to remove small concrete objects: glasses, hat, red lipstick; first row: origin image, second: steered 
+
+5.4 Ablations 
+
+In this section, we provide a comprehensive ablation analysis of the proposed steering process. Our study is categorized into two parts: (i) an evaluation of steering strength for abstract concept erasure (e.g., nudity) while preserving image generation quality on COCO dataset, and (ii) an investigation into steering design choices for concrete concept removal to identify the primary drivers of SHIFT’s performance. Flux.1[schnell] txt encoder only txt encoder no cos DT: 1000, CLIP: 6 DT: 500, CLIP: 6 DT: 100, CLIP: 6 DT: 500, CLIP: 6, all steps* DT: 500, CLIP: 6, blocks 10-19 DT: 500, CLIP: 6, step:0 DT: 500, CLIP: 6, blocks 0-9 
+
+Fig. 7: Steering to remove concrete concept, ablations for 3 different close concepts: Mickey, Snoopy and Spongebob. The * in the last row indicates step-specific steering vectors. DT – indicates steering strength, CLIP indicates pooled text encoder strength. SHIFT 13 
+
+Table 4: Ablation on steering strength and classifier for regularization usage. (Left) Quantity of explicit content detected using the NudeNet detector on the I2P bench-mark. (Right) Comparison of FID and CLIP on MS-COCO 1K sampled images. 
+
+Method Strength Detected Nudity (Quantity) MS-COCO 1K Common Female Male Total ↓ FID ↓ CLIP ↑
+
+SHIFT (no cls) 250 149 65 16 230 71.09 31.45 SHIFT (with cls) 250 87 32 3 122 68.72 31.54 SHIFT (with cls) 500 73 23 1 97 69.60 31.37 FLUX.1 [schnell] – 406 161 38 605 66.81 31.92 
+
+Table 5: Ablation of steering across block ranges and timestep schedules. Each cell reports CLIP ↑ and FID ↓. The * indicates step-specific steering vectors.                                                                                                                          
+
+> Blocks Steps Legislator Mickey Pikachu Spongebob Dog Snoopy
+> CLIP ↑FID ↓CLIP ↑FID ↓CLIP ↑FID ↓CLIP ↑FID ↓CLIP ↑FID ↓CLIP ↓FID ↑
+> 0022.6 –27.4 –26.5 –28.4 –25.1 –28.3 –0–4 all 22.3 58.1 27.0 105.0 26.8 73.2 28.6 119.5 25.0 53.8 16.5 272.0 0–9 all 22.7 60.9 26.8 110.7 26.9 80.7 28.4 124.7 25.0 62.8 16.4 275.6 10–19 all 22.9 56.1 26.8 95.7 26.1 86.6 27.8 123.8 24.9 62.2 26.6 136.7 all 022.9 68.7 26.6 112.1 26.3 94.0 27.9 143.3 24.9 76.8 16.0 278.6 all 2-3 22.6 0.8 27.2 52.3 26.5 26.1 28.4 28.3 25.1 11.3 26.5 144.8 all all* 23.0 69.4 26.7 113.0 26.4 94.2 28.1 144.0 24.9 77.3 16.1 276.0 all all 22.9 68.7 26.6 112.1 26.3 94.0 27.9 143.3 24.9 76.8 16.0 278.6
+
+Abstract concept erasure We investigate the trade-off between concept-removal efficacy and generation fidelity. Nudity removal is evaluated using the detection framework described in Section 5.3. For Fréchet Inception Distance (FID), we use 1,000 images sampled from the COCO dataset. To improve evalu-ation throughput, all experiments in this subsection are conducted at 512 × 512 
+
+resolution with a fixed text-encoder strength of 6. We also analyze the effect of the classifier-based regularizer for steering-strength control. The results are reported in Table 4. As shown in the table, the classifier is critical both for stable steering and for preserving overall image quality. In the Appendix, we further analyze how Flux.1[dev] quality depends on steering strength and classifier us-age. 
+
+Concrete concept erase Following the protocol established by SPM [20], we evaluate concrete concept removal using 80 fixed prompts and a fixed random seed. We quantify performance with: (i) CLIP similarity between the original prompt and the steered output to measure semantic preservation, and (ii) FID to assess overall image quality. All images are generated with Flux.1[schnell] using 4 inference steps at 1024 × 1024 resolution. Qualitative results are shown in Fig. 7. 14 Konovalova et al. 
+
+Table 6: Ablation across steering-vector parameterization types. For each concept, we report CLIP and FID .                                                                           
+
+> Str Txt Str Type Legislator Mickey Pikachu Spongebob Dog Snoopy
+> CLIP ↑FID ↓CLIP ↑FID ↓CLIP ↑FID ↓CLIP ↑FID ↓CLIP ↑FID ↓CLIP ↓FID ↑
+> 00–22.59 –27.36 –26.49 –28.39 –25.13 –28.29 –500 6diff sep 22.9 68.7 26.6 112.0 26.3 93.9 27.8 143.3 24.8 76.8 15.9 278.5 500 6diff mean 22.6 59.9 26.9 99.7 26.4 90.6 28.4 126.9 25.1 70.9 22.8 191.4 500 6normals 22.5 60.4 27.0 97.3 26.1 92.1 28.4 118.4 25.1 73.6 23.9 187.4
+
+Vector parameterization. We compare three methods for computing the steering vector: the SVM-derived hyperplane normal, token-wise difference, and mean token-wise difference. As shown in Tables 6, all methods maintain com-parable CLIP scores for non-target concepts, while token-wise difference yields stronger target-concept suppression. 
+
+Injection blocks and temporal dynamics. We ablate the influence of steering across different blocks of the DiT backbone (Table 5). We also com-pare a shared steering vector with timestep-specific vectors. Our results show that steering is most effective during the early stages of the diffusion trajec-tory, whereas applying steering in the latter half of the generation process yields insufficient concept suppression. 
+
+Steering strength and regularization. We evaluate the sensitivity of the model to steering magnitude in both the text encoder and the diffusion trans-former’s activations. We further assess the impact of cosine similarity regular-ization (for the text encoder) and linear SVM classification (for DiT features). Our main observations from Table. 7 suggest that using only text-encoder steer-ing or only diffusion-transformer steering is insufficient for high-quality erasure, increased text steering improves removal but risks "over-erasure," where non-target concepts lose semantic fidelity and the inclusion of a classifier effectively mitigates this degradation, preserving the integrity of non-target attributes. FID evaluation for steering strength can be found in Appendix. 
+
+Table 7: CLIP ablation of steering strength and regularization settings on concrete concept erasure.                                                                                             
+
+> Str Txt Cls Norm Cos Legislator Mickey Pikachu Spongebob dog Snoopy Str CLIP ↑CLIP ↑CLIP ↑CLIP ↑CLIP ↑CLIP ↓
+> 00–––22.59 27.36 26.49 28.39 25.13 28.29 06–––22.56 27.12 26.47 28.24 25.22 26.35 100 6✓✓✓22.81 27.14 26.37 28.45 24.88 20.05 500 6–✓✓20.11 24.95 25.88 27.80 24.24 13.26 500 6✓✓✓22.90 26.63 26.33 27.89 24.87 15.99 500 3✓✓–20.68 20.67 27.34 21.82 24.17 15.16 1000 5✓✓✓22.22 26.32 27.29 28.01 24.77 17.83 10 5✓–✓20.73 26.30 26.26 26.99 24.21 16.61
+
+SHIFT 15 
+
+6 Conclusion 
+
+We have presented a simple but effective steering-based framework for concept erasure that achieves competitive performance while maintaining high computa-tional efficiency. Unlike existing optimization-heavy baselines, our method allows for the rapid derivation of steering vectors for novel concepts without extensive retraining. While our results demonstrate the versatility of steering for tasks such as stylization and object manipulation, maintaining structural consistency during significant domain shifts remains a challenge. Future work will focus on refining the geometric alignment of steering vectors to further decouple target concepts from global image structure. 
+
+References 
+
+1. Beaglehole, D., Radhakrishnan, A., Boix-Adsera, E., Belkin, M.: Toward universal steering and monitoring of ai models. Science 391 (6787), 787–792 (2026) 2. Brack, M., Schramowski, P., Friedrich, F., Hintersdorf, D., Kersting, K.: The stable artist: Steering semantics in diffusion latent space. arXiv preprint arXiv:2212.06013 (2022) 3. Bui, A., Vuong, L., Doan, K., Le, T., Montague, P., Abraham, T., Phung, D.: Erasing undesirable concepts in diffusion models with adversarial preservation. arXiv preprint arXiv:2410.15618 (2024) 4. Dhariwal, P., Nichol, A.: Diffusion models beat gans on image synthesis. Advances in neural information processing systems 34 , 8780–8794 (2021) 5. Esser, P., Kulal, S., Blattmann, A., Entezari, R., Müller, J., Saini, H., Levi, Y., Lorenz, D., Sauer, A., Boesel, F., et al.: Scaling rectified flow transformers for high-resolution image synthesis. In: Forty-first international conference on machine learning (2024) 6. Gaintseva, T., Ma, C., Liu, Z., Benning, M., Slabaugh, G., Deng, J., Elezi, I.: Casteer: Steering diffusion models for controllable generation. arXiv e-prints pp. arXiv–2503 (2025) 7. Gandikota, R., Materzynska, J., Fiotto-Kaufman, J., Bau, D.: Erasing concepts from diffusion models. In: Proceedings of the IEEE/CVF international conference on computer vision. pp. 2426–2436 (2023) 8. Gandikota, R., Orgad, H., Belinkov, Y., Materzyńska, J., Bau, D.: Unified concept editing in diffusion models. In: Proceedings of the IEEE/CVF winter conference on applications of computer vision. pp. 5111–5120 (2024) 9. Gao, D., Lu, S., Zhou, W., Chu, J., Zhang, J., Jia, M., Zhang, B., Fan, Z., Zhang, W.: Eraseanything: Enabling concept erasure in rectified flow transformers. In: Forty-second International Conference on Machine Learning (2025) 10. Hernandez, E., Li, B.Z., Andreas, J.: Inspecting and editing knowledge represen-tations in language models. arXiv preprint arXiv:2304.00740 (2023) 11. Ho, J., Jain, A., Abbeel, P.: Denoising diffusion probabilistic models. Advances in neural information processing systems 33 , 6840–6851 (2020) 12. Ho, J., Salimans, T.: Classifier-free diffusion guidance. arXiv preprint arXiv:2207.12598 (2022) 13. Ilharco, G., Ribeiro, M.T., Wortsman, M., Gururangan, S., Schmidt, L., Ha-jishirzi, H., Farhadi, A.: Editing models with task arithmetic. arXiv preprint arXiv:2212.04089 (2022) 16 Konovalova et al. 14. Khashabi, D., Lyu, X., Min, S., Qin, L., Richardson, K., Welleck, S., Hajishirzi, H., Khot, T., Sabharwal, A., Singh, S., et al.: Prompt waywardness: The curious case of discretized interpretation of continuous prompts. In: Proceedings of the 2022 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies. pp. 3631–3643 (2022) 15. Kumari, N., Zhang, B., Wang, S.Y., Shechtman, E., Zhang, R., Zhu, J.Y.: Ablat-ing concepts in text-to-image diffusion models. In: Proceedings of the IEEE/CVF international conference on computer vision. pp. 22691–22702 (2023) 16. Labs, B.F., Batifol, S., Blattmann, A., Boesel, F., Consul, S., Diagne, C., Dock-horn, T., English, J., English, Z., Esser, P., et al.: Flux. 1 kontext: Flow match-ing for in-context image generation and editing in latent space. arXiv preprint arXiv:2506.15742 (2025) 17. Lester, B., Al-Rfou, R., Constant, N.: The power of scale for parameter-efficient prompt tuning. In: Proceedings of the 2021 conference on empirical methods in natural language processing. pp. 3045–3059 (2021) 18. Li, K., Patel, O., Viégas, F., Pfister, H., Wattenberg, M.: Inference-time inter-vention: Eliciting truthful answers from a language model. Advances in Neural Information Processing Systems 36 , 41451–41530 (2023) 19. Liu, S., Ye, H., Zou, J.: Reducing hallucinations in large vision-language models via latent space steering. In: The Thirteenth International Conference on Learning Representations (2025) 20. Lyu, M., Yang, Y., Hong, H., Chen, H., Jin, X., He, Y., Xue, H., Han, J., Ding, G.: One-dimensional adapter to rule them all: Concepts diffusion models and erasing applications. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 7559–7568 (2024) 21. Meng, K., Bau, D., Andonian, A., Belinkov, Y.: Locating and editing factual associ-ations in gpt. Advances in neural information processing systems 35 , 17359–17372 (2022) 22. Peebles, W., Xie, S.: Scalable diffusion models with transformers. In: Proceedings of the IEEE/CVF international conference on computer vision. pp. 4195–4205 (2023) 23. Podell, D., English, Z., Lacey, K., Blattmann, A., Dockhorn, T., Müller, J., Penna, J., Rombach, R.: Sdxl: Improving latent diffusion models for high-resolution image synthesis. arXiv preprint arXiv:2307.01952 (2023) 24. Radford, A., Kim, J.W., Hallacy, C., Ramesh, A., Goh, G., Agarwal, S., Sastry, G., Askell, A., Mishkin, P., Clark, J., et al.: Learning transferable visual models from natural language supervision. In: International conference on machine learning. pp. 8748–8763. PmLR (2021) 25. Raffel, C., Shazeer, N., Roberts, A., Lee, K., Narang, S., Matena, M., Zhou, Y., Li, W., Liu, P.J.: Exploring the limits of transfer learning with a unified text-to-text transformer. Journal of machine learning research 21 (140), 1–67 (2020) 26. Rando, J., Paleka, D., Lindner, D., Heim, L., Tramèr, F.: Red-teaming the stable diffusion safety filter. arXiv preprint arXiv:2210.04610 (2022) 27. Rodriguez, P., Blaas, A., Klein, M., Zappella, L., Apostoloff, N., Cuturi, M., Suau, X.: Controlling language and diffusion models by transporting activations. arXiv preprint arXiv:2410.23054 (2024) 28. Rombach, R., Blattmann, A., Lorenz, D., Esser, P., Ommer, B.: High-resolution image synthesis with latent diffusion models. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. pp. 10684–10695 (2022) 29. Schramowski, P., Brack, M., Deiseroth, B., Kersting, K.: Safe latent diffusion: Mitigating inappropriate degeneration in diffusion models. In: Proceedings of the SHIFT 17 IEEE/CVF conference on computer vision and pattern recognition. pp. 22522– 22531 (2023) 30. Schuhmann, C., Beaumont, R., Vencu, R., Gordon, C., Wightman, R., Cherti, M., Coombes, T., Katta, A., Mullis, C., Wortsman, M., et al.: Laion-5b: An open large-scale dataset for training next generation image-text models. Advances in neural information processing systems 35 , 25278–25294 (2022) 31. Subramani, N., Suresh, N., Peters, M.E.: Extracting latent steering vectors from pretrained language models. In: Findings of the Association for Computational Linguistics: ACL 2022. pp. 566–581 (2022) 32. Turner, A.M., Thiergart, L., Leech, G., Udell, D., Vazquez, J.J., Mini, U., MacDi-armid, M.: Steering language models with activation engineering. arXiv preprint arXiv:2308.10248 (2023) 33. Turner, A.M., Thiergart, L., Leech, G., Udell, D., Vazquez, J.J., Mini, U., Mac-Diarmid, M.: Steering language models with activation engineering, 2024. URL https://arxiv. org/abs/2308.10248 2308 (2024) 34. Zhang, Y., Jin, E., Dong, Y., Wu, Y., Torr, P., Khakzar, A., Stegmaier, J., Kawaguchi, K.: Minimalist concept erasure in generative models. arXiv preprint arXiv:2507.13386 (2025) 35. Zhou, Y., Muresanu, A.I., Han, Z., Paster, K., Pitis, S., Chan, H., Ba, J.: Steering large language models using ape. In: NeurIPS ML Safety Workshop (2022) 36. Ziegler, D.M., Stiennon, N., Wu, J., Brown, T.B., Radford, A., Amodei, D., Chris-tiano, P., Irving, G.: Fine-tuning language models from human preferences. arXiv preprint arXiv:1909.08593 (2019) 37. Zou, A., Phan, L., Chen, S., Campbell, J., Guo, P., Ren, R., Pan, A., Yin, X., Mazeika, M., Dombrowski, A.K., et al.: Representation engineering: A top-down approach to ai transparency. arXiv preprint arXiv:2310.01405 (2023) 18 Konovalova et al. 
+
+7 Appendix 
+
+7.1 Implementation details Baselines UCE. We follow the official UCE implementation. For nudity erasure, we use the target prompts “nudity; nude; naked” and preserve prompts “clothed; wear-ing clothes; dressed” with concept type “unsafe.” For art-style erasure, we use “Van Gogh” as the target concept, preserve “Monet; Rembrandt; Warhol,” and set the concept type to “art”. 
+
+CA. We follow [34] and train the model for 10 epochs with β = 0 .1.
+
+EAP. We follow the implementation from [34], using the “textattn” variant with guidance scale 3. 
+
+ESD. We use the official ESD code with the esd-x setting, learning rate 1×10 −5,negative guidance 2, and 1000 training iterations for Flux.1[dev]. 
+
+Datasets Nudity erase dataset. For the nudity-erasure task, we construct the steering-prompt dataset following CASteer [6]. We use two prompt groups: base human descriptors B = {"a girl", "a boy", "two men", "two women", "two people", "a man", "a woman", "an old man", "an old woman", "boys", "girls", "man", "woman", "group of people", "a human" } and context modifiers C = {"", "gloomy image", "zoomed in", "talking", "on a beach", "in a strange pose", "realism", "colorful background", "smiling" }. We generate all pairwise combi-nations b + c for b ∈ B and c ∈ C (e.g., "a girl talking", "a girl on a beach", "a human smiling"), resulting in |B| × | C| = 15 × 9 = 135 prompts. 
+
+Style erase dataset. For erasing concrete concepts, we use prompt pairs of the form "prompt" and "prompt with target concept style", where prompt is just a class from N ImageNet classes. 
+
+7.2 More ablations Abstract concept erase. We further investigate how steering strength and classifier choice influence the efficacy of nudity erasure and overall image quality on the COCO dataset. As demonstrated in Table 8, the classifier is vital for pre-serving image fidelity, while the steering strength provides the trade-off between successful concept erasure and maintained visual quality. 
+
+Concrete concept erase. We additionally evaluate the model’s sensitivity to steering magnitude in both the text encoder and diffusion transformer activa-tions, measuring effects on image quality and FID score (Table 9). The results closely mirror our CLIP findings: higher text steering improves target-concept removal yet risks “over-erasure” for non-target concepts. 
+
+7.3 Concrete object steering for FLUX.1[dev] 
+
+Similarly to the main experiments, we tested our method on specific object re-moval (Snoopy) for the Flux.1[dev] model. We used 80 original prompts follow-SHIFT 19 
+
+Table 8: Quantitative comparison of Flux.1[dev] steering with different strength and with/without classifier for regularization. We additionally tested steering vector from distilled model applied to origin. 
+
+Method Strength Detected Nudity (Quantity) MS-COCO 1K Common Female Male Total ↓ FID ↓ CLIP ↑
+
+no cls SHIFT (schnell acts) 100 149 65 16 230 71.63 30.78 SHIFT (schnell acts) 250 163 72 16 251 74.74 30.50 SHIFT (schnell acts) 500 134 43 18 195 77.71 29.53 SHIFT (dev acts) 100 179 70 19 268 72.59 30.69 SHIFT (dev acts) 250 198 75 22 295 74.23 30.39 SHIFT (dev acts) 500 140 57 19 216 77.24 29.49 with cls SHIFT (schnell acts) 250 106 31 15 152 71.50 30.50 SHIFT (schnell acts) 500 98 28 12 138 72.06 30.10 SHIFT (dev acts) 250 155 43 17 215 71.5 30.39 SHIFT (dev acts) 500 142 33 21 196 72.35 29.53 FLUX.1 [dev] – 406 161 38 605 69.25 30.87 
+
+Table 9: FID ablation for steering strength and regularization settings for Flux.1[schnell].                                                                                            
+
+> Str Txt Str Cls Norm Cos Legislator Mickey Pikachu Spongebob dog Snoopy
+> FID ↓FID ↓FID ↓FID ↓FID ↓FID ↑
+> 00–––––––––06✓✓✓13.76 55.93 26.38 39.46 15.35 144.89 100 6✓✓✓47.08 91.09 73.63 106.95 44.21 227.29 500 6–✓✓88.30 153.99 103.37 168.46 124.03 290.35 500 6✓✓✓68.68 112.05 93.99 143.30 76.82 278.59 500 3✓✓–86.92 238.31 131.08 286.89 109.59 280.39 1000 5✓✓✓74.72 131.07 113.88 161.45 97.86 254.93 10 5✓–✓77.65 139.78 137.13 170.92 118.31 262.84
+
+ing [20] and 9 different seeds for validation. Similarly, we evaluated our method for Snoopy erasure while preserving Mickey, SpongeBob, Pikachu, dog, and legis-lator. For quality evaluation, we computed CLIP scores between target prompts and generated images, as well as the FID metric. While the CA method did not erase the concept, our method performs much better on this task, as shown in Table 10. 
+
+7.4 Additional Flux.1[dev] quality results 
+
+In addition to the main experiments on nudity concept erasure, we evaluate the quality of our method on the COCO dataset using 5k prompts, measuring FID and CLIP metrics. The results are presented in Table 11. The steering strength offers a trade-off between overall image quality and erasure effectiveness. How-ever, using the Flux.1[schnell] steering vector with a strength of 250, we achieve 20 Konovalova et al. 
+
+Table 10: Quantitative evaluation of concrete object erasure for Flux.1[schnell] model. Snoopy Mickey Spongebob Pikachu Dog Legislator Method CS ↓ FID CS ↑ FID ↓ CS ↑ FID ↓ CS ↑ FID ↓ CS ↑ FID ↓ CS ↑ FID ↓                                    
+
+> ESD 26.77 15.44 26.18 6.56 27.09 9.51 26.81 7.87 24.16 8.76 20.34 8.52 SHIFT, our (dev acts) 11.98 181 22.70 88.70 26.13 67.19 25.14 51.12 22.98 56.00 17.90 72.95 FLUX.1 [dev] 27.43 –26.20 –27.14 –18.81 –24.19 –20.51 –Flux.1[dev] Flux.1[schnell] Flux.1[dev] steered Flux.1[dev] steered* Flux.1[scnhell] steered
+
+Fig. 8: Examples of image generations on the COCO dataset using Flux.1[dev], Flux.1[schnell], and steered Flux.1[dev]*, Flux.1[dev] and Flux.1[schnell] genera-tions, where * denotes steering Flux.1[dev] with the activation vector derived from Flux.1[schnell]. 
+
+high-quality erasure with minimal degradation in FID and virtually no decrease in CLIP score. We additionally present images generated without steering and with steering for nudity erasure on COCO in Fig. 8. 
+
+7.5 Style erase 
+
+Additionally, we tested our method for style erasure. First, we assessed the abil-ity to remove the style of a famous artist like Van Gogh while preserving similar artists (Picasso, Rembrandt, Warhol, Caravaggio). For the second task, we eval-uated the removal of a modern artist’s style like McKernan, while preserving Kinkade, Edlin, Eng, and Ajin: Demi-Human. For validation, we used GPT-4o to identify artists in generated images as an evaluation metric. Questions to GPT-4o were formulated as “Is this picture in s’s style? Just tell me Yes or No.”, where s represents the style. We estimated the accuracy of detected artists. We compared our model with ESD (for Flux.1[dev]) and UCE (for Flux.1[schnell] model) baselines. The quantitative results are presented in Table 12, and qual-SHIFT 21 
+
+Table 11: Quantitative evaluation of Flux.1[dev] steering for nudity concept erasure and overall image quality metrics (FID and CLIP) on the COCO dataset using 5k prompts.                                     
+
+> Method Strength Detected Nudity (Quantity) MS-COCO 5K Common Female Male Total ↓FID ↓CLIP ↑
+> with cls
+> SHIFT (schnell acts) 250 106 31 15 152 37.90 30.69
+> SHIFT (dev acts) 250 155 43 17 215 38.50 30.69 SHIFT (schnell acts) 500 98 28 12 138 38.06 30.40 FLUX.1 [dev] –406 161 38 605 35.83 30.91
+
+itative results are presented in Fig. 9, 10 for Van Gogh erasure. Flux.1[schnell] was tested with text steering strength 2, while Flux.1[dev] with steering strength 
+
+5. Both models were tested with DiT blocks steering strength 250 .Flux.1[schnell] Flux.1[dev] 
+
+> origin UCE Steered origin  ESD  Steered*  Steered
+
+Van Gogh style erase 
+
+Fig. 9: Qualitative results for Van Gogh style erasure. First row: original Flux.1[dev] and Flux.1[schnell] generations. Second row: UCE and ESD competitors. Last rows: our steered generations, where * denotes steering Flux.1[dev] with the activation vector derived from Flux.1[schnell]. 
+
+7.6 Add concept task Task formulation We additionally evaluate our steering method on a concept addition task. Unlike editing, this setting corresponds to a domain shift, as steering does not necessarily preserve the background. Similarly to the removal task, we compute steering vectors for both the diffusion-transformer encoder and the text encoder; however, unlike removal, we do not use cosine-similarity 22 Konovalova et al. Flux.1[schnell] steered Flux.1[dev] steered Flux.1[dev] steered* Picasso Rembrandt Warhol Caravaggio 
+
+Fig. 10: Qualitative results demonstrating preservation of other artists’ styles (Picasso, Rembrandt, Warhol, Caravaggio) while erasing Van Gogh’s style using our steered model (SHIFT). 
+
+Table 12: Style-erasure accuracy on old and modern artist groups. Acc E denotes accuracy on erased-target prompts, and Acc U denotes accuracy on unaffected prompts. 
+
+Method Old artists Modern artists 
+
+Acc E Acc U Acc E Acc U
+
+ESD 20.00% 63.75% 68.33% 67.08% SHIFT [dev] 30% 63.75% 15% 68.75% SHIFT [schnell] 20.00% 67.50 % 13.33 70.41 
+
+FLUX.1 [dev] 68.33% 79.58% 88.33% 81.25% UCE 23.33% 75.41% 61.67 64.16 SHIFT 30.00 % 79.17% 60.00 73.75 
+
+FLUX.1 [schnell] 80.00% 84.59% 88.33% 85.84 % 
+
+regularization on the pooled text vector. For concept addition, we construct a dataset with 20 positive and 20 negative examples. We tested several types of concepts: (i) relatively easy additions, such as glasses, a hat, or a smile; (ii) fine-grained additions, such as red lipstick; and (iii) an apple, which does not reliably correspond to a single visual pattern. For dataset creation, we utilize a small dataset consisting of prompt pairs, such as ["Fluffy white cat", "Fluffy white cat with hat"] (see Fig. 11 for the hat example). 
+
+Experiments and Results We tested Flux.1[schnell] model for "add concept" task. Similar to the removal task, we evaluate our method on the concept addition task, but without the cosine similarity regularization for the text encoder steer-ing, as we aim to add the concept to the generated images without preserving the original background. At the same time, we continue to use classification-based SHIFT 23 origin images (no target concept) red lipstick concept smile concept hat concept 
+
+Fig. 11: Dataset examples for constructing steering vectors for the "add concept" task. Provided images are for target concepts: "red lipstick", "hat", and "smile". 
+
+regularization to ensure that steering remains within the manifold of trained activations. For validation, we construct a small dataset consisting of 80 diverse prompts and evaluate the steering performance. We additionally conduct ex-periments by applying the steering to different blocks (Fig. 12,13, 14, 15) and timesteps (Fig. 16,17). Unlike the removal task, we find that restricting steering to a subsample of blocks can improve quality (first 9 blocks). However, similar to the removal task, applying steering only to the last steps or last blocks yields insufficient results. The qualitative results demonstrate that the steering method is effective not only for erasure tasks but also for shifting representations toward specific regions of the manifold containing the target concept. Notably, this approach can successfully insert objects into an image, such as an apple, even when they are traditionally difficult to integrate naturally. 
+
+7.7 Switch concept task 24 Konovalova et al. Origin image all blocks 0-7 blocks 0-9 blocks 0-12 blocks 
+
+Fig. 12: Ablation of number of steered DiT blocks for adding "hat" using Flux.1[schnell]. Rows (top to bottom): origin, 7, 9, 12 all blocks. DiT strength: 1000 ;text encoder strength: 1.5.Origin image all blocks 0-7 blocks 0-9 blocks 0-12 blocks 
+
+Fig. 13: Ablation of number of steered DiT blocks for adding "smile" using Flux.1[schnell]. Rows (top to bottom): origin, 7, 9, 12 all blocks. DiT strength: 1000 ;text encoder strength: 1.5.
+
+Task formulation Our method can also be applied to the concept switching task, where the goal is to replace one target concept with another (e.g., cat →
+
+dog or man → woman). For the steering dataset, we employ both positive and SHIFT 25 Origin image all blocks 0-7 blocks 0-9 blocks 0-12 blocks 
+
+Fig. 14: Ablation of number of steered DiT blocks for adding "red lipstick" using Flux.1[schnell]. Rows (top to bottom): origin, 7, 9, 12 all blocks. DiT strength: 1000 ;text encoder strength: 1.5.Origin image all blocks 0-7 blocks 0-9 blocks 0-12 blocks 
+
+Fig. 15: Ablation of number of steered DiT blocks for adding "apple" using Flux.1[schnell]. Rows (top to bottom): origin, 7, 9, 12 all blocks. DiT strength: 1000 ;text encoder strength: 1.5.
+
+negative concept 20 pairs of prompts. Example of training dataset for steering is presented in Fig. 18. During inference, we apply the steering vector to both the text encoder and the diffusion DiT blocks. 26 Konovalova et al. Origin image one vec all steps 0 step 0-1 steps 2-3 steps 
+
+Fig. 16: Ablation of number of timesteps for adding "smile" (left), "apple" (right) using Flux.1[schnell]. Rows (top to bottom): origin, vector from 0 step applied to all steps; all steps; 0 step; 0-1 steps and 2-3 steps steering. DiT strength: 1000 ; text encoder strength: 1.5.
+
+Experiments and Results We tested Flux.1[schnell] model for "switch con-cept" task. To evaluate performance, we curated a diverse validation set of 80 prompts. Consistent with the “add concept” experiments, we find that restrict-ing steering to a subset of blocks (7 blocks) is substantially more effective than applying it across all blocks. Ablations on timesteps proves that early steps are crucially important for diffusion steering Fig. 2324. Our experiments demon-strate that the approach successfully switches a wide range of concepts, including global attributes (age) Fig. 19, similarly structured animals (cat vs. dog) Fig. 21, small objects (apple vs. banana) Fig. 20, and even large, structurally dissimilar objects (car vs. bicycle) Fig. 22. While background preservation remains an open challenge, these results establish concept steering as a promising and generaliz-able direction for controllable object-level editing in diffusion models. 
+
+7.8 Stylization task Task formulation Steering is also applicable for domain shifting to a specific style. That means that we now can generate all images in selected style, for example, sketch style. To construct the steering vector, we used a dataset of 20 
+
+prompts consisting of pairs: a neutral prompt and the same prompt augmented with the target style concept (see examples in Fig. 25). As a neutral prompt we take one class of N ImageNet classes. SHIFT 27 Origin image one vec all steps 0 step 0-1 steps 2-3 steps 
+
+Fig. 17: Ablation of number of timesteps for adding "red lipstick" (left), "hat" (right) using Flux.1[schnell]. Rows (top to bottom): origin, vector from 0 step applied to all steps; all steps; 0 step; 0-1 steps and 2-3 steps steering. DiT strength: 1000 ; text encoder strength: 1.5.
+
+Experiments and Results We tested Flux.1[schnell] model for "stylization" task. We evaluated our method on several stylization tasks, including sketch, anime, cyberpunk, and impressionist styles. For stylization, we ablated the effect of applying steering only to a subset of blocks, with results shown in Figs. 28, 26, and 27. Unlike the "add" and "switch" tasks, however, we did not find restricting steering to a subset of blocks necessary. As with the add and switch tasks, stylization does not preserve the background and performs only a manifold shift toward target-style generations. 
+
+7.9 Flux-dev add and switch tasks 
+
+We additionally tested whether a steering vector derived from Flux.1[schnell] activations can be applied to the Flux.1[dev] model for both the add (Fig. 30) and switch (Fig. 29) tasks. Our experiments confirm that the steering vector from the distilled model transfers effectively to the non-distilled model, consistent with the results shown in the main paper. 
+
+7.10 Empty prompt steering 
+
+We additionally evaluated the steering method on unconditional generations starting from an empty prompt. In this setting, we initialized the diffusion pro-cess with an empty prompt and applied steering to both the text encoder and 28 Konovalova et al. young concept old concept banana concept apple concept 
+
+Fig. 18: Dataset examples for constructing steering vectors for the "add concept" task. Provided images are for target concepts: "banana → apple, young → old". 
+
+the DiT blocks. We tested the approach across the add, switch, and stylization tasks, with results for all concepts shown in Fig. 31. 
+
+7.11 Classifiers for activations 
+
+We additionally report the classification scores for the models employed as regu-larizers during steering (Fig. 32). These scores are presented across all tasks, in-cluding stylization ("cyberpunk"), concept addition ("hat"), and concept switch-ing ("banana → apple"). We evaluated multiple classifier types, including linear and RBF SVMs, as well as logistic regression. As shown, activations from the stylization task proved the most readily classifiable. Moreover, 0-step activations achieved the highest classification performance across all tasks. SHIFT 29 Origin image all blocks 0-7 blocks 0-9 blocks 0-12 blocks 
+
+Fig. 19: Ablation of number of steered DiT blocks for switching concepts "young 
+
+→ old" using Flux.1[schnell]. Rows (top to bottom): origin, all blocks, 7, 9, 12. DiT strength: 1000 ; text encoder strength: 3.Origin image all blocks 0-7 blocks 0-9 blocks 0-12 blocks 
+
+Fig. 20: Ablation of number of steered DiT blocks for switching concepts "banana →
+
+apple" using Flux.1[schnell]. Rows (top to bottom): origin, all blocks, 7, 9, 12. DiT strength: 1000 ; text encoder strength: 3.30 Konovalova et al. Origin image all blocks 0-7 blocks 0-9 blocks 0-12 blocks 
+
+Fig. 21: Ablation of number of steered DiT blocks for switching concepts "dog → cat" using Flux.1[schnell]. Rows (top to bottom): origin, all blocks, 7, 9, 12. DiT strength: 
+
+1000 ; text encoder strength: 3.Origin image all blocks 0-7 blocks 0-9 blocks 0-12 blocks 
+
+Fig. 22: Ablation of number of steered DiT blocks for switching concepts "bicycle 
+
+→ car" using Flux.1[schnell]. Rows (top to bottom): origin, all blocks, 7, 9, 12. DiT strength: 1000 ; text encoder strength: 1.5.SHIFT 31 Origin image one vec all steps 0 step 0-1 steps 2-3 steps 
+
+Fig. 23: Ablation of number of timesteps for switching "banana → apple" (left), "dog 
+
+→ cat" (right) using Flux.1[schnell]. Rows (top to bottom): origin, vector from 0 step applied to all steps; all steps; 0 step; 0-1 steps and 2-3 steps steering. DiT strength: 
+
+1000 ; text encoder strength: 3.Origin image one vec all steps 0 step 0-1 steps 2-3 steps 
+
+Fig. 24: Ablation of number of timesteps for switching "young → old" (left), "bicycle 
+
+→ car" (right) using Flux.1[schnell]. Rows (top to bottom): origin, vector from 0 step applied to all steps; all steps; 0 step; 0-1 steps and 2-3 steps steering. DiT strength: 
+
+1000 ; text encoder strength: 3/1.5.32 Konovalova et al. origin images (no target concept) cyberpunk concept sketch concept impressionism concept 
+
+Fig. 25: Dataset examples for constructing steering vectors for the "add concept" task. Provided images are for target concepts: "cyberpunk", "sketch" and "impressionism" style. SHIFT 33 Origin image all blocks 0-7 blocks 0-9 blocks 0-12 blocks 
+
+Fig. 26: Ablation of number of steered DiT blocks for adding style "cyberpunk" using Flux.1[schnell]. Rows (top to bottom): origin, 7, 9, 12 all blocks. DiT strength: 1000 ;text encoder strength: 1.5.Origin image all blocks 0-7 blocks 0-9 blocks 0-12 blocks 
+
+Fig. 27: Ablation of number of steered DiT blocks for adding style "impressionism" using Flux.1[schnell]. Rows (top to bottom): origin, 7, 9, 12 all blocks. DiT strength: 
+
+1000 ; text encoder strength: 1.5.34 Konovalova et al. Origin image all blocks 0-7 blocks 0-9 blocks 0-12 blocks 
+
+Fig. 28: Ablation of number of steered DiT blocks for adding style "sketch" using Flux.1[schnell]. Rows (top to bottom): origin, 7, 9, 12 all blocks. DiT strength: 1000 ;text encoder strength: 1.5.cat apple age (old) 
+
+Fig. 29: Ablation of steering-vector transfer from Flux.1[schnell] to Flux.1[dev] for the "switch concept" task. Rows show (top to bottom): base generation (neutral prompt), steered result with "dog → cat", steered result with "banana → apple", steered result with "young → old". DiT steering strength: 1000 ; text encoder strength: 3.SHIFT 35 hat smile glasses 
+
+Fig. 30: Ablation of steering-vector transfer from Flux.1[schnell] to Flux.1[dev] for the "add concept" task. Rows show (top to bottom): steered result with "hat", steered result with "smile", steered result with "glasses". DiT steering strength: 1000 ; text encoder strength: 1.5.age (old) gender (woman) cat empty prompt apple smile red lipstick empty prompt anime cyberpunk sketch empty prompt 
+
+Fig. 31: Steering results for unconditional (empty-prompt) generations. Top row: add-concept task; middle row: switch-concept task; bottom row: stylization task. 36 Konovalova et al. Diffrerent tasks classifiers Different classifiers for switch task 
+
+> stylization switch concepts add concept linear SVM  logreg  rbf SVM
+
+Fig. 32: Classifier scores for different blocks and steps. Left: steering tasks (stylization 
+
+→ switch → add concept); right: classifiers for the switch task (linear SVM → logistic regression → RBF SVM).

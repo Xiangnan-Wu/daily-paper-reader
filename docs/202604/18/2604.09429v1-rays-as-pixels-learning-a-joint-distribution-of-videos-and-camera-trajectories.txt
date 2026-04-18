@@ -1,0 +1,528 @@
+Title: Rays as Pixels: Learning A Joint Distribution of Videos and Camera Trajectories
+
+URL Source: https://arxiv.org/pdf/2604.09429v1
+
+Published Time: Mon, 13 Apr 2026 01:16:10 GMT
+
+Number of Pages: 12
+
+Markdown Content:
+## Rays as Pixels: Learning A Joint Distribution of Videos and Camera Trajectories 
+
+Wonbong Jang 1 Shikun Liu 1 Soubhik Sanyal 1 Juan Camilo Perez 1 Kam Woh Ng 1 Sanskar Agrawal 1
+
+Juan-Manuel Perez-Rua 1 Yiannis Douratsos 1 Tao Xiang 1Input Image  Generated Frame 0  Generated Frame 64    
+
+> Arc Left
+> Move Forward
+> Generated Frame 55 Generated Frame 35 Input Image
+> Input Video
+> …
+> …
+> ………Generated Camera Trajectories
+
+Figure 1. Rays as Pixels: Unifying Video Generation and Camera Pose Estimation. The first two rows show trajectory-controlled video generation from user-defined camera paths, and the last row shows pose estimation recovering a camera trajectory from a raw input video. By representing camera parameters as dense raxels (rays as pixels), our model learns a joint distribution of videos and camera trajectories, enabling both camera pose prediction and novel view synthesis within a single model. 
+
+Abstract 
+
+Recovering camera parameters from images and rendering scenes from novel viewpoints have long been treated as separate tasks in computer vision and graphics. This separation breaks down when image coverage is sparse or poses are ambigu-ous, since each task needs what the other pro-duces. We propose Rays as Pixels, a Video Diffu-sion Model (VDM) that learns a joint distribution over videos and camera trajectories. We represent each camera as dense ray pixels (raxels) and de-noise them jointly with video frames through De-
+
+> 1
+
+Meta AI, London, United Kingdom. Webpage: Link . Corre-spondence to: Wonbong Jang <won.jang1108@gmail.com >.
+
+Preprint. April 13, 2026. 
+
+coupled Self-Cross Attention mechanism. A sin-gle trained model handles three tasks: predicting camera trajectories from video, jointly generating video and camera trajectory from input images, and generating video from input images along a target camera trajectory. Because the model can both predict trajectories from a video and gener-ate views conditioned on its own predictions, we evaluate it through a closed-loop self-consistency test, demonstrating that its forward and inverse predictions agree. Notably, trajectory prediction requires far fewer denoising steps than video gen-eration, even a few denoising step suffices for self-consistency. We report results on pose esti-mation and camera-controlled video generation. 1
+
+> arXiv:2604.09429v1 [cs.CV] 10 Apr 2026 Rays as Pixels: Learning A Joint Distribution of Video and Camera Trajectories
+
+1. Introduction 
+
+Videos implicitly encode 3D geometry through motion and parallax. In 3D computer vision and neural render-ing, this manifests as two complementary problems: re-covering camera trajectories from images (the inverse pro-cess), and rendering images from those trajectories and the underlying geometry (the forward process). Despite this duality, traditional pipelines treat these problems in isola-tion. Structure-from-Motion (SfM) acts as a prerequisite, demanding dense overlapping views to estimate the cam-era parameters that downstream methods such as Neural Radiance Fields (NeRFs) (Mildenhall et al., 2020) or 3D Gaussian Splatting (3DGS) (Kerbl et al., 2023a) consume as ground truth. This separation creates a fragility: when im-age coverage is sparse or camera motion is ambiguous, the pipeline breaks. This motivates a unified approach: learning the forward and inverse processes jointly within a single generative model. While optimization-based methods like NeRF and 3DGS ex-cel at reconstructing observed regions, they struggle when input views are scarce. Because they reconstruct rather than generate, they cannot plausibly synthesize occluded regions, resulting in blurry artifacts or floaters. Recent 3D-aware generative models (Gao et al., 2025; Liu et al., 2026) address this by leveraging data-driven priors to sam-ple plausible completions for unseen regions. In parallel, camera-controlled VDMs (Liang et al., 2024; Bai et al., 2025) generate video along a specified camera trajectory by conditioning on camera parameters alongside dense input frames. However, these approaches share a limitation: they 
+
+decouple pose estimation from the generation process. They treat camera poses as a solved prerequisite , relying on off-the-shelf estimators, whether classical, such as COLMAP (Sch ¨onberger & Frahm, 2016a), or learned, such as DUSt3R (Wang et al., 2024b), to provide conditioning. Consequently, the generative model inherits the fragility of these upstream estimators, which often fail to converge given the very same sparse inputs the generative model is designed to handle. To overcome this dependency, we introduce a unified dif-fusion model that handles both directions of the duality with a single joint distribution. Unlike existing 3D-aware generative models, which treat camera parameters as fixed conditioning inputs, our model learns a joint distribution over video frames and camera trajectories. This enables both forward and inverse inference within a single model. The primary challenge is that pretrained video diffusion models operate on dense spatial tensors, while camera pa-rameters are typically low-dimensional global vectors. Prior camera-controlled VDMs handle this mismatch by adding camera-conditioning components, either by injecting cam-era matrices through learned encoders (Wang et al., 2024c) or by adopting Pl ¨ucker embeddings (He et al., 2024). In both cases, cameras serve as fixed inputs, not generative targets. We instead re-encode the cameras themselves: we represent rays as pixels (raxels) , dense maps where every pixel encodes the origin and direction of the corresponding camera ray. Because raxels share the spatial structure of video frames, the same spatio-temporal VAE compresses them, and the same diffusion backbone processes them with-out modification. We further introduce decoupled self-cross attention to better couple raxel and video latents. Our model, Rays as Pixels, performs three tasks with a single set of weights: i) Camera Pose Estimation: Recovering camera trajecto-ries from video, without ground-truth poses or external pose estimators. ii) Joint Video and Pose Generation: Generating video and the corresponding camera trajectory jointly from one or more sparse input images. iii) Pose-Conditioned Video Generation: Generating video that follows a user-specified camera trajectory, from sparse input images. We evaluate Rays as Pixels on pose estimation and camera-controlled video generation, and validate that the model’s forward and inverse predictions agree through a closed-loop 
+
+self-consistency test .
+
+2. Related Work 
+
+Reconstructing 3D from Images. Optimization-based frameworks such as COLMAP (Sch ¨onberger & Frahm, 2016b), ORB-SLAM (Mur-Artal & Tardos, 2017), and DROID-SLAM (Teed & Deng, 2021) remain the gold stan-dard for recovering 3D structure and serve as the backbone for creating most real-world 3D datasets. However, these methods rely on dense feature matching, making them brittle under sparse views or limited overlap. Recent feed-forward approaches such as DUSt3R (Wang et al., 2024a), MASt3R (Leroy et al., 2024), VGGT (Wang et al., 2025), Pow3R (Jang et al., 2025) and MapAnything (Keetha et al., 2025) predict 3D pointmaps and camera parameters from sparse views in a single forward pass. While effective at handling sparse inputs, these methods reconstruct rather than gener-ate: they cannot synthesize plausible content for unobserved regions. 
+
+Novel View Synthesis. NeRF (Mildenhall et al., 2020) and its successors such as 3DGS (Kerbl et al., 2023b) achieve high-quality rendering through per-scene optimiza-tion. However, they rely on dense multi-view supervision and lack the generative priors needed to plausibly syn-thesize occluded regions in sparse-view settings. Feed-forward approaches such as LRM (Hong et al., 2023), pixel-Splat (Charatan et al., 2024), and NViST (Jang & Agapito, 2Rays as Pixels: Learning A Joint Distribution of Video and Camera Trajectories TAE 
+
+Encoder 
+
+Inference 
+
+Input Image -> Video + Camera Motion 
+
+Input Images + Camera Motion -> Video 
+
+Input Video -> Camera Motion 
+
+Training 
+
+> … …
+> … …
+> … …
+> … …
+
+Input Images + Videos 
+
++ Raxel Images 
+
+Images +Videos + Ray 
+
+Latents 
+
+Add 
+
+Noise 
+
+DiT 
+
+(w/ Decoupled 
+
+Self-Cross Attn) 
+
+Input Latent Format 
+
+> … …
+> … …
+
+Source Latents Sparse Target Latents Video Target Latents  
+
+> <latexit sha1_base64="49FU7gVWmi3Ps5NFmbg+qrFrzHM=">AAADEXicbVLNbtNAEN6Yv9b8tXDkYhFV4oCiBKHSS6UKOMAFBUHaSokVjddjd5Vd72p3TJVYfgROSPAs3BDXPgFvwpF14oqm7Uj2jr7vm52fncRI4ajf/9MJbty8dfvOxmZ49979Bw+3th8dOl1ajiOupbbHCTiUosARCZJ4bCyCSiQeJbM3DX/0Ba0TuvhMc4OxgrwQmeBAHvq0mLrpVrff6y8tuuoMWqfLWhtOtzt/J6nmpcKCuATnxoO+obgCS4JLrMNJ6dAAn0GOY+8WoNDF1bLWOtrxSBpl2vqvoGiJXoyoQDk3V4lXKqATd5lrwOu4cUnZXlyJwpSEBV8lykoZkY6axqNUWOQk594BboWvNeInYIGTH89aluZuAwu91klFufGHlLAOmzwzUpOrw52LcNOcM8i9OMXMP86y0UrNE+kVdWXzpK78lPeeR///zR0OSYEomvjx8vn225i4evv+QzS0vqwwnJyn9XI/WWWA9gs8RUdtdS0tRWLBzqvc6tK0dV7Hp0DYACuWxGxxzoC1+tT1FJJv3O/K4PJmXHUOX/QGu73djy+7B6/brdlgT9hT9owN2Ct2wN6xIRsxznL2lX1nP4Jvwc/gV/B7JQ06bcxjtmbB2T8IXAEW</latexit>
+
+zs <latexit sha1_base64="WpG0ZC7/i+/TOKM3ZX2Q+fqgHuU=">AAADEXicbVLNbtNAEN6YvxL+WjhysYgqcUCRjarSS6UKOMAFBUHaSokVjddjd5Vd72p33Cqx8gickOBZuCGuPAFvwpF14oqm7Uj2jr7vm52fndRI4SiK/nSCGzdv3b6zcbd77/6Dh482tx4fOl1ZjkOupbbHKTiUosQhCZJ4bCyCSiUepdM3DX90itYJXX6mmcFEQVGKXHAgD32aT04nm72oHy0tvOrErdNjrQ0mW52/40zzSmFJXIJzozgylNRgSXCJi+64cmiAT6HAkXdLUOiSelnrItz2SBbm2vqvpHCJXoyoQTk3U6lXKqATd5lrwOu4UUX5XlKL0lSEJV8lyisZkg6bxsNMWOQkZ94BboWvNeQnYIGTH89aluZuA3O91klNhfGHlLAOmyI3UpNbdLcvwk1zziD34gxz/zjLRms1S6VXLGpbpIvaT3nvRfj/39zhkBSIsokfLZ9vv41J6rfvP4QD68vqdsfnab3cT1YZoP0Sz9BRW11LS5FasLO6sLoybZ3X8RkQNsCKJTGdnzNgrT5zfYXkG/e7El/ejKvO4ct+vNvf/bjTO3jdbs0Ge8qesecsZq/YAXvHBmzIOCvYF/aNfQ++Bj+Cn8GvlTTotDFP2JoFv/8BEF0BGQ==</latexit> 
+
+zv 
+
+> <latexit sha1_base64="+JF6fWaoHM/QrWL3z8Hj0/VKTp8=">AAADEXicbVLNbtNAEN6Yv9b8tXDkYhFV4oCiBKHSS6UKOMAFBUHaSokVjddjd5Vd72p3TJVYfgROSPAs3BDXPgFvwpF14oqm7Uj2jr7vm52fncRI4ajf/9MJbty8dfvOxmZ49979Bw+3th8dOl1ajiOupbbHCTiUosARCZJ4bCyCSiQeJbM3DX/0Ba0TuvhMc4OxgrwQmeBAHvq0mNJ0q9vv9ZcWXXUGrdNlrQ2n252/k1TzUmFBXIJz40HfUFyBJcEl1uGkdGiAzyDHsXcLUOjiallrHe14JI0ybf1XULREL0ZUoJybq8QrFdCJu8w14HXcuKRsL65EYUrCgq8SZaWMSEdN41EqLHKSc+8At8LXGvETsMDJj2ctS3O3gYVe66Si3PhDSliHTZ4ZqcnV4c5FuGnOGeRenGLmH2fZaKXmifSKurJ5Uld+ynvPo///5g6HpEAUTfx4+Xz7bUxcvX3/IRpaX1YYTs7TermfrDJA+wWeoqO2upaWIrFg51VudWnaOq/jUyBsgBVLYrY4Z8Bafep6Csk37ndlcHkzrjqHL3qD3d7ux5fdg9ft1mywJ+wpe8YG7BU7YO/YkI0YZzn7yr6zH8G34GfwK/i9kgadNuYxW7Pg7B8LBwEX</latexit>
+
+zt 
+
+> <latexit sha1_base64="cdrJ7Ms6X/WsVu70L3mrJ7qMO1c=">AAADEXicbVLNbtNAEN6Yv2L+WjhysYgqcUBRjKrSS6Wq5QCXKgjSVkqiaLweu6vsele7Y6rUyiNwQoJn4Ya48gS8CUfWjiuatiPZO/q+b3Z+dhIjhaN+/08nuHX7zt17a/fDBw8fPX6yvvH0yOnSchxyLbU9ScChFAUOSZDEE2MRVCLxOJkd1PzxZ7RO6OITzQ1OFOSFyAQH8tDHw6mbrnf7vX5j0XUnbp0ua20w3ej8HaealwoL4hKcG8V9Q5MKLAkucRGOS4cG+AxyHHm3AIVuUjW1LqJNj6RRpq3/Cooa9HJEBcq5uUq8UgGduqtcDd7EjUrKdiaVKExJWPBloqyUEemobjxKhUVOcu4d4Fb4WiN+ChY4+fGsZKnvNnCuVzqpKDf+kBJWYZNnRmpyi3DzMlw35wxyL04x84/TNFqpeSK9YlHZPFlUfso7r6L///oOh6RAFHX8qHm+3TZmUr19fxgNrC8rDMcXab3cT1YZoN0Cz9BRW11LS5FYsPMqt7o0bZ038SkQ1sCSJTE7v2DAWn3megrJN+53Jb66Gdedo9e9eLu3/WGru7ffbs0ae85esJcsZm/YHnvHBmzIOMvZF/aNfQ++Bj+Cn8GvpTTotDHP2IoFv/8BkpEA6g==</latexit>
+
+Ns 
+
+> <latexit sha1_base64="rDp/AxUCy3chLbPwXnLt69ytkZs=">AAADEXicbVLNbtNAEN6Yv2L+WjhysYgqcUBRjKrSS6Wq5QCXKgjSVkqiaLweu6vsele7Y6rUyiNwQoJn4Ya48gS8CUfWjiuatiPZO/q+b3Z+dhIjhaN+/08nuHX7zt17a/fDBw8fPX6yvvH0yOnSchxyLbU9ScChFAUOSZDEE2MRVCLxOJkd1PzxZ7RO6OITzQ1OFOSFyAQH8tDHwylN17v9Xr+x6LoTt06XtTaYbnT+jlPNS4UFcQnOjeK+oUkFlgSXuAjHpUMDfAY5jrxbgEI3qZpaF9GmR9Io09Z/BUUNejmiAuXcXCVeqYBO3VWuBm/iRiVlO5NKFKYkLPgyUVbKiHRUNx6lwiInOfcOcCt8rRE/BQuc/HhWstR3GzjXK51UlBt/SAmrsMkzIzW5Rbh5Ga6bcwa5F6eY+cdpGq3UPJFesahsniwqP+WdV9H/f32HQ1Igijp+1Dzfbhszqd6+P4wG1pcVhuOLtF7uJ6sM0G6BZ+iora6lpUgs2HmVW12ats6b+BQIa2DJkpidXzBgrT5zPYXkG/e7El/djOvO0etevN3b/rDV3dtvt2aNPWcv2EsWszdsj71jAzZknOXsC/vGvgdfgx/Bz+DXUhp02phnbMWC3/8AlTwA6w==</latexit>
+
+Nt 
+
+> <latexit sha1_base64="jLNOLnHSRJeQCn68itK5cVB3zuY=">AAADEXicbVJLb9NAEN6YVzGvthy5WESVOKAoQVXppVJFOcAFBUHaSkkUjTdjd5V9aXfcKrX8EzghwW/hhrjyC/gnHFknrmjajmTv6Pu+2XnspFYKT93un1Z06/adu/fW7scPHj56/GR9Y/PQm8JxHHAjjTtOwaMUGgckSOKxdQgqlXiUzg5q/ugUnRdGf6a5xbGCXItMcKAAfdKT08l6u9vpLiy57vQap80a6082Wn9HU8MLhZq4BO+Hva6lcQmOBJdYxaPCowU+gxyHwdWg0I/LRa1VshWQaZIZFz5NyQK9HFGC8n6u0qBUQCf+KleDN3HDgrLdcSm0LQg1XybKCpmQSerGk6lwyEnOgwPciVBrwk/AAacwnpUs9d0Wzs1KJyXlNhxSwips88xKQ76Kty7DdXPeIg/iKWbhcRaNlmqeyqCoSpenVRmmvPsy+f+v7/BICoSu44eL59trYsbl2/cfkr4LZcXx6CJtkIfJKgu0p/EMPTXVNbQUqQM3L3NnCtvUeRM/BcIaWLIkZucXDDhnznxHIYXGw670rm7GdefwVae309n5uN3ef9NszRp7xp6zF6zHXrN99o712YBxlrMv7Bv7Hn2NfkQ/o19LadRqYp6yFYt+/wPwMgEN</latexit>
+
+nv
+
+…
+
+> … …
+> … …
+> … …
+
+VAE 
+
+Figure 2. Overview of the Rays as Pixels Framework. Training (Left): We jointly encode video frames and corresponding raxel images 
+
+into a shared latent space using a frozen VAE Encoder. Video inputs undergo 4× temporal compression, while image inputs remain temporally uncompressed. The DiT is trained to co-denoise these latents with Decoupled Self-Cross Attention, conditioned on clean source inputs and noisy sparse target signals. Inference (Right): This joint distribution formulation supports multiple inference modes: (1) generating a synchronized video and motion trajectory from input image(s); (2) performing camera-controlled video generation given a motion trajectory; and (3) recovering camera parameters directly from a input video. 
+
+2024) amortize 3D reconstruction across scenes by train-ing transformers on large multi-view datasets, regressing explicit 3D representations from sparse inputs in a single forward pass. Because these methods regress rather than sample, they produce a single deterministic output and can-not capture the multiple plausible completions that occluded regions admit. 
+
+3D-aware Diffusion Models. Diffusion models have been adapted for 3D tasks through several distinct strate-gies. Early approaches lifted 2D priors to 3D: DreamFu-sion (Poole et al., 2022) uses Score Distillation Sampling to optimize NeRFs from text, while Zero-1-to-3 (Liu et al., 2023a) conditions image diffusion models on relative cam-era poses. More recent multi-view diffusion models (Shi et al., 2024; Liu et al., 2023b; Long et al., 2024; Wu et al., 2024; Gao et al., 2025; Zhou et al., 2025; Liu et al., 2026) generate consistent novel views from sparse inputs by jointly denoising multiple target views. All of these approaches, however, treat camera poses as a fixed conditioning input rather than a generative variable. Unified frameworks for joint pose estimation and view synthesis remain rare; the closest prior work is Matrix3D (Lu et al., 2025), which jointly models RGB, pose, and depth across sparse views using a multi-modal diffusion transformer, then renders final outputs through a 3DGS optimization step. Rays as Pixels differs in two respects. First, we build on a pretrained video diffusion model and adapt it minimally through our raxel representation, inheriting the temporal priors learned from large-scale video data. Second, we generate video frames directly from the diffusion model, without an intermediate 3D representation or post-processing rendering step. 
+
+Video Diffusion Models. Scaling diffusion models to the temporal domain has driven rapid progress in video gener-ation. Foundational works such as Make-A-Video (Singer et al., 2022) and Video LDM (Blattmann et al., 2023) estab-lished the paradigm of inflating 2D priors to achieve tempo-ral consistency. More recently, large-scale commercial sys-tems like Sora (Brooks et al., 2024) and Veo3 (Google Deep-Mind, 2025), alongside open-source models like LTX (Ha-Cohen et al., 2024) and Wan (Wan et al., 2025), have demonstrated that training on massive video data yields high-fidelity, physically plausible results. Beyond pure syn-thesis, pretrained VDMs have emerged as effective priors with surprisingly broad emergent capabilities (Wiedemer et al., 2025). 
+
+Repurposing Generative Models for Different Tasks. Agrowing body of work fine-tunes pretrained generative mod-els for tasks beyond their original objective. Marigold (Ke et al., 2024) adapts Stable Diffusion (Rombach et al., 2021) for monocular depth estimation, and DepthCrafter (Hu et al., 2025) extends this idea to consitent video depth estimation. More broadly, large-scale generative training has been repur-posed for interactive world simulation (Bruce et al., 2024). Recovering camera trajectories is harder than these per-pixel tasks: depth has a one-to-one correspondence with image pixels, while camera trajectories are defined relative to a reference frame and require joint reasoning across the full sequence. Rays as Pixels extends the repurposing pattern to camera geometry by adapting a pretrained video diffusion model to recover camera trajectories from video while pre-serving its generative capability , treating the video prior as a basis for both generation and inference. 
+
+Camera-Controlled Video Diffusion. Existing camera-controlled VDMs differ in how they inject camera informa-tion. Several methods feed camera matrices through learned adapter modules (He et al., 2024; 2025; Bai et al., 2025), 3Rays as Pixels: Learning A Joint Distribution of Video and Camera Trajectories 
+
+while others adopt dense Pl ¨ucker embeddings (Bahmani et al., 2025) or epipolar attention (Xu et al., 2024; Kuang et al., 2024). A separate line of work conditions VDMs on explicit 3D representations such as point clouds or 3D Gaus-sians produced by external estimators (Yu et al., 2025b;a; Liang et al., 2024). Each of these strategies treats cameras as fixed conditioning inputs, often requiring additional adapter layers or external 3D pre-processing. Rays as Pixels instead encodes cameras as raxels, letting the same architecture process them alongside video frames as a generative target rather than a conditioning input. 
+
+3. Methodology 
+
+3.1. Preliminaries and Notations 
+
+At training time, the input consists of three sets of frames: a target video V of N frames, Ns source images, and Nt
+
+sparse target images, with the total N + Ns + Nt held fixed across training examples. The source images provide clean conditioning, the sparse target images keep the input length fixed regardless of how many source images are provided, and the target video provides dense temporal supervision. Each frame I ∈ RH×W ×3 comes with an intrinsic matrix 
+
+K ∈ R3×3 and an extrinsic (camera-to-world) matrix P ∈
+
+R4×4. We use subscripts s and t to denote source and sparse target frames respectively, so source frames have parameters 
+
+(Ks, P s) and sparse target frames have (Kt, P t).We encode the visual inputs into a lower-dimensional latent space using a pretrained VAE encoder E. The target video 
+
+V is encoded into video latents zv ∈ Rnv ×h×w×c, with 4×
+
+temporal compression so that N = 4( nv − 1) + 1 . The source and sparse target images are encoded by the same VAE without temporal compression, yielding source latents 
+
+zs of length Ns and sparse target latents zt of length Nt.The source latents zs remain clean throughout training and serve as conditioning, while the sparse target latents zt are noised and supervised together with the video latents zv .
+
+3.2. Representing Rays as Pixels 
+
+To make camera parameters compatible with a pretrained video diffusion model, we represent each camera as a raxel image : a dense per-pixel map where every pixel encodes the ray origin and direction associated with that pixel. Because raxel images share the same 3-channel spatial structure as RGB video frames, we can encode them using the same pretrained VAE encoder E, placing raxel images and their corresponding video frames in a shared latent space. Table 1 compares raxels with alternative camera encodings: low-dimensional representations such as camera matrices lack spatial structure, Pl ¨ucker embeddings and raymaps (used in Depth Anything 3 (Lin et al., 2025)) are dense but their 6 channels are incompatible with 3-channel pretrained VAEs, and pointmaps proposed by DUSt3R (Wang et al., 2024a) require per-pixel depth that is not available at inference time. 
+
+Table 1. Comparison of Camera Representations. We define the ray direction d = X/ ∥X∥, where X denotes the unprojected pixel coordinates obtained from the intrinsic matrix K. R and T denote rotation and translation, D denotes depth, and × denotes the cross product. Raxels are the only representation that matches both the spatial structure and the 3-channel input format of a pretrained video diffusion VAE.                                 
+
+> Representation Formulation Dimension Limitation
+> Camera Matrices K, R, T (4 ,4) spatially unaligned Pl¨ ucker Embedding [Rd, R d×T](H, W, 6) input channel mismatch Raymap [T, R d](H, W, 6) input channel mismatch Pointmap RX ·D+T(H, W, 3) depth required
+> Raxels (Ours) Rd+T(H, W, 3) —
+
+Coordinate Canonicalization. To ensure the model learns generalizable relative poses rather than memorizing absolute global coordinates, we canonicalize the scene to a randomly selected reference frame, indexed s. We then transform the extrinsic matrices of all video, source, and target frames into its coordinate system: 
+
+P (j) 
+
+> rel
+
+= P −1 
+
+> s
+
+Pj . (1) This places the reference camera at the origin with identity rotation ( P (s) 
+
+> rel
+
+= I), decoupling the camera parameters from the arbitrary global coordinate frame of the original dataset. 
+
+Raxel Image Construction. For every pixel coordinate 
+
+u = [ u, v ]⊺ in a frame Ij , we un-project it to the camera coordinate system using the intrinsic matrix Kj , normalize the resulting direction, and then transform it to the canonical world space using the relative extrinsic P (j) 
+
+> rel
+
+, composed of rotation R(j) 
+
+> rel
+
+and translation T (j) 
+
+> rel
+
+. This yields the world-space ray direction d ∈ R3 and origin o ∈ R3:
+
+d = R(j)
+
+> rel
+
+K−1 
+
+> j
+
+˜u
+
+K−1 
+
+> j
+
+˜u 2
+
+, o = T (j) 
+
+> rel
+
+, (2) where ˜u is the homogeneous pixel coordinate. We de-fine the raxel at coordinate u as the vector sum d + o,a compact 3-channel encoding that combines the ray’s di-rection and origin into a single RGB-compatible represen-tation. These per-pixel vectors form the dense raxel image 
+
+Rj ∈ RHr ×Wr ×3, which we compute on a coarser pixel grid ( Hr = H/ 2, W r = W/ 2) to reduce token overhead. We then encode each raxel image using the shared VAE encoder E, producing latents rv , r s, r t that spatially align with the video latents zv , z s, z t. Because raxel latents and video latents share the same spatial grid, we apply the same Rotary Positional Embedding (RoPE) (Su et al., 2021) to both, with an additional learnable modality embedding to distinguish video latents from raxel latents. 4Rays as Pixels: Learning A Joint Distribution of Video and Camera Trajectories 
+
+Input Image Kaleido Ours Ground Truth   
+
+> Figure 3. Qualitative Results on DL3DV. We visualize the NVS performance of our model against the state-of-the-art baseline Kaleido (Liu et al., 2026) on DL3DV. Given a single reference image (first column), our model synthesizes target views (third column) that exhibit superior structural fidelity and lighting consistency, closely matching the ground truth (fourth column). Note that ours predicts the camera parameters by itself.
+
+3.3. Joint Denoising via Flow Matching 
+
+Given the visual latents z ∈ { zv , z s, z t} and their corre-sponding ray latents r ∈ { rv , r s, r t}, we model the joint distribution p(z, r ). Previous methods typically learn the conditional distributions p(z|r) for view synthesis or p(r|z)
+
+for pose estimation; we instead learn the joint density, which lets a single model recover camera trajectories from video, generate video from camera trajectories, and jointly gener-ate both from input images. 
+
+Flow Matching Formulation. We adopt Flow Match-ing (Lipman et al., 2023) as our generative framework: it integrates cleanly with our pretrained backbone and pro-vides straight-line sampling paths that require fewer steps than DDPM-style diffusion at inference. Let x = [ z, r ]
+
+denote the concatenation of visual and ray latents. We de-fine a time-dependent probability density path pt(x) that transforms a Gaussian prior p0(x) = N (0, I) at t = 0 
+
+into the data distribution p1(x) ≈ pdata (z, r ) at t = 1 . The conditional probability path is a linear interpolation: 
+
+xt = (1 − t)x0 + tx 1, t ∈ [0 , 1] , x0 ∼ p0. (3) This corresponds to a constant conditional velocity field 
+
+ut(x | x1) = x1 − x0, guiding the flow from noise to data along a straight line. 
+
+Unified Tokenization. We concatenate visual latents z
+
+and ray latents r along the sequence dimension. Because the two modalities occupy distinct token positions, we can apply asymmetric inference schedules: for example, fix-ing r at t = 1 for camera-conditioned video generation while denoising z. We find that r converges much faster than z during sampling, and a few denoising steps on r
+
+achieves comparable results to multi-step inference on self-consistency test (Table 3). 
+
+Training Objective. We parameterize the velocity field with a neural network vθ (xt, t ) that predicts the target veloc-ity ut = x1 − x0. The velocity vector has both a magnitude and a direction; while the MSE loss penalizes both jointly, we add a cosine similarity term that isolates the direction component:           
+
+> L(θ) = Et,x 0,x 1
+> 
+> ∥vθ(xt, t )−ut∥2+λ
+> 
+> 1−vθ(xt, t )⊤ut
+> ∥vθ(xt, t )∥ ∥ ut∥
+> 
+> ,
+> (4)
+
+where λ weights the cosine term (set to 0.5 in our ex-periments). We find that the cosine term improves self-consistency in our ablations (Table 3). 
+
+3.4. Decoupled Self-Cross Attention 
+
+While ray latents r and video latents z inhabit the same VAE latent space, they have different structural characteris-tics. Visual latents z encode dense, high-frequency texture, while ray latents r encode smooth camera ray information anchored to a canonical reference frame. The two modal-ities also differ in their temporal profiles: visual content can change rapidly between frames due to camera motion, occlusion, and lighting, while the underlying camera trajec-tory evolves smoothly relative to the reference frame s. We 5Rays as Pixels: Learning A Joint Distribution of Video and Camera Trajectories Self Attention     
+
+> (Video to Video)
+> Video
+> Latents
+> Q
+> Video
+> Latents
+> Cross Attention
+> (Video to Ray)
+> Feed Forward
+> (Video)
+> Video
+> Latents KV
+> Q
+> Ray
+> Latents KV
+> Self Attention
+> (Ray to Ray)
+> Ray
+> Latents
+> Q
+> Ray
+> Latents
+> Cross Attention
+> (Ray to Video)
+> Feed Forward
+> (Ray)
+> Ray
+> Latents KV
+> Q
+> Video
+> Latents KV
+> Video Branch
+> Ray Branch
+
+Figure 4. Decoupled Self-Cross Attention. We replace standard self-attention in the video diffusion backbone with a Decoupled Self-Cross Attention block that processes video and ray latents in parallel branches. Within each branch, intra-modal self-attention 
+
+operates on tokens of the same modality, followed by inter-modal cross-attention where queries from one modality attend to keys and values from the other. This separation encourages stable training and allows the video and ray latents to attend to each other. 
+
+find that applying a single global self-attention across the concatenated sequence under-utilizes this asymmetry: the model tends to fit each modality somewhat independently rather than learning rich cross-modal dependencies. To address this, we replace the standard self-attention with a Decoupled Self-Cross Attention . Each transformer block applies attention in two stages: i) Self-Attention (Intra-Modal): we apply self-attention separately to z and r. This enforces consistency within each modality, ensuring tempo-ral smoothness in video frames and trajectory coherence in ray paths, without interference between modalities. ii) Sym-metric Cross-Attention (Inter-Modal): cross-attention layers then exchange information between modalities, with visual tokens attending to ray tokens ( z ← r) and ray to-kens attending to visual tokens ( r ← z). This guides the video generation to follow the predicted camera rays while allowing the ray latents to refine their trajectory based on visual context. One subtlety: without positional encoding, cross-attention treats keys and values as an unordered set. Because raxel la-tents and video latents are spatially aligned at every position, we need to preserve this alignment in the cross-attention. We apply RoPE to both queries and keys, ensuring that each visual token attends to its spatially corresponding raxel token (and vice versa). 
+
+Probabilistic Interpretation. This decomposition has a clean probabilistic motivation. By the chain rule of proba-bility, the joint log-likelihood log p(z, r ) factorizes in two equivalent ways: 
+
+log p(z, r ) = log p(r)
+
+| {z }
+
+> Self-Attn (r)
+
++ log p(z|r)
+
+| {z }
+
+> Cross-Attn (z←r)
+
+≡ log p(z)
+
+| {z }
+
+> Self-Attn (z)
+
++ log p(r|z)
+
+| {z }
+
+> Cross-Attn (r←z)
+
+.
+
+(5) 
+
+By decoupling these operations, we encourage the model to learn the marginal priors (via self-attention) and the condi-tional dependencies (via cross-attention) separately. This is consistent with a related observation from Seeing without Pixels (Xue et al., 2025), which shows that camera informa-tion can be incorporated into video models as a lightweight modality on top of the existing visual backbone. 
+
+3.5. From Raxels to Camera Parameters Pose Recovery via Procrustes Alignment. We decode the ray latents rv , r s, r t using the pretrained VAE decoder, obtaining reconstructed raxel images ˆRv , ˆRs, ˆRt. Recall that raxel images are expressed in a canonicalized coordi-nate system anchored at the source frame Is (Section 3.2). The reference raxel image ˆRs represents the bundle of cam-era rays at the identity pose ( P (s) 
+
+> rel
+
+= I), and any other frame 
+
+k contains the same bundle transformed by the relative pose 
+
+P (k) 
+
+> rel
+
+. We recover this pose by aligning the predicted bun-dle ˆRk to the reference bundle ˆRs as a rigid registration problem: 
+
+ˆP (k) 
+
+> rel
+
+= argmin  
+
+> P∈SE (3)
+
+X
+
+> i,j
+
+ˆR(i,j ) 
+
+> k
+
+− P ˆR(i,j )
+
+> s
+> 2
+
+, (6) where (i, j ) ranges over the spatial grid of the raxel im-age. This admits a closed-form solution via Orthogonal Procrustes (Luo & Hancock, 1999; Br´ egier, 2021). 
+
+Focal Length Recovery via Median-of-Ratios. Once 
+
+ˆP (k) 
+
+> rel
+
+is recovered, we transform ˆRk back into its own cam-era coordinate system by applying the inverse pose, yielding per-pixel local ray vectors d(i,j ) 
+
+> local
+
+= ( ˆP (k) 
+
+> rel
+
+)−1 ˆR(i,j ) 
+
+> k
+
+. Under a pinhole camera model, each local ray (x, y, z ) relates to its centered pixel coordinate (u, v ) by u/f x = x/z and 
+
+v/f y = y/z . To recover the focal lengths robustly against decoding noise, we use the Median-of-Ratios estimator: 
+
+ˆfx = median 
+
+> i,j
+
+ ui,j · ˆzi,j 
+
+ˆxi,j 
+
+
+
+, ˆfy = median 
+
+> i,j
+
+ vi,j · ˆzi,j 
+
+ˆyi,j 
+
+
+
+(7) 
+
+where (ui,j , v i,j ) are pixel coordinates centered at the prin-cipal point (assumed to be the image center). 
+
+4. Experiments 
+
+Architecture Design. We build on the Wan 2.1 14B Text-to-Video model (Wan et al., 2025). We choose the T2V checkpoint rather than the Image-to-Video (I2V) variant because I2V is post-trained from T2V with a fixed frame ordering that conflicts with our flexible source-frame setup. We replace the standard self-attention in each transformer block with our decoupled self-cross attention (Section 3.4), and add a dedicated ray branch consisting of independent 6Rays as Pixels: Learning A Joint Distribution of Video and Camera Trajectories 
+
+Input Image Arc Left 
+
+Input Image Arc Right       
+
+> Figure 5. Qualitative Results on DL3DV-140 following the predefined camera trajectory. We visualize pose-conditioned video generation given a single input image from DL3DV-140 (Ling et al., 2024) and a specific camera path. These scenes present distinct challenges: the top example features a cluttered layout with an off-center subject, while the bottom example contains highly reflective metallic surfaces. Top: The model renders the scene from “Arc Left” camera movement while maintaining the geometric consistency of sofa and many objects within a frame. Bottom: The model is capable of synthesizing the scene from “Arc Right” trajectory, notably our model can synthesize view-dependent reflections on the metallic surfaces while following the camera path.
+
+layer normalizations, feed-forward networks, and linear embedding layers for the ray latents. The ray branch is initialized from the corresponding pretrained video layers and adds 6B parameters, for a total of 20B. We fine-tune all parameters during training. 
+
+Training Datasets and Strategies. We train on two real-world datasets: RealEstate10K (Re10K) (Zhou et al., 2018) and DL3DV (Ling et al., 2024). The camera parameters for these datasets, obtained from ORB-SLAM and COLMAP respectively, are reconstructed at arbitrary per-scene scales. We align all scenes to a common metric scale using (Hu et al., 2024; Keetha et al., 2025). We resize and center-crop both datasets to 480 × 832 
+
+while preserving the original aspect ratio. To encourage scene–trajectory disentanglement, we apply time-reversal augmentation: each scene’s trajectory is augmented with its reverse, giving the model two distinct trajectories per scene during training. 
+
+Qualitative Results. Figures 1, 3, 5, and 6 together demonstrate the visual quality and versatility of our model. Figure 1 shows the model generating consistent frames from artwork and our test set following pre-defined camera tra-jectories, as well as predicting camera trajectories within the same model. Figure 3 compares Rays as Pixels against Kaleido (Liu et al., 2026) on DL3DV-140 test set, where our model produces better results. Figure 5 shows our model following predefined camera trajectories on complex scenes from DL3DV-140 test set: the top row demonstrates consis-tency in cluttered spatial arrangements, and the bottom row shows view-dependent effects such as specular reflections on metallic surfaces. Figure 6 visualizes the cycle self-consistency test under different ablation conditions, where replacing raxels with Pl ¨ucker embeddings causes the most visible degradation. Unlike I2V models, our approach is flexible in the temporal position of the input image, which can serve as the first, middle, or last frame of the generated sequence. 
+
+4.1. Self-Consistency and Ablation Study 
+
+Our model learns a joint distribution over video latents 
+
+z and camera trajectories r, which enables a test that no conditional-only model can pass: cycle self-consistency . A model that learns only p(z | r) or only p(r | z) cannot round-trip through both directions, because its forward and inverse predictions are not constrained to agree. We use cycle consistency both as a direct evaluation of our joint distribution learning and as the metric for our ablation study. 
+
+Cycle Setup. We sample a ground-truth pair (z, r ) and select three source images from z as conditioning. We first predict the camera trajectory by sampling r′ ∼ p(r | z),then re-generate the video conditioned on the predicted trajectory and the three source images, z′ ∼ p(z | r′, I s).A self-consistent model satisfies two properties: (i) r′ is close to the ground-truth trajectory r, and (ii) z′ is close in distribution to z. We measure (i) with rotation error Rerr and translation error Terr computed against ground truth, and (ii) with FID and FVD on the re-generated set. We evaluate on the DL3DV-140 test set, sampled at 12 FPS directly from the raw videos rather than the standard DL3DV-140 COLMAP split, which uses non-uniform subsampling. 
+
+Ablation Study. We ablate three design choices using cycle self-consistency as the metric (Table 2): the decoupled self-cross attention (DSCA), the cosine similarity loss, and the choice of ray representation. For the ray-representation ablation, we replace raxels with Pl ¨ucker embeddings: since 7Rays as Pixels: Learning A Joint Distribution of Video and Camera Trajectories 
+
+Pl¨ ucker No DSCA No Cosine Ours Ground Truth    
+
+> Figure 6. Self-Consistency and Ablation Study. Re-generated frames from the cycle self-consistency test on three scenes from DL3DV. From left to right: with Pl ¨ucker embeddings replacing raxels, without DSCA, without cosine similarity loss, our full model, and ground truth. Replacing raxels with Pl¨ ucker embeddings causes the most severe degradation, consistent with the quantitative results in Table 2.
+
+Pl ¨ucker embeddings have 6 channels and cannot be encoded by the pretrained VAE, we instead embed them directly via an MLP and concatenate the result with the VAE-encoded video latents. 
+
+Results. Table 2 shows that the Pl ¨ucker-embedding vari-ant dramatically underperforms raxels across every metric: FID (Heusel et al., 2017), FVD (Unterthiner et al., 2018; Skorokhodov et al., 2022), rotation error, and translation error. These gaps hold despite the architecture being oth-erwise identical except for the ray encoding. The raxel representation, by encoding both ray origin and direction in a form compatible with the pretrained VAE, gives the model a substantially better starting point than Pl ¨ucker’s 6-channel input-level embedding. Removing the cosine similarity loss or DSCA also hurts self-consistency, though less dramatically across every metric. The metric-scale training data provides a well-conditioned signal for cross-modal learning, making DSCA a useful refinement rather than a strict requirement. Still, the raxel representation and metric-scale training are the primary load-bearing design choices.                            
+
+> Table 2. Self-Consistency and Ablation Study. We evaluate cycle consistency on DL3DV (sampled at 12 FPS from raw videos) with three source images. Each row shows the effect of removing or replacing one design choice. Replacing raxels with Pl ¨ucker embeddings degrades all four metrics by large margins, while removing DSCA or the cosine similarity loss produces smaller but consistent drops. Lower is better for all metrics. Method FID ↓FVD ↓Rerr ↓Terr ↓
+> Ours 7.33 68.17 0.020 0.018
+> w/o DSCA 8.69 77.08 0.048 0.052 w/o Cosine Sim. Loss 9.48 97.84 0.058 0.094 Pl¨ ucker Embedding 21.97 333.56 0.241 0.430
+
+4.2. Camera Pose Estimation Experimental Setup. We evaluate pose estimation on three benchmarks: 975 quality-filtered clips from Re10K (Zhou et al., 2018), all 299 test clips from DL3DV-140 (Ling et al., 2024), and all 211 clips from Tanks and Temples (T&T) (Knapitsch et al., 2017). These bench-marks cover two distinct regimes: Re10K and T&T con-tain temporally continuous video clips where consecutive frames are close viewpoints, while DL3DV-140 follows the standard COLMAP subsampling convention, produc-ing wide-baseline frames with large pose differences. Our model is trained on relatively continuous video sequences, so DL3DV-140 probes generalization to a sampling regime different from training. We compare against VGGT (Wang et al., 2025), a feed-forward pose estimator trained on wide-baseline multi-view data, evaluated on the same frames for fair comparison. We report mean Relative Rotation Accuracy (mRRA@30), computed over all frames in each clip. Note that we do not report Relative Translation Accuracy: both the ground-truth camera parameters and VGGT are scale-ambiguous, so angular translation distance is very sensitive to small changes near the reference frame Is.                       
+
+> Table 3. Camera Pose Estimation. Mean Relative Rotation Accuracy (mRRA@30, ×100 ) across diffusion step counts on three benchmarks, with VGGT (Wang et al., 2025) as a reference. Our model reaches its best accuracy at 2 diffusion steps across all benchmarks. Higher is better. Dataset 1 step 2 steps 5 steps 20 steps VGGT Re10K 95.39 95.91 95.08 94.78 98.07
+> DL3DV-140 82.78 88.37 87.30 85.90 91.86
+> T&T 92.34 93.51 93.43 93.01 97.70
+
+8Rays as Pixels: Learning A Joint Distribution of Video and Camera Trajectories 
+
+Results. Table 3 shows two main findings. First, across all three benchmarks, our model reaches its best rotation accuracy at 2 diffusion steps, with further steps produc-ing slightly worse results. The pattern is consistent: 1step underperforms, 2 steps is the peak, and 5 or 20 steps degrade gradually. This is consistent with the observa-tion in Section 3.3 that ray latents converge much faster than video latents under joint flow matching. Second, VGGT (Wang et al., 2025) achieves higher rotation accuracy across all benchmarks. This is expected: VGGT predicts 3D pointmaps, which inherently encode depth and camera poses, so pose parameters can be derived directly from the pointmap output. Our model predicts videos, which do not contain explicit geometric information; camera parameters are learned as a separate modality (raxels) jointly with video generation but without explicit 3D representations. 
+
+4.3. Camera-Controlled Video Generation Experimental Setup. We evaluate visual quality FID (Heusel et al., 2017) and temporal coherence FVD (Un-terthiner et al., 2018; Skorokhodov et al., 2022) on Re10K, DL3DV-140, and Tanks and Temples, following the proto-cols of Wonderland (Liang et al., 2024) and Kaleido (Liu et al., 2026), using VGGT (Wang et al., 2025) to validate the trajectory adherence. Since the ground-truth trajectories are scale-ambiguous, we use the variant of our model trained with per-scene normalized camera trajectories for this evaluation. We compare against MotionCtrl (Wang et al., 2023) and VD3D (Bahmani et al., 2025), which condition video diffusion models on camera matrices and Pl ¨ucker embeddings; ViewCrafter (Yu et al., 2025b) and Wonderland (Liang et al., 2024), which integrate explicit 3D representations; and Kaleido (Liu et al., 2026), an image-based generative novel view synthesis model with camera positional embedding. 
+
+Results. Table 4 shows that our model achieves the best FID and FVD on all three benchmarks without using ex-plicit 3D representations or camera-specific positional em-beddings. 
+
+4.4. Limitations 
+
+Several limitations remain. First, our training data consists of static scenes with smooth camera trajectories (Re10K and DL3DV), so the model may not generalize well to rapid camera motion or scenes containing dynamic objects. Sec-ond, the 4× temporal compression of the VAE compresses consecutive frames into shared latent positions, which limits the temporal resolution at which we can recover camera poses. Third, our approach currently uses image condition-ing only; integrating text-based control alongside camera control is a natural extension that we leave to future work.                                                                                        
+
+> Table 4. Quantitative Comparison of Camera-Controlled Video Generation Evaluations. We evaluate visual quality (FID ↓, FVD
+> ↓) and trajectory adherence ( Rerr ↓,Terr ↓) across three bench-marks, and achieve the best performance on visual qualities (FID, FVD) with temporal coherence on generated videos. Method Metrics
+> Dataset FID ↓FVD ↓Rerr ↓Terr ↓
+> RealEstate10K
+> MotionCtrl 22.58 229.34 0.231 0.794 VD3D 21.40 187.55 0.053 0.126 ViewCrafter 20.89 203.71 0.054 0.152 Wonderland 16.16 153.48 0.046 0.093
+> Kaleido 18.04 103.03 0.049 0.181 Ours 15.76 98.72 0.056 0.115
+> DL3DV-140
+> MotionCtrl 25.58 248.77 0.467 1.114 VD3D 22.70 232.97 0.094 0.237 ViewCrafter 20.55 210.62 0.092 0.243 Wonderland 17.74 169.34 0.061 0.130 Kaleido 41.18 458.60 0.011 0.026
+> Ours 9.73 102.52 0.098 0.192
+> Tanks and Temples
+> MotionCtrl 30.17 289.62 0.834 1.501 VD3D 24.33 244.18 0.117 0.292 ViewCrafter 22.41 230.56 0.125 0.306 Wonderland 19.46 189.32 0.094 0.172 Kaleido 14.84 245.09 0.016 0.086
+> Ours 13.02 187.03 0.105 0.192
+
+5. Conclusion 
+
+Camera pose estimation and camera-controlled video gener-ation have traditionally been treated as separate tasks, with pose estimators and video generators trained and evaluated independently. We presented Rays as Pixels, a unified frame-work that learns the joint distribution of video frames and camera trajectories in a single model. By encoding cam-era parameters as dense raxel images compatible with a pretrained video VAE, and by introducing decoupled self-cross attention to couple the two modalities, we enable joint denoising of video and ray latents. Our experiments show visual quality on camera-controlled video generation benchmarks, competitive pose estimation accuracy. We also demonstrate strong cycle self-consistency: the model can predict a camera trajectory from a video and re-generate the video from its own predicted trajectory with minimal degra-dation, a property that single conditional models cannot achieve. More broadly, we view the raxel representation as an in-stance of a general pattern: a non-visual modality (such as camera, segmentation) re-encoded as an image-compatible tensor that shares a pretrained visual backbone’s latent space. More speculatively, the joint distribution of visual observa-tions and camera motion that our model captures is one of the primitives relevant to embodied perception, where agents must reason about both what they see and how they are moving through the world. 9Rays as Pixels: Learning A Joint Distribution of Video and Camera Trajectories 
+
+Impact Statement 
+
+This work models the joint distribution of video sequences and camera trajectories, with applications to camera-controlled video generation, pose estimation, and view syn-thesis. Like other advances in generative video models, our method could be misused to create misleading or fabri-cated content, although it does not introduce risks beyond those already present in existing video generation systems. We support continued work on detection tools, provenance tracking, and safety protocols to address these concerns as generative models become more capable. 
+
+References 
+
+Bahmani, S., Skorokhodov, I., Siarohin, A., Menapace, W., Qian, G., Vasilkovsky, M., Lee, H.-Y., Wang, C., Zou, J., Tagliasacchi, A., et al. Vd3d: Taming large video diffusion transformers for 3d camera control. In Pro-ceedings of the International Conference on Learning Representations (ICLR) , 2025. Bai, J., Xia, M., Fu, X., Wang, X., Mu, L., Cao, J., Liu, Z., Hu, H., Bai, X., Wan, P., et al. Recammaster: Camera-controlled generative rendering from a single video. In 
+
+Proceedings of the International Conference on Computer Vision (ICCV) , 2025. Blattmann, A., Rombach, R., Ling, H., Dockhorn, T., Kim, S. W., Fidler, S., and Kreis, K. Align your latents: High-resolution video synthesis with latent diffusion models. In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR) , 2023. Br ´egier, R. Deep regression on manifolds: A 3d rotation case study. In Proceedings of the International Confer-ence on 3D Vision (3DV) , 2021. Brooks, T., Peebles, B., Holmes, C., DePue, W., Guo, Y., Jing, L., Schnurr, D., Taylor, J., Luhman, T., Luhman, E., Ng, C., Wang, R., and Ramesh, A. Video generation models as world simulators. 2024. Bruce, J., Dennis, M. D., Edwards, A., Parker-Holder, J., Shi, Y., Hughes, E., Lai, M., Mavalankar, A., Steigerwald, R., Apps, C., et al. Genie: Generative interactive environ-ments. In Proceedings of the International Conference on Machine Learning (ICML) , 2024. Charatan, D., Li, S., Tagliasacchi, A., and Sitzmann, V. pix-elsplat: 3d gaussian splats from epipolar feature pairs for scalable generalizable 3d reconstruction. In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR) , 2024. Gao, R., Holynski, A., Henzler, P., Brussee, A., Martin Bru-alla, R., Srinivasan, P., Barron, J., and Poole, B. Cat3d: Create anything in 3d with multi-view diffusion mod-els. Advances in Neural Information Processing Systems (NeurIPS) , 2025. Google DeepMind. Veo 3 technical report. Technical report, Google DeepMind, 2025. URL https://storage. googleapis.com/deepmind-media/veo/ Veo-3-Tech-Report.pdf .HaCohen, Y., Chiprut, N., Brazowski, B., Shalem, D., Moshe, D., Richardson, E., Levin, E., Shiran, G., Zabari, N., Gordon, O., Panet, P., Weissbuch, S., Kulikov, V., Bitterman, Y., Melumian, Z., and Bibi, O. Ltx-video: Realtime video latent diffusion. arXiv preprint arXiv:2501.00103 , 2024. He, H., Xu, Y., Guo, Y., Wetzstein, G., Dai, B., Li, H., and Yang, C. Cameractrl: Enabling camera control for text-to-video generation. arXiv preprint arXiv:2404.02101 ,2024. He, H., Yang, C., Lin, S., Xu, Y., Wei, M., Gui, L., Zhao, Q., Wetzstein, G., Jiang, L., and Li, H. Cameractrl ii: Dy-namic scene exploration via camera-controlled video dif-fusion models. arXiv preprint arXiv:2503.10592 , 2025. Heusel, M., Ramsauer, H., Unterthiner, T., Nessler, B., and Hochreiter, S. Gans trained by a two time-scale update rule converge to a local nash equilibrium. In Advances in Neural Information Processing Systems , volume 30, 2017. Hong, Y., Zhang, K., Gu, J., Bi, S., Zhou, Y., Liu, D., Liu, F., Sunkavalli, K., Bui, T., and Tan, H. Lrm: Large recon-struction model for single image to 3d. In Proceedings of the International Conference on Learning Representa-tions (ICLR) , 2023. Hu, M., Yin, W., Zhang, C., Cai, Z., Long, X., Chen, H., Wang, K., Yu, G., Shen, C., and Shen, S. Met-ric3d v2: A versatile monocular geometric foundation model for zero-shot metric depth and surface normal es-timation. IEEE Transactions on Pattern Analysis and Machine Intelligence , 46(12):10579–10596, 2024. doi: 10.1109/TPAMI.2024.3444912. Hu, W., Gao, X., Li, X., Zhao, S., Cun, X., Zhang, Y., Quan, L., and Shan, Y. Depthcrafter: Generating consistent long depth sequences for open-world videos. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pp. 2005–2015, 2025. Jang, W. and Agapito, L. Nvist: In the wild new view synthesis from a single image with transformers. In Pro-ceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR) , 2024. 10 Rays as Pixels: Learning A Joint Distribution of Video and Camera Trajectories 
+
+Jang, W., Weinzaepfel, P., Leroy, V., Agapito, L., and Re-vaud, J. Pow3r: Empowering unconstrained 3d recon-struction with camera and scene priors. In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR) , 2025. Ke, B., Obukhov, A., Huang, S., Metzger, N., Daudt, R. C., and Schindler, K. Repurposing diffusion-based image generators for monocular depth estimation. In Proceed-ings of the IEEE/CVF conference on computer vision and pattern recognition , pp. 9492–9502, 2024. Keetha, N., M ¨uller, N., Sch ¨onberger, J. L., Porzi, L., Zhang, Y., Fischer, T., Knapitsch, A., Zauss, D., Weber, E., An-tunes, N., Luiten, J., Lopez-Antequera, M., Bul `o, S. R., Richardt, C., Ramanan, D., Scherer, S., and Kontschieder, P. Mapanything: Universal feed-forward metric 3d recon-struction. arXiv preprint arXiv:2509.13414 , 2025. URL 
+
+https://arxiv.org/abs/2509.13414 .Kerbl, B., Kopanas, G., Leimk ¨uhler, T., and Drettakis, G. 3d gaussian splatting for real-time radiance field rendering. 
+
+ACM Transactions on Graphics (TOG) , 2023a. Kerbl, B., Kopanas, G., Leimk ¨uhler, T., and Drettakis, G. 3d gaussian splatting for real-time radiance field rendering. 
+
+ACM Transactions on Graphics , 2023b. Knapitsch, A., Park, J., Zhou, Q.-Y., and Koltun, V. Tanks and temples: Benchmarking large-scale scene reconstruc-tion. ACM Transactions on Graphics (TOG) , 2017. Kuang, Z., Cai, S., He, H., Xu, Y., Li, H., Guibas, L., and Wetzstein, G. Collaborative video diffusion: Consis-tent multi-video generation with camera control. arXiv preprint arXiv:2405.17414 , 2024. Leroy, V., Cabon, Y., and Revaud, J. Grounding image matching in 3d with mast3r. In European conference on computer vision , pp. 71–91. Springer, 2024. Liang, H., Cao, J., Goel, V., Qian, G., Korolev, S., Ter-zopoulos, D., Plataniotis, K., Tulyakov, S., and Ren, J. Wonderland: Navigating 3d scenes from a single image. 
+
+arXiv preprint arXiv:2412.12091 , 2024. Lin, H., Chen, S., Liew, J. H., Chen, D. Y., Li, Z., Shi, G., Feng, J., and Kang, B. Depth anything 3: Recovering the visual space from any views. arXiv preprint arXiv:2511.10647 , 2025. URL https:// arxiv.org/abs/2511.10647 .Ling, L., Sheng, Y., Tu, Z., Zhao, W., Xin, C., Wan, K., Yu, L., Guo, Q., Yu, Z., Lu, Y., et al. Dl3dv-10k: A large-scale scene dataset for deep learning-based 3d vision. In 
+
+Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR) , 2024. Lipman, Y., Chen, R. T., Ben-Hamu, H., Nickel, M., and Le, M. Flow matching for generative modeling. In Pro-ceedings of the International Conference on Learning Representations (ICLR) , 2023. Liu, R., Wu, R., Van Hoorick, B., Tokmakov, P., Zakharov, S., and Vondrick, C. Zero-1-to-3: Zero-shot one image to 3d object. In Proceedings of the International Conference on Computer Vision (ICCV) , 2023a. Liu, S., Ng, K. W., Jang, W., Guo, J., Han, J., Liu, H., Douratsos, Y., P ´erez, J. C., Zhou, Z., Phung, C., et al. Scaling sequence-to-sequence generative neural render-ing. Proceedings of the International Conference on Learning Representations (ICLR) , 2026. Liu, Y., Lin, C., Zeng, Z., Long, X., Liu, L., Komura, T., and Wang, W. Syncdreamer: Generating multiview-consistent images from a single-view image. arXiv preprint arXiv:2309.03453 , 2023b. Long, X., Guo, Y.-C., Lin, C., Liu, Y., Dou, Z., Liu, L., Ma, Y., Zhang, S.-H., Habermann, M., Theobalt, C., et al. Wonder3d: Single image to 3d using cross-domain dif-fusion. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pp. 9970–9980, 2024. Lu, Y., Zhang, J., Fang, T., Nahmias, J.-D., Tsin, Y., Quan, L., Cao, X., Yao, Y., and Li, S. Matrix3d: Large pho-togrammetry model all-in-one. Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR) , 2025. Luo, B. and Hancock, E. R. Procrustes alignment with the em algorithm. In CAIP , 1999. Mildenhall, B., Srinivasan, P. P., Tancik, M., Barron, J. T., Ramamoorthi, R., and Ng, R. Nerf: Representing scenes as neural radiance fields for view synthesis. In Proceed-ings of the European Conference on Computer Vision (ECCV) , 2020. Mur-Artal, R. and Tardos, J. D. ORB-SLAM2: An open-source SLAM system for monocular, stereo, and RGB-D cameras. IEEE Transactions on Robotics , 33(5):1255– 1262, 2017. Poole, B., Jain, A., Barron, J. T., and Mildenhall, B. Dream-fusion: Text-to-3d using 2d diffusion. arXiv preprint arXiv:2209.14988 , 2022. Rombach, R., Blattmann, A., Lorenz, D., Esser, P., and Ommer, B. High-resolution image synthesis with latent diffusion models, 2021. Sch ¨onberger, J. L. and Frahm, J.-M. Structure-from-motion revisited. In Proceedings of the IEEE Conference on Com-puter Vision and Pattern Recognition (CVPR) , 2016a. 11 Rays as Pixels: Learning A Joint Distribution of Video and Camera Trajectories 
+
+Sch ¨onberger, J. L. and Frahm, J.-M. Structure-from-motion revisited. In Proceedings of the IEEE Conference on Com-puter Vision and Pattern Recognition (CVPR) , 2016b. Shi, Y., Wang, P., Ye, J., Long, M., Li, K., and Yang, X. Mvdream: Multi-view diffusion for 3d generation. In 
+
+Proceedings of the International Conference on Learning Representations (ICLR) , 2024. Singer, U., Polyak, A., Hayes, T., Yin, X., An, J., Zhang, S., Hu, Q., Yang, H., Ashual, O., Gafni, O., Parikh, D., Gupta, S., and Taigman, Y. Make-a-video: Text-to-video generation without text-video data, 2022. URL https: //arxiv.org/abs/2209.14792 .Skorokhodov, I., Tulyakov, S., and Elhoseiny, M. Stylegan-v: A continuous video generator with the price, image quality and perks of stylegan2. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pp. 3626–3636, 2022. Su, J., Lu, Y., Pan, S., Murtadha, A., Wen, B., and Liu, Y. Roformer: Enhanced transformer with rotary position embedding. Neurocomputing , 2021. Teed, Z. and Deng, J. Droid-slam: Deep visual slam for monocular, stereo, and rgb-d cameras. Advances in Neu-ral Information Processing Systems (NeurIPS) , 2021. Unterthiner, T., Van Steenkiste, S., Kurach, K., Marinier, R., Michalski, M., and Gelly, S. Towards accurate generative models of video: A new metric & challenges. arXiv preprint arXiv:1812.01717 , 2018. Wan, T., Wang, A., Ai, B., Wen, B., Mao, C., Xie, C.-W., Chen, D., Yu, F., Zhao, H., Yang, J., Zeng, J., Wang, J., Zhang, J., Zhou, J., Wang, J., Chen, J., Zhu, K., Zhao, K., Yan, K., Huang, L., Feng, M., Zhang, N., Li, P., Wu, P., Chu, R., Feng, R., Zhang, S., Sun, S., Fang, T., Wang, T., Gui, T., Weng, T., Shen, T., Lin, W., Wang, W., Wang, W., Zhou, W., Wang, W., Shen, W., Yu, W., Shi, X., Huang, X., Xu, X., Kou, Y., Lv, Y., Li, Y., Liu, Y., Wang, Y., Zhang, Y., Huang, Y., Li, Y., Wu, Y., Liu, Y., Pan, Y., Zheng, Y., Hong, Y., Shi, Y., Feng, Y., Jiang, Z., Han, Z., Wu, Z.-F., and Liu, Z. Wan: Open and advanced large-scale video generative models. arXiv preprint arXiv:2503.20314 , 2025. Wang, J., Chen, M., Karaev, N., Vedaldi, A., Rupprecht, C., and Novotny, D. Vggt: Visual geometry grounded transformer. In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR) , 2025. Wang, S., Leroy, V., Cabon, Y., Chidlovskii, B., and Revaud, J. Dust3r: Geometric 3d vision made easy. In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR) , 2024a. Wang, S., Leroy, V., Cabon, Y., Chidlovskii, B., and Revaud, J. Dust3r: Geometric 3d vision made easy. In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR) , 2024b. Wang, Z., Yuan, Z., Wang, X., Chen, T., Xia, M., Luo, P., and Shan, Y. Motionctrl: A unified and flexible motion controller for video generation. arXiv preprint arXiv:2312.03641 , 2023. Wang, Z., Yuan, Z., Wang, X., Li, Y., Chen, T., Xia, M., Luo, P., and Shan, Y. Motionctrl: A unified and flexible motion controller for video generation. In Proceedings of SIGGRAPH , 2024c. Wiedemer, T., Li, Y., Vicol, P., Gu, S. S., Matarese, N., Swer-sky, K., Kim, B., Jaini, P., and Geirhos, R. Video mod-els are zero-shot learners and reasoners. arXiv preprint arXiv:2509.20328 , 2025. Wu, R., Mildenhall, B., Henzler, P., Park, K., Gao, R., Watson, D., Srinivasan, P. P., Verbin, D., Barron, J. T., Poole, B., et al. Reconfusion: 3d reconstruction with diffusion priors. In Proceedings of the IEEE/CVF con-ference on computer vision and pattern recognition , pp. 21551–21561, 2024. Xu, D., Nie, W., Liu, C., Liu, S., Kautz, J., Wang, Z., and Vahdat, A. Camco: Camera-controllable 3d-consistent image-to-video generation. arXiv preprint arXiv:2406.02509 , 2024. Xue, Z., Grauman, K., Damen, D., Zisserman, A., and Han, T. Seeing without pixels: Perception from camera trajecories. arXiv preprint arXiv:2511.21681 , 2025. Yu, M., Hu, W., Xing, J., and Shan, Y. Trajectorycrafter: Redirecting camera trajectory for monocular videos via diffusion models. arXiv preprint arXiv:2503.05638 ,2025a. Yu, W., Xing, J., Yuan, L., Hu, W., Li, X., Huang, Z., Gao, X., Wong, T.-T., Shan, Y., and Tian, Y. Viewcrafter: Taming video diffusion models for high-fidelity novel view synthesis. IEEE Transactions on Pattern Analysis and Machine Intelligence (PAMI) , 2025b. Zhou, J., Gao, H., Voleti, V., Vasishta, A., Yao, C.-H., Boss, M., Torr, P., Rupprecht, C., and Jampani, V. Stable virtual camera: Generative view synthesis with diffusion models. 
+
+Proceedings of the International Conference on Computer Vision (ICCV) , 2025. Zhou, T., Tucker, R., Flynn, J., Fyffe, G., and Snavely, N. Stereo magnification: learning view synthesis using mul-tiplane images. ACM Transactions on Graphics (TOG) ,2018. 12
