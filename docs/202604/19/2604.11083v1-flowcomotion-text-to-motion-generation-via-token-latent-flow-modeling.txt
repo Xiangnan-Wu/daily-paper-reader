@@ -1,0 +1,1135 @@
+Title: FlowCoMotion: Text-to-Motion Generation via Token-Latent Flow Modeling
+
+URL Source: https://arxiv.org/pdf/2604.11083v1
+
+Published Time: Tue, 14 Apr 2026 02:15:46 GMT
+
+Number of Pages: 23
+
+Markdown Content:
+# FlowCoMotion: Text-to-Motion Generation via Token–Latent Flow Modeling 
+
+Dawei Guan 1 Di Yang 1, 2 Chengjie Jin 1 Jiangtao Wang 1, 2  
+
+> 1
+
+School of Artificial Intelligence and Data Science, University of Science and Technology of China  
+
+> 2
+
+Suzhou Institute for Advanced Research, University of Science and Technology of China 
+
+guand3841@gmail.com {di.yang, cjsyp, wangjiangtao}@ustc.edu.cn 
+
+Abstract 
+
+Text-to-motion generation is driven by learning motion representations for semantic alignment with language. Existing methods rely on either continuous or discrete motion representations. However, continuous representations entangle semantics with dynamics, while discrete representations lose fine-grained motion details. In this context, we propose FlowCoMotion , a novel motion generation framework that unifies both treatments from a modeling perspective. Specifically, FlowCoMotion employs token-latent coupling to capture both semantic content and high-fidelity motion details. In the latent branch, we apply multi-view distillation to regularize the continuous latent space, while in the token branch we use discrete temporal resolution quantization to extract high-level semantic cues. The motion latent is then obtained by combining the representations from the two branches through a token-latent coupling network. Subsequently, a velocity field is predicted based on the textual conditions. An ODE solver integrates this velocity field from a simple prior, thereby guiding the sample to the potential state of the target motion. Extensive experiments show that FlowCoMotion achieves competitive performance on text-to-motion benchmarks, including HumanML3D and SnapMoGen. 
+
+1 Introduction 
+
+Text-to-motion generation, which diverse, temporally coherent human motions from natural language descriptions, has experienced notable progress in computer vision, graphics, and robotics. These advances have been enabled by large-scale text–motion datasets [ 13 , 11 , 8] and a variety of deep generative models, including VAEs [ 13 , 28 ], autoregressive models [ 25 , 20 , 37 , 21 ], diffusion models [ 32 , 1, 40 , 18 , 44 , 19 ], and mask generative models [ 12 , 11 ]. However, existing models exhibit substantial limitations when handling complex cues. They often struggle to achieve fine-grained control over motion extent and intensity (e.g.,“ clockwise half circle ” or “ ninety degrees ”), and to capture subtle variations in human motion. Autoregressive models use vector quantization, which introduces approximation errors, thus limiting the quality of motion generation. In autoregressive generation, tokens at each step is generated conditionally on previously generated context, and accumulate errors over time. While diffusion models can mitigate approximation error, it typically requires much denoising steps while inferring, making long-horizon motion synthesis computationally expensive and latency-intensive. Moreover, repeatedly refining high-dimensional trajectories can lead to temporal drift, so achieving high-fidelity often incurs substantial sampling cost. Based on these observations, we propose a novel framework called FlowCoMotion which can perform high-quality text-motion generation and understand precise text. FlowCoMotion combines discrete vectors obtained through residual vector quantization (RVQ) with continuous vectors and performs conditional generation via the flow matching strategy. Our framework is based on two         
+
+> Preprint.
+> arXiv:2604.11083v1 [cs.CV] 13 Apr 2026 A person walks forward
+> at an average pace to the
+> edge of a grey square,
+> turns ninety degrees to
+> their left, then walks
+> forward to another edge
+> of the same square.
+> A person quickly puts
+> both hands down while
+> walking in a clockwise
+> half circle , then climbs
+> imaginary stairs with
+> both arms and legs.
+> A person leans forward
+> with their right hand as
+> if to pick something up,
+> walks to the left , turns
+> right , and leans to pick
+> something up again, then
+> moves right arm as if to
+> wipe something.
+
+Figure 1: We propose a novel framework called FlowCoMotion , which can handle fine-grained semantic content to guide the generation of high-quality motion. This method is particularly suitable for handling various forms of input, including but not limited to numbers, shapes and directions. 
+
+components. First, we introduce a VAE with two branches, Token and Latent, to establish an accurate mapping between 3D motion and its corresponding token-latent coupling vector. Unlike previous methods that typically use hierarchical RVQ alone for iterative residual quantization or latent vector representation, our VAE design combines two distinct representations: the discrete tokens and the continuous latent, which are generated from the token and latent branch, respectively. Second, the Transformer-based generation head parameterizes a text-conditional velocity field that transfers samples from a simple prior distribution to the target motion latent by flow matching. While diffusion methods also start with noise, they typically require multiple denoising iterations during the inference phase, increasing computational cost and potentially leading to long-term time drift accumulation. Therefore, an ODE solver integrates the predicted velocity field, mapping the prior to the conditional motion latent. Since the model predicts sequence-level dynamics rather than subsequent autoregressive updates, it leverages a full-context attention mechanism to better maintain long-range consistency while avoiding the multi-step sampling of diffusion methods. Our main contributions can be summarized into three parts: (a). We propose FlowCoMotion, a framework for text -motion generation that improves fine -grained text alignment. Our method shows enhanced performance on text descriptions containing numeric values, directional cues, and geometric shapes. (b). We introduce the token-latent coupling method to simultaneously guarantee the semantic content and dynamic features of motion representation. Besides, we also introduce a flow matching generation strategy for accurate and efficient generation. (c). Experimental results demonstrate that our FlowCoMotion achieves competitive performance in text-to-motion generation tasks. On the HumanML3D dataset, our R-precision values reach 0.55 , 0.74 , and 0.83 , respectively. 
+
+2 Related Work 
+
+Text-to-Motion Generation. Recently, text-motion generation has made significant progress, im-proving the realism of motion and its alignment with text description. Early methods used variational autoencoders to model motion [ 13 , 28 ]. Vector quantization represents motion into discrete tokens, which can be generated using autoregressive methods [ 25 , 20 , 37 , 21 , 31 ] or mask-based methods [ 12 , 11 ]. Meanwhile, the diffusion methods [ 32 , 39 , 6, 40 ] denoise the motion samples iteratively, making them better match the text description. Furthermore, some researchers have achieved more advanced semantic alignment capabilities using autoregressive diffusion models [ 44 ]. Despite these advances, most work still relies on continuous or discrete representations, making it difficult to simultaneously utilize labeled semantic structure and continuous temporal dynamics. It is precisely because of this gap that we propose a labeled-latent coupling method. 
+
+Hybrid Representations in Generative Modeling. High-fidelity visual synthesis increasingly leverages the synergy between discrete and continuous representations. In image generation, VQ-GAN [ 7 ] established a powerful hybrid paradigm: using codebooks to compress structural priors while performing continuous optimization in latent space. Similarly, video models like MAGVIT [36 ] and VideoLDM [ 2] employ 3D tokens for temporal consistency alongside continuous transitions for inter-frame smoothness. By bridging discrete semantic synthesis and continuous texture synthesis, these frameworks alleviate high-dimensional complexity while preserving fine perceptual details. This rationale provides the foundation for our token-latent coupling method. However, motion generation poses unique challenges not present in image or video generation: (1) Kinematics demand plausible joint rotations, (2) temporal dynamics must preserve continuity and causality, and (3) semantics entangle with trajectories. Unlike previous hybrid methods, our approach preserves continuous dynamics under kinematic regularization. 2Motion Encoder      
+
+> Motion
+> Motion
+> Latent
+> Motion
+> Latent
+> Token
+> Branch
+> Learnable Codebook
+> Latent
+> Branch
+> Token-Latent
+> Coupling
+> Dequantization
+> T5
+> Text Token
+> Condition Embedding
+> Motion Decoder
+> Motion
+> Text Motion
+> Mask Latent
+> ResBlock
+> ODE
+> Solver
+> FFN
+> 𝐀 1𝐀 𝐀 𝐀
+> 𝐀 𝐀𲀀
+> 𝐀 𝐀
+> 𝐀 𝐀
+> 𝐀
+> Flow Matching
+> Head 𝐀
+
+𝐀 
+
+𝐀    
+
+> 𝐀
+> 𝐀
+> 𝐀
+> 𝐀
+> 𝐀 𝐀 𝐀 𝐀 0
+> 𝐀 kt−t
+> 𝐀 1−2t
+> 𝐀 1−t
+> 𝐀 t
+> 𝐀 kt
+> 𝐀 1−t
+> 𝐀 1
+
+𝐀   
+
+> Self Attention
+> Cross Attention
+> Output Layer
+> AdaLN Linear
+> Motion Compression Motion Representation & Coupling
+> Latent Space
+> …
+> Motion Flow Matching in Condition Generation Backbone
+
+Figure 2: Method Overview. FlowCoMotion mainly includes three key components: (1) Motion compression (Section 3.1): The motion sequence is compressed into the latent space using VAE to obtain z ∈ Rn×b. (2) Motion representation & Coupling (Sections 3.2 and 3.3): The Token Branch further uses RVQ-VAE to extract discrete Token representations and then dequantizes them to obtain zq . The Latent Branch directly uses the continuous latent space vector zc. Finally, the final motion representation zgt is obtained through the token-latent coupling network. (3) Motion Flow Matching in Condition Generation (Section 3.4): The flow velocity field ˆvt is predicted through the text condition c and time t. The predicted latent vector ˆz1 is solved by the ODE solver and finally handed over to the Decoder D.
+
+3 Methodology 
+
+We propose FlowCoMotion , a framework for efficient text-to-motion generation. As shown in Figure 2, FlowCoMotion consists of three components: (1) Motion Compression (Section 3.1): A shared VAE encoder E maps motion sequences to a compact latent space z. (2) Motion Representation & Coupling (Sections 3.2 and 3.3): The latent z is processed by two parallel branches, a Token Branch that applies RVQ quantization to obtain discrete semantic tokens zq , and a Latent Branch that preserves continuous dynamics zc. A coupling network C fuses (zq , z c) into a unified representation 
+
+zgt . (3) Motion Flow Matching (Section 3.4): A text-conditional flow matching head H predicts the velocity field that maps noise to zgt .We use a VAE with encoder E and decoder D to map an M -frame motion sequence m1: M to a compact continuous latent z ∈ Rd, and reconstruct it via D. Given a text input with N tokens w1: N
+
+which can be mapped into condition C, FlowCoMotion samples a noise latent conditioned on C and applies the flow matching head H to predict the motion latent ˆz. The synthesized motion is then obtained by decoding ˆm1: M = D(ˆ z).
+
+3.1 Motion Compression 
+
+We employ a VAE to compress the motion sequence into a continuous latent space. Our transformer-based VAE [ 12 ], comprising an encoder E and decoder D with long-stage skip connections, encodes the motion sequence into a compressed, information-rich latent space, preserving fine-grained dynamics and kinematic trends, and supporting high-fidelity, diverse motion generation. For an input motion sequence x1: L of arbitrary length L, the encoder processes the motion vector and a set of learnable distribution labels to infer a Gaussian distribution with mean μ and standard deviation σ.
+
+3.2 Motion Representation in Discrete Token 
+
+Accurately representing motion sequences is essential for motion generation tasks. We propose a 
+
+dual-representation framework that combines token and latent representations, encoding motion sequences through two branches: one for discrete tokens and the other for continuous latent space to capture temporal details. Discretization inherently leads to information loss, reducing expressive power during quantization. To mitigate this, our framework integrates continuous latent space and discrete representations, enabling the simultaneous capture of subtle temporal variations and semantic content in motions. 3For the Token Branch , we treat the token distribution as semantic anchors, performing quantization and dequantization. To represent motion semantics with discrete tokens, we train a motion quantizer 
+
+T based on the VQ-VAE architecture, as applied in [ 37 , 21 , 12 , 35 ]. These approaches enable efficient condensation of motion semantics, facilitating fusion with continuous temporal details for motion generation tasks. To enable the Token Branch as a semantic anchor, we employ an RVQ-VAE quantizer architecture. Multiple quantization layers are introduced to perform quantization at different temporal resolutions, with all layers sharing a single codebook [ 11 ]. For a motion latent feature sequence z ∈ Rn×d, the quantizer applies a series of residual quantization operations with progressively increasing temporal resolutions {hv }Vv=0 , where h0 < · · · < h V = n. The quantized features zq ∈ Rh0×d at the coarse-grained level are restored to full resolution via bilinear interpolation: ˆf v 
+
+> ↑
+
+= I(f v , h v ). Residuals are computed and downsampled to the next scale for quantization by subsequent layers. 
+
+ˆzq =
+
+> V
+
+X
+
+> v=0
+
+I( ˆf v , h v ) (1) Overall, this Quantizer trained using latent embedding loss (commit loss) on each quantization scale 
+
+h ∈ { h0, . . . , h V }:
+
+L(h)commit = 1
+
+|M h|
+
+X
+
+> m∈M h
+
+z(m,h ) 
+
+> e
+
+− ek(m,h )
+
+> 22
+
+(2) Where z(m,h ) 
+
+> e
+
+represents the continuous latent variable of the encoder at scale h for motion sample m,and ek(m,h ) is the selected vector from the codebook, determined by nearest neighbor quantization. 
+
+Mh denotes the set of valid locations at scale h, and |M h| is the number of its elements. By employing temporal resolution sampling, our Token Branch effectively samples semantic anchors at different time intervals, optimizing its fidelity and versatility in motion generation tasks. 
+
+3.3 Motion Representation in Continuous Latent 
+
+In the Latent Branch , a latent vector z ∈ Rm is extracted from the distribution using a reparameteri-zation technique. This latent vector is fused with the Token Branch output and fed into the decoder 
+
+D to generate the reconstructed motion sequence. The reconstruction training process is detailed in Section 3.5. 
+
+Multi-view Distillation. Relying solely on reconstruction and quantization constraints may lead to latent space inconsistencies under varying pruning/enhancement conditions, reducing generalization for downstream conditional generation. To address this, we propose a multi-view teacher-student self-distillation framework [ 3, 38 ], constructing a multi-view set v for the same sequence. The teacher processes the global view set vg , while the student processes v. After passing through projection heads gt and gs, and decentralization, we obtain the probability distribution. 
+
+pt(v) = Softmax 
+
+ gt(Et(v)) −c
+
+τt
+
+
+
+ps(v) = Softmax 
+
+ gs(ϕ(Es(v))) 
+
+τs
+
+
+
+(3) Where ϕ(·) denotes the polymerization operator for distillation, and c represents the center vector, updated using exponential moving average to prevent characterization collapse. The distillation loss [ 17 ] is computed on a global view using the KL divergence between two probability distributions. The final latent sequence approximation ˆzq is the sum of all up-interpolated quantized sequences, which is passed through a token-latent coupling network C with the latent branch prediction ˆzc, and subsequently fed into the Decoder D to predict the motion sequence. 
+
+ˆm = D(C(ˆ zq , ˆzc)) (4) Through multi-view distillation, our Latent Branch is effectively characterized, enhancing its capacity to capture motion details and optimize motion generation performance. In Appendix Section D, we provide a concrete proof of the theoretical feasibility of token-latent coupling. 
+
+3.4 Motion Flow Modeling in Condition Generation 
+
+To improve fidelity and diversity in motion generation, we propose a text-conditioned flow matching strategy that maps random noise to a token-latent coupled latent space. Building on recent advances in 4flow matching generative models, our approach integrates Rectified Flow [ 23 , 16 ] with a conditional Transformer backbone. The flow matching head predicts the velocity field in the motion latent space with high accuracy, introducing minimal inference overhead. LN  
+
+> Multi-head
+> Cross-Attention
+> Cond
+> 𝐀
+> Gate
+> AdaIN
+> Multi-head
+> Cross-Attention
+> (QK Norm)
+> Time Emb
+> 𝐀
+> Text Emb
+> Gate
+> a) Nova Block b) Orbit Block
+
+Figure 3: Two Conditional Transformer Blocks for Motion Generation. (a) The Nova Block integrates a unified conditioning signal via LN-modulated cross-attention and uses a learnable gate to control the strength of the conditioned update on the hidden state x. (b) The Orbit Block separates conditioning into time and text inputs, performing cross-attention with QK normalization for improved stability. It also applies the same learnable gate to modulate the conditioned residual. 
+
+Flow Matching Process. We apply flow matching principles to represent complex probability distributions within the motion latent space. Instead of adding Gaussian noise over discrete time steps as in diffusion, we construct a continuous probability path connecting a simple prior to the real data latent variables over time t ∈ [0 , 1] , resulting in a sequence of intermediate states zt. Given a real latent variable z1 from encoding real motions and a random sample z0 ∼ N (0 , I ) from a standard Gaussian distribution, we generate intermediate samples via a simple linear path. 
+
+zt = tz 1 + (1 − t)z0 (5) 
+
+t controls the interpolation position. Unlike Diffusion process, flow matching requires specifying a target instantaneous velocity for each zt, which can be viewed as a shortest straight line in the path. 
+
+ut = dz t
+
+dt = z1 − z0 (6) The conditional flow model vθ (zt, t, c ), where c is the auxiliary input, is trained to predict the instantaneous velocity ut, learning the transformation from the prior to the data distribution over continuous time. In our setup, c corresponds to the output hidden state of the Transformer backbone, providing conditional information that modulates the vector field. We use T5-base [ 30 ] to extract word-level features from complex textual descriptions. As shown in Figure 3, we present two types of Transformers for conditional generation, each injecting distinct conditions. More details for our model are provided in Appendix Section E.4. The objective is based on the flow matching loss. 
+
+L = Ez0,z 1,t 
+
+h
+
+∥(z1 − z0) − vθ (zt, t, c )∥22
+
+i
+
+(7) where z1 is sampled from the token-latent coupling network using the ground truth motion latent. 
+
+Inference Procedure. We begin by sampling initial latent variables z0 ∼ N (0 , I ) from random noise and providing a conditional input c. Next, we define a continuous time generative dynamical system using the learned conditional velocity field vθ (z, t, c ). We obtain the generated latent variables ˆz1 by solving ordinary differential equations (ODEs) to integrate the state from t = 0 to t = 1 . Finally, 
+
+ˆz1 is input into the motion decoder D to reconstruct the final motion sequence. To ensure efficient conditional generation, we use a fixed-step ODE solver with small sampling steps to map the data distribution. 
+
+3.5 Training Procedure Overview 
+
+Fully end-to-end training can destabilize the latent space and weaken kinematic constraints. We therefore adopt a three-stage training pipeline that progressively learns the motion representation, stabilizes kinematic reconstruction, and enables diverse generation. As shown in Figure 4, Motion Representation & Coupling learns motion sequence representations that support both reconstruction and generation. Decoder Fine-tuning with Dynamic Constraints freezes the learned motion repre-sentation and fine-tunes the Decoder to better satisfy kinematic requirements during reconstruction. 
+
+Text-to-Motion Training with Flow Matching trains the generation head to predict the velocity field that samples into the learned motion representation. 5Stage 1 Motion Representation & Coupling  
+
+> Latent Branch Token Branch
+> Token-Latent Coupling
+
+𝓔𝓔 
+
+𝓓𝓓 
+
+> …
+> Dequantization
+> Motion Latent
+> Motion Latent
+
+𝓔𝓔 
+
+𝓓𝓓         
+
+> T5
+> Text Token Latent Branch
+> Token Branch
+> Token-Latent Coupling
+> 𝓉𝓉
+> 𝒗𝒗 𝜽𝜽 𝒛𝒛 𝒈𝒈 𝒈𝒈 𝒄𝒄
+> Flow Matching Head 𝓗𝓗
+> 𝓝𝓝 𝟎𝟎 𝑰𝑰 𝓏𝓏 0
+> 𝓏𝓏 kt−t
+> 𝓏𝓏 kt+t
+> 𝓏𝓏 1−t
+> �𝓋𝓋 t
+> �𝓋𝓋 kt
+> �𝓋𝓋 1−2t
+> �𝓋𝓋 1
+
+𝓓𝓓                                                  
+
+> Stage 2 Decoder Fine-tuning (Dynamic Constraints) Stage 3 Text to Motion Training with Flow Matching
+> Latent Branch Token Branch
+> Token-Latent Coupling
+> 𝓛𝓛 𝒓𝒓𝒓𝒓 𝒄𝒄 +𝝀𝝀 𝒅𝒅𝒅𝒅𝒅𝒅 𝓛𝓛 𝒅𝒅𝒅𝒅𝒅𝒅
+> +𝝀𝝀 𝒄𝒄𝒄𝒄𝒄𝒄𝒄𝒄 𝒅𝒅𝒈𝒈 𝓛𝓛 𝒄𝒄𝒄𝒄𝒄𝒄𝒄𝒄 𝒅𝒅𝒈𝒈 +𝝀𝝀 𝒇𝒇𝒇𝒇 𝓛𝓛 𝒇𝒇𝒇𝒇
+> 𝓛𝓛 𝒓𝒓𝒓𝒓 𝒄𝒄 +𝝀𝝀 𝒗𝒗 𝒓𝒓 𝒗𝒗 𝓛𝓛 𝒗𝒗 𝒓𝒓 𝒗𝒗 +𝝀𝝀 𝒈𝒈 𝒗𝒗𝒄𝒄 𝒈𝒈𝒈𝒈 𝒗𝒗 𝓛𝓛 𝒈𝒈 𝒗𝒗𝒄𝒄 𝒈𝒈𝒈𝒈 𝒗𝒗
+> +𝝀𝝀 𝒋𝒋 𝒓𝒓𝒓𝒓𝒇𝒇 𝓛𝓛 𝒋𝒋 𝒓𝒓𝒓𝒓𝒇𝒇 +𝝀𝝀 𝒇𝒇𝒇𝒇 𝓛𝓛 𝒇𝒇𝒇𝒇
+> ODE Solver
+> ODE Solver
+> 𝓛𝓛 =𝔼𝔼 𝕫𝕫 𝟘𝟘 ,𝕫𝕫 𝟙𝟙 ,𝕥𝕥 |𝒛𝒛 𝟏𝟏 − 𝒛𝒛 𝟎𝟎 − 𝒗𝒗 𝜽𝜽 𝒛𝒛 𝒈𝒈 ,𝒈𝒈 ,𝒄𝒄 |𝟐𝟐 𝟐𝟐
+
+Figure 4: We propose a three-stage training strategy for the motion-language model: Stage 1: Train the Encoder E,Decoder D, and learnable latent space, refining the latent space representation. Stage 2: Freeze the Encoder and learnable latent space, and fine-tune the Decoder by kinematic losses. Stage 3: Train the flow matching head H to predict the velocity flow from random noise to the motion latent space. Inference process: Conditions are injected at each block, and the predicted latent vector is obtained by solving the ODE through N steps after sampling from random noise. Finally, it is fed into the Decoder to obtain the predicted motion sequence. 
+
+Motion Representation & Coupling. To map motions into our predefined latent space and achieve accurate reconstruction, we first train the VAE, Token Branch, and Latent Branch. This stage prioritizes enriching the latent representation while minimizing the impact of kinematic constraints. Using the multi-view distillation, we encourage a richer mapping from motion sequences to the latent space. Following [ 37 , 15 ], we optimize the motion tokenizer with four losses: L = Lrec + λdis Ldis +
+
+λcommit Lcommit + λf k Lf k , where Lrec is the reconstruction loss, Lcommit is the commitment loss, 
+
+Ldis is the multi-view distillation loss, and Lf k is the forward kinematics (FK) loss. 
+
+Decoder Fine-tuning with Dynamic Constraints. In this stage, we freeze the encoder, token & latent branches, and introduce kinematic constraints to fine-tune the decoder. Specifically, we apply a series of kinematic constraints, including jerk loss and global loss. This stage preserves the effective motion sequence representation from the first stage, enabling the decoder to better reconstruct the motion sequence. In summary, this stage performs rigorous kinematic fine-tuning on the decoder, with a loss of L = Lrec + λvel Lvel + λglobal Lglobal + λjerk Ljerk + λf k Lf k , where the jerk loss 
+
+Ljerk , the global loss Lglobal , the velocity loss Lvel .
+
+Text-to-Motion Training with Flow Matching. In the final stage, we encode the text caption with 
+
+T5-base and feed it to the flow matching head. We freeze all networks used for motion reconstruction. Conditioned on time and text, the head models the sampled path by predicting the velocity field. We train it with an L2 loss between the predicted and ground truth velocity. This formulation leverages the sequence reconstruction capability learned in earlier stages while preserving inference efficiency. 
+
+4 Experiment 
+
+Extensive experiments demonstrate the superior performance of our model, FlowCoMotion , in motion generation tasks. Details of the dataset settings, evaluation metrics, and implementation specifics are provided in Section 4.1. We first present the performance of text-to-motion generation in Section 4.2, through both quantitative and qualitative experiments. Next, we showcase our model’s capabilities in motion sequence reconstruction in Section 4.3. The supplements include additional qualitative results and further implementation details. 
+
+4.1 Experimental Setup Datasets. Our experiments are based on the HumanML3D and SnapMoGen [ 13 , 11 ] datasets. HumanML3D is a large-scale benchmark for text-to-motion generation and understanding, containing 14,616 motion sequences from AMASS [ 26 ] and HumanAct12, annotated with 44,970 sequence-level natural language descriptions. SnapMoGen includes 43.7 hours of high-quality motion data at 30 frames per second, with each motion segment accompanied by 6 detailed text descriptions, including daily tasks, fitness, social interactions, and dance. 
+
+Evaluation Metrics. We evaluate motion quality using Fréchet Inception Distance (FID), which measures how closely generated motions align with ground truth motions in feature space, reflecting 6Description of Motion MotionGPT Mo Mask++ MotionGPT3 Ours 
+
+A person quickly puts both hands 
+
+down while walking in a clockwise 
+
+half circle , then climbs imaginary 
+
+stairs with both arms and legs, and 
+
+finally pulls his head above his arms 
+
+using his hands. 
+
+A man gets up from the ground 
+
+pushing off with his left hand then 
+
+walks in a counter clockwise circle 
+
+back to where he began then lays 
+
+down flat on the ground on his back. 
+
+A man walks forward for a short 
+
+time, turns slightly to the right to 
+
+meet back at his starting point then 
+
+continues forward for a short time 
+
+and turns left heading back to 
+
+starting point to create a figure 8 .
+
+A man takes several steps forward, 
+
+jumps over an imaginary obstacle, 
+
+lands on both feet, takes several 
+
+more steps forward, turns around 
+
+180 degrees , takes several steps 
+
+forward and jumps over same 
+
+obstacle and returns to start. Figure 5: Qualitative evaluation on text-to-motion generation. We qualitatively compared the visualizations generated by our method with those produced by MotionGPT [ 21 ], MoMask++ [ 11 ], and MotionGPT3 [ 44 ]. Misaligned motions of other methods are marked with red text. The results show that FlowCoMotion demonstrates powerful text understanding capabilities, enabling it to generate more accurate and coherent motions. 
+
+overall motion quality. Diversity quantifies feature space variation across generated samples, while MultiModality captures variation among motions generated from the same text description. To assess text-motion alignment, we use motion-text retrieval R-Precision and Multimodal Distance, which measures the embedding-space distance between paired motion and text embeddings. 
+
+Implementation Details. FlowCoMotion consists of a motion VAE and a Transformer-based flow matching head. The VAE has 6 layers and encodes each sequence into a 256 dimension latent, split into a 64 dimension token branch and a 192 dimension continuous branch. The flow matching head uses 15 Transformer layers with 8 attention heads and a 512 hidden size. We perform inference with Rectified Flow sampling using 40 euler steps. The VAE is trained for 400 epochs and the flow head for 1000 epochs, on a single NVIDIA RTX 4090 GPU. More details are reported in Appendix Section E. Table 1: Quantitative evaluation on HumanML3D test set. 
+
+Methods R-precision ↑ FID ↓ MultiModal Dist ↓ Diversity → MModality ↑
+
+Top 1 Top 2 Top 3 Real motions 0.511 ±.003 0.703 ±.003 0.797 ±.002 0.002 ±.000 2.974 ±.008 9.503 ±.065 -TM2D 0.319 ±.000 - - 1.021 ±.000 4.098 ±.000 9.513 ±.000 4.139 ±.000 
+
+MotionCraft 0.501 ±.003 0.697 ±.003 0.796 ±.002 0.173 ±.002 3.025 ±.008 9.543 ±.098 -ReMoDiffuse 0.510 ±.005 0.698 ±.006 0.795 ±.004 0.103 ±.004 2.974 ±.016 9.018 ±.075 1.795 ±.043 
+
+MMM 0.504 ±.003 0.696 ±.003 0.794 ±.002 0.080 ±.003 2.998 ±.007 9.411 ±.058 1.164 ±.041 
+
+MotionGPT 0.492 ±.003 0.681 ±.003 0.778 ±.002 0.232 ±.008 3.096 ±.008 9.528 ±.071 2.008 ±.084 
+
+MotionGPT-2 0.496 ±.002 0.691 ±.003 0.782 ±.004 0.191 ±.004 3.080 ±.013 9.860 ±.026 2.137 ±.022 
+
+DiverseMotion 0.515 ±.003 0.706 ±.002 0.802 ±.002 0.072 ±.004 2.941 ±.007 9.683 ±.102 1.869 ±.089 
+
+BAD 0.517 ±.002 0.713 ±.003 0.808 ±.003 0.065 ±.003 2.901 ±.008 9.694 ±.068 1.194 ±.044 
+
+MoMask 0.521 ±.002 0.713 ±.002 0.807 ±.002 0.045 ±.002 2.958 ±.008 9.620 ±.064 1.241 ±.040 
+
+MoMask++ 0.528 ±.003 0.718 ±.003 0.811 ±.002 0.072 ±.003 2.912 ±.008 9.573 ±.062 1.227 ±.046 
+
+MotionGPT3 0.543 ±.003 0.735 ±.002 0.828 ±.002 0.217 ±.010 2.793 ±.007 9.662 ±.072 1.366 ±.046 
+
+Ours nova 0.532 ±.002 0.725 ±.002 0.819 ±.002 0.072 ±.003 2.887 ±.006 9.377 ±.078 1.875 ±.088 
+
+Ours orbit 0.550 ±.003 0.740 ±.003 0.832 ±.002 0.061 ±.003 2.852 ±.008 9.457 ±.067 2.071 ±.093 
+
+7Table 2: Quantitative evaluation on SnapMoGen test set. 
+
+Methods R-precision ↑ FID ↓ CLIP Score ↑ MModality ↑
+
+Top 1 Top 2 Top 3 Real motions 0.940 ±.001 0.976 ±.001 0.985 ±.001 0.001 ±.000 0.837 ±.000 -MDM 0.503 ±.002 0.653 ±.002 0.727 ±.002 57 .783 ±.092 0.481 ±.001 13 .412 ±.231 
+
+T2M-GPT 0.618 ±.002 0.773 ±.002 0.812 ±.002 32 .629 ±.087 0.573 ±.001 9.172 ±.181 
+
+StableMoFusion 0.679 ±.002 0.823 ±.002 0.888 ±.002 27 .801 ±.063 0.605 ±.001 9.064 ±.138 
+
+MARDM 0.659 ±.002 0.812 ±.002 0.860 ±.002 26 .878 ±.131 0.602 ±.001 9.812 ±.287 
+
+MoMask 0.777 ±.002 0.888 ±.002 0.927 ±.002 17 .404 ±.051 0.664 ±.001 8.183 ±.184 
+
+MoMask++ 0.805 ±.002 0.904 ±.002 0.938 ±.001 15 .560 ±.071 0.684 ±.001 6.556 ±.178 
+
+Ours nova 0.737 ±.002 0.873 ±.002 0.929 ±.002 17 .544 ±.068 0.654 ±.001 9.190 ±.240 
+
+Ours orbit 0.776 ±.002 0.890 ±.002 0.934 ±.001 14 .678 ±.061 0.672 ±.001 8.553 ±.230 
+
+4.2 Comparison to State-of-the-art Approaches 
+
+We compared our method with a range of existing state-of-the-art works, including autoregressive models [ 10 , 29 , 21 , 34 , 37 , 27 ], diffusion models [ 32 , 1, 40 , 18 , 19 ], mask generation models [ 12 , 11 ], and autoregressive diffusion model [44]. 
+
+Qualitative Comparison. Figure 5 presents a qualitative comparison between our method, Mo-tionGPT, MoMask++, and MotionGPT3. While MotionGPT generates semantically correct motions, it struggles with direction- and degree-related descriptions, such as “clockwise half circle” and “in figure 8”. Although MoMask++ and MotionGPT3 show improvements, they still fail to fully align motions with the text descriptions. Additionally, MoMask++ occasionally produces stiff and repetitive motions. In contrast, our method generates high-quality motions that are highly consistent with the input text. Further comparative results can be found in Appendix Section A.1. 
+
+Quantitative Comparisons. Following prior work, we repeat each experiment 20 times and report the mean with a 95% confidence interval. We evaluate two conditional Transformer blocks, termed Nova 
+
+and Orbit . Results on HumanML3D and SnapMoGen are reported in Tables 1 and 2. FlowCoMotion achieves competitive or better performance on the core metrics, indicating robust text-to-motion generation. On HumanML3D, the Nova transformer already matches strong baselines, and Orbit 
+
+further improves performance. Besides, we report a full comparison with prior T2M approaches in Appendix Section A.2. Table 3: Ablation analysis of motion representation on Text-to-Motion Tasks. 
+
+VQ Config. VQ Reconstruction T2M Generation            
+
+> #Codes #Quant. F/M w/ Att. FID ↓Joint Pos. Err. ↓FID ↓R-Precison@3 ↑
+> HumanML3D
+
+1024 4 M ✓ 0.0622 0.0488 0.122 ±.002 0.809 ±.003 
+
+512 4 M ✓ 0.0859 0.0514 0.218 ±.003 0.771 ±.002 
+
+Representation Dimension VQ Reconstruction T2M Generation          
+
+> Type Dim. FID ↓Joint Pos. Err. ↓FID ↓R-Precison@3 ↑
+
+Latent 256 0.0054 0.0302 0.087 ±.004 0.796 ±.003 
+
+Hybrid 64, 192 0.0036 0.0234 0.061 ±.003 0.832 ±.002 
+
+VQ Config. VQ Reconstruction T2M Generation            
+
+> #Codes #Quant. F/M w/ Att. FID ↓Joint Pos. Err. ↓FID ↓R-Precison@3 ↑
+> SnapMoGen
+
+1024 2 M ✓ 4.26 8.48 26 .248 ±.060 0.911 ±.002 
+
+512 2 M ✓ 4.41 8.62 28 .013 ±.072 0.903 ±.001 
+
+Representation Dimension VQ Reconstruction T2M Generation          
+
+> Type Dim. FID ↓Joint Pos. Err. ↓FID ↓R-Precison@3 ↑
+
+Latent 256 0.1650 4.3650 19 .465 ±.037 0.895 ±.002 
+
+Hybrid 64, 192 0.0503 4.4234 14 .678 ±.061 0.934 ±.001 
+
+4.3 Ablation Studies 
+
+Our research proposes a new strategy for integrating discrete motion representation and continuous motion, and using a flow matching head for conditional generation. This strategy consists of two 8key components: 1) Token-Latent Coupling, 2) Conditional generation using flow matching. More ablation studies are shown in Appendix Section B. 
+
+Token-Latent Coupling. To evaluate the utility of Token-Latent Coupling, we compared our model with variants of motion tokens that were discretized using vector quantization alone ( token dimension = 256 ), and with variants that used only continuous motion Latents ( latent dimension = 256 ). As shown in Table 3, under the same training iterations, the mixed representation significantly outperformed the other variants in both the motion reconstruction and generation tasks. Particularly for the transformation from text to motion, discretization would disrupt the temporal coherence between different motion segments and introduce quantization noise, which would hinder the generation quality. In contrast, the mixed latent vectors retain a compact and expressive semantics, enabling smoother generation, and can be better aligned with the text input. Table 4: Ablation analysis on HumanML3D test set of motion representation and generation heads.                                       
+
+> Representation Dimension VQ Reconstruction T2M Generation
+> Type Dim. FID ↓Joint Pos. Err. ↓FID ↓R-Precison@3 ↑Inference time ↓
+> Latent + Flow Matching 256 0.0054 0.0302 0.087 ±.004 0.796 ±.003 0.49 Hybrid + Flow Matching 64, 192 0.0036 0.0234 0.061 ±.003 0.832 ±.002 0.52 Latent + Diffusion 256 0.0054 0.0302 0.078 ±.003 0.781 ±.002 7.66 Hybrid + Diffusion 64, 192 0.0036 0.0234 0.075 ±.003 0.801 ±.002 8.02
+
+Flow Modeling Generation. To assess the benefits of the flow modeling approach, we compared our model with a variant generated using the standard diffusion method. As shown in Table 4, under the same training iterations, the method using flow modeling significantly outperformed the diffusion model. Additionally, the inference speed of the flow modeling method was also significantly faster than that of the diffusion method. Table 5: Quantitative evaluation on harder test set which selected from HumanML3D.                         
+
+> Methods R-precision ↑FID ↓
+> Top 1 Top 2 Top 3 MoMask 0.467 ±.002 0.655 ±.003 0.748 ±.003 0.231 ±.012
+> MoMask++ 0.473 ±.003 0.669 ±.003 0.769 ±.002 0.354 ±.015
+> MotionGPT3 0.496 ±.002 0.685 ±.002 0.787 ±.003 0.658 ±.032
+> Ours nova 0.479 ±.002 0.678 ±.003 0.776 ±.002 0.349 ±.014
+> Ours orbit 0.502 ±.003 0.693 ±.004 0.796 ±.002 0.332 ±.011
+
+4.4 Evaluation on Fine-Grained Text Understanding 
+
+To rigorously assess our model’s capability in comprehending complex and detailed language instruc-tions, we conduct an attribute-specific analysis on a constructed “Hard Test Set”. Specifically, we filter the standard HumanML3D test set to isolate prompts containing fine-grained constraints [ 33 , 20 , 22 ], such as directional indicators (e.g., left/right), rotational semantics (e.g., clockwise/counterclockwise), and precise numerical or degree-based instructions. The details split the hard test set are provided in Appendix Section E.5. As detailed in Table 5, FlowCoMotion demonstrates a distinct advantage in these highly constrained scenarios. It achieves the best text-motion alignment on this subset. Addi-tionally, FlowCoMotion maintains a competitive FID, significantly outperforming both MoMask++ and MotionGPT3 in motion quality under strict textual conditions. These quantitative results confirm that our approach effectively balances high-fidelity motion synthesis with precise semantic grounding, successfully addressing the complex attribute binding that frequently challenges existing methods. 
+
+5 Conclusion 
+
+In this work, we propose FlowCoMotion, a token - latent coupled flow matching framework for text - driven motion generation. Our method achieves improved text - motion alignment and inference efficiency compared to diffusion - based baselines. However, several limitations remain: (1) the model requires multi - stage training which increases computational cost, (2) performance on highly complex multi - action sequences needs further improvement, and (3) generalization to unseen motion categories has not been thoroughly evaluated. Future work will explore single - stage training strategies, hierarchical action modeling, and zero-shot generalization capabilities. 9References 
+
+[1] Yuxuan Bian, Ailing Zeng, Xuan Ju, Xian Liu, Zhaoyang Zhang, Wei Liu, and Qiang Xu. Mo-tioncraft: crafting whole-body motion with plug-and-play multimodal controls. In Proceedings of the Thirty-Ninth AAAI Conference on Artificial Intelligence , 2025. [2] Andreas Blattmann, Robin Rombach, Huan Ling, Tim Dockhorn, Seung Wook Kim, Sanja Fidler, and Karsten Kreis. Align your latents: High-resolution video synthesis with latent diffusion models. In IEEE Conference on Computer Vision and Pattern Recognition (CVPR) ,2023. [3] Mathilde Caron, Hugo Touvron, Ishan Misra, Hervé Jegou, Julien Mairal, Piotr Bojanowski, and Armand Joulin. Emerging properties in self-supervised vision transformers. In 2021 IEEE/CVF International Conference on Computer Vision (ICCV) , pages 9630–9640, 2021. [4] Ling-Hao Chen, Wenxun Dai, Xuan Ju, Shunlin Lu, and Lei Zhang. Motionclr: Motion generation and training-free editing via understanding attention mechanisms. arxiv:2410.18977 ,2024. [5] Ling-Hao Chen, Shunlin Lu, Ailing Zeng, Hao Zhang, Benyou Wang, Ruimao Zhang, and Lei Zhang. Motionllm: Understanding human behaviors from human motions and videos. arXiv preprint arXiv:2405.20340 , 2024. [6] Xin Chen, Biao Jiang, Wen Liu, Zilong Huang, Bin Fu, Tao Chen, and Gang Yu. Executing your commands via motion diffusion in latent space. In 2023 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 18000–18010, 2023. [7] Patrick Esser, Robin Rombach, and Bjorn Ommer. Taming transformers for high-resolution image synthesis. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 12873–12883, June 2021. [8] Ke Fan, Shunlin Lu, Minyue Dai, Runyi Yu, Lixing Xiao, Zhiyang Dou, Junting Dong, Lizhuang Ma, and Jingbo Wang. Go to zero: Towards zero-shot motion generation with million-scale data. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) ,pages 13336–13348, October 2025. [9] Xuehao Gao, Yang Yang, Zhenyu Xie, Shaoyi Du, Zhongqian Sun, and Yang Wu. Guess: Gradually enriching synthesis for text-driven human motion generation. IEEE Transactions on Visualization and Computer Graphics , 30(12):7518–7530, 2024. [10] Kehong Gong, Dongze Lian, Heng Chang, Chuan Guo, Zihang Jiang, Xinxin Zuo, Michael Bi Mi, and Xinchao Wang. TM2D: Bimodality Driven 3D Dance Generation via Music-Text Integration . In 2023 IEEE/CVF International Conference on Computer Vision (ICCV) , pages 9908–9918, Los Alamitos, CA, USA, October 2023. IEEE Computer Society. [11] Chuan Guo, Inwoo Hwang, Jian Wang, and Bing Zhou. Snapmogen: Human motion generation from expressive texts. arXiv preprint arXiv:2507.09122 , 2025. [12] Chuan Guo, Yuxuan Mu, Muhammad Gohar Javed, Sen Wang, and Li Cheng. Momask: Generative masked modeling of 3d human motions. In 2024 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 1900–1910, 2024. [13] Chuan Guo, Shihao Zou, Xinxin Zuo, Sen Wang, Wei Ji, Xingyu Li, and Li Cheng. Generating diverse and natural 3d human motions from text. In 2022 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 5142–5151, 2022. [14] Chuan Guo, Xinxin Zuo, Sen Wang, and Li Cheng. Tm2t: Stochastic and tokenized modeling for the reciprocal generation of 3d human motions and texts. In European Conference on Computer Vision , pages 580–597, 2022. [15] Félix G. Harvey, Mike Yurick, Derek Nowrouzezahrai, and Christopher Pal. Robust motion in-betweening. ACM Trans. Graph. , 39(4), August 2020. 10 [16] Johannes Hertrich, Antonin Chambolle, and Julie Delon. On the relation between rectified flows and optimal transport. CoRR , abs/2505.19712, 2025. [17] Geoffrey Hinton, Oriol Vinyals, and Jeffrey Dean. Distilling the knowledge in a neural network. 
+
+arXiv preprint arXiv:1503.02531 , 2015. [18] S. Rohollah Hosseyni, Ali Ahmad Rahmani, S. Jamal Seyedmohammadi, Sanaz Seyedin, and Arash Mohammadi. Bad: Bidirectional auto-regressive diffusion for text-to-motion generation. 
+
+arXiv preprint arXiv:2409.10847 , 2024. [19] Yiheng Huang, Hui Yang, Chuanchen Luo, Yuxi Wang, Shibiao Xu, Zhaoxiang Zhang, Man Zhang, and Junran Peng. Stablemofusion: Towards robust and efficient diffusion-based motion generation framework. arXiv preprint arXiv:2405.05691 , 2024. [20] Yiming Huang, Weilin Wan, Yue Yang, Chris Callison-Burch, Mark Yatskar, and Lingjie Liu. Como: Controllable motion generation through language guided pose code editing. In European Conference on Computer Vision , pages 180–196, 2025. [21] Biao Jiang, Xin Chen, Wen Liu, Jingyi Yu, Gang Yu, and Tao Chen. Motiongpt: Human motion as a foreign language. In Advances in Neural Information Processing Systems , volume 36, pages 20067–20079, 2023. [22] Peng Jin, Yang Wu, Yanbo Fan, Zhongqian Sun, Wei Yang, and Li Yuan. Act as you wish: Fine-grained control of motion diffusion model with hierarchical semantic graphs. In Advances in Neural Information Processing Systems , volume 36, pages 15497–15518, 2023. [23] Yaron Lipman, Ricky T. Q. Chen, Heli Ben-Hamu, Maximilian Nickel, and Matt Le. Flow matching for generative modeling. arXiv preprint arXiv:2210.02747 , 2023. [24] Yunhong Lou, Linchao Zhu, Yaxiong Wang, Xiaohan Wang, and Yi Yang. Diversemotion: To-wards diverse human motion generation via discrete diffusion. arXiv preprint arXiv:2309.01372 ,2023. [25] Shunlin Lu, Jingbo Wang, Zeyu Lu, Ling-Hao Chen, Wenxun Dai, Junting Dong, Zhiyang Dou, Bo Dai, and Ruimao Zhang. Scamo: Exploring the scaling law in autoregressive motion generation model. In 2025 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 27872–27882, 2025. [26] Naureen Mahmood, Nima Ghorbani, Nikolaus F. Troje, Gerard Pons-Moll, and Michael Black. Amass: Archive of motion capture as surface shapes. In 2019 IEEE/CVF International Confer-ence on Computer Vision (ICCV) , pages 5441–5450, 2019. [27] Zichong Meng, Yiming Xie, Xiaogang Peng, Zeyu Han, and Huaizu Jiang. Rethinking diffusion for text-driven human motion generation: Redundant representations, evaluation, and masked autoregression. arXiv preprint arXiv:2411.16575 , 2025. [28] Mathis Petrovich, Michael J. Black, and Gül Varol. Temos: Generating diverse human motions from textual descriptions. In European Conference on Computer Vision , pages 480–497, 2022. [29] Ekkasit Pinyoanuntapong, Pu Wang, Minwoo Lee, and Chen Chen. Mmm: Generative masked motion model. In 2024 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 1546–1555, 2024. [30] Colin Raffel, Noam Shazeer, Adam Roberts, Katherine Lee, Sharan Narang, Michael Matena, Yanqi Zhou, Wei Li, and Peter J. Liu. Exploring the limits of transfer learning with a unified text-to-text transformer. Journal of Machine Learning Research , 21(140):1–67, 2020. [31] Junyu Shi, Lijiang Liu, Yong Sun, Zhiyuan Zhang, Jinni Zhou, and Qiang Nie. Genm3: Generative pretrained multi-path motion model for text conditional human motion generation. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , pages 13129–13139, October 2025. [32] Guy Tevet, Sigal Raab, Brian Gordon, Yonatan Shafir, Daniel Cohen-Or, and Amit H. Bermano. Human motion diffusion model. arXiv preprint arXiv:2209.14916 , 2022. 11 [33] Yin Wang, Zhiying Leng, Frederick W. B. Li, Shun-Cheng Wu, and Xiaohui Liang. Fg-t2m: Fine-grained text-driven human motion generation via diffusion model. In 2023 IEEE/CVF International Conference on Computer Vision (ICCV) , pages 21978–21987, 2023. [34] Yuan Wang, Di Huang, Yaqi Zhang, Wanli Ouyang, Jile Jiao, Xuetao Feng, Yan Zhou, Pengfei Wan, Shixiang Tang, and Dan Xu. Motiongpt-2: A general-purpose motion-language model for motion generation and understanding. arXiv preprint arXiv:2410.21747 , 2024. [35] Lixing Xiao, Shunlin Lu, Huaijin Pi, Ke Fan, Liang Pan, Yueer Zhou, Ziyong Feng, Xiaowei Zhou, Sida Peng, and Jingbo Wang. Motionstreamer: Streaming motion generation via diffusion-based autoregressive model in causal latent space. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , pages 10086–10096, October 2025. [36] Lijun Yu, Yong Cheng, Kihyuk Sohn, José Lezama, Han Zhang, Huiwen Chang, Alex Haupt-mann, Ming-Hsuan Yang, Yuan Hao, Irfan Essa, and Lu Jiang. Magvit: Masked generative video transformer. In IEEE Conference on Computer Vision and Pattern Recognition (CVPR) ,2023. [37] Jianrong Zhang, Yangsong Zhang, Xiaodong Cun, Yong Zhang, Hongwei Zhao, Hongtao Lu, Xi Shen, and Ying Shan. Generating human motion from textual descriptions with discrete representations. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 14730–14740, June 2023. [38] Linfeng Zhang, Jiebo Song, Anni Gao, Jingwei Chen, Chenglong Bao, and Kaisheng Ma. Be your own teacher: Improve the performance of convolutional neural networks via self distillation. In 2019 IEEE/CVF International Conference on Computer Vision (ICCV) , pages 3712–3721, 2019. [39] Mingyuan Zhang, Zhongang Cai, Liang Pan, Fangzhou Hong, Xinying Guo, Lei Yang, and Ziwei Liu. Motiondiffuse: Text-driven human motion generation with diffusion model. IEEE Transactions on Pattern Analysis and Machine Intelligence , 46(6):4115–4128, 2024. [40] Mingyuan Zhang, Xinying Guo, Liang Pan, Zhongang Cai, Fangzhou Hong, Huirong Li, Lei Yang, and Ziwei Liu. Remodiffuse: Retrieval-augmented motion diffusion model. In 2023 IEEE/CVF International Conference on Computer Vision (ICCV) , pages 364–373, 2023. [41] Zeyu Zhang, Akide Liu, Ian Reid, Richard Hartley, Bohan Zhuang, and Hao Tang. Motion mamba: Efficient and long sequence motion generation. In European Conference on Computer Vision , pages 265–282. Springer, 2025. [42] Chongyang Zhong, Lei Hu, Zihao Zhang, and Shihong Xia. Attt2m: Text-driven human motion generation with multi-perspective attention mechanism. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , pages 509–519, October 2023. [43] Wenyang Zhou, Zhiyang Dou, Zeyu Cao, Zhouyingcheng Liao, Jingbo Wang, Wenjia Wang, Yuan Liu, Taku Komura, Wenping Wang, and Lingjie Liu. Emdm: Efficient motion diffusion model for fast, high-quality motion generation. arXiv preprint arXiv:2312.02256 , 2023. [44] Bingfan Zhu, Biao Jiang, Sunyi Wang, Shixiang Tang, Tao Chen, Linjie Luo, Youyi Zheng, and Xin Chen. Motiongpt3: Human motion as a second modality. arXiv preprint arXiv:2506.24086 ,2025. [45] Qiran Zou, Shangyuan Yuan, Shian Du, Yu Wang, Chang Liu, Yi Xu, Jie Chen, and Xiangyang Ji. Parco: Part-coordinating text-to-motion synthesis. arXiv preprint arXiv:2403.18512 , 2024. 12 A More Results 
+
+A.1 More Qualitative Results 
+
+We supplement some qualitative results of the text-to-motion comparison on HumanML3D, dividing them into shorter and longer prompts, as shown in Figure 6 and Figure 7 respectively. 
+
+For shorter prompts, MotionGPT generally generates semantically correct motions, but it struggles with direction- and plural-related descriptions (e.g., “right side”, “arms” and “left/right arm”). While MoMask++ and MotionGPT3 improve in this regard, they still struggle to generate motions that perfectly match the text descriptions. Furthermore, the motions generated by MoMask++ are largely identical and lack dynamism. In contrast, our method is able to generate high-quality motions that are highly consistent with the input text. 
+
+For longer prompts, while MotionGPT produces semantically plausible basic motions, it struggles significantly with extended descriptions that require a series of distinct actions (e.g., knee down” 
+
+→ raising right arm up” → “placing its forearm in front of the face”). Although MoMask++ and MotionGPT3 show improved sequence handling, they still fail to achieve precise text-motion alignment, frequently suffering from incorrect action ordering or the insertion of irrelevant movements. Conversely, our approach excels at interpreting complex, multi-action prompts, delivering high-quality motion sequences that strictly adhere to the textual conditions. 
+
+A.2 More Quantitative Evaluation 
+
+To comprehensively evaluate our method on text-to-motion generation, we report a full comparison with prior T2M approaches in Table 6. The main methods include the following: TEMOS [ 28 ], TM2T [ 14 ], T2M [ 13 ], TM2D [ 10 ], MotionDiffuse [ 39 ], MDM [ 32 ], MotionLLM [ 5], MLD [ 6], Motion Mamba [ 41 ], ReMoDiffuse [ 40 ], Fg-T2M [ 33 ], T2M-GPT [ 37 ], EMDM [ 43 ], GraphMotion [22 ], AttT2M [ 42 ], GUESS [ 9 ], MMM [ 29 ], MotionCLR [ 4], MotionGPT [ 21 ], MotionGPT-2 [ 34 ], Parco [ 45 ], StableMoFusion [ 19 ], DiverseMotion [ 24 ], BAD [ 18 ], MoMask [ 12 ], Momask++ [ 11 ], MotionGPT3 [ 44 ]. The results show that our method consistently outperforms prior approaches and achieves competitive performance on HumanML3D. 
+
+B More Ablation Studies 
+
+In this section, we have made additional supplementary information as follows: (1). The impact of the number of ODE sampling steps and the size of the CFG model during the flow matching process on the generated results. (2). We compared the reasoning speed of our framework with that of other competitive frameworks. (3). The influence of the proportions of Tokens and Latents on motion reconstruction. 
+
+Inference Hyperparameters. During the inference process of flow matching, the scaling coefficient s of CFG and the number of ODE sampling L are two crucial hyperparameters. In Figure 8, we present the performance curves of FID and R-Precision@3 by changing different values of s and L. Several key observations emerge. Firstly, more sampling times do not necessarily lead to better results. As L increases, FID quickly converges to a minimum value, typically within approximately 40 iterations. After more than 40 iterations, there is no further performance improvement in FID, but R-Precision@3 will experience a certain decline. Secondly, the optimal guidance coefficient s for inference is approximately around s = 2. Over-guided decoding may even lead to a decrease in performance. Our FlowCoMotion requires fewer inference steps than most diffusion models. 
+
+Inference Time. In Figure 9, we compare inference efficiency and quality across methods, measuring runtime as the average latency over 100 samples on an NVIDIA RTX 2080 Ti. FlowCoMotion provides a stronger quality–efficiency trade-off than prior approaches. Specifically, by leveraging a Flow Matching framework rather than traditional diffusion models, our approach significantly accelerates the generation process. The optimal transport trajectories inherent in Flow Matching allow for a drastic reduction in the number of sampling steps required without compromising motion fidelity. Consequently, FlowCoMotion substantially decreases inference latency, achieving generation speeds that closely approach those of fast autoregressive-based methods, while still maintaining superior motion quality. 13 Description of Motion MotionGPT MoMask++ MotionGPT3 Ours                
+
+> A person runs forward and slightly
+> to the right for 3 or 4 steps.
+> A person lifts their right hand over
+> their head and extends both knees
+> upward .
+> Person is sprinting to their right
+> The person running fast on the floor.
+> Waving arms around randomly.
+> The character is crouching down
+> and shuffling
+> A person swings its right arm
+> upwards
+
+Figure 6: Qualitative evaluation on text-to-motion generation. The state-of-the-art methods presented in this paper are all implemented using the same inference and rendering settings on HumanML3D. Misaligned motion is indicated by red text and bounding boxes. We selected some results with shorter prompts. The results demonstrate that our motion-language framework exhibits strong text understanding capabilities, enabling the generation of more accurate and coherent motion. 
+
+14 Description of Motion MotionGPT Mo Mask++ MotionGPT3 Ours 
+
+A person does a single knee down 
+
+with left leg with right leg stepping 
+
+forward while raising right arm up 
+
+to head level and placing its forearm 
+
+in front of face , and then resume the 
+
+original position. 
+
+Person is walking forwards quite 
+
+fast, then squats down to pick 
+
+something up to then turn around 
+
+and walk fast again. appears to be 
+
+in a rush and moving an item 
+
+Person stands with arms extended 
+
+to their side then lower them then 
+
+walk forward then swing arms side 
+
+to side then go to side swinging 
+
+arms still then punches in front 
+
+A person ducks down to walk 
+
+underneath a bar or fence in front of 
+
+them. they then turn right, walk 
+
+around something, then turn right 
+
+again to climb up a ladder or 
+
+something. Figure 7: Qualitative evaluation on text-to-motion generation. The provided state-of-the-art methods are under the same training and inference setting on HumanML3D. Misaligned motions are indicated by red texts. We selected some results with longer prompts. The results indicate that our motion-language framework exhibits strong text comprehension capabilities, leading to more accurate and coherent motion generation. 20 25 30 35 40 45 50 55 60         
+
+> ODE Steps
+> 0.06
+> 0.08
+> 0.10
+> 0.12
+> 0.14
+> 0.16
+> 0.18
+> 0.20
+> FID (  )
+> Ablation on ODE Steps
+> 012345678
+> CFG Scales
+> 0.06
+> 0.08
+> 0.10
+> 0.12
+> 0.14
+> 0.16
+> FID (  )
+> Ablation on CFG Scales
+> 0.810
+> 0.815
+> 0.820
+> 0.825
+> 0.830
+> R-Precision@3 (  )
+> 0.70
+> 0.72
+> 0.74
+> 0.76
+> 0.78
+> 0.80
+> 0.82
+> R-Precision@3 (  )
+
+Figure 8: Evaluation sweep over ODE numbers L (left) and guidance scale s (right) in inference. We find a accuracy-fidelity sweep spot around s = 2, meanwhile 40 iterations (L = 40) for flow matching yield sufficiently good results. 0.0 2.5 5.0 7.5 10.0 12.5 15.0 17.5 20.0 
+
+Average Inference Time (AIT) - Seconds 
+
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+> 1.25
+> 1.50
+> Fréchet Inception Distance (FID)
+> TM2T
+> FID: 1.50 | AIT: 0.76s
+> T2M
+> FID: 1.09 | AIT: 0.03s
+> MotionDiffuse
+> FID: 0.63 | AIT: 10.89s
+> MDM
+> FID: 0.54 | AIT: 18.20s
+> MLD
+> FID: 0.47 | AIT: 0.22s
+> T2M-GPT
+> FID: 0.12 | AIT: 0.38s
+> MoMask
+> FID: 0.04 | AIT: 0.12s
+> FlowCoMotion
+> FID: 0.06 | AIT: 0.52s
+
+Figure 9: Comparison of inference time costs. All tests were conducted on a single NVIDIA RTX 2080 Ti. Models closer to the origin indicate better performance. For non-autoregressive models, our method significantly improves inference speed, thanks to the flow matching directional velocity field. 
+
+15 Table 6: Quantitative evaluation on HumanML3D test set. 
+
+Methods R-precision ↑ FID ↓ MultiModal Dist ↓ Diversity → MModality ↑
+
+Top 1 Top 2 Top 3 Real motions 0.511 ±.003 0.703 ±.003 0.797 ±.002 0.002 ±.000 2.974 ±.008 9.503 ±.065 -TEMOS 0.424 ±.002 0.612 ±.002 0.722 ±.002 3.734 ±.028 3.703 ±.008 8.973 ±.071 0.368 ±.018 
+
+TM2T 0.424 ±.003 0.618 ±.003 0.729 ±.002 1.501 ±.017 3.467 ±.011 8.589 ±.076 2.424 ±.093 
+
+T2M 0.457 ±.002 0.639 ±.003 0.740 ±.003 1.067 ±.002 3.340 ±.008 9.188 ±.002 2.090 ±.083 
+
+TM2D 0.319 ±.000 - - 1.021 ±.000 4.098 ±.000 9.513 ±.000 4.139 ±.000 
+
+MotionDiffuse 0.491 ±.001 0.681 ±.001 0.782 ±.001 0.630 ±.001 3.113 ±.001 9.410 ±.049 1.553 ±.042 
+
+MDM 0.320 ±.005 0.498 ±.004 0.611 ±.007 0.544 ±.044 5.566 ±.027 9.559 ±.086 2.799 ±.072 
+
+MotionLLM 0.482 ±.004 0.672 ±.003 0.770 ±.002 0.491 ±.019 3.138 ±.010 9.838 ±.244 -MLD 0.481 ±.003 0.673 ±.003 0.772 ±.002 0.473 ±.013 3.196 ±.010 9.724 ±.082 2.413 ±.079 
+
+Motion Mamba 0.502 ±.003 0.693 ±.002 0.792 ±.002 0.281 ±.009 3.060 ±.058 9.871 ±.084 2.294 ±.058 
+
+MotionCraft 0.501 ±.003 0.697 ±.003 0.796 ±.002 0.173 ±.002 3.025 ±.008 9.543 ±.098 -ReMoDiffuse 0.510 ±.005 0.698 ±.006 0.795 ±.004 0.103 ±.004 2.974 ±.016 9.018 ±.075 1.795 ±.043 
+
+Fg-T2M 0.492 ±.002 0.683 ±.003 0.783 ±.002 0.243 ±.019 3.109 ±.007 9.278 ±.072 1.614 ±.049 
+
+T2M-GPT 0.492 ±.003 0.679 ±.002 0.775 ±.002 0.141 ±.005 3.121 ±.009 9.722 ±.082 1.831 ±.048 
+
+EMDM 0.498 ±.007 0.684 ±.006 0.786 ±.006 0.112 ±.019 3.110 ±.027 9.551 ±.078 1.641 ±.078 
+
+GraphMotion 0.504 ±.003 0.699 ±.002 0.785 ±.002 0.116 ±.007 3.070 ±.008 9.692 ±.067 2.766 ±.096 
+
+AttT2M 0.499 ±.003 0.690 ±.002 0.786 ±.002 0.112 ±.006 3.038 ±.007 9.700 ±.090 2.452 ±.051 
+
+GUESS 0.503 ±.003 0.688 ±.002 0.787 ±.002 0.109 ±.007 3.006 ±.007 9.826 ±.104 2.430 ±.100 
+
+MMM 0.504 ±.003 0.696 ±.003 0.794 ±.002 0.080 ±.003 2.998 ±.007 9.411 ±.058 1.164 ±.041 
+
+MotionCLR 0.542 ±.001 0.733 ±.002 0.827 ±.003 0.099 ±.003 2.981 ±.011 - 2.145 ±.043 
+
+MotionGPT 0.492 ±.003 0.681 ±.003 0.778 ±.002 0.232 ±.008 3.096 ±.008 9.528 ±.071 2.008 ±.084 
+
+MotionGPT-2 0.496 ±.002 0.691 ±.003 0.782 ±.004 0.191 ±.004 3.080 ±.013 9.860 ±.026 2.137 ±.022 
+
+ParCo 0.515 ±.003 0.706 ±.003 0.801 ±.002 0.109 ±.005 2.927 ±.008 9.576 ±.088 1.382 ±.060 
+
+StableMoFusion 0.553 ±.003 0.748 ±.002 0.841 ±.002 0.098 ±.003 - 9.748 ±.092 1.774 ±.051 
+
+DiverseMotion 0.515 ±.003 0.706 ±.002 0.802 ±.002 0.072 ±.004 2.941 ±.007 9.683 ±.102 1.869 ±.089 
+
+BAD 0.517 ±.002 0.713 ±.003 0.808 ±.003 0.065 ±.003 2.901 ±.008 9.694 ±.068 1.194 ±.044 
+
+MoMask 0.521 ±.002 0.713 ±.002 0.807 ±.002 0.045 ±.002 2.958 ±.008 9.620 ±.064 1.241 ±.04 
+
+MoMask++ 0.528 ±.003 0.718 ±.003 0.811 ±.002 0.072 ±.003 2.912 ±.008 9.573 ±.062 1.227 ±.046 
+
+MotionGPT3 0.543 ±.003 0.735 ±.002 0.828 ±.002 0.217 ±.010 2.793 ±.007 9.662 ±.072 1.366 ±.046 
+
+Ours nova 0.532 ±.002 0.725 ±.002 0.819 ±.002 0.072 ±.003 2.887 ±.006 9.377 ±.078 1.875 ±.088 
+
+Ours orbit 0.550 ±.003 0.740 ±.003 0.832 ±.002 0.061 ±.003 2.852 ±.008 9.457 ±.067 2.071 ±.093 Best 
+
+> [0.0036, 0.0228]
+> [0.0070, 0.0621]
+> [0.0039, 0.0234]
+> [0.0048, 0.0280]
+
+Figure 10: Ablation analysis on representation dimension choices. We report reconstruction quality using FID and MPJPE. The larger of the circles represents a better MPJPE. 
+
+Representation Dimension. We study how allocating capacity between the token and latent branches affects reconstruction quality. Keeping the total dimensionality fixed, we vary the dimensions of both branches and summarize the results in Figure 10. Performance is best when one branch receives most of the capacity while the other retains a non-trivial share; overly skewed allocations lead to clear degradation. This trend supports the complementarity of the two representations: tokens capture semantic structure, whereas continuous latent preserve geometric and temporal detail. A primary–secondary allocation thus provides the strongest hybrid representation under a fixed budget. Conversely, forcing an equal division restricts the representational power of both branches, preventing either from fully modeling its target features. Based on these empirical observations, we adopt this optimal asymmetric allocation as our default configuration for all subsequent experiments. 16 C Human Evaluation on Text-to-Motion Quality 
+
+This evaluation presents a comprehensive user evaluation of our motion generation framework FlowCoMotion by conducting a Google Forms survey as shown in Figure 11. Participants were asked to evaluate the effectiveness and realism of the generated motions based on accuracy, smoothness, realism, and overall user experience. 
+
+Evaluation Setup. 1. For the individual evaluation, we provided 44 distinct motion sequences. To mitigate potential biases introduced by user selection inertia, 6 additional sequences were randomly inserted into the set but excluded from the final analysis. Participants rated these motions on a three-point scale (scored from 1 to 3), and we report the final average rating. 2. For the comparative evaluation, we curated 50 sets of motion sequences generated by different models based on identical textual descriptions. Participants were asked to select the best-performing model within each set. This allowed for a direct assessment of our model’s realism, coherence, and engagement against existing alternatives. We report the final average win rate (out of 50) based on how often users felt our method achieved the best results. 
+
+Figure 11: User study form. The User Interface (UI) was used in our user study. Our user study consists of 50 individual evaluations and 50 comparative evaluations. We incorporate elements from other methods to prevent the review results from becoming invalid due to user inertia. 
+
+Baseline. We selected three equally competitive models: MotionGPT, Momask++, and MotionGPT3. We evaluated them using high-quality rendered sequence images and videos. 
+
+Human Evaluation Results Analysis. As illustrated in Figure 12, FlowCoMotion demonstrates clear superiority over baselines including MoMask++ , MotionGPT3, and MotionGPT. In the individual evaluation, our method achieved high satisfaction rates of 86.0% , 88.0% , and 89.0% for Motion Quality , Motion Diversity , and Text-Motion Alignment, respectively. Furthermore, the comparative evaluation reveals a strong human preference for FlowCoMotion, which was selected as the top-performing model by 44.8% , 48.8% , and 52.3% of participants across the three respective metrics. These findings confirm that our model generates more realistic, diverse, and well-aligned motions than existing approaches. Motion Quality Motion Diversity Text-Motion              
+
+> Alignment
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> Percentage (%)
+> 86.0% 88.0% 89.0%
+> 5.1%
+> 6.6% 5.2% 5.2%
+> FlowCoMotion
+> MoMask++
+> MotionGPT3
+> MotionGPT
+> Motion Quality Motion Diversity Text-Motion
+> Alignment
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> Human Preference (%)
+> 44.8% 48.8% 52.3%
+> 22.2% 16.7% 12.6%
+> 27.0% 29.1% 31.0%
+> 6.1% 5.4%
+> FlowCoMotion
+> MoMask++
+> MotionGPT3
+> MotionGPT
+
+Figure 12: Human preference on Text-to-Motion Generation by comparing FlowCoMotion with MotionGPT [ 21 ], Mo-mask++ [11] and MotionGPT3 [44]. We report the scores on three generation aspects. 
+
+17 D Why Token-Latent Coupling Helps: A Theoretical View 
+
+Let X represent a motion sequence, modeled as a vector in RT ×d, where T denotes the sequence length and d is the dimension of each representation. Additionally, let C be the textual condition that drives the motion generation process. Our framework constructs two distinct representations from X: (1). A discrete token representation 
+
+Zq , derived from the Residual Vector Quantization tokenizer. (2). A continuous latent representation 
+
+Zc, obtained from a VAE’s encoder. To integrate both modalities, we first extract a dequantized multi-scale token feature ˆzq =
+
+PVv=0 I( ˆf v , h v ), where ˆf v represents the token features at scale v, and hv denotes the associ-ated multi-scale feature for each token. We can combine ˆzq with ˆzc using a coupling network, producing a fused representation C defined as: 
+
+ˆzgt = C(ˆ zq , ˆzc) ˆm = D(ˆ zgt ) (8) In Stage 3, we define the flow matching data endpoint as z1 = zgt , and train a condition velocity field to map z0 ∼ N (0 , I ) to z1, where z0 is drawn from a standard Gaussian distribution. 
+
+D.1 Coupling improves the best achievable reconstruction risk. 
+
+We quantify the utility of token–latent coupling through the population Bayes risk under squared reconstruction loss. For any representation S of X, define the optimal reconstruction risk 
+
+R⋆(S) ≜ inf  
+
+> g
+
+E∥X − g(S)∥22
+
+ , (9) where g ranges over all measurable decoders. 
+
+Proposition D.1 (Bayes risk monotonicity and a joint-representation limit) . Let S1, S 2 be two representations of X. If σ(S1) ⊆ σ(S2) (i.e., S2 is at least as informative as S1), then 
+
+R⋆(S2) ≤ R ⋆(S1). (10) 
+
+In particular, for the joint-representation Sjoint ≜ (ˆ zc, ˆzq ), we have 
+
+R⋆(ˆ zc, ˆzq ) ≤ min 
+
+n
+
+R⋆(ˆ zc), R⋆(ˆ zq )
+
+o
+
+. (11) 
+
+Moreover, the inequality in Equation (11) is typically strict whenever the two branches are comple-mentary, i.e., one branch reduces the conditional reconstruction uncertainty left by the other on a set of nonzero probability mass. Proof. Under squared loss, the Bayes-optimal decoder is the conditional expectation g⋆(S) = E[X |
+
+S]. Hence 
+
+R⋆(S) = E∥X − E[X | S]∥22
+
+ = E[Var( X | S)] . (12) If σ(S1) ⊆ σ(S2), conditioning on S2 cannot increase conditional variance, implying Var( X |
+
+S2) ≤ Var( X | S1) almost surely, and thus R⋆(S2) ≤ R ⋆(S1). Applying this with S2 = (ˆ zc, ˆzq )
+
+and S1 = ˆ zc (or S1 = ˆ zq ) yields Equation (11). Proposition D.1 should be read as a representational limit statement : the joint statistic (ˆ zc, ˆzq ) admits a Bayes-optimal reconstruction risk no worse than either branch alone. Our coupling network 
+
+ˆzgt = C(ˆ zq , ˆzc) can be viewed as a learnable compression of this joint statistic. In Stage 1 and 2, we train C and the decoder D to reconstruct X from ˆzgt , which encourages ˆzgt to preserve the reconstruction-relevant information in (ˆ zc, ˆzq ). Consequently, as the capacity of C and D increases and optimization succeeds, the achievable reconstruction risk using ˆzgt can approach the joint-representation limit in Equation (11). 18 D.2 Coupling Reduces the Irreducible Error of Flow Matching. 
+
+We next connect coupling to conditional flow matching. Let z1 denote the target endpoint latent (in our method, z1 = ˆ zgt ), and draw z0 ∼ N (0 , I ). Consider the standard linear interpolation path 
+
+zt = (1 − t)z0 + tz 1, ut ≜ dz t
+
+dt = z1 − z0, t ∼ U (0 , 1) . (13) The population conditional flow matching objective is 
+
+LFM (v) ≜ E∥ut − v(zt, t, C )∥22
+
+ , (14) where the expectation is over (t, z 0, z 1, C ). By the optimality of L2 regression, 
+
+v⋆(zt, t, C ) = E[ut | zt, t, C ], (15) and the minimum achievable loss equals the irreducible conditional variance 
+
+L⋆
+
+> FM
+
+(z1) ≜ inf  
+
+> v
+
+LFM (v) = E[Var( ut | zt, t, C )] . (16) We compare two endpoint constructions under the same text condition C: a coupled endpoint zcp 1
+
+(e.g., zcp 1 = ˆ zgt = C(ˆ zq , ˆzc)) and a single-branch endpoint zsb 1 . These two choices induce different random variables zcp  
+
+> t
+
+= (1 − t)z0 + tz cp 1 and zsb  
+
+> t
+
+= (1 − t)z0 + tz sb 1 , and their irreducible errors are compared through their respective conditionings. In addition, throughout Stage 1 and 2 we regularize the latent scales (e.g., VAE KL regularization), so zcp 1 and zsb 1 are comparable in magnitude; hence the variance change discussed below is attributed to reduced conditional ambiguity (mode dispersion) rather than trivial rescaling. 
+
+Theorem D.1 (Reduction of an irreducible error upper bound via endpoint concentration) . Assume that coupling makes the endpoint distribution more concentrated under the text condition, in the sense that 
+
+E∥zcp 1 − E[zcp 1 | C]∥22
+
+ ≤ E∥zsb 1 − E[zsb 1 | C]∥22
+
+ . (17) 
+
+Then, for any fixed t ∈ (0 , 1) , the irreducible conditional variance term admits the bound 
+
+E[Var( ucp  
+
+> t
+
+| zcp  
+
+> t
+
+, t, C )] ≤ 1(1 − t)2 E∥zcp 1 − E[zcp 1 | C]∥22
+
+ , (18) 
+
+and analogously 
+
+EVar( usb  
+
+> t
+
+| zsb  
+
+> t
+
+, t, C ) ≤ 1(1 − t)2 E∥zsb 1 − E[zsb 1 | C]∥22
+
+ . (19) 
+
+Consequently, under Equation (17) , coupling reduces an upper bound on the irreducible variance term in Equation (16) . (The factor 1(1 −t)2 diverges as t → 1, which is expected: near the endpoint, the uncertainty of the velocity field is highly sensitive to the endpoint distribution.) Proof. Fix t ∈ (0 , 1) and condition on (t, C ). Since zt = (1 − t)z0 + tz 1 and ut = z1 − z0, we eliminate z0 via 
+
+z0 = z1 − ut =⇒ zt = (1 − t)( z1 − ut) + tz 1 = z1 − (1 − t)ut, (20) equivalently z1 = zt + (1 − t)ut. Conditioning on (zt, t, C ) yields 
+
+Var( z1 | zt, t, C ) = (1 − t)2 Var( ut | zt, t, C ), (21) and hence 
+
+E[Var( ut | zt, t, C )] = 1(1 − t)2 E[Var( z1 | zt, t, C )] . (22) By the law of total variance, 
+
+E[Var( z1 | zt, t, C )] ≤ E[Var( z1 | C)] = E∥z1 − E[z1 | C]∥22
+
+ − E∥E[z1 | zt, t, C ] − E[z1 | C]∥22
+
+
+
+≤ E∥z1 − E[z1 | C]∥22
+
+ .
+
+(23) Combining the above gives the generic bound 
+
+E[Var( ut | zt, t, C )] ≤ 1(1 − t)2 E∥z1 − E[z1 | C]∥22
+
+ , (24) which, applied to zcp 1 and zsb 1 , yields Equations (18) and (19). Finally, Equation (17) transfers the improvement to the corresponding upper bound. 19 Equation (16) shows that conditional flow matching is fundamentally limited by the conditional dispersion of the target velocity ut given (zt, t, C ). In text-to-motion, the mapping C 7 → X is typically one-to-many, so a single-branch endpoint may aggregate multiple semantic modes under the same caption, increasing the variability of z1 and injecting additional uncertainty into the regression target ut. Coupling injects discrete semantic anchors into the endpoint construction, which can make 
+
+p(z1 | C) more concentrated in the sense of Equation (17), thereby reducing an upper bound on the irreducible variance term in Equation (16) and easing the conditional regression task learned by vθ .
+
+D.3 Discussion on assumptions and how our design satisfies them. 
+
+The above analysis relies on two practical assumptions. First, the coupled representation should be sufficiently information-preserving with respect to the two branches, so that fusing (ˆ zq , ˆzc) into ˆzgt 
+
+does not discard reconstruction-relevant cues. In our design, this is supported by an expressive cou-pling network C (e.g., residual MLP/Transformer blocks) and the reconstruction-driven supervision in Stage 1 and 2, where C and D are optimized to minimize E∥X − D (C(ˆ zq , ˆzc)) ∥22. This training objective encourages ˆzgt to behave as a faithful compression of the joint statistic, aligning with the representational limit in Equation (11). Second, the variance-bound improvement in Theorem D.1 presumes that coupling makes the end-point distribution p(z1 | C) more concentrated in a scale-comparable space. Our implementation promotes this comparability through latent regularization and normalization (e.g., the VAE prior/KL regularization for ˆzc and codebook/embedding normalization for the RVQ branch), which prevents the bound reduction from being explained by trivial rescaling. Moreover, the RVQ commitment loss stabilizes token assignments across time scales, reducing semantic drift of ˆzq and improving the predictability between discrete anchors and continuous motion dynamics. Empirically, this reduces conditional ambiguity of the endpoint under the same caption, making the conditional regression target in flow matching less noisy and easier to learn with finite-capacity vector fields. 
+
+E Details on Our Work 
+
+E.1 Training Objectives Reconstruction Loss. As the primary objective, this loss ensures the accurate recovery of motion sequences by minimizing the L2 distance between predicted ( ˆX) and ground truth ( X) motions. Its weight is fixed at λrec = 1 .0 across both stages: 
+
+Lrec = E[∥X − ˆX∥22] (25) 
+
+Commitment Loss. To stabilize the quantization process, the commitment loss ( λcommit = 0 .01 )minimizes the distance between the encoder’s continuous latent output and its nearest codebook entry. Coupled with temporal resolution sampling, this guarantees that the model effectively samples semantic anchors at varying time intervals without needing explicit formulation here. 
+
+Forward Kinematics (FK) Loss. Acting as a structural regularization term to ensure physically plausible motions, the FK loss compares predicted and expected joint positions: 
+
+Lf k = E[∥Xpred − XFK ∥22] (26) We set λf k = 0 .5 in Stage 1 and reduce it to 0.1 in Stage 2. 
+
+Dynamic Distillation Loss. In Stage 1, a multi-view teacher-student alignment regularizes the latent space. The weight λdis linearly warms up to 0.02 , holds constant, then decays to 0.0. View generation. 
+
+Sequences yield two global views and four local views (random crops ∈ [0 .3, 0.7] ). Local views receive temporal augmentations: time-warp, Gaussian noise, and temporal masking. Aggregation. Asingle per-view representation is obtained via temporal masked mean pooling: 
+
+ϕ(F, M ) = 
+
+PTt=1 Mt Ft
+
+PTt=1 Mt + ε (27) 
+
+Temperature and centering. We use separate temperatures ( τteacher = 0 .04 , τstudent = 0 .07 ) and center teacher logits via an EMA buffer. The L2 distillation objective minimizes the error between student outputs and teacher targets. 20 Velocity, Acceleration, and Jerk Losses. Applied in Stage 2 to enhance temporal consistency, these losses penalize deviations in the first three derivatives of motion: velocity ( λvel = 0 .2), acceleration (λacc = 0 .05 ), and jerk ( λjerk = 0 .01 ). Balancing these higher-order kinematic constraints ensures smooth, natural transitions and overall generation stability. 
+
+E.2 Codebook Size and Resolution Segmentation 
+
+The codebook size and resolution segmentation significantly impact quantization and generation quality. Our model fixes the codebook size at 1024 with an entry dimension of 64 . Combined with a continuous latent dimension of 192 , the total latent dimension per sample is 256 .To optimize quantization, we adapt the resolution segmentation per dataset. For HumanML3D, we apply a four-layer scale Sh = [8 , 4, 2, 1] . In SnapMoGen, we utilize a two-layer scale Sh = [2 , 1] . Through temporal resolution sampling, the Token Branch extracts semantic anchors at varying intervals to enhance fidelity. Combining these varying scales with the commitment loss enables the model to capture multiple levels of motion granularity, producing detailed and coherent sequences across diverse datasets. 
+
+E.3 Flow Matching Details 
+
+In our implementation, we define a continuous path between a prior latent variable z0 ∼ N (0 , I ) and the real data latent z1, leveraging a velocity field predicted by the flow model. 
+
+Latent Variable Interpolation and Velocity. During training and inference, the latent variable zt
+
+is linearly interpolated as zt = tz 1 + (1 − t)z0 for t ∈ [0 , 1] , smoothly transitioning from Gaussian noise to the data distribution. The conditional flow model vθ (zt, t, c ) predicts the instantaneous velocity ut = z1 − z0 at each timestep, utilizing zt and an auxiliary textual condition c.
+
+Flow Matching Loss. The training objective minimizes the mean squared error between the predicted and true velocities: 
+
+L = Ez0,z 1,t 
+
+h
+
+∥(z1 − z0) − vθ (zt, t, c )∥22
+
+i
+
+, (28) where z1 is the ground truth motion latent from the token-latent coupling network. This enables the model to accurately bridge the prior and data distributions. 
+
+Inference and ODE Solver. Inference begins with z0 ∼ N (0 , I ). We solve the equation dz t 
+
+> dt
+
+=
+
+vθ (zt, t, c ) over t ∈ [0 , 1] using a fixed-step Euler solver to output the final latent ˆz1. We set the total steps to 40 , updating the latent iteratively via zt+1 = zt + ∆ t · vθ (zt, t, c ). This step configuration provides an optimal trade-off between high-fidelity motion quality and computational efficiency. 
+
+Classifier-Free Guidance (CFG). We apply CFG with a fixed scale s = 2 .0. By concurrently predicting conditional ( vcond ) and unconditional ( vuncond , via zeroed text embeddings) velocities, we guide the generation: 
+
+vcfg = vuncond + s · (vcond − vuncond ). (29) 
+
+Noise Schedule. By modulating the velocity field vθ (zt, t, c ) with time t, the noise schedule ensures the generated sequence is progressively refined. 
+
+E.4 Model Parameterization Backbone configuration. We parameterize the conditional vector field using a Transformer-based flow matching network which shown in Figure 13. The input latent representations are first linearly projected to a hidden dimension dmodel = 512 . The network architecture is composed of 15 Trans-former blocks, each utilizing 8 attention heads and applying a dropout rate of 0.1. To ensure training stability, we adopt a pre-normalization layout, applying LayerNorm prior to the sub-modules and employing residual connections afterward. 
+
+Time embedding parameterization. The time step t is embedded using sinusoidal Fourier features with a maximum period of 10 ,000 . The resulting concatenated sin( ·) and cos( ·) components are then mapped to the hidden dimension dmodel through a two-layer multi-layer perceptron (MLP) with an expansion ratio of 4 (i.e., 512 → 2048 → 512 ). This resulting time embedding serves as a crucial conditioning signal injected into each block, preserving the latent sequence length throughout the network. 21 Flow Matching Transformer 
+
+Linear & Reshape 
+
+Layer Norm 
+
+Transformer Block 
+
+Patchify Embed 
+
+Input 
+
+Latent     
+
+> 𝐀 ×256 ×𝐀 ′
+> Time
+
+𝐀 
+
+> Cond
+
+𝐀 
+
+Output 
+
+Latent     
+
+> 𝐀 ×256 ×𝐀 ′
+
+Output 
+
+Velocity     
+
+> 𝐀 ×256 ×𝐀 ′
+
+𝐀 × 
+
+> Layer Norm
+
+Orbit Transformer Block       
+
+> Multi-Head
+> Self-Attention
+> Gate, Shift
+> Layer Norm
+> Gate
+> Layer Norm Layer Norm
+> QK Norm
+> RoPE, QK Norm
+> Layer Norm Gate, Shift
+> Gate
+> Multi-Head
+> Cross-Attention
+> Layer Norm
+> Feed Forward
+> QK Norm
+> Time Emb
+> 𝐀
+> 𝐀 𝐀
+> 𝐀 𝐀
+> Text Emb
+> 𝐀
+> 𝐀 𝐀 ,𝐀 𝐀
+> 𝐀 𝐀 ,𝐀 𝐀
+> Text Emb (KV Cache)
+> Layer Norm
+
+Nova Transformer Block      
+
+> Multi-Head
+> Self-Attention
+> Gate, Shift
+> Layer Norm
+> Gate
+> Layer Norm Layer Norm
+> QK Norm
+> Layer Norm Gate, Shift
+> Gate
+> Multi-Head
+> Cross-Attention
+> Layer Norm
+> Feed Forward
+> Cond Emb
+> 𝐀 ⊕𝐀
+> Text Proj
+
+Figure 13: Details of our Flow Matching Transformer model. Given an Input Latent of shape B × 256 × T ′, alongside Time Cond and Text Emb, the initial features are processed through Patchify and Embed layers. These tokens are then passed through N Transformer Blocks, which incorporate Orbit Transformer Block and Nova Transformer Block designs utilizing Multi-Head Self-Attention and Multi-Head Cross-Attention. After passing through the N layers, latent generation proceeds via a Linear & Reshape layer, ultimately yielding the Output Latent and Output Velocity in their original B × 256 × T ′
+
+dimensions. 
+
+Condition builder and injection. Outputs derived from the text encoder are first projected to 
+
+dmodel utilizing a sequence of Linear and LayerNorm layers. Subsequently, a global text summary is extracted via masked mean pooling. This summary representation is then transformed and additively combined with the time step embedding t. To mitigate the risk of early over-conditioning during training, the text contribution is scaled by a learnable gating parameter, initialized at αinit = 0 .02 . The resulting combined condition vector is injected into every Transformer block, while the fine-grained, token-level text features are retained to serve as memory for the cross-attention mechanisms. 
+
+Positional encoding and attention masks. For the latent sequence, we incorporate learned positional embeddings accommodating a maximum length of 1024 . Conversely, the text memory stream does not require additional positional encoding, as the encoder outputs are inherently position-aware. Both the latent and text streams employ key-padding masks to handle variable sequence lengths. To ensure the integrity of the generation process, a latent validity mask is systematically reapplied following each ODE solver update, guaranteeing that the padded positions remain strictly unchanged. 
+
+Stability-oriented block design. To further enhance numerical stability within the network, the Orbit blocks apply QK normalization and facilitate the injection of the combined conditioning signal via adaptive layer normalization (AdaLN). Finally, to optimize inference efficiency, we introduce an option to cache the key-value (KV) tensors associated with the frozen text memory. This efficiently circumvents the need to recompute text-side attention across successive ODE solver steps. 
+
+E.5 Construction of the Harder HumanML3D Test Set Overview. To rigorously evaluate the robustness and fine-grained synthesis capabilities of text-to-motion models, we construct the Harder-HumanML3D dataset. This subset is derived from the original HumanML3D test set (4,382 samples) by filtering for motions associated with complex, multi-step, or spatially-precise textual descriptions. Our methodology combines heuristic linguistic rules with large language model (LLM) reasoning to ensure both structural complexity and semantic depth. 
+
+Multi-Dimensional Difficulty Rules. We define eight linguistic dimensions ( D1 to D8) to quantify the complexity of motion prompts, targeting specific challenges in motion synthesis such as directional precision, temporal composition, and spatial relations. The detailed keyword lexicon and the assigned heuristic weight wi for each dimension are summarized in Table 7. Based on this lexicon, the initial 22 Table 7: Keyword Lexicon for Multi-Dimensional Difficulty Rules. We define eight linguistic dimensions ( D1–D8) to quantify the complexity of motion prompts. Keywords are matched using heuristic rules to compute the initial difficulty score. 
+
+Dimension Matching Keywords / Patterns 
+
+D1 Direction left, right, forward, backward, clockwise, counterclockwise, sideways, diagonal, north„south, east, westward, . . . 
+
+D2 Body Parts arm, leg, hand, foot, head, torso, hip, shoulder, elbow, knee, wrist, ankle, spine, neck, finger, chest, back, . . . 
+
+D3 Modifiers quickly, slowly, slightly, sharply, gently, rapidly, suddenly, gradually, briefly, continuously, repeatedly, . . . 
+
+D4 Temporal then, while, before, after, simultaneously, followed by, at the same time, next, finally, meanwhile, . . . 
+
+D5 Count twice, three times, several times, multiple times, once, again, number of, . . . 
+
+D6 Verbs kick, punch, bend, twist, spin, crawl, kneel, wave, crouch, squat, hop, leap, lunge, stomp, clap, point, rotate, . . . 
+
+D7 Constraint only, specific, particular, certain, exactly, precisely, must, specifically, . . . 
+
+D8 Spatial upward, downward, inward, outward, horizontal, vertical, perpendicular, parallel, above, below, overhead, . . . heuristic score is calculated as: 
+
+Srule =
+
+> 8
+
+X
+
+> i=1
+
+wi · count (Di) (30) You are an expert in evaluating the difficulty of text-to-motion generation tasks. Given a natural language description of a human body motion, rate its generation difficulty on a scale from 1 to 10. Difficulty criteria: Higher scores (7-10) for prompts with: fine-grained directional cues (left/right), specific body part references, temporal sequences, spatial constraints, combined or simultaneous actions, speed/manner modifiers, counting/repetition. Lower scores (1-3) for simple, vague, single-action descriptions. Respond ONLY with a JSON object in this exact format (no extra text):  
+
+> {"score": <int 1-10>, "reason": "<one sentence explanation>"}
+> Motion description: "{caption}"
+
+Figure 14: Prompt template for Difficulty Oracle. The system prompt (top) defines linguistic evaluation criteria and enforces JSON output, while the user prompt (bottom) supplies the target caption to enable structured semantic scoring. 
+
+LLM-Assisted Semantic Scoring. Recognizing that word counts alone cannot fully capture logical complexity, we employ DeepSeek-R1 to oracle the difficulty of the prompts. For candidates with 
+
+Srule ≥ 4, the LLM evaluates the prompt’s difficulty on a scale of 1–10 and provides a natural language justification. The complete prompt template designed for this evaluation is illustrated in Figure 14. This crucial step filters out prompts that contain difficulty keywords but remain semantically simple (e.g., “a person walks left”). 
+
+Final Selection and Dataset Statistics. The final difficulty score is a fusion of the heuristic and LLM scores: 
+
+Sf inal = Srule + α · Sllm (31) where we set α = 1 .0. Following the protocol of Fg-T2M [ 33 ], we select the top 2,582 unique motion sequences with the highest Sf inal .Compared to the full test set, the Harder-HumanML3D subset exhibits a significantly higher density of directional terms and complex temporal structures, posing a substantial challenge for current state-of-the-art models. 23

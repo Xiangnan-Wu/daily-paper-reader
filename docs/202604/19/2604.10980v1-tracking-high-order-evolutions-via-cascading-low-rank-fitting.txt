@@ -1,0 +1,490 @@
+Title: Tracking High-order Evolutions via Cascading Low-rank Fitting
+
+URL Source: https://arxiv.org/pdf/2604.10980v1
+
+Published Time: Tue, 14 Apr 2026 01:42:52 GMT
+
+Number of Pages: 11
+
+Markdown Content:
+# Tracking High-order Evolutions via Cascading Low-rank Fitting 
+
+Zhao Song ∗
+
+Abstract 
+
+Diffusion models have become the de facto standard for modern visual generation, includ-ing well-established frameworks such as latent diffusion and flow matching. Recently, modeling high-order dynamics has emerged as a promising frontier in generative modeling. Rather than only learning the first-order velocity field that transports random noise to a target data dis-tribution, these approaches simultaneously learn higher-order derivatives, such as acceleration and jerk, yielding a diverse family of higher-order diffusion variants. To represent higher-order derivatives, naive approaches instantiate separate neural networks for each order, which scales the parameter space linearly with the derivative order. To overcome this computational bottle-neck, we introduce cascading low-rank fitting, an ordinary differential equation inspired method that approximates successive derivatives by applying a shared base function augmented with sequentially accumulated low-rank components. Theoretically, we analyze the rank dynamics of these successive matrix differences. We prove that if the initial difference is linearly decomposable, the generic ranks of high-order derivatives are guaranteed to be monotonically non-increasing. Conversely, we demonstrate that without this structural assumption, the General Leibniz Rule allows ranks to strictly increase. Furthermore, we establish that under specific conditions, the sequence of derivative ranks can be designed to form any arbitrary permutation. Finally, we present a straightforward algorithm to efficiently compute the proposed cascading low-rank fitting. 
+
+# 1 Introduction 
+
+Generative frameworks such as latent diffusion [RBL +22, BRL +23, BDK +23] and flow match-ing [LCBH +23, LGL23, AVE23] have become foundational to modern video generation, enabling state-of-the-art video generation systems like Sora [BPH +24], Seedance [GGH +25, SCC +25], and Stable Video Diffusion [BRL +23, BDK +23]. Mathematically, if we let g(t) denote the trajectory of a sample as it evolves from random noise to the target data distribution, several diffusion models like latent diffusion aim to learn a network f0 that directly approximates g. Flow matching focuses on learning a vector field f1 that approximates the first-order time derivative, dg 
+
+> dt
+
+. Given the suc-cess of these methods and the importance of noise scheduling in diffusion models [KAAL22], it is a natural progression to model higher-order [SHL +25] trajectory dynamics. To learn the derivatives of g up to order k, the naive approach is to construct k + 1 separate neural networks ( f0, f 1, . . . , f k). However, this causes an unacceptable parameter blowup, since the total parameter space expands to ( k + 1) N if a single network requires N parameters. A standard strategy to constrain this growth is to apply Low-Rank Adaptation (LoRA) [HSW +22]. Under a standard LoRA paradigm, one might learn a unified base function f parameterized by dense weights W , and append inde-pendent low-rank weight matrices Ai, B i to specifically approximate the i-th derivative. In this paper, we demonstrate that by viewing the system through an ODE formulation, we uncover a 
+
+> ∗magic.linuxkde@gmail.com . Work done while at Simons Institute for Theory of Computing, UC Berkeley.
+
+1
+
+> arXiv:2604.10980v1 [cs.LG] 13 Apr 2026
+
+more powerful structural intuition: cascading low-rank fitting . Because higher-order derivatives in-herently build upon lower-order states, our cascading method evaluates the i-th derivative of g not through isolated adapters, but by applying f over the base weights W synergistically accumulated with all sequential low-rank components up to order i, denoted by {Aj , B j }j≤i. Intuitively, we use 
+
+f (( W − P 
+
+> j≤i
+
+Aj Bj )x) to interpolate dig(t)dit = ( C(t) − P 
+
+> j≤i
+
+Lj (t)) x. While our explicit analysis focuses on linear weight transformations, extending this framework to softmax functions in modern attention mechanisms is straightforward. By leveraging established polynomial approximation tech-niques [ACSS20, AA22, AS23, AS24a, AS24b, AS25, CPA26], our method can be directly adapted to optimize the softmax operations over quadratic pairwise correlations found in modern attention mechanisms. Intuitively, when applying diffusion processes to video generation, it is highly desirable for the rank ri to be monotonically non-increasing or to decay rapidly, where ri = rank( Li(t)) and 
+
+Li(t) = di−1W (t)dti−1 − diW (t)dti . This decay property allows us to allocate progressively smaller LoRA adapters for higher-order dynamics, improving parameter efficiency. In this work, we systematically explore the scenarios under which this rank sequence naturally shrinks, alongside the conditions that allow for arbitrary rank patterns. To establish this foundation, we first introduce the concept of linear decomposability for matrix functions. 
+
+Definition 1.1 (linearly decomposable) . For a matrix U (t) that is parameterized with t, we say 
+
+U (t) is r-linearly decomposable, if there exists r functions (can depend on t) f1(t), · · · , f r(t), 2r
+
+vectors (independent of t) u1, · · · , u r, v1, · · · , v r satisfy that U (t) = Prj=1 fj (t)uj v⊤ 
+
+> j
+
+.
+
+Under the assumption of linear decomposability, we prove the following result. 
+
+Lemma 1.2. Let W (t) denote an n × n matrix. Let k denote a positive integer. For each i ∈ [k],we define Li(t) = di−1W (t)dti−1 − diW (t)dti . Assume that L1(t) is r1-linearly decomposable, i.e., L1(t) = 
+
+Pr1 
+
+> j=1
+
+fj (t)uj v⊤ 
+
+> j
+
+. For each i ≥ 2, 3, · · · , k , we define the rank of Li(t) to be ri. Then we can show that r1 ≥ r2 ≥ · · · ≥ rk.Proof. Let L1(t) = W (t) − dW (t)dt . We are given that L1(t) has rank r1 and can be expressed as: L1(t) = Pr1 
+
+> j=1
+
+fj (t)uj v⊤ 
+
+> j
+
+. Because L1(t) is formed by a sum of exactly r1 rank-1 matrices and achieves a rank of exactly r1, the set of constant column vectors {u1, u 2, . . . , u r1 } must be linearly independent. Similarly, the set of constant vectors {v1, v 2, . . . , v r1 } must also be linearly independent. If either set contained linear dependencies, the rank of their sum would be strictly less than r1. We can rewrite L1(t) compactly in matrix form: L1(t) = U Σ1(t)V ⊤ where U =[u1, . . . , u r1 ] and V = [ v1, . . . , v r1 ] are n × r1 matrices with full column rank. The matrix Σ 1(t) = diag( f1(t), . . . , f r1 (t)) is an r1 × r1 diagonal matrix. Because U and V ⊤ have full rank, the rank of L1(t) is purely determined by the rank of Σ 1(t), which is exactly the number of generically non-zero functions fj (t) on its diagonal. For any integer i ≥ 2, we are evaluating the rank of the matrix difference: Li(t) = di−1W (t)dti−1 − diW (t)dti . Notice that Li(t) is simply the ( i − 1)-th derivative of 
+
+L1(t) with respect to t. Because uj and vj are constant vectors, the differentiation passes through the matrices U and V ⊤ and applies strictly to the scalar functions: Li(t) = U ( di−1 
+
+> dti−1
+
+Σ1(t)) V ⊤ =
+
+U Σi(t)V ⊤ where Σ i(t) = diag( f (i−1) 1 (t), . . . , f (i−1)  
+
+> r1
+
+(t)). Again, because U and V ⊤ maintain full column and row rank respectively, the rank of Li(t), defined as ri, is equal to the rank of the diagonal matrix Σ i(t). This rank corresponds to the number of generically non-zero functions in the set {f (i−1) 1 (t), . . . , f (i−1)  
+
+> r1
+
+(t)}. When taking successive derivatives of functions, if a function is identically zero across the domain (i.e., f (i−1)  
+
+> j
+
+(t) ≡ 0), its derivative must also be identically zero (f (i) 
+
+> j
+
+(t) ≡ 0). It is impossible for the derivative of a zero function to yield a non-zero function. 2Therefore, as i increases, the number of identically zero entries on the diagonal of Σ i(t) can only increase or stay the same. Consequently, the number of non-zero entries (which dictates the rank) must monotonically non-increase: rank(Σ 1(t)) ≥ rank(Σ 2(t)) ≥ · · · ≥ rank(Σ k(t)). This directly proves that r1 ≥ r2 ≥ · · · ≥ rk.
+
+Linearly decomposable assumption is necessary Next, we will show that the linearly decom-posable assumption is necessary for rank shrinking. If we don’t have such assumptions, it is easy to construct some counter-examples which have that r1 < r 2. Let us consider a 2 × 2 matrix. It is not hard to see that L2(t) = dL1(t)dt , thus r2 = rank( dL1(t)dt ). Let us consider L1(t) = [1 t; t t 2] = [1 t]⊤[1 t]which has rank-1. Next, we can compute L2(t) = [0 1; 1 2 t]. This matrix has rank-2. Next we generalize the idea to high-orders by using L1(t) = [1 t · · · tn−1]⊤[1 t · · · tn−1]. 
+
+Lemma 1.3 (rank could strictly increase after derivatives) . For any integer k, there exists an n×n
+
+matrix W (t) (with n ≥ k) such that if we define L1(t) = W (t) − dW (t)dt and Li(t) = di−1W (t)dti−1 − diW (t)dti
+
+for i ≥ 2, the generic ranks ri = rank( Li(t)) satisfy: rk > r k−1 > · · · > r 2 > r 1.Proof. Let n ≥ k. We define W (t) to be the solution to the differential equation W (t) − W ′(t) = 
+
+L1(t), where L1(t) = u(t)u(t)⊤ and u(t) = [1 , t, t 2, . . . , t n−1]⊤. Because L1(t) is formed by the outer product of a single non-zero vector function, its generic rank is r1 = 1. For any i ≥ 2, we have 
+
+Li(t) = di−1 
+
+> dti−1
+
+L1(t). By the General Leibniz Rule, the ( i − 1)-th derivative of the outer product 
+
+u(t)u(t)⊤ is: Li(t) = Pi−1
+
+> j=0
+
+ i−1
+
+> j
+
+u(i−1−j)(t)u(j)(t)⊤. We can express this summation compactly in matrix form as: Li(t) = Ui(t)DiVi(t)⊤. Here Ui(t) = [ u(i−1) (t) u(i−2) (t) . . . u (0) (t)] is an n × i
+
+matrix. Vi(t) = [ u(0) (t) u(1) (t) . . . u (i−1) (t)] is an n × i matrix. Di = diag(  i−10
+
+,  i−11
+
+, . . . ,  i−1
+
+> i−1
+
+)is an i × i diagonal matrix. To determine the generic rank of Li(t), it is sufficient to evaluate its rank at t = 0. The m-th derivative of u(t) evaluated at t = 0 isolates the ( m + 1)-th component of the vector. Specifically, u(m)(0) = m!em+1 , where em+1 is the standard basis vector in Rn.Evaluating our component matrices at t = 0, we obtain: Ui(0) = [( i − 1)! ei (i − 2)! ei−1 . . . 0! e1]and Vi(0) = [0! e1 1! e2 . . . (i − 1)! ei]. Because i ≤ k ≤ n, the columns of Ui(0) are non-zero scalar multiples of distinct standard basis vectors {e1, e 2, . . . , e i}. Therefore, Ui(0) has full column rank i.By the exact same logic, Vi(0) ⊤ has full row rank i. Furthermore, because all binomial coefficients are strictly positive, the diagonal matrix Di is non-singular and has rank i. Because Li(0) is the product of an n×i matrix of rank i, an i×i matrix of rank i, and an i×n matrix of rank i, it follows that: rank( Li(0)) = i. Since the rank of a matrix function evaluated at a specific point serves as a lower bound for its generic rank over the function space, and Li(t) is factored through an i × i
+
+inner dimension, the generic rank of Li(t) is exactly ri = i. Evaluating this for i = 1 , 2, . . . , k , we obtain ri = i, which directly yields: rk > r k−1 > · · · > r 2 > r 1 completing the proof. 
+
+The matrices L1, L 2, · · · , L k can be constructed via solving ODE Let the target low-rank matrix be L1(t). Your condition is: W (t) − dW (t)dt = L1(t). Rearranging this gives a standard first-order linear ordinary differential equation (ODE) for the matrix W (t): dW (t)dt − W (t) = −L1(t). Us-ing the integrating factor e−t, the general solution to this equation is: W (t) = etC − et R e−tL1(t)d t
+
+where C is an arbitrary n × n constant matrix (which you can choose to be full-rank so that W (t)is not trivially a low-rank matrix itself). Constant low-rank difference. If we just need the difference to be a constant low-rank matrix 
+
+L1, the integration becomes trivial. Let L1 = Pri=1 uiv⊤ 
+
+> i
+
+where ui and vi are column vectors, and r ≪ n is your desired low rank. Plugging a constant L into our integral gives: W (t) = 
+
+etC − et(−e−tL1) = etC + L1. Let us verify the solutions: 1) W (t) = etC + L1; 2) dW (t)dt = etC; 3) 3W (t) − dW (t)dt = ( etC + L1) − etC = L1. Because L1 is constructed as a rank-r matrix, the condition is perfectly satisfied. Time-varying low-rank difference. If we want the low-rank matrix to change with time, we can choose an L1(t) that is easy to integrate. Let’s design W (t) such that the difference is a rank-1 matrix that scales with t. Let u and v be constant n × 1 vectors. We define our matrix as: W (t) = 
+
+etC +tuv ⊤. Let us verify the solutions: 1) W (t) = etC +tuv ⊤; 2) The derivative with respect to t is:   
+
+> dW(t)dt
+
+= etC +uv ⊤; 3) Subtracting the two: W (t)− dW (t)dt = ( etC +tuv ⊤)−(etC +uv ⊤) = ( t−1) uv ⊤.The above idea can be easily generalized to higher orders. Similarly, using the ODE formulation, we know that W (t) should include a component etC where C is a constant n × n matrix. Then, we let W (t) = etC + tkuv ⊤. Let us verify the solution diW (t)dti = etC + k!(k−i)! tk−iuv ⊤ for all i = 1 , . . . , k .Further we know that, Li(t) = di−1W (t)dti−1 − diW (t)dti = k!(k−i+1)! tk−i(t − k + i − 1) uv ⊤ for all i = 1 , . . . , k .
+
+1.1 Rank pattern of different derivatives 
+
+Let q : [ k] → [n] be an arbitrary sequence of target ranks, and let Li(t) = dLi−1(t)dt for all i ∈{2, . . . , k }. A natural question arises: is it possible to construct an initial matrix L1(t) such that its successive derivatives achieve exactly these generic ranks, i.e., rank( Li(t)) = q(i) for all i ∈ [k]? This is generally impossible because the generic rank of a matrix derivative is strictly bounded by twice the generic rank of the preceding matrix (rank( Li(t)) ≤ 2 rank( Li−1(t))). 
+
+Fact 1.4 (growth of rank) . Let Li−1(t) be an n × n matrix function and let Li(t) = dLi−1(t)dt . The generic rank of Li(t) is bounded by: 0 ≤ rank( Li(t)) ≤ 2 rank( Li−1(t)) .Proof. We prove the lower bound and upper bound separately. Lower Bound: The lower bound is trivially 0 and is completely decoupled from the rank of 
+
+Li−1(t). Consider the case where Li−1(t) = C, where C is a constant n × n matrix of arbitrary rank 
+
+r ≤ n. Because C is constant, its derivative with respect to t is the zero matrix: Li(t) = dC 
+
+> dt
+
+= 0n×n.The rank of the zero matrix is exactly 0. Therefore, the rank can drop from any arbitrary r to 0 in a single derivative step, establishing 0 as the tightest possible universal lower bound. Upper Bound: Let r = rank( Li−1(t)). Over the field of functions, any n × n matrix Li−1(t)of rank r admits a rank factorization: Li−1(t) = U (t)V (t)⊤ where U (t) and V (t) are n × r ma-trices. Applying the matrix product rule to compute the first derivative yields: Li(t) = dLi−1(t)dt =
+
+U ′(t)V (t)⊤ + U (t)V ′(t)⊤. The column space of Li(t) is spanned entirely by linear combinations of the columns of U ′(t) and the columns of U (t). Because both U ′(t) and U (t) have exactly r columns, the dimension of their combined column space cannot exceed 2 r. Therefore, the maximum possible generic rank of the derivative is bounded by: rank( Li(t)) ≤ 2r = 2 rank( Li−1(t)). This completes the proof of both bounds. While the preceding claim does not hold for generic rank over the function space, it becomes achievable if we evaluate the matrix ranks at a specific stationary point, such as t = 0. We present this simplified result below. 
+
+Lemma 1.5 (positive result, rank matching at t = 0) . Let q : [ k] → [n]. Let Li(t) = dLi−1(t)dt for all i = 2 , · · · , k . It is possible to design an n × n matrix function L1(t) such that for all i ∈ [k], the rank evaluated at t = 0 satisfies rank( Li(0)) = q(i).Proof. Let C1, C 2, . . . , C k be a sequence of constant n × n matrices chosen strictly such that rank( Ci) = q(i) for each i ∈ [k]. Such matrices always exist since q(i) ≤ n. We construct L1(t) as a matrix polynomial: L1(t) = Pkj=1 tj−1 
+
+> (j−1)!
+
+Cj . For any i ∈ [k], the ( i − 1)-th derivative of L1(t) is 4given by: Li(t) = di−1L1(t)dti−1 = Pkj=i tj−i 
+
+> (j−i)!
+
+Cj . Evaluating this derivative matrix at t = 0, all terms containing t vanish completely. The only remaining term is the first term of the sum where j = i:
+
+Li(0) = Ci. Consequently, rank( Li(0)) = rank( Ci) = q(i). This holds true for all i ∈ [k], perfectly satisfying any arbitrary function q and completing the proof. 
+
+Lemma 1.6 (negative result) . Let k ≥ 3 and n ≥ 4. There exists a sequence q : [ k] → [n] satisfying the step-wise bound q(i) ≤ 2q(i − 1) for all i ∈ { 2, . . . , k }, such that for the successive derivatives 
+
+Li(t) = dLi−1(t)dt , no n × n matrix function L1(t) can achieve the generic ranks rank( Li(t)) = q(i)
+
+for all i ∈ [k].Proof. We prove this lemma by explicitly constructing a target sequence q that satisfies the step-wise condition q(i) ≤ 2q(i − 1), but cannot be achieved by any matrix function L1(t) due to the global bounds imposed by the General Leibniz Rule. Let k = 3 and n ≥ 4. Consider the target rank sequence defined by q(1) = 1, q(2) = 2, and 
+
+q(3) = 4. This sequence strictly satisfies the step-wise premise, as q(2) ≤ 2q(1) and q(3) ≤ 2q(2). Assume for the sake of contradiction that there exists an n × n matrix function L1(t) that achieves these generic ranks. Because rank( L1(t)) = q(1) = 1, we can factorize it over the field of functions as the outer product of two vectors: L1(t) = u(t)v(t)⊤ where u(t) and v(t) are n × 1vector functions. The matrix L3(t) is defined as the second derivative of L1(t). Applying the General Leibniz Rule to the outer product, we obtain: L3(t) = d2L1(t)dt2 = u′′ (t)v(t)⊤ + 2 u′(t)v′(t)⊤ + u(t)v′′ (t)⊤.The resulting matrix L3(t) is expressed entirely as the sum of exactly three rank-1 matrices. By the subadditivity of matrix rank, the generic rank of a sum is bounded by the sum of the ranks. Therefore, the maximum possible generic rank of L3(t) is: rank( L3(t)) ≤ rank( u′′ v⊤) + rank( u′v′⊤ ) + rank( uv ′′⊤ ) ≤ 1 + 1 + 1 = 3. However, the target sequence requires rank( L3(t)) = q(3) = 4. Since 4 ≤ 3 is an impossibility, no such matrix function L1(t) can exist. This contradiction proves that the step-wise bound is insufficient to guarantee the existence of L1(t), thus completing the proof. 
+
+Fact 1.7 (high-order growth of rank) . Let Li−1(t) be an n × n matrix function and let Li(t) =  
+
+> dLi−1(t)dt
+
+. The generic rank of Li(t) is bounded by: 0 ≤ rank( Li(t)) ≤ i · rank( L1(t)) .Proof. We prove the lower bound and upper bound separately. Lower Bound: The lower bound is trivially 0. If L1(t) = C, where C is a constant n × n matrix of arbitrary rank r, its first derivative L2(t) is the zero matrix. Consequently, all higher-order derivatives Li(t) for i ≥ 2 will also be the zero matrix, which has a generic rank of exactly 0. Upper Bound: Let r = rank( L1(t)). Over the field of functions, any n × n matrix function 
+
+L1(t) of generic rank r admits a global rank factorization: L1(t) = U (t)V (t)⊤ where U (t) and V (t)are n × r matrix functions. By the definition provided, Li(t) represents the ( i − 1)-th derivative of 
+
+L1(t) with respect to t. Applying the General Leibniz Rule to the matrix product U (t)V (t)⊤, we can express Li(t) as: 
+
+Li(t) = di−1
+
+dti−1
+
+
+
+U (t)V (t)⊤
+
+=
+
+> i−1
+
+X
+
+> j=0
+
+i − 1
+
+j
+
+
+
+U (i−1−j)(t)V (j)(t)⊤.
+
+The resulting expression for Li(t) is a summation of exactly i distinct terms (indexed from j = 0 to i − 1). Each term in this summation is the product of a scalar binomial coefficient, an n × r
+
+matrix U (i−1−j)(t), and an r × n matrix V (j)(t)⊤. Because the inner dimension of this product is 
+
+r, the generic rank of each individual term in the sum is bounded above by r.5By the subadditivity property of matrix rank, the rank of a sum of matrices is less than or equal to the sum of their individual ranks. Therefore, we can bound the generic rank of Li(t) by summing the maximum possible ranks of its i components: rank( Li(t)) ≤
+
+> i−1
+
+X
+
+> j=0
+
+rank 
+
+
+
+U (i−1−j)(t)V (j)(t)⊤
+
+≤
+
+> i−1
+
+X
+
+> j=0
+
+r = i · r. 
+
+Substituting back r = rank( L1(t)), we obtain the global linear bound: rank( Li(t)) ≤ i ·
+
+rank( L1(t)). This completes the proof. 
+
+Lemma 1.8 (positive result, rank matching) . Let q : [ k] → [n] with for any i < j it satisfies 
+
+q(j) ≤ (j − i + 1) q(i). Let Li(t) = dLi−1(t)dt for all i = 2 , · · · , k . For any q, it is possible to design an n × n matrix function L1(t) such that for all i ∈ [k], rank( Li(t)) = q(i).Proof. We proceed by constructive proof. The condition q(j) ≤ (j − i + 1) q(i) corresponds exactly to the maximum rank expansion permitted by the General Leibniz Rule when taking the ( j − i)-th derivative of a matrix function. Because this condition is satisfied globally for all i < j , we can achieve the exact rank sequence q by decomposing it into a sum of valid base rank sequences and constructing L1(t) as a block-diagonal matrix. Let us define a family of base matrix blocks 
+
+Bm,d (t). We start with the core polynomial outer-product block Bm(t) = um(t)um(t)⊤, where 
+
+um(t) = [1 , t, t 2, . . . , t m−1]⊤. The generic rank of the r-th derivative of Bm(t) follows a known, deterministic sequence. We then define Bm,d (t) as the d-th integral of Bm(t) with respect to t,setting all constants of integration to zero. Integrating the polynomial matrix shifts its derivative rank sequence to the right, buffering the initial states with full-rank polynomial matrices. The generic rank profile of each base block Bm,d (t) inherently satisfies the Leibniz bound. Because the target sequence q strictly obeys this identical bound, q can be mathematically decomposed into a finite sum of these base rank profiles: 
+
+q(i) = 
+
+> S
+
+X
+
+> s=1
+
+rank 
+
+ di−1
+
+dti−1 Bms,d s (t)
+
+
+
+for a chosen set of structural parameters {(m1, d 1), . . . , (mS , d S )}. We construct our target matrix 
+
+L1(t) by concatenating these corresponding blocks along the diagonal: 
+
+L1(t) = blockdiag( Bm1,d 1 (t), B m2,d 2 (t), . . . , B mS ,d S (t)). Because the operations of differentiation and generic rank computation are strictly additive over disjoint block-diagonal matrices, the generic rank of the combined matrix is exactly the sum of the generic ranks of its individual blocks. Therefore, for all i ∈ [k], the generic rank of the ( i − 1)-th derivative is: rank( Li(t)) = 
+
+> S
+
+X
+
+> s=1
+
+rank 
+
+ di−1
+
+dti−1 Bms,d s (t)
+
+
+
+= q(i)Provided the dimension n is sufficiently large to accommodate the sum of the block dimensions, this construction perfectly achieves the target rank sequence. This completes the proof. 61.2 Possibilities of rank ordering 
+
+Lemma 1.9 (positive result, rank ordering) . Let π : [ k] → [k] denote a permutation. Let R =(R1, R 2, . . . , R k−1) be a sequence of relations where each Rm ∈ { >, =}. Let Li(t) = dLi−1(t)dt for all 
+
+i = 2 , · · · , k . For any π and any sequence of relations R, it is possible to design an n × n matrix function L1(t) such that: 
+
+rank( Lπ(1) ) R1 rank( Lπ(2) ) R2 · · · Rk−1 rank( Lπ(k))
+
+Proof. We construct a target rank sequence q : [ k] → [n] that exactly mirrors the requested sequence of relations R under the permutation π. Assuming n ≥ 2k, we define a sequence of integer weights 
+
+w1, w 2, . . . , w k iteratively. Let the initial weight be w1 = 2 k − 1. For each m ∈ { 1, . . . , k − 1}, we define the subsequent weights based on the relation Rm:
+
+wm+1 =
+
+(
+
+wm − 1 if Rm is >wm if Rm is =We then define our target rank sequence by mapping these weights to the permuted indices: 
+
+q(π(x)) = wx for each x ∈ { 1, 2, . . . , k }
+
+By this construction, the relationships between the sequence elements perfectly match R:
+
+q(π(1)) R1 q(π(2)) R2 · · · Rk−1 q(π(k)) To apply our main existence lemma, we must prove that q satisfies the Leibniz bound: q(j) ≤
+
+(j − i + 1) q(i) for all i < j . Notice that the weight sequence starts at 2 k − 1 and decreases by at most 1 at each of the k − 1 steps. Therefore, the minimum possible value in the sequence is: 
+
+wk ≥ (2 k − 1) − (k − 1) = k. 
+
+Thus, for all i ∈ [k], the target rank is strictly bounded within the window: 
+
+k ≤ q(i) ≤ 2k − 1.
+
+Because i < j , we know j − i + 1 ≥ 2. Consequently, the right side of the Leibniz bound evaluates to at least 2 k:(j − i + 1) q(i) ≥ 2q(i) ≥ 2k. 
+
+Since the maximum possible value of the sequence is 2 k − 1, the left side evaluates to: 
+
+q(j) ≤ 2k − 1 < 2k ≤ (j − i + 1) q(i).
+
+Because q(j) < (j − i + 1) q(i) holds for all i < j , the sequence q perfectly satisfies the Leibniz bound. By our previous lemma, there exists an n × n matrix function L1(t) such that rank( Li(t)) = 
+
+q(i). Substituting q back into the relation chain yields: rank( Lπ(1) ) R1 rank( Lπ(2) ) R2 · · · Rk−1 rank( Lπ(k))This completes the proof. 
+
+Remark: The relation ≥ can be trivially accommodated by assigning it as either > or = during the construction of the weight sequence wm.71.3 Batched data computations 
+
+Let W ∈ Rn×n denote a base weight matrix, and let k be a positive integer. For each i ∈ [k], we define the low-rank adapter matrices Ai ∈ Rn×ri and Bi ∈ Rri×n. For notational convenience, we denote the total cumulative rank as r = Pki=1 ri. Suppose we wish to evaluate a target function g(x)alongside its successive time derivatives up to order k, denoted as g1(x) = dg(x)dt , . . . , g k(x) = dk g(x)dtk .The naive approach to approximate these k + 1 functions is to instantiate k + 1 independent n × n
+
+weight matrices, W0, W 1, . . . , W k. However, evaluating a single input under this naive paradigm requires O(kn 2) time. To efficiently scale this for batched data, let X ∈ Rn×b denote the input matrix with batch size b, and let f denote an entry-wise activation function. For any column x in X,we approximate the zero-order evaluation as g0(x) ≈ f (W x ). For higher-order derivatives i ∈ [k], we employ our cascading formulation: gi(x) ≈ f (( W +Pij=1 Aj Bj )x). The computational time for this batched formulation can be systematically broken down into several sequential operations. First, we compute the base projection Z0 = W X , which takes O(Tmat (n, n, b )) time. Second, we compute the right-side low-rank projections Yi = BiX for all i ∈ [k]. This can be efficiently batched by vertically stacking the matrices as Y = [ B⊤ 
+
+> 1
+
+, B ⊤ 
+
+> 2
+
+, . . . , B ⊤ 
+
+> k
+
+]⊤X, requiring O(Tmat (r, n, b )) time. Third, we compute the left-side projections Zi = AiYi for all i ∈ [k], which takes Pki=1 O(Tmat (n, r i, b )) time. Finally, we must evaluate the cascading sum ( W + Pij=1 Aj Bj )X for each i ∈ [k]. Anaive summation of these i + 1 matrices of size n × b would take Pki=1 O(inb ) = O(k2nb ) time. However, we can eliminate a factor of k by employing a cumulative sum. Let Z≤0 = Z0. For each i ∈ [k], we iteratively compute Z≤i = Z≤i−1 + Zi. It is straightforward to verify that Z≤i =
+
+W X + Pij=1 Aj Bj X, which exactly produces our target pre-activation matrices. This optimized accumulation step reduces the summation time to O(knb ). Combining these steps, the overall time complexity is bounded by O(Tmat (n, n, b )+ Tmat (r, n, b )+ Pki=1 Tmat (n, r i, b )+ knb ), which simplifies asymptotically to O(Tmat (n, n, b ) + Pki=1 Tmat (n, r i, b )). 
+
+1.4 Data structure that supports low-rank range queries 
+
+In this section, we introduce a general data structure designed to support range queries for matrix computations utilizing low-rank components. In the subsequent section, we extend this framework to the tensor setting. We begin by presenting the foundational results for the matrix version. 
+
+Theorem 1.10 (Low-rank segment tree data structure) . Let n, k , and r1, . . . , r k be positive in-tegers, and let r = Pki=1 ri. There exists a data structure requiring O(kn 2 + nr ) space that sup-ports the following two operations. 1) Init ({Ai, B i}i∈[k]): The input are a collection of matrices 
+
+A1, . . . , A k and B1, . . . , B k, where each Ai and B⊤ 
+
+> i
+
+has dimensions n × ri. This initialization takes 
+
+O(Pki=1 Tmat (n, r i, n )) time. 2) Query (i−, i +, X ): Given a contiguous index interval S = [ i−, i +]
+
+and an input data matrix X ∈ Rn×b, this operation outputs the exact matrix product P 
+
+> i∈S
+
+(AiBi)X
+
+in time bounded by O(min {T mat (n, n log k, b ), P 
+
+> i∈S
+
+Tmat (n, r i, b )}).Proof. We construct a segment tree to efficiently query interval sums of the matrix products. 
+
+Space Complexity: The data structure must explicitly store the input matrices Ai and Bi
+
+for all i ∈ [k]. Since Ai is n × ri and Bi is ri × n, the total space to store the inputs is 2 Pki=1 nr i =2nr = O(nr ). Next, we construct a standard segment tree over the interval [1 , k ]. The segment tree contains 2 k − 1 nodes. Each node v represents a canonical interval Sv ⊆ [1 , k ] and stores an 
+
+n × n matrix Mv = P 
+
+> j∈Sv
+
+Aj Bj . Storing O(k) such matrices of size n × n requires O(kn 2) space. Summing these components yields an overall space complexity of O(kn 2 + nr ). 
+
+Init Operation: During initialization, we first populate the k leaves of the segment tree. For the i-th leaf, we compute Ci = AiBi. Multiplying an n × ri matrix by an ri × n matrix takes 8Tmat (n, r i, n ) time. Computing all k leaves takes Pki=1 Tmat (n, r i, n ) time. After populating the leaves, we build the internal nodes of the segment tree bottom-up. Each of the k − 1 internal nodes is computed by simply adding the n×n matrices of its two children. An n×n matrix addition takes 
+
+O(n2) time, so populating all internal nodes takes O(kn 2) time. The total time for initialization is strictly bounded by O(kn 2 + Pki=1 Tmat (n, r i, n )) = O(Pki=1 Tmat (n, r i, n )). 
+
+Query Operation: Given a query interval S = [ i−, i +] and an input matrix X ∈ Rn×b, the data structure dynamically evaluates the cost of two distinct strategies and routes the execution to the optimal one: 
+
+Strategy 1 (Segment Tree Evaluation): Any arbitrary interval S ⊆ [1 , k ] can be exactly parti-tioned into a set of at most m ≤ 2 log k disjoint canonical intervals from the segment tree. Let 
+
+Mv1 , M v2 , · · · , M vm be the precomputed n × n matrices corresponding to these canonical nodes. We wish to compute ( Pmj=1 Mvj )X. We can achieve this by performing O(log k) individual matrix-matrix multiplications of size ( n × n) by ( n × b), which is computationally equivalent to a batched block-matrix multiplication taking O(Tmat (n, n log k, b )) time. 
+
+Strategy 2 (On-the-Fly Evaluation): Instead of using the precomputed n × n matrices, we bypass the segment tree and directly evaluate the cascading matrix product for each index i ∈ S.By utilizing the associative property, we evaluate Ai(BiX). First, we compute Yi = BiX, which multiplies an ri × n matrix by an n × b matrix in Tmat (ri, n, b ) = O(Tmat (n, r i, b )) time. Next, we compute Zi = AiYi, which multiplies an n × ri matrix by an ri × b matrix in Tmat (n, r i, b ) time. The total time to evaluate the entire sequence iteratively is O(P 
+
+> i∈S
+
+Tmat (n, r i, b )). By comparing the predicted theoretical costs of Strategy 1 and Strategy 2 before execution, the algorithm selects the most efficient path. This guarantees a worst-case execution time exactly bounded by min {T mat (n, n log k, b ), P 
+
+> i∈S
+
+Tmat (n, r i, b )}, completing the proof. 
+
+Remark 1.11. Let b = nβ , let ri = nγi , if nω(1 ,1,β ) < P 
+
+> i∈S
+
+nω(1 ,γ i,b ), then we will use segmentation tree to output the answer; otherwise, we will compute the answer on the fly via cumulative sum. 
+
+1.5 Tensor generalization 
+
+Before presenting our tensor generalization, we introduce a textbook trick that has been successfully applied to various tensor problems [Son26b, Son26a]. 
+
+Fact 1.12. Given three matrices A, B, C with sizes ni × k and n1 ≥ n2 ≥ n3. The time to form 
+
+n1 × n2 × n3 size tensor T = A ⊗ B ⊗ C takes O(Tmat (n2n3, k, n 1)) time. 
+
+Theorem 1.13 (Low-rank tensor segment tree data structure) . Let n, k , and r1, . . . , r k be positive integers, and let r = Pki=1 ri. There exists a data structure requiring O(kn 3 + nr ) space that supports the following two operations. 1) Init ({Ai, B i, C i}i∈[k]): Takes a collection of matrices 
+
+A1, . . . , A k, B1, . . . , B k, and C1, . . . , C k, where each Ai, B i, and Ci has dimensions n × ri. This initialization takes O(Pki=1 Tmat (n2, r i, n )) time. 2) Query (i−, i +, X ): Given a contiguous index interval S = [ i−, i +] and input n × b size data matrix X, this operation outputs the exact tensor contraction evaluated as P 
+
+> i∈S
+
+Ai ⊗ Bi ⊗ (X⊤Ci) ∈ Rn×n×b (note that (Ai ⊗ Bi ⊗ Ci)[ I, I, X ] = 
+
+Ai ⊗ Bi ⊗ (X⊤Ci)), This step takes min {T mat (n2, n log k, b ), P 
+
+> i∈S
+
+Tmat (n min {n, b }, r i, max {n, b })}
+
+time. Proof. We construct a segment tree data structure to store and query the tensor products. Space Complexity: The data structure explicitly stores the input matrices Ai, Bi, and Ci for all 
+
+i ∈ [k]. Because each of these matrices has dimensions n × ri, storing them requires 3 Pki=1 nr i =3nr = O(nr ) space. We then build a segment tree over the interval [1 , k ]. The tree contains 92k − 1 nodes. Each node v represents a canonical interval Sv and stores a precomputed 3-tensor 
+
+Tv = P 
+
+> j∈Sv
+
+Aj ⊗ Bj ⊗ Cj ∈ Rn×n×n. Storing O(k) such tensors of size n3 requires O(kn 3) space. The total space complexity is therefore bounded by O(kn 3 + nr ). 
+
+Init Operation: During initialization, we first compute the tensors for the k leaves of the seg-ment tree. For the i-th leaf, we must form Ti = Ai⊗Bi⊗Ci, where all three matrices have dimensions 
+
+n × ri. Applying the Fact 1.12 with n1 = n2 = n3 = n and k = ri, the time to form this tensor is bounded by O(Tmat (n2, r i, n )). Computing this for all k leaves takes O(Pki=1 Tmat (n2, r i, n )) time. We then build the internal nodes of the segment tree bottom-up by adding the n × n × n tensors of their children. Since addition takes O(n3) per node, populating all internal nodes takes O(kn 3)time. Because ri ≥ 1, the tensor formation at the leaves strictly dominates the addition cost, yielding an overall initialization time of O(Pki=1 Tmat (n2, r i, n )). 
+
+Query Operation: Given a query interval S = [ i−, i +] and an input matrix X ∈ Rn×b, the data structure dynamically routes the execution to the optimal of two evaluation strategies: Strat-egy 1 (Segment Tree Evaluation): The interval S can be partitioned into m ≤ 2 log k disjoint canonical intervals from the segment tree. Let Tv1 , . . . , T vm be the precomputed n × n × n ten-sors corresponding to these nodes. We must evaluate Pmj=1 Tvj [I, I, X ], which is equivalent to performing a tensor contraction with X⊤ along the third mode. We can reshape each tensor Tvj
+
+into an n2 × n matrix and horizontally concatenate them into a large block matrix M ∈ Rn2×mn .We then vertically concatenate m identical copies of X ∈ Rn×b into a matrix X′ ∈ Rmn ×b. The matrix product M X ′ simultaneously contracts and sums the m components to produce the fi-nal n2 × b matrix (which reshapes to the target n × n × b tensor). Because m = O(log k), this block-matrix multiplication takes O(Tmat (n2, n log k, b )) time. Strategy 2 (On-the-Fly Evaluation): 
+
+Alternatively, we bypass the segment tree and directly evaluate P 
+
+> i∈S
+
+Ai ⊗ Bi ⊗ (X⊤Ci) iteratively. For a specific index i, we first compute the matrix product Yi = X⊤Ci. Because X⊤ is b × n and 
+
+Ci is n × ri, this takes Tmat (b, n, r i) time, producing Yi ∈ Rb×ri . Next, we must form the tensor 
+
+Ai ⊗ Bi ⊗ Yi. The three matrices have row dimensions n, n, and b, and a shared inner dimension 
+
+ri. By the Fact 1.12, the time to form this specific tensor is O(Tmat (n min {n, b }, r i, max {n, b })). Because Tmat (b, n, r i) is asymptotically absorbed by the tensor formation time, evaluating a sin-gle index i takes O(Tmat (n min {n, b }, r i, max {n, b })) time. Evaluating the entire interval sequence takes O(P 
+
+> i∈S
+
+Tmat (n min {n, b }, r i, max {n, b })) time. By selecting the path with the minimum theoretical cost, the algorithm guarantees a worst-case query execution time bounded exactly by min {T mat (n2, n log k, b ), P 
+
+> i∈S
+
+Tmat (n min {n, b }, r i, max {n, b })}, which completes the proof. 
+
+# References 
+
+[AA22] Amol Aggarwal and Josh Alman. Optimal-degree polynomial approximations for ex-ponentials and gaussian kernel density estimation. In CCC , 2022. [ACSS20] Josh Alman, Timothy Chu, Aaron Schild, and Zhao Song. Algorithms and hardness for linear algebra on geometric graphs. In FOCS , 2020. [AS23] Josh Alman and Zhao Song. Fast attention requires bounded entries. In NeurIPS ,2023. [AS24a] Josh Alman and Zhao Song. The fine-grained complexity of gradient computation for training large language models. In NeurIPS , 2024. [AS24b] Josh Alman and Zhao Song. How to capture higher-order correlations? generalizing matrix softmax attention to kronecker computation. In ICLR , 2024. 10 [AS25] Josh Alman and Zhao Song. Fast rope attention: Combining the polynomial method and fast fourier transform. arXiv preprint arXiv:2505.11892 , 2025. [AVE23] Michael S Albergo and Eric Vanden-Eijnden. Building normalizing flows with stochas-tic interpolants. In ICLR , 2023. [BDK +23] Andreas Blattmann, Tim Dockhorn, Sumith Kulal, Daniel Mendelevitch, Maciej Kil-ian, Dominik Lorenz, Yam Levi, Zion English, Vikram Voleti, Adam Letts, et al. Stable video diffusion: Scaling latent video diffusion models to large datasets. arXiv preprint arXiv:2311.15127 , 2023. [BPH +24] Tim Brooks, Bill Peebles, Connor Holmes, Will DePue, Yufei Guo, Li Jing, David Schnurr, Joe Taylor, Troy Luhman, Eric Luhman, Clarence Ng, Ricky Wang, and Aditya Ramesh. Video generation models as world simulators. Technical Report , 2024. [BRL +23] Andreas Blattmann, Robin Rombach, Huan Ling, Tim Dockhorn, Seung Wook Kim, Sanja Fidler, and Karsten Kreis. Align your latents: High-resolution video synthesis with latent diffusion models. In CVPR , 2023. [CPA26] Sayak Chakrabarti, Toniann Pitassi, and Josh Alman. Poly-attention: a general scheme for higher-order self-attention. In ICLR , 2026. [GGH +25] Yu Gao, Haoyuan Guo, Tuyen Hoang, Weilin Huang, Lu Jiang, Fangyuan Kong, Huixia Li, Jiashi Li, Liang Li, Xiaojie Li, et al. Seedance 1.0: Exploring the boundaries of video generation models. arXiv preprint arXiv:2506.09113 , 2025. [HSW +22] Edward J Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, and Weizhu Chen. LoRA: Low-rank adaptation of large language models. In ICLR , 2022. [KAAL22] Tero Karras, Miika Aittala, Timo Aila, and Samuli Laine. Elucidating the design space of diffusion-based generative models. In NeurIPS , 2022. [LCBH +23] Yaron Lipman, Ricky TQ Chen, Heli Ben-Hamu, Maximilian Nickel, and Matt Le. Flow matching for generative modeling. In ICLR , 2023. [LGL23] Xingchao Liu, Chengyue Gong, and Qiang Liu. Flow straight and fast: Learning to generate and transfer data with rectified flow. In ICLR , 2023. [RBL +22] Robin Rombach, Andreas Blattmann, Dominik Lorenz, Patrick Esser, and Bj¨ orn Om-mer. High-resolution image synthesis with latent diffusion models. In CVPR , 2022. [SCC +25] Team Seedance, Heyi Chen, Siyan Chen, Xin Chen, Yanfei Chen, Ying Chen, Zhuo Chen, Feng Cheng, Tianheng Cheng, Xinqi Cheng, et al. Seedance 1.5 pro: A na-tive audio-visual joint generation foundation model. arXiv preprint arXiv:2512.13507 ,2025. [SHL +25] Maojiang Su, Jerry Yao-Chieh Hu, Yi-Chen Lee, Ning Zhu, Jui-Hui Chung, Shang Wu, Zhao Song, Minshuo Chen, and Han Liu. High-order flow matching: Unified framework and sharp statistical rates. In NeurIPS , 2025. [Son26a] Zhao Song. Lazy kronecker product. arXiv preprint arXiv:2603.19443 , 2026. [Son26b] Zhao Song. Tensor hinted mv conjectures. arXiv preprint arXiv:2602.07242 , 2026. 11

@@ -6,94 +6,77 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-04-18
-- 运行时间：2026-04-18 20:01:57 UTC
+- 最新运行日期：2026-04-19
+- 运行时间：2026-04-19 19:28:55 UTC
 - 运行状态：成功
-- 本次总论文数：24
-- 精读区：12
+- 本次总论文数：19
+- 精读区：7
 - 速读区：12
 
 ### 今日简报（AI）
-今日精选 24 篇前沿成果，重点攻克零样本世界模型的发育效率与可控视频生成的空间推理难题。
-满分论文证实了高效学习者的零样本潜力，CT-1 则展示了相机控制如何赋能视频生成。
-推荐深入探索具身智能与视觉大模型的结合，特别是 VLM 在 6D 位姿重排等复杂任务中的应用。
-- 详情：[/202604/18/README](/202604/18/README)
+今日精选 19 篇前沿论文，重点聚焦强化学习驱动的流匹配优化与开放词汇机器人抓取技术。
+- 详情：[/202604/19/README](/202604/19/README)
 
 ### 精读区论文标签
-1. [Zero-shot World Models Are Developmentally Efficient Learners](/202604/18/2604.10333v1-zero-shot-world-models-are-developmentally-efficient-learners)  
-   标签：评分：10.0/10、query:robot
-   evidence：用于物理场景理解的零样本视觉世界模型
-2. [CT-1: Vision-Language-Camera Models Transfer Spatial Reasoning Knowledge to Camera-Controllable Video Generation](/202604/18/2604.09201v1-ct-1-vision-language-camera-models-transfer-spatial-reasoning-knowledge-to-camera-controllable-video-generation)  
-   标签：评分：9.0/10、query:profile-2
-   evidence：用于视频生成的视觉-语言-相机模型
-3. [Rays as Pixels: Learning A Joint Distribution of Videos and Camera Trajectories](/202604/18/2604.09429v1-rays-as-pixels-learning-a-joint-distribution-of-videos-and-camera-trajectories)  
-   标签：评分：9.0/10、query:profile-2
-   evidence：用于联合视频和相机轨迹生成的视频扩散模型
-4. [Adaptor: Advancing Assistive Teleoperation with Few-Shot Learning and Cross-Operator Generalization](/202604/18/2604.09462v1-adaptor-advancing-assistive-teleoperation-with-few-shot-learning-and-cross-operator-generalization)  
+1. [ScoRe-Flow: Complete Distributional Control via Score-Based Reinforcement Learning for Flow Matching](/202604/19/2604.10962v1-score-flow-complete-distributional-control-via-score-based-reinforcement-learning-for-flow-matching)  
    标签：评分：9.0/10、query:robot
-   evidence：融合视觉语言模型上下文以调节动作专家
-5. [RoboLab: A High-Fidelity Simulation Benchmark for Analysis of Task Generalist Policies](/202604/18/2604.09860v2-robolab-a-high-fidelity-simulation-benchmark-for-analysis-of-task-generalist-policies)  
+   evidence：用于机器人控制和强化学习微调的流匹配策略
+2. [CLASP: Closed-loop Asynchronous Spatial Perception for Open-vocabulary Desktop Object Grasping](/202604/19/2604.11320v1-clasp-closed-loop-asynchronous-spatial-perception-for-open-vocabulary-desktop-object-grasping)  
    标签：评分：9.0/10、query:robot
-   evidence：用于分析机器人任务通用策略的高保真仿真基准
-6. [Do LLMs Build Spatial World Models? Evidence from Grid-World Maze Tasks](/202604/18/2604.10690v1-do-llms-build-spatial-world-models-evidence-from-grid-world-maze-tasks)  
+   evidence：用于机器人操作和抓取的视觉语言模型
+3. [XRZero-G0: Pushing the Frontier of Dexterous Robotic Manipulation with Interfaces, Quality and Ratios](/202604/19/2604.13001v1-xrzero-g0-pushing-the-frontier-of-dexterous-robotic-manipulation-with-interfaces-quality-and-ratios)  
    标签：评分：9.0/10、query:robot
-   evidence：评估大语言模型中用于规划的空间世界模型
-7. [Learning Long-term Motion Embeddings for Efficient Kinematics Generation](/202604/18/2604.11737v1-learning-long-term-motion-embeddings-for-efficient-kinematics-generation)  
-   标签：评分：9.0/10、query:q10
-   evidence：学习长期运动嵌入以实现高效的场景动力学
-8. [From Kinematics to Dynamics: Learning to Refine Hybrid Plans for Physically Feasible Execution](/202604/18/2604.12474v1-from-kinematics-to-dynamics-learning-to-refine-hybrid-plans-for-physically-feasible-execution)  
+   evidence：机器人操作的具身数据采集与策略学习
+4. [Learning Ad Hoc Network Dynamics via Graph-Structured World Models](/202604/19/2604.14811v1-learning-ad-hoc-network-dynamics-via-graph-structured-world-models)  
    标签：评分：9.0/10、query:robot
-   evidence：学习细化混合规划以实现物理可行的机器人执行
-9. [Beyond State Consistency: Behavior Consistency in Text-Based World Models](/202604/18/2604.13824v1-beyond-state-consistency-behavior-consistency-in-text-based-world-models)  
-   标签：评分：9.0/10、query:robot
-   evidence：交互式智能体文本世界模型中的行为一致性
-10. [Seedance 2.0: Advancing Video Generation for World Complexity](/202604/18/2604.14148v1-seedance-20-advancing-video-generation-for-world-complexity)  
-   标签：评分：9.0/10、query:q7
-   evidence：多模态音视频生成模型架构
-11. [ADAPT: Benchmarking Commonsense Planning under Unspecified Affordance Constraints](/202604/18/2604.14902v1-adapt-benchmarking-commonsense-planning-under-unspecified-affordance-constraints)  
-   标签：评分：9.0/10、query:robot
-   evidence：具身智能体的常识规划与动作赋能基准
-12. [A Hierarchical Spatiotemporal Action Tokenizer for In-Context Imitation Learning in Robotics](/202604/18/2604.15215v1-a-hierarchical-spatiotemporal-action-tokenizer-for-in-context-imitation-learning-in-robotics)  
-   标签：评分：9.0/10、query:robot
-   evidence：用于机器人模仿学习的分层时空动作分词器
+   evidence：用于自主智能体的图结构世界模型
+5. [Rein3D: Reinforced 3D Indoor Scene Generation with Panoramic Video Diffusion Models](/202604/19/2604.10578v1-rein3d-reinforced-3d-indoor-scene-generation-with-panoramic-video-diffusion-models)  
+   标签：评分：8.0/10、query:profile-2
+   evidence：利用视频扩散模型进行具身智能3D场景生成
+6. [Rein3D: Reinforced 3D Indoor Scene Generation with Panoramic Video Diffusion Models](/202604/19/2604.10578v2-rein3d-reinforced-3d-indoor-scene-generation-with-panoramic-video-diffusion-models)  
+   标签：评分：8.0/10、query:profile-2
+   evidence：使用全景视频扩散模型生成3D室内场景
+7. [OneHOI: Unifying Human-Object Interaction Generation and Editing](/202604/19/2604.14062v1-onehoi-unifying-human-object-interaction-generation-and-editing)  
+   标签：评分：8.0/10、query:q11
+   evidence：使用扩散 Transformer 进行动作条件的动作-物体交互生成
 
 ### 速读区论文标签
-1. [Visually-grounded Humanoid Agents](/202604/18/2604.08509v1-visually-grounded-humanoid-agents)  
+1. [RoboLab: A High-Fidelity Simulation Benchmark for Analysis of Task Generalist Policies](/202604/19/2604.09860v1-robolab-a-high-fidelity-simulation-benchmark-for-analysis-of-task-generalist-policies)  
    标签：评分：8.0/10、query:robot
-   evidence：3D场景中人形智能体的世界-智能体范式
-2. [ELT: Elastic Looped Transformers for Visual Generation](/202604/18/2604.09168v2-elt-elastic-looped-transformers-for-visual-generation)  
-   标签：评分：8.0/10、query:q7
-   evidence：用于视频生成的参数高效视觉生成模型
-3. [Text-Guided 6D Object Pose Rearrangement via Closed-Loop VLM Agents](/202604/18/2604.09781v1-text-guided-6d-object-pose-rearrangement-via-closed-loop-vlm-agents)  
+   evidence：机器人任务通用策略的仿真基准测试
+2. [LIDEA: Human-to-Robot Imitation Learning via Implicit Feature Distillation and Explicit Geometry Alignment](/202604/19/2604.10677v1-lidea-human-to-robot-imitation-learning-via-implicit-feature-distillation-and-explicit-geometry-alignment)  
    标签：评分：8.0/10、query:robot
-   evidence：用于3D物体重新排列和推理的闭环VLM智能体
-4. [Long-Horizon Streaming Video Generation via Hybrid Attention with Decoupled Distillation](/202604/18/2604.10103v1-long-horizon-streaming-video-generation-via-hybrid-attention-with-decoupled-distillation)  
-   标签：评分：8.0/10、query:q13
-   evidence：基于扩散模型的长序列流式视频生成
-5. [TAIHRI: Task-Aware 3D Human Keypoints Localization for Close-Range Human-Robot Interaction](/202604/18/2604.08921v1-taihri-task-aware-3d-human-keypoints-localization-for-close-range-human-robot-interaction)  
+   evidence：基于视频数据的从人到机器人的模仿学习
+3. [ReplicateAnyScene: Zero-Shot Video-to-3D Composition via Textual-Visual-Spatial Alignment](/202604/19/2604.10789v1-replicateanyscene-zero-shot-video-to-3d-composition-via-textual-visual-spatial-alignment)  
+   标签：评分：8.0/10、query:profile-2
+   evidence：用于空间智能和具身智能的视频到3D合成
+4. [WARPED: Wrist-Aligned Rendering for Robot Policy Learning from Egocentric Human Demonstrations](/202604/19/2604.10809v1-warped-wrist-aligned-rendering-for-robot-policy-learning-from-egocentric-human-demonstrations)  
+   标签：评分：8.0/10、query:robot
+   evidence：为机器人策略学习合成观测数据
+5. [Device-Conditioned Neural Architecture Search for Efficient Robotic Manipulation](/202604/19/2604.10170v1-device-conditioned-neural-architecture-search-for-efficient-robotic-manipulation)  
    标签：评分：7.0/10、query:robot
-   evidence：用于人机交互和任务感知感知的视觉语言模型
-6. [ELT: Elastic Looped Transformers for Visual Generation](/202604/18/2604.09168v1-elt-elastic-looped-transformers-for-visual-generation)  
-   标签：评分：7.0/10、query:q7
-   evidence：用于视频生成的循环Transformer架构
-7. [Camera Artist: A Multi-Agent Framework for Cinematic Language Storytelling Video Generation](/202604/18/2604.09195v1-camera-artist-a-multi-agent-framework-for-cinematic-language-storytelling-video-generation)  
-   标签：评分：7.0/10、query:q7
-   evidence：用于叙事视频生成的多智能体框架
-8. [TinyNeRV: Compact Neural Video Representations via Capacity Scaling, Distillation, and Low-Precision Inference](/202604/18/2604.09220v1-tinynerv-compact-neural-video-representations-via-capacity-scaling-distillation-and-low-precision-inference)  
-   标签：评分：7.0/10、query:q12
-   evidence：用于高效帧重建的神经视频表示
-9. [InstrAct: Towards Action-Centric Understanding in Instructional Videos](/202604/18/2604.08762v1-instract-towards-action-centric-understanding-in-instructional-videos)  
-   标签：评分：6.0/10、query:q10
-   evidence：视频中以动作为中心的表示和时间关系
-10. [SHIFT: Steering Hidden Intermediates in Flow Transformers](/202604/18/2604.09213v1-shift-steering-hidden-intermediates-in-flow-transformers)  
-   标签：评分：6.0/10、query:q7
-   evidence：用于图像生成的扩散模型和流变换器
-11. [VGA-Bench: A Unified Benchmark and Multi-Model Framework for Video Aesthetics and Generation Quality Evaluation](/202604/18/2604.10127v1-vga-bench-a-unified-benchmark-and-multi-model-framework-for-video-aesthetics-and-generation-quality-evaluation)  
-   标签：评分：6.0/10、query:q7
-   evidence：视频生成质量评估基准
-12. [Rethinking Video Human-Object Interaction: Set Prediction over Time for Unified Detection and Anticipation](/202604/18/2604.10397v1-rethinking-video-human-object-interaction-set-prediction-over-time-for-unified-detection-and-anticipation)  
-   标签：评分：6.0/10、query:q12
-   evidence：预测视频中人机交互的未来演变
+   evidence：高效机器人视觉运动策略的神经架构搜索
+6. [Agentic Video Generation: From Text to Executable Event Graphs via Tool-Constrained LLM Planning](/202604/19/2604.10383v1-agentic-video-generation-from-text-to-executable-event-graphs-via-tool-constrained-llm-planning)  
+   标签：评分：7.0/10、query:q14
+   evidence：在3D引擎中执行结构化事件图的生成系统
+7. [GTASA: Ground Truth Annotations for Spatiotemporal Analysis, Evaluation and Training of Video Models](/202604/19/2604.10385v1-gtasa-ground-truth-annotations-for-spatiotemporal-analysis-evaluation-and-training-of-video-models)  
+   标签：评分：7.0/10、query:profile-2
+   evidence：视频生成模型物理合理性的真值标注
+8. [Learning 3D Representations for Spatial Intelligence from Unposed Multi-View Images](/202604/19/2604.10573v1-learning-3d-representations-for-spatial-intelligence-from-unposed-multi-view-images)  
+   标签：评分：7.0/10、query:robot
+   evidence：用于空间智能和具身智能的3D表示学习
+9. [HiddenObjects: Scalable Diffusion-Distilled Spatial Priors for Object Placement](/202604/19/2604.10675v1-hiddenobjects-scalable-diffusion-distilled-spatial-priors-for-object-placement)  
+   标签：评分：6.0/10、query:q16
+   evidence：从扩散模型中提取物体放置的空间先验
+10. [Teaching Robots to Interpret Social Interactions through Lexically-guided Dynamic Graph Learning](/202604/19/2604.10895v1-teaching-robots-to-interpret-social-interactions-through-lexically-guided-dynamic-graph-learning)  
+   标签：评分：6.0/10、query:robot
+   evidence：建模内部状态与动作之间的动态关系
+11. [Tracking High-order Evolutions via Cascading Low-rank Fitting](/202604/19/2604.10980v1-tracking-high-order-evolutions-via-cascading-low-rank-fitting)  
+   标签：评分：6.0/10、query:q9
+   evidence：在视觉生成的扩散模型中建模高阶动力学
+12. [FlowCoMotion: Text-to-Motion Generation via Token-Latent Flow Modeling](/202604/19/2604.11083v1-flowcomotion-text-to-motion-generation-via-token-latent-flow-modeling)  
+   标签：评分：6.0/10、query:profile-2
+   evidence：学习运动动力学与语义的文本到动作生成
 
 
 <div class="dpr-home-promo-card">
