@@ -1,0 +1,459 @@
+Title: Point2Pose: Occlusion-Recovering 6D Pose Tracking and 3D Reconstruction for Multiple Unknown Objects Via 2D Point Trackers
+
+URL Source: https://arxiv.org/pdf/2604.10415v1
+
+Published Time: Tue, 14 Apr 2026 01:09:56 GMT
+
+Number of Pages: 18
+
+Markdown Content:
+# Point2Pose: Occlusion-Recovering 6D Pose Tracking and 3D Reconstruction for Multiple Unknown Objects Via 2D Point Trackers 
+
+Tzu-Yuan Lin †, Ho Jae Lee †, Kevin Doherty ‡,§, Yonghyeon Lee †, and Sangbae Kim † 
+
+> †
+
+MIT Biomimetic Robotics Lab, Massachusetts Institute of Technology, Cambridge, MA 02139, USA  
+
+> ‡
+
+Boston Dynamics, Waltham, MA 02451, USA  
+
+> §
+
+Work was conducted in personal time and independently of the author’s organization. 
+
+Abstract 
+
+We present Point2Pose , a model-free method for causal 6D pose tracking of multiple rigid objects from monocular RGB-D video. Initialized only from sparse image points on the objects to be tracked, our approach tracks multiple unseen objects without requiring object CAD models or category priors. Point2Pose leverages a 2D point tracker to obtain long-range correspondences, enabling instant recovery after complete occlusion. Simultaneously, the system incrementally reconstructs an online Truncated Signed Distance Function (TSDF) representation of the tracked targets. Alongside the method, we introduce a new multi-object tracking dataset comprising both simulation and real-world sequences, with motion-capture ground truth for evaluation. Experiments show that Point2Pose achieves performance comparable to the state-of-the-art methods on a severe-occlusion benchmark, while additionally supporting multi-object tracking and recovery from complete occlusion, capabilities that are not supported by previous model-free tracking approaches. https://youtu.be/NRfGyx1nes4. 
+
+Figure 1: Snapshots from the YCBMultiTrack-Real-World dataset. The sequence shows a severe occlusion of all the tracked objects. As the objects reappear, the proposed method successfully recovers their poses. 1
+
+> arXiv:2604.10415v1 [cs.CV] 12 Apr 2026
+
+# 1 Introduction 
+
+Estimating the 6D pose of rigid objects from visual observations is a core problem in robotics and augmented reality. Reliable pose tracking enables agents to plan, interact with, and manipulate objects. While recent progress in object pose estimation and tracking has been substantial, many high-performing systems assume access to object CAD models [11, 31], category-level priors [25], or requires multi-view reconstruction before tracking [31]. These assumptions limit deployment in open-world settings, where robots must interact with previously unseen objects without pre-built geometric models. Many existing model-free trackers [28, 30] are primarily designed for single-object tracking and often struggle to recover from complete occlusions. This limitation becomes particularly pronounced in egocentric settings involving multi-object manipulation, where objects may undergo full occlu-sion due to robot-arm motion, inter-object crossovers, or temporary camera motion away from the workspace. In such cases, tracking can fail entirely, as these methods typically rely on inter-frame feature matching and require brittle relocalization mechanisms. To address these challenges, we present Point2Pose, a model-free method for causal 6D pose tracking of multiple unknown rigid objects from a single RGB-D video stream. Point2Pose jointly tracks object poses online while incrementally reconstructing object-centric 3D models for each tracked object. Our key idea is to use a long-range 2D point tracker as a persistent data-association module, which eliminates the need for expensive and unreliable long-horizon feature matching. By lifting these tracked 2D points using depth data, we construct object-centric 3D keypoint maps and recover poses through map-based registration. In addition, this design naturally supports simulta-neous multi-object tracking through aggregated object-specific query sets and enables immediate recovery after complete occlusion when objects reappear, without requiring a separate heavyweight and potentially brittle relocalization stage. Furthermore, we introduce YCBMultiTrack , a new dataset for dynamic multi-object RGB-D pose tracking that includes both synthetic and real-world sequences. While existing benchmarks such as HO3D [10] and YCB-InEOAT [29] focus on single-object manipulation, YCB-Video [33] mainly contains static multi-object scenes, and egocentric datasets like HOT3D [1] rely on multi-view RGB streams without dense depth; in contrast, YCBMultiTrack captures dynamic multi-object motion with inter-object occlusions and provides motion-capture ground-truth poses. In summary, our main contributions include: 
+
+• We propose Point2Pose , a model-free method for 6D pose tracking of multiple unknown rigid objects that leverages a learned long-range 2D point tracker, enabling immediate recovery after complete occlusions. 
+
+• We introduce YCB-MultiTrack , a new dataset for dynamic multi-object RGB-D pose track-ing with synthetic and real-world sequences (with motion capture ground truth), complement-ing existing datasets. 
+
+• Empirical results show that our method is competitive with the state-of-the-art, additionally enabling occlusion recovery and multi-object tracking. 
+
+• Our code will be open-sourced in the near future. 
+
+# 2 Related Works 
+
+In this work, we focus on the model-free pose tracking problem for unknown objects. Existing approaches can be broadly categorized into two types: methods that directly estimate pose from 2frame-to-frame observations without maintaining a persistent geometric representation and methods that simultaneously reconstruct an object map during tracking. 
+
+6D object pose estimation and tracking. 6-DoF object pose estimation and tracking infer the 3D position and orientation of a target object, expressed relative to a chosen reference frame (e.g., the CAD canonical frame, the object pose in the first frame, or the camera frame). Pose estimation compares the current observation to a reference model and estimates the object’s pose in the current frame; by definition, it typically requires a model—either an existing CAD model, pre-trained on selected objects [11], or one reconstructed from multi-view images [31]. When performed in real time, pose estimation operates independently at each frame, avoiding drift accumulation and enabling natural recovery from abrupt motion or tracking failure; however, it does not enforce temporal consistency and may result in frame-to-frame jitter. In contrast, pose tracking leverages temporal coherence to propagate and refine pose estimates over time, maintaining a dynamically con-sistent estimate of the object’s motion [6]. It can be formulated as either model-based or model-free approaches [28]. By exploiting motion continuity, pose tracking achieves smooth and computation-ally efficient updates, but at the risk of drift accumulation and reduced robustness under prolonged occlusions. Several methods, e.g., MegaPose [19], and FoundationPose [31], can perform both global pose estimation and tracking using separate coarse estimation and local refinement steps. These methods can use the (faster) local refinement step to perform frame-to-frame tracking given an initial estimate. However, these methods struggle to regain tracking after occlusion, and data asso-ciation is a challenge in the multi-object setting. CosyPose [18] and KMOPS [32] are able to provide pose estimates for multiple static objects in a scene, but do not consider the problem of persistent temporal tracking. In contrast, our method is designed to track multiple objects that are dynam-ically moving, maintaining precise 6D trajectories even through complex inter-object interactions and temporary disappearances. 
+
+Simultaneous tracking and reconstruction. When an object model is not available a priori ,it must be constructed as part of the tracking problem. BundleTrack [28] pioneered this direction by using a graph-based optimization that segments the object and tracks it via temporal feature matching. However, its reliance on short-term frame-to-frame correspondences makes it susceptible to drift and failure during total occlusions. BundleSDF [30] improves upon this by using a neural implicit field to represent the object, enabling joint optimization of pose and shape. While high-fidelity, the heavy computational overhead of neural fields makes scaling to multiple objects difficult, and it remains primarily focused on single-object scenarios. Recent advancements have explored alternative representations, such as 6DOPE-GS [15], which leverages 3D Gaussian Splatting for real-time tracking and reconstruction. While Gaussian Splatting offers impressive rendering speeds and detail, these methods still struggle with "re-localization" after a target object completely leaves and re-enters the camera view. In this work, we bridge these gaps by utilizing a long-range 2D point tracker as the primary data-association engine. Unlike previous methods that rely on local descriptors or dense volumetric updates, our approach uses persistent point queries to maintain identity across long temporal gaps. This allows our method to reconstruct object-centric models for multiple items simultaneously and achieve immediate re-localization after complete occlusion. 
+
+Object tracking datasets. HO3D [10] and YCBInEOAT [29] are well-established for evaluat-ing pose tracking methods but are limited to single-object manipulation scenarios. Datasets that incorporate multiple objects, such as YCB-Video [33], predominantly feature static scenes where only the camera is in motion, failing to capture the complexities of independent object trajectories and inter-object occlusions. Furthermore, recent large-scale egocentric benchmarks like HOT3D [1] capture multi-object interactions but rely entirely on multi-view RGB and monochrome streams, lacking the dense depth information. To address this gap, YCBMultiTrack is designed specifically for multi-object RGB-D pose tracking under dynamic motion and occasional complete occlusions, 3Figure 2: Overview of the Point2Pose framework. A 2D point tracker propagates object keypoints from RGB images and segmentation masks for frame-to-map registration and pose-hypothesis se-lection. In parallel, segmented depth is fused into an object-centric TSDF for dense reconstruction, while graph optimization maintains global consistency and supports robust tracking under occlu-sion. and includes both synthetic and real sequences with motion-capture object pose annotations. 
+
+# 3 Methodology 
+
+Our goal is to track the 6D poses of multiple rigid objects and simultaneously reconstruct their 3D meshes from a stream of monocular RGB-D images. We assume a fixed camera frame C rigidly attached to the world and denote an RGB-D video by {F t}Tt=0 , where Ft = ( It, D t) contains an RGB image It ∈ R3×H×W and a depth image Dt ∈ RH×W . The rigid transformation that maps 3D points from frame A to frame B is represented by T BA ∈ SE(3) , which can also be interpreted as the pose of frame A expressed in frame B.For each object i, we rigidly attach a frame Oi to the object– which we refer to as the object frame . We denote the pose of object frame at time t expressed in C is as T COi,t , and we initialize it to coincide with the camera frame C, i.e., T COi, 0 = I4×4. Then, multi-object tracking reduces to estimating T COi,t = T COi, 0 T Oi, 0 
+
+> Oi,t
+
+.An overview of the proposed method is shown in Fig. 2. Given a few user-provided points on the objects, segmentation masks for each object are obtained using Segment Anything 2 [26]. Given these masks, we sample object-specific 2D points and track them over time using a long-range point tracker, such as Track Any Points [8, 9] or CoTracker [16, 17]. The tracked points are lifted to 3D using depth measurements and transformed into the object frame to form an object-centric keypoint map, which we simply refer to as the map. As the object rotates and new surfaces become visible, additional points are sampled and added to expand the map over time. Frames where new points are sampled are referred to as keyframes. Using the natural correspondences from tracking, object poses are estimated by solving a registration problem between the current keypoint observations and the map, which we refer to as frame-to-map registration . Meanwhile, we perform 4online graph optimization to improve temporal stability and update a Truncated Signed Distance Function (TSDF) representation of the mesh model online, which is used to refine pose estimation among the pose hypotheses. 
+
+3.1 2D Point Tracker 
+
+Given an RGB video {It}Tt=0 and a set of query points, where each query point is defined as 
+
+q = ( tq, u q) with tq the query frame index (i.e., the frame in which the point is queried) and uq ∈ R2
+
+the query pixel location in Itq , a 2D point tracker estimates the corresponding pixel location in It,denoted ut ∈ R2. In addition, the tracker outputs a binary visibility indicator δt ∈ { 0, 1} and an uncertainty score σt ∈ [0 , 1] for each prediction. In our multi-object setting, we maintain an object-specific query set Qi for each object i, while tracking all query points jointly in a single tracker pass. Therefore, the tracker serves as a long-range data-association module, producing temporally consistent correspondences over long time horizons, bypassing the need for explicit feature matching between consecutive frames. This property enables instant recovery when the object reappears after complete occlusion. Furthermore, since tracking is performed at the point level without object-specific setup, the same mechanism naturally supports mult-object tracking by operating on the aggregated query set. 
+
+3.2 Sampling Strategy and Keypoints Map 
+
+When the initially tracked points become occluded or rotate out of view, additional points must be sampled to maintain tracking. These points should be chosen to jointly maximize trackability and spatial diversity to reduce the risk of degenerate pose estimation. To this end, we detect candidate keypoints using SuperPoint [7] within the segmented mask, and use the detector confidence score as a proxy for trackability. Given a set of candidate points {(pk, s k)}Nk
+
+> k=1
+
+, where pk is the pixel location and sk ∈ [0 , 1] is the confidence score from SuperPoint, we iteratively select K ≤ Nk points using a greedy approach. Let K denote the set of all keypoints already stored in the map. At each step, we choose the candidate that maximizes the following objective function, which balances trackability and spatial spread: 
+
+Jk = λs k + (1 − λ) min( dk
+
+rideal 
+
+, 1) − βρ (dk), (1) where dk is the minimum distance between the candidate point pk and the union of the previously selected point and K, rideal is a parameter controlling the ideal spacing radius, and λ ∈ [0 , 1] is a weighting parameter. We additionally include a clustering cost ρ(dk) = max(0 , rmin −dk 
+
+> rmin
+
+) that penalizes candidates that fall below a minimum acceptable separation distance rmin weighted by 
+
+β. Intuitively, the first term rewards trackability, the second term encourages the selected points to maintain an ideal spatial spread, and the final term strictly penalizes candidates that are too close to existing tracks. The newly selected K keypoints are then lifted to 3D using the camera matrix and the depth measurements. These points are subsequently transformed into the object frame using the current estimated pose. Rather than immediately integrating these new keypoints into the map, they are initialized in a pending state to mitigate the impact of depth noise and incorrect pose estimate. A pending point is promoted to a keypoint only if it passes a multi-frame verification process. Each pending point receives a score of +1 or +0 at every time step based on the new observation. If the accumulated score exceeds a threshold within a fixed time window, the point is promoted to a keypoint and added to the map. Further details are provided in the Appendix. 53.3 Frame-to-Map Registration for Pose Estimation 
+
+The point tracker provides the 2D pixel location of each keypoint in the current camera frame along with an estimate of its visibility. By filtering out non-visible keypoints and back-projecting the remaining points using depth, we obtain 3D keypoint observations in the current camera frame and establish correspondences with the keypoint map. This allows us to recover the pose of the object by solving a corresponding point cloud registration problem: 
+
+T COi,t = arg min  
+
+> T∈SE (3)
+> N
+
+X
+
+> n=1
+
+∥˜pn − T p n∥2 , (2) where {(˜ pn, p n)}Nn=1 denotes the set of correspondences between the 3D keypoint observations ˜pn in the camera frame and their corresponding points pn in the map, where N is the number of keypoint observations in the current frame. This least-squares objective can be solved analytically using a Singular Value Decomposition (SVD) approach. However, because 2D point tracks often contain a high ratio of outliers due to severe occlusions or repetitive local textures, solving (2) directly across all putative matches can yield catastrophic pose errors. To address this, we propose a multi-hypothesis registration strategy designed to explicitly handle geometric degeneracies and perceptual aliasing. For instance, consider a mug rotating around its vertical axis: 2D point trackers may incorrectly predict nearly static trajectories for keypoints on the symmetric cylindrical body, while only a small subset of points on the handle reflects the true rotational motion. In such cases, single-hypothesis outlier-robust methods such as RANSAC can be dominated by the more numerous but incorrect correspondences on the body. By sequentially generating a diverse set of pose hypotheses, our approach preserves the valid transformation among the candidates. 
+
+Multi-Hypothesis Pose Generation and Selection. For each object frame O, we generate a set of pose hypotheses H = {(T CO )h}Hh=1 using a sequential RANSAC scheme paired with SVD. In each iteration, standard RANSAC identifies the candidate transformation T CO that maximizes the number of geometric inliers, after which the corresponding consensus set is removed from the pool of correspondences. We repeat this procedure on the remaining points. This greedy extraction strategy ensures that H captures not only the dominant motion but also alternative viable poses, preventing the system from prematurely committing to a spatially clustered set of outlier tracks. We select the best candidate in H by directly measuring the geometric consistency between the TSDF (whose construction is described later in this section) and dense 3D point observations. Note that the tracked keypoints used for hypothesis generation are sparse. Specifically, we extract a dense point cloud from the current depth image using the predicted segmentation mask. For each pose hypothesis, the observed points are transformed into the object frame, and the absolute TSDF value of the transformed points is computed. The hypothesis with the minimum TSDF score is selected. 
+
+SDF Refinement. To further improve the registration accuracy of the selected hypothesis 
+
+¯T CO , we perform an iterative pose refinement step that minimizes the dense point-to-implicit-surface distance induced by the TSDF. Given a dense point cloud Pcur extracted from the current depth im-age, we formulate a robust nonlinear least-squares problem that drives the transformed observations onto the zero-level isosurface of the TSDF volume Φ( ·).Let T ∈ SE(3) denote the object pose (object frame to camera frame). Starting from the initial estimate T0 = ¯T CO , we iteratively solve for a pose increment D ∈ SE(3) by minimizing 
+
+D∗ = arg min 
+
+> D∈SE(3)
+
+X
+
+> p∈P cur
+
+ρH
+
+
+
+Φ T −1 
+
+> i
+
+D−1p2
+
+, (3) 6where ρH (·) denotes the Huber loss [14]. After each iteration, the pose estimate is updated as 
+
+Ti+1 = D∗Ti for i = 0 , . . . , L . The spatial gradients of the TSDF are computed numerically, and the optimal transformation D∗ is obtained using the Levenberg–Marquardt algorithm [20, 22]. 
+
+3.4 Graph Optimization 
+
+To maintain a globally consistent 3D map and correct for accumulated drift over time, for each object, we jointly optimize the keyframe poses and the keypoints using an online factor graph formulation. This optimization is performed whenever a new keyframe is created. For factor-graph optimization, we adopt the equivalent perspective of a fixed object observed by a moving virtual camera, which yields a standard landmark observation model. As a result, the factor graph is parameterized using inverse pose variables Xm := T OC (m). Let X = {X0, · · · , X Mi }
+
+be the set of inverse keyframe poses of a given object, and P = {p0, · · · , p Ni } denote the 3D coordinates of the keypoints in the object frame. We solve for the optimal configurations for X and 
+
+P by minimizing the following nonlinear least-squares objective function: 
+
+L(X , P) = Lprior + Lodom + Lobs . (4) For simplicity, we will drop the object index i.
+
+Prior Loss. To prevent gauge ambiguity, the prior loss anchors the first keyframe pose to the identity: 
+
+Lprior = log( X0)∨ 2Σprior , (5) where log( ·)∨ denotes the vectorized Lie algebra representation of the pose in se(3) obtained via the logarithm map from SE(3) , and ∥e∥2Σ = e⊤Σ−1e denotes the Mahalanobis norm. 
+
+Pose Consistency Loss. The pose consistency loss penalizes deviations of keyframe poses from the frame-to-map registration results. Let ˜Xm−1 
+
+> m
+
+denote the estimated relative pose between two consecutive keyframes obtained from the registration. The pose consistency loss is defined using a relative motion constraint rather than an absolute pose estimate and is formulated as 
+
+Lodom =
+
+> M
+
+X
+
+> m=1
+
+ρH log 
+
+
+
+( ˜Xm−1 
+
+> m
+
+)−1X−1
+
+> m−1
+
+Xm
+
+∨ 2Σodom ,m 
+
+!
+
+, (6) where Σodom ,m is the odometry covariance matrix, which may vary across keyframe pairs. 
+
+Observation Loss. Under the inverse pose parameterization, each keyframe pose Xm acts as a virtual camera observing static keypoints pn defined in the object frame. Let Ω denote the set of keypoint observations, where (m, n ) ∈ Ω indicates that keypoint pn is observed and added to the map in keyframe m. Under this parameterization, X−1 
+
+> m
+
+pn represents the keypoint expressed in the camera frame of keyframe m. Let ˜zm,n ∈ R3 denote the corresponding 3D observation expressed in the camera frame. The observation loss is defined as the discrepancy between the predicted keypoint location X−1 
+
+> m
+
+pn and the observed 3D point ˜zm,n for (m, n ) ∈ Ω.To measure this discrepancy, we represent observations using a bearing–range representation (spherical coordinates) and define the loss as the sum of directional and radial errors. Let ϕ : R3 →
+
+R4 be a mapping that converts a 3D point p to its bearing–range representation, ϕ(p) = 
+
+h p 
+
+> ∥p∥
+
+, ∥p∥
+
+i
+
+,where p 
+
+> ∥p∥
+
+denotes the unit direction (bearing) and ∥p∥ denotes the radial distance. The observation loss is then defined as 
+
+Lobs = X
+
+> (m,n )∈Ω
+
+ρH
+
+ d2 ϕ(˜ zm,n ), ϕ (X−1 
+
+> m
+
+pn) , (7) 7where d2 (u1, r 1), (u2, r 2) denotes the summation of the angle between u1 and u2 and |r1 − r2|. We refer the reader to the Appendix for detailed information. 
+
+Solving the Optimization. We implement and solve this nonlinear least-squares problem using the Levenberg-Marquardt optimizer [20, 22] provided by the GTSAM library [4, 5]. At each keyframe insertion, the factor graph is updated and re-optimized to obtain refined inverse keyframe poses X ∗ and keypoint coordinates P∗. The optimized graph maintains a globally consis-tent keyframe-keypoint map, resulting in a more consistent pose tracking result. 
+
+3.5 3D Reconstruction 
+
+With the globally consistent object trajectory from the factor graph optimization, we aggregate the segmented RGB-D observations into a dense 3D model. We represent the target object using an object-centric volumetric grid defined in the object frame and fuse the depth measurements via a Truncated Signed Distance Function (TSDF) [3], where we follow the approach in [24] for projective TSDF update. The TSDF is updated online whenever a new keyframe is added. For final mesh extraction, we use the marching cubes approach [21] and apply a filter to filter out the disconnected component introduced by depth noise. Beyond reconstruction, the fused TSDF also serves as a dense geometric representation for pose-hypothesis selection and refinement. 
+
+# 4 Experiments 
+
+We first introduce the datasets used for evaluation, including our newly proposed datasets, and then compare our results with those of BundleSDF [30], the current state-of-the-art for model-free object tracking. 
+
+4.1 Datasets 
+
+Following the literature, we evaluate our method using two publicly available real-world datasets. In addition, we propose YCBMultiTrack , a brand new dataset that contains both synthetic and real-world multi-object tracking data. 
+
+HO3D [10]: HO3D is a dataset that consists of several hand-object interaction sequences. The dataset contains several heavy-occluded scenario. The RGB-D images are captured using an Intel RealSense camera, and the ground truth is automatically generated using a multi-frame registration process. Following BundleSDF [30], we use the latest HO-3D_v3 evaluation sets, which contain 4 different objects in 13 sequences. 
+
+YCBInEOAT [29]: YCBInEOAT consists of video sequences of YCB objects [2] being manipu-lated by a dual arm robot manipulator in a further range. As a result, compared to HO3D , the objects appear smaller in the image. The RGB-D videos are recorded using an Azure Kinect camera. The 6D groundtruth poses are manually annotated for each frame. In total, this dataset consists of 9 sequences of 5 different objects. 
+
+YCBMultiTrack (Ours): YCBMultiTrack , built from a subset of the YCB object dataset [2], includes both synthetic (simulation) and real-world data and has three distinctive features compared to existing datasets: (i) it contains multiple objects, (ii) it includes challenging occlusion scenarios where objects become completely out of view or are fully occluded by other objects, and (iii) it provides ground-truth object pose annotations obtained either from simulation or from a motion capture system. Each video sequence includes RGB-D images, per-object segmentation masks obtained using SAM2 [26], object canonical mesh poses in the camera frame T CMi (t) for each object 
+
+i, camera intrinsic parameters, and visibility annotations indicating whether an object is visible or 8fully occluded. Since T COi, 0 = I, we have T Oi 
+
+> Mi
+
+= T CMi, 0 . Therefore, the ground truth pose of the object frame can be computed as T COi,t = T CMi,t (T Oi 
+
+> Mi
+
+)−1.
+
+1. Synthetic Data. We use a total of seven objects from the YCB dataset and generate sequences containing one single-object and three two-object scenarios; example data are shown in Fig. 3. The objects move along either linear or circular trajectories to create diverse motion patterns and occlusion conditions. We simulate the motions and render the scenes in Isaac Lab [23], which provides (i) photorealistic rendering and (ii) ground-truth depth images, enabling us to evaluate tracking algorithms in a controlled setting with realistic simulated data 1.
+
+2. Real-World Data. We use a total of five objects from the YCB dataset and generate sequences containing five single-object, four two-object, and two three-object scenarios; example sequences are shown in Fig. 1. We use an Intel RealSense D435i camera to collect RGB-D data. To obtain near ground-truth object pose labels, we use an OptiTrack motion capture system. Specifically, we attach four to five markers to each object and record their 6D poses during the sequence. The camera extrinsic matrix is calibrated using an AprilTag [27] with known groundtruth pose. After optimization-based time synchronization, we obtain aligned RGB-D frames and motion capture measurements for accurate pose labeling. 
+
+Figure 3: Example from the YCBMultiTrack-Synthetic dataset: a two-object sequence (toy air-plane and tomato soup can) with circular motion and mutual occlusions. 
+
+Evaluation metrics: Following prior works [12, 28, 30], we evaluate 6D pose tracking accuracy using the area under the curve (AUC) of ADD and ADD-S with the groundtruth mesh. At a high level, ADD measures the exact pose error by computing the average distance between model points transformed by the estimated pose and those transformed by the ground-truth pose. In contrast, ADD-S accounts for object symmetries by using the closest-point distance between the two point sets, removing the ambiguity introduced by symmetric axes. To evaluate reconstruction quality, we report the Chamfer distance between the reconstructed mesh and the ground-truth mesh. 
+
+4.2 Results on HO3D and YCBInEOAT 
+
+1 shows the results on the HO3D benchmark, while the results on the YCBInEOAT dataset are presented in Table 2, where we compare our method with BundleSDF [30]. Overall, Point2Pose achieves competitive performance across the evaluated sequences. We observe lower ADD AUC on a subset of sequences, such as AP12 in HO3D and bleach v1 
+
+in YCBInEOAT . The reduced ADD AUC is primarily due to the largely textureless visible object surfaces, which make point tracking challenging. As shown in Fig. 4, AP12 exhibits weaker texture than AP14 —the latter contains white labels and a cap with clear textures—resulting in less stable and more uncertain 2D point tracking. A similar failure mode appears in the YCBInEOAT bleach sequences: in v1 , only a small textured region is visible, which induces geometric degeneracies 
+
+> 1Our synthetic data generation pipeline will be open-sourced, enabling users to efficiently generate custom multi-object tracking datasets in Isaac Lab using large-scale GPU-parallel simulation.
+
+9Figure 4: Comparison between low-texture and textured scenes. The green bounding box shows the pose estimated by the proposed method, while the red box denotes the ground truth. Point colors indicate the tracker’s uncertainty, with lighter colors corresponding to higher uncertainty and darker colors to more confident tracks; we visualize only points deemed visible by the tracker. In the AP12 sequence, where our method attains a lower ADD score, many tracked points lie on largely featureless regions and exhibit high uncertainty. We additionally observe that these points fluctuate across frames, which leads to unstable correspondences and degrades pose estimation accuracy. In contrast, AP14 provides richer texture, enabling more stable point tracks and more accurate pose estimates. A similar trend appears in the Bleach sequence: v1 includes an extended interval dominated by a nearly uniform white side view, which yields unstable point tracks and consequently noisier pose estimates. Table 1: Results on the HO3D dataset [10]. We compare BundleSDF [30] and Ours on ADD-S AUC, ADD AUC, and Chamfer Distance.                                                                                                         
+
+> Metric / Sequence AP10 AP11 AP12 AP13 AP14 MPM10 MPM11 MPM12 MPM13 MPM14 SB11 SB13 SM1 Mean ADD-S (%) ↑BundleSDF 95.82 96.07 96.96 96.20 97.17 90.94 96.29 96.16 59.05 97.18 97.06 97.69 96.88 93.34 Ours 93.71 96.18 84.33 96.27 96.13 95.31 97.08 97.12 96.58 96.42 94.35 97.58 89.15 94.63
+> ADD (%) ↑BundleSDF 89.69 91.01 94.54 92.80 94.81 78.78 91.69 91.33 33.71 94.16 93.73 95.25 94.23 92.62
+> Ours 76.19 91.12 46.64 92.36 92.39 73.99 88.16 93.86 63.19 85.56 85.99 94.90 65.95 80.79 CD (m) ↓BundleSDF 0.52 0.58 0.66 0.66 0.98 0.70 0.49 0.48 0.71 0.47 0.45 0.46 0.44 0.58
+> Ours 1.20 0.89 2.97 0.96 0.85 0.48 0.28 0.70 0.59 0.74 2.15 0.68 0.80 1.02
+
+in the tracked points and reduces registration accuracy. Nevertheless, Point2Pose still achieves reasonable ADD-S AUC in these edge cases, indicating that the estimated poses remain largely correct apart from ambiguities along the symmetry axis. 
+
+4.3 Results on YCBMultiTrack 
+
+We present results on the YCBMultiTrack dataset. Since BundleSDF supports only single-object tracking, we run it sequentially for each object in a multi-object sequence. This setting gives BundleSDF a slight advantage in computational resources, as it never needs to share memory or compute across objects within a frame. Table 3a reports performance on the synthetic split, where accurate depth and ground-truth poses are available. Under these controlled conditions, our method performs consistently better across objects and scenes. Qualitative results of our method for the airplane–tomato sequence are shown in Fig. 3. Real-world results are shown in Table 3b. In these sequences, objects frequently undergo com-plete occlusion and may even leave the camera view, which significantly degrades BundleSDF and often leads to failure. In contrast, our method remains reliable while tracking multiple objects 10 Table 2: The results in the YCBInEOAT dataset [29]. Comparison of BundleSDF [30] and Ours by sequence group on ADD-S/ADD AUC. We refer the reader to the Appendix for the full sequence name.                                                           
+
+> Metric Method bleach cracker mustard sugar tomato Mean v1 v2 v1 v2 v1 v2 v1 v2 ADD-S (%) ↑BundleSDF 94.00 95.47 95.60 91.72 96.32 96.28 96.12 90.56 fail 94.51
+> Ours 82.88 93.90 96.37 92.50 95.26 95.65 94.31 87.60 95.52 92.67 ADD (%) ↑BundleSDF 87.71 90.99 91.73 84.06 90.44 93.08 90.10 84.41 fail 89.07
+> Ours 63.96 87.75 93.56 85.74 89.89 89.90 89.00 78.84 87.35 85.11
+
+simultaneously. Fig. 1 shows a representative three-object scenario with severe arm-induced occlu-sions; when the objects reappear, our method quickly recovers their poses. Fig. 5 presents a direct comparison with BundleSDF. While BundleSDF tracks correctly before the object leaves the view, its relocalization after re-entry is biased by the previous estimate used for initialization, resulting in an incorrect pose. In contrast, our method re-establishes correspondences and accurately recovers the pose after reappearance. 
+
+Figure 5: Results on a fully occluded scene from YCBMultiTrack-Real-World . After the object becomes completely occluded and later re-enters the scene, our method successfully recovers the object pose, whereas BundleSDF [30] loses track and preserves a stale object orientation. 
+
+# 5 Limitations 
+
+The proposed method has several limitations. First, the underlying 2D point tracker relies on sufficiently discriminative image texture to maintain stable correspondences and may become less reliable on textureless or repetitive surfaces. Second, the approach depends on accurate instance segmentation; noisy or incomplete masks may introduce background points that degrade registra-tion. Third, tracking many objects can increase memory usage due to the large number of tracked points, although this can be mitigated through practical engineering choices such as point subsam-pling or pruning inactive keypoints, as well as improved point-tracking models. Finally, our use of a classical TSDF representation prioritizes simplicity and runtime efficiency, but may yield lower reconstruction fidelity compared to recent learning-based approaches. Exploring modern neural re-construction methods (e.g., EfficientNeRF [13]) while maintaining online fusion and tight coupling 11 Table 3: Comparison of BundleSDF and Ours on ADD-S and ADD, grouped by object count. Left: YCBMultiTrack-Synthetic . Right: YCBMultiTrack-Real-World . We refer the reader to the Appendix for the full object name. †BundleSDF averages exclude the failed sequence group. 
+
+(a) YCBMultiTrack-Synthetic                                             
+
+> Category Object ADD-S (%) ↑ADD (%) ↑
+> BundleSDF Ours BundleSDF Ours One object sugar 69.80 96.97 67.18 91.98
+> pitcher 94.53 92.60 79.15 79.27
+> Two objects meat 76.67 97.13 72.13 93.06
+> sugar 72.09 96.87 69.16 92.31
+> scissors 12.36 41.80 6.70 39.65
+> master 96.24 97.31 54.20 90.73
+> airplane 96.02 88.46 92.21 55.07 tomato 96.17 98.20 63.66 81.41
+> Mean 76.74 88.67 63.05 77.94
+
+(b) YCBMultiTrack-Real-World                                                                                         
+
+> Category Object ADD-S (%) ↑ADD (%) ↑
+> BundleSDF Ours BundleSDF Ours One object tomato fail 71.66 fail 36.60
+> mustard 40.82 90.34 35.37 78.39
+> pudding 44.48 90.81 24.87 73.22
+> meat 74.88 88.48 41.65 76.25
+> bleach 61.91 94.80 43.78 88.80
+> Two objects tomato 55.51 95.63 34.12 89.15
+> pudding fail 95.13 fail 91.63
+> tomato 93.48 87.21 83.44 44.87 pudding fail 84.99 fail 70.46
+> mustard 12.19 95.35 12.04 91.02
+> meat fail 96.49 fail 92.34
+> mustard 70.08 91.01 29.19 81.72
+> meat fail 90.02 fail 68.29
+> Three objects mustard 72.90 85.88 39.04 74.16
+> meat fail 92.21 fail 84.5
+> tomato fail 90.36 fail 60.96
+> bleach fail 92.65 fail 81.89
+> tomato 94.59 94.05 79.92 83.67
+> pudding fail 72.14 fail 41.75
+> Mean 62.08 89.40 42.34 71.19
+
+with tracking is an interesting direction for future work. 
+
+# 6 Conclusion 
+
+We presented Point2Pose , a causal, model-free method for multi-object 6D pose tracking and 3D reconstruction from monocular RGB-D video that can recover from complete occlusion. By leverag-ing modern 2D point trackers for long-range data association, our method maintains object identity through severe occlusions and enables recovery when objects reappear. We improve robustness under outlier-heavy correspondences with multi-hypothesis frame-to-map registration and TSDF-based hypothesis selection/refinement, while an online factor-graph optimization maintains global consistency and supports object-centric TSDF reconstruction. We also introduced YCBMultiTrack ,a new synthetic and real-world benchmark for multi-object tracking under severe occlusions. Experi-ments show competitive performance on existing model-free tracking benchmarks, while additionally providing multi-object tracking and complete-occlusion recovery capabilities not addressed by prior model-free methods. 12 References 
+
+[1] Banerjee, P., Shkodrani, S., Moulon, P., Hampali, S., Han, S., Zhang, F., Zhang, L., Fountain, J., Miller, E., Basol, S., et al.: Hot3d: Hand and object tracking in 3d from egocentric multi-view videos. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 7061–7071 (2025) [2] Calli, B., Singh, A., Walsman, A., Srinivasa, S., Abbeel, P., Dollar, A.M.: The ycb object and model set: Towards common benchmarks for manipulation research. In: 2015 international conference on advanced robotics (ICAR). pp. 510–517. IEEE (2015) [3] Curless, B., Levoy, M.: A volumetric method for building complex models from range images. In: Proceedings of the 23rd annual conference on Computer graphics and interactive techniques. pp. 303–312 (1996) [4] Dellaert, F., Contributors, G.: borglab/gtsam (May 2022). https://doi.org/10.5281/zenodo.5794541, https://github.com/borglab/gtsam) 
+
+[5] Dellaert, F., Kaess, M.: Factor Graphs for Robot Perception. Foundations and Trends in Robotics, Vol. 6 (2017), http://www.cs.cmu.edu/~kaess/pub/Dellaert17fnt.pdf 
+
+[6] Deng, X., Mousavian, A., Xiang, Y., Xia, F., Bretl, T., Fox, D.: Poserbpf: A rao–blackwellized particle filter for 6-d object pose tracking. IEEE Transactions on Robotics 37 (5), 1328–1342 (2021) [7] DeTone, D., Malisiewicz, T., Rabinovich, A.: Superpoint: Self-supervised interest point detec-tion and description. In: Proceedings of the IEEE conference on computer vision and pattern recognition workshops. pp. 224–236 (2018) [8] Doersch, C., Luc, P., Yang, Y., Gokay, D., Koppula, S., Gupta, A., Heyward, J., Rocco, I., Goroshin, R., Carreira, J., Zisserman, A.: BootsTAP: Bootstrapped training for tracking-any-point. Asian Conference on Computer Vision (2024) [9] Doersch, C., Yang, Y., Vecerik, M., Gokay, D., Gupta, A., Aytar, Y., Carreira, J., Zisserman, A.: TAPIR: Tracking any point with per-frame initialization and temporal refinement. In: Proceedings of the IEEE/CVF International Conference on Computer Vision. pp. 10061–10072 (2023) [10] Hampali, S., Rad, M., Oberweger, M., Lepetit, V.: Honnotate: A method for 3d annotation of hand and object poses. In: CVPR (2020) [11] He, Y., Sun, W., Huang, H., Liu, J., Fan, H., Sun, J.: Pvn3d: A deep point-wise 3d keypoints voting network for 6dof pose estimation. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. pp. 11632–11641 (2020) [12] He, Y., Wang, Y., Fan, H., Sun, J., Chen, Q.: Fs6d: Few-shot 6d pose estimation of novel ob-jects. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. pp. 6814–6824 (2022) [13] Hu, T., Liu, S., Chen, Y., Shen, T., Jia, J.: Efficientnerf efficient neural radiance fields. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 12902–12911 (2022) 13 [14] Huber, P.J.: Robust estimation of a location parameter. In: Breakthroughs in statistics: Methodology and distribution, pp. 492–518. Springer (1992) [15] Jin, Y., Prasad, V., Jauhri, S., Franzius, M., Chalvatzaki, G.: 6dope-gs: Online 6d object pose estimation using gaussian splatting. In: Proceedings of the IEEE/CVF International Conference on Computer Vision. pp. 8032–8043 (2025) [16] Karaev, N., Makarov, I., Wang, J., Neverova, N., Vedaldi, A., Rupprecht, C.: Cotracker3: Simpler and better point tracking by pseudo-labelling real videos. In: Proc. arXiv:2410.11831 (2024) [17] Karaev, N., Rocco, I., Graham, B., Neverova, N., Vedaldi, A., Rupprecht, C.: Cotracker: It is better to track together. In: Proc. ECCV (2024) [18] Labbé, Y., Carpentier, J., Aubry, M., Sivic, J.: Cosypose: Consistent multi-view multi-object 6d pose estimation. In: European conference on computer vision. pp. 574–591. Springer (2020) [19] Labbé, Y., Manuelli, L., Mousavian, A., Tyree, S., Birchfield, S., Tremblay, J., Carpentier, J., Aubry, M., Fox, D., Sivic, J.: Megapose: 6d pose estimation of novel objects via render & compare. In: Conference on Robot Learning. pp. 715–725. PMLR (2023) [20] Levenberg, K.: A method for the solution of certain non-linear problems in least squares. Quarterly of applied mathematics 2(2), 164–168 (1944) [21] Lorensen, W.E., Cline, H.E.: Marching cubes: A high resolution 3d surface construction algo-rithm. In: Seminal graphics: pioneering efforts that shaped the field, pp. 347–353 (1998) [22] Marquardt, D.W.: An algorithm for least-squares estimation of nonlinear parameters. Journal of the society for Industrial and Applied Mathematics 11 (2), 431–441 (1963) [23] Mittal, M., Roth, P., Tigue, J., Richard, A., Zhang, O., Du, P., Serrano-Muñoz, A., Yao, X., Zurbrügg, R., Rudin, N., et al.: Isaac lab: A gpu-accelerated simulation framework for multi-modal robot learning. arXiv preprint arXiv:2511.04831 (2025) [24] Newcombe, R.A., Izadi, S., Hilliges, O., Molyneaux, D., Kim, D., Davison, A.J., Kohi, P., Shotton, J., Hodges, S., Fitzgibbon, A.: Kinectfusion: Real-time dense surface mapping and tracking. In: 2011 10th IEEE international symposium on mixed and augmented reality. pp. 127–136. Ieee (2011) [25] Ponimatkin, G., Cífka, M., Soucek, T., Fourmy, M., Labbé, Y., Petrik, V., Sivic, J.: 6d object pose tracking in internet videos for robotic manipulation. In: The Thirteenth International Conference on Learning Representations (2025) [26] Ravi, N., Gabeur, V., Hu, Y.T., Hu, R., Ryali, C., Ma, T., Khedr, H., Rädle, R., Rolland, C., Gustafson, L., et al.: Sam 2: Segment anything in images and videos. arXiv preprint arXiv:2408.00714 (2024) [27] Wang, J., Olson, E.: Apriltag 2: Efficient and robust fiducial detection. In: 2016 IEEE/RSJ international conference on intelligent robots and systems (IROS). pp. 4193–4198. IEEE (2016) [28] Wen, B., Bekris, K.: Bundletrack: 6d pose tracking for novel objects without instance or category-level 3d models. In: 2021 IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS). pp. 8067–8074. IEEE (2021) 14 [29] Wen, B., Mitash, C., Ren, B., Bekris, K.E.: se(3)-tracknet: Data-driven 6d pose tracking by calibrating image residuals in synthetic domains. 2020 IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS) (Oct 2020). https://doi.org/10.1109/iros45743.2020.9341314, http://dx.doi.org/10.1109/IROS45743. 2020.9341314 
+
+[30] Wen, B., Tremblay, J., Blukis, V., Tyree, S., Müller, T., Evans, A., Fox, D., Kautz, J., Birch-field, S.: Bundlesdf: Neural 6-dof tracking and 3d reconstruction of unknown objects. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 606–617 (2023) [31] Wen, B., Yang, W., Kautz, J., Birchfield, S.: Foundationpose: Unified 6d pose estimation and tracking of novel objects. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. pp. 17868–17879 (2024) [32] Wu, Y.K., Shen, Y., Huang, T., Fang, I., Chen, J.C., et al.: Kmops: Keypoint-driven method for multi-object pose and metric size estimation from stereo images. In: Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision. pp. 7730–7739 (2026) [33] Xiang, Y., Schmidt, T., Narayanan, V., Fox, D.: Posecnn: A convolutional neural network for 6d object pose estimation in cluttered scenes. arXiv preprint arXiv:1711.00199 (2017) [34] Zeng, A., Song, S., Nießner, M., Fisher, M., Xiao, J., Funkhouser, T.: 3dmatch: Learning local geometric descriptors from rgb-d reconstructions. In: CVPR (2017) 
+
+# A Implementation Details 
+
+Below we describe the implementation details of the proposed method. Actual implementation, including code and parameters, will be available on the GitHub repository after the final decision. 
+
+A.1 2D Point Tracker 
+
+We use the causal BootsTAPIR [8, 9] as the 2D point tracker to track sparse query points over time. Following [9], we use a visibility threshold of 0.5. Each RGB frame is resized to 480 × 480 × 3 before being passed to the tracker, and the predicted point locations are mapped back to the original image resolution afterward. 
+
+A.2 Point Sampling 
+
+Sampling Criteria. Point sampling is triggered when the current tracked points no longer provide sufficient geometric coverage for reliable registration. In practice, we use two criteria: the estimated object rotation and the number of currently visible tracked points. We sample new points when the object rotates by more than  10 ◦ relative to previous sampled frames, or when the number of visible tracked points falls below 25 .
+
+Point Promotion Strategy. To avoid contaminating the object map with noisy depth mea-surements or short-lived tracks, newly sampled points are not trusted immediately. Once sampling is triggered, the new image points are added to the 2D tracker so that temporal correspondences can be established right away, but their associated 3D object-frame keypoints are initialized as tentative and are excluded from reliable frame-to-map registration. 15 A pending point is promoted to a keypoint only if it passes a multi-frame verification process. Each pending point receives a score of +1 or +0 at every time step if it passes all of the following verificationchecks, and is promoted once this score reaches a consecutive streak threshold Nstreak ,which we set to 3:1. Pose Stability: The relative pose change between consecutive frames must be small (e.g., rotation < 2◦ and translation < 0.01 m) to ensure observations are captured during reliable tracking phases. 2. Track Quality: The 2D track remains visible, has a valid depth value, and its tracking uncer-tainty falls below a strict threshold ( 0.3). 3. Mask Consistency: The 2D projection of the track strictly lies within the current object segmentation mask. Once the consecutive streak threshold is reached, the point undergoes a final geometric verification before promotion. We evaluate the accumulated 3D observations of the pending point in the object coordinate frame to enforce spatial consistency. The point must satisfy a minimum observation count and exhibit a tight spatial spread, defined as a median absolute deviation of less than 0.008 m.
+
+A.3 Graph Optimization 
+
+Observation Loss. We define the observation loss as: 
+
+Lobs = X
+
+> (m,n )∈Ω
+
+ρH
+
+ d2 ϕ(˜ zm,n ), ϕ (X−1 
+
+> m
+
+pn) . (8) We use the GTSAM [4] implementation for the range and bearing loss, where the loss is defined over the product manifold S2 × R+ as 
+
+d2  ˜b
+
+˜r
+
+
+
+,
+
+br
+
+
+
+) = 
+
+˜b
+
+˜r
+
+
+
+⊖
+
+br
+
+
+
+≜
+
+U (˜b)⊤Log S2,˜b(b)˜r − r
+
+
+
+, (9) where Log S2,˜b(b) ∈ T˜bS2 is the Riemannian logarithm map on the unit sphere S2, and U (˜b) ∈ R3×2
+
+is an orthonormal basis of the tangent space T˜bS2.
+
+A.4 3D Reconstruction 
+
+We use the CUDA implementation of tsdf-fusion-python library [34] for 3D reconstruction. It follows the projective TSDF update approach. For a voxel center v ∈ R3 in the object volume, its coordinates in the m-th camera frame are computed as vm = T m∗ 
+
+> 0
+
+v. We project this point onto the image plane using the camera projection function π(·) and sample the corresponding depth from the segmented depth image Dm.We define the projective signed distance at voxel v as the difference between the measured depth and the voxel depth along the camera optical axis: 
+
+dm(v) = Dm(π(vm)) − [vm]z , (10) where [·]z denotes the z-coordinate in the camera frame. To suppress noise and occlusion effects far from the observed surface, we use a truncation margin τ . Following projective TSDF fusion, 16 we discard voxels with dm(v) < −τ . For valid voxels ( dm(v) ≥ − τ ), we define the normalized truncated TSDF observation as 
+
+Φm(v) = min 
+
+
+
+1, dm(v)
+
+τ
+
+
+
+. (11) The fused TSDF volume V (v) and its corresponding weight volume W (v) are updated by weighted averaging over valid observations: 
+
+V (v) = 
+
+PMi 
+
+> m=0
+
+wm(v)Φ m(v)
+
+PMi 
+
+> m=0
+
+wm(v) , (12) where wm(v) is set to zero if the projected voxel falls outside the image, outside the object mask, yields an invalid depth measurement, or is rejected by the truncation gate; otherwise, wm(v) = 1 .RGB values are fused analogously from the corresponding color images to maintain a volumetric color map. To extract the dense 3D object mesh, one can use the Marching Cubes algorithm and compute the zero-crossing isosurface ( V (v) = 0 ) of the TSDF volume. 
+
+# B Ablation Studies 
+
+We conduct two ablation studies on the HO3D dataset: (i) evaluating the contribution of each module in the proposed system (multi-hypothesis, SDF refinement, and graph optimization), and (ii) analyzing the effect of different keypoint sampling strategies. The results are summarized in Table 4 and Table 5. In Table 4, the no multi-hypothesis setting estimates the pose using a two-step procedure: an initial SVD-based alignment, followed by outlier removal using a fixed threshold and a second SVD using the remaining inliers. In the no SDF refinement setting, the pose from the multi-hypothesis stage is used directly without the SDF refinement step. In the no graph optimization setting, the estimated pose is used without performing graph-based global refinement. The results show that each component of the proposed system contributes to the overall performance. Removing the multi-hypothesis module leads to the largest performance degradation, while SDF refinement and graph optimization further improve pose accuracy through local and global refinement. Overall, these results confirm that the three modules are complementary and together enable robust and accurate pose estimation. The results in Table 5 show that the proposed keypoint sampling strategy outperforms both SuperPoint-only and uniform sampling. Using only SuperPoint keypoints reduces performance, indicating that relying solely on detector-based keypoints may limit spatial coverage. Uniform sam-pling leads to an even larger drop, suggesting that randomly distributed points lack discriminative features for reliable matching. In contrast, the proposed strategy achieves the best accuracy and maintains relatively low variance, demonstrating that combining informative keypoints with better spatial coverage improves both robustness and pose estimation accuracy. 17 Table 4: Ablation results of the proposed method with different modules disabled. 
+
+ADD-S AUC (%) ↑ ADD AUC (%) ↑
+
+Method Mean Std Mean Std Proposed 95.07 3.74 82.76 15.18 
+
+No multi-hypothesis 89.81 7.80 65.52 21.86 No SDF refine 94.40 2.26 77.37 18.98 No graph optimization 94.56 2.12 78.80 17.26 
+
+Table 5: Ablation results on keypoint sampling methods. 
+
+ADD-S AUC (%) ↑ ADD AUC (%) ↑
+
+Method Mean Std Mean Std Proposed 95.07 3.74 82.76 15.18 
+
+Super Point Only 93.09 4.14 77.61 19.78 Uniform Sampling 91.47 5.92 72.31 17.89 
+
+18
