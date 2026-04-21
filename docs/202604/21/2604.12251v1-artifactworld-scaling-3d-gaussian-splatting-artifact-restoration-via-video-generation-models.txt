@@ -1,0 +1,422 @@
+Title: ArtifactWorld: Scaling 3D Gaussian Splatting Artifact Restoration via Video Generation Models
+
+URL Source: https://arxiv.org/pdf/2604.12251v1
+
+Published Time: Wed, 15 Apr 2026 00:37:14 GMT
+
+Number of Pages: 10
+
+Markdown Content:
+# ArtifactWorld: Scaling 3D Gaussian Splatting Artifact Restoration via Video Generation Models 
+
+## Xinliang Wang 
+
+Ke Holdings Inc. Beijing, China wangxinliang008@ke.com 
+
+## Yifeng Shi ∗
+
+Ke Holdings Inc. Beijing, China shiyifeng003@ke.com 
+
+## Zhenyu Wu 
+
+Ke Holdings Inc. Beijing, China wuzhenyu018@ke.com Floaters        
+
+> GT  Input Difix3D GSFixer Ours
+> Dilation Needles Cracks Aliasing Blurring Popping Ghosting Color Outliers
+
+Figure 1: ArtifactWorld effectively resolves complex 3D Gaussian Splatting degradations under sparse-view constraints. We systematically categorize these failures into nine fine-grained phenomenological artifact types (Sec. 3). Compared to recent generative restoration pipelines (e.g., Difix3D [ 28 ], GSFixer [ 38 ]), our large-scale data scaling and homogeneous video diffusion framework ensure spatio-temporally consistent, high-fidelity restoration. 
+
+## Abstract 
+
+3D Gaussian Splatting (3DGS) delivers high-fidelity real-time ren-dering but suffers from geometric and photometric degradations under sparse-view constraints. Current generative restoration ap-proaches are often limited by insufficient temporal coherence, a lack of explicit spatial constraints, and a lack of large-scale training data, resulting in multi-view inconsistencies, erroneous geomet-ric hallucinations, and limited generalization to diverse real-world artifact distributions. In this paper, we present ArtifactWorld, a framework that resolves 3DGS artifact repair through systematic data expansion and a homogeneous dual-model paradigm. To ad-dress the data bottleneck, we establish a fine-grained phenomeno-logical taxonomy of 3DGS artifacts and construct a comprehensive training set of 107.5K diverse paired video clips to enhance model robustness. Architecturally, we unify the restoration process within a video diffusion backbone, utilizing an isomorphic predictor to localize structural defects via an artifact heatmap. This heatmap then guides the restoration through an Artifact-Aware Triplet Fu-sion mechanism, enabling precise, intensity-guided spatio-temporal repair within native self-attention. Extensive experiments demon-strate that ArtifactWorld achieves state-of-the-art performance in sparse novel view synthesis and robust 3D reconstruction. Code and dataset will be made public. 
+
+## CCS Concepts 
+
+• Computing methodologies → Computer vision .
+
+> ∗Corresponding author.
+
+## Keywords 
+
+3D Gaussian Splatting, Video Diffusion Models, Generative Artifact Restoration 
+
+## 1 Introduction 
+
+3D Gaussian Splatting (3DGS) has garnered significant attention in computer graphics and vision due to its exceptional real-time rendering capabilities and high fidelity [ 8, 19 ]. However, the per-formance of 3DGS relies heavily on dense view coverage. Under sparse-view constraints, the optimization process often falls into a severely under-constrained state [ 43 ]. This limitation leads to various geometric and photometric degradations in rendered views, such as floaters, background dilation, needle-like artifacts, and color outliers caused by the overfitting of Spherical Harmonics. These defects significantly hinder the practical industrial deployment of 3DGS in scenarios with limited capture. To mitigate these issues, recent research utilizes large-scale gen-erative models as diffusion priors to guide restoration [ 29 , 30 ]. However, these paradigms face several core challenges. First, cer-tain methods perform per-frame restoration, causing multi-view inconsistencies like flickering during novel view synthesis [ 28 ]. Sec-ond, existing frameworks suffer from severe training data scarcity, making it difficult to generalize to diverse real-world artifact distri-butions. Furthermore, relying on external feature extractors [ 38 ]often introduces feature space mismatches and increases optimiza-tion difficulty. Critically, directly applying powerful diffusion priors without explicit spatial constraints causes models to misinterpret 
+
+> arXiv:2604.12251v1 [cs.CV] 14 Apr 2026 X. Wang et al.
+
+highly coupled 3DGS artifacts as standard 2D noise, triggering hal-lucinations and erroneous restorations (as illustrated in Figure 5). In this paper, we present ArtifactWorld, a comprehensive frame-work for 3DGS artifact restoration through systematic data expan-sion and a homogeneous dual-model architecture. To address the data bottleneck, we first establish a fine-grained phenomenological taxonomy encompassing nine 3DGS degradation types. By leverag-ing an automated generative data flywheel, we expand our training set to 107,520 diverse paired video clips, significantly enhancing the model’s robustness against complex artifacts. Architecturally, we propose a homogeneous dual-model par-adigm unifying the restoration process within a video diffusion backbone. Sharing this latent space, an isomorphic predictor first generates an explicit artifact heatmap. To resolve erroneous restora-tions, our Artifact-Aware Triplet Fusion (AATF) mechanism utilizes this heatmap as spatial intensity guidance to dynamically modulate the restoration strategy. In severely corrupted regions, it stimulates stronger generative capacity, synergizing with semantic cues from degraded reference frames to rebuild structures. Conversely, in low- or no-artifact areas, a reference mechanism directly extracts reliable features from clean boundary ground-truths introduced by Decoupled Boundary Anchoring (DBA) or reference frames. Cou-pled with a piecewise heatmap decay strategy, the model dynam-ically balances global context absorption and precise local repair. Finally, pristine frames are distilled back into 3D space via gen-erative closed-loop reconstruction, eliminating 3DGS geometric defects. Experiments show ArtifactWorld excels in sparse-view syn-thesis and 3D reconstruction, yielding superior visual fidelity over existing methods (Figure 1). Our main contributions are: 
+
+• We introduce a phenomenological taxonomy of 3DGS sparse-view degradations and construct the ArtifactWorld Benchmark to facilitate standardized evaluation. 
+
+• We develop an automated generative data flywheel and construct a large-scale dataset of 107.5K paired video clips, establishing a foundation for learning degradation distributions. 
+
+• We design a homogeneous restoration network featuring Artifact-Aware Triplet Fusion (AATF) and Decoupled Boundary Anchor-ing (DBA), utilizing spatial artifact intensity guidance to achieve precise spatio-temporal repair within native self-attention layers. 
+
+• Extensive experiments validate that our framework achieves state-of-the-art performance in both 2D artifact restoration and 3D reconstruction tasks, demonstrating superior robustness across various sparsity protocols. 
+
+## 2 Related Work 2.1 Regularization-based Sparse-View 3DGS 
+
+To mitigate sparse-view 3DGS degradations (e.g., floaters and back-ground dilation), previous studies have primarily focused on per-scene regularizations, such as monocular depth priors [ 5 , 43 ], fre-quency smoothness [ 40 ], dropout strategies [ 13 , 34 ] or explicit geo-metric and denoising constraints [ 32 , 39 ]. However, limited by their reliance on existing geometric cues, these analytical approaches struggle to hallucinate missing high-frequency details in severely under-observed regions, typically yielding overly smoothed results that remain sensitive to specific scene distributions. 
+
+## 2.2 Generative Priors for 3D Restoration 
+
+To overcome the limitations of purely analytical regularizations, recent advancements utilize the priors embedded in large-scale generative models. For NeRFs, methods like ReconFusion [ 29 ] in-corporate image diffusion to optimize novel views. In the 3DGS domain, works such as 3DGS-Enhancer [ 10 ], Difix3D [ 28 ], Gen-Fusion [ 30 ], and GSFixer [ 38 ] employ diffusion priors to correct rendering artifacts. However, these paradigms face two main chal-lenges. First, image-based distillation inherently lacks temporal awareness, introducing severe multi-view inconsistencies such as flickering and popping artifacts. Second, while video-based ap-proaches address temporal coherence, they often rely on appending external feature extractors (e.g., DINOv2 [ 12 ], VGGT [ 23 ]) onto the diffusion backbone via cross-attention modules. This architectural design imposes computational overhead and creates feature space discrepancies. ArtifactWorld addresses these issues by unifying the spatio-temporal restoration process within the native self-attention of a homogeneous video diffusion backbone, avoiding cumbersome external tokenizers and enabling large-scale data training. 
+
+## 2.3 Video Generation and Restoration 
+
+Foundation video diffusion models (DiTs) excel in modeling spatio-temporal dynamics and in-context generation [ 2 , 3, 6, 11 , 15 , 36 , 37 ]. Recently, these generative priors have advanced complex video restoration tasks [ 4, 24 , 31 , 33 , 42 , 44 ]. However, directly applying generic video restoration paradigms to sparse-view 3DGS is chal-lenging. General priors blindly treat highly coupled 3DGS artifacts as standard 2D noise, causing severe geometric over-hallucination and degrading accurately reconstructed regions. To resolve this bottleneck, ArtifactWorld employs an isomorphic predictor to gen-erate explicit spatial heatmaps. This adaptive conditioning strictly restricts generative modifications to corrupted regions, preserving the multi-view consistency of healthy 3DGS geometry. 
+
+## 3 ArtifactWorld Benchmark & Data Scaling 3.1 Phenomenological Taxonomy of Degradations 
+
+To systematically categorize the failure modes of 3DGS under sparse constraints, considering that the attributes in the 3DGS optimiza-tion process are highly coupled—making it extremely difficult to completely decouple the underlying causes of degradation—our taxonomy avoids exhaustive causal tracing. Instead, we adopt a phenomenological perspective from four fundamental representa-tion domains, as shown in Figure 2(a): 
+
+(i) Geometric Structure: 
+
+• Floaters: High-opacity primitives wandering in free space, typi-cally induced by overfitting multi-view consistency discrepancies due to a lack of strict 3D geometric constraints. 
+
+• Dilation: Amorphous, oversized Gaussian blobs. This stems from insufficient densification, forcing primitives to over-expand to cover large areas for minimizing photometric loss, particularly in textureless regions or under severe depth ambiguity. 
+
+• Needles: Sharp, spike-like artifacts emerging when Gaussians become highly anisotropic along specific rays to overfit sparse ArtifactWorld: Scaling 3D Gaussian Splatting Artifact Restoration via Video Generation Models (a) Phenomenological Taxonomy of Sparse -View Degradations 
+
+(b) Real -World Data Curation and Benchmark Construction                
+
+> 16K High -Quality
+> Posed Pristine Scenes
+> Pose Registration +
+> Quality Filtering
+> Posed scenes with
+> official annotations
+> 25.6K Paired
+> Video Clips
+> 1.28K Evaluation Set
+> (ArtifactWorld Benchmark)
+> Remainder
+> 24.3K data
+> QAlign Model SFT
+
+(c) Artifact World Model for Controllable 
+
+Data Scaling                             
+
+> 2K+ human -
+> annotated
+> samples with 9
+> artifact
+> categories
+> LTX -Video -2B SFT
+> The Resulting
+> Artifact World
+> Model
+> Generative
+> Synthetic Scaling
+> Automated 9 -
+> category pseudo -
+> labeling and
+> quality filtering
+> (4K+ samples)
+> 107.5K ArtifactWorld
+> Training Data
+> Artifact category
+> control text
+> (i) Geometric
+> Structure
+> SpatialVID -HQ
+> …
+> DL3DV
+> Floaters Dilation Needles
+> 3DGS
+> Degradation
+> Simulator
+> (ii) Rendering
+> & Sampling
+> (iii) Dynamic
+> & Temporal
+> (iv)  Photome -
+> tric  Radiance
+> Cracks
+> Aliasing Blurring Aliasing Blurring
+> Popping Ghosting Popping Ghosting
+> Color Outliers Color Outliers
+> Floaters Dilation Needles Cracks
+> 83.2K
+> Realworld Scenes ArtifactWorld Scenes
+> Unseen Clean Videos
+> (from SpatialVID -HQ)
+> (22K+ Remaining
+> for Pseudo -labeling )
+
+Figure 2: Overview of ArtifactWorld Data Engine. (a) Our phenomenological taxonomy categorizes 3DGS sparse-view degrada-tions into 4 domains and 9 artifact types. (b) The data curation pipeline extracts 16K pristine scenes and physically simulates 25.6K paired videos, splitting them into a 1.28K benchmark and 24.3K training data. (c) The generative data flywheel leverages a VLM and an Artifact World Model to ultimately produce 107.5K training pairs. 
+
+views. They manifest prominently from unconstrained novel perspectives (e.g., close-up or orthogonal). 
+
+• Cracks: Manifest as topological voids appearing on object sur-faces or structures. The potential underlying cause is primarily the lack of explicit topological constraints, causing overlapping Gaussian spheres to experience spatial positional drift. 
+
+(ii) Rendering & Sampling: 
+
+• Aliasing: High-frequency Moiré patterns. Critical sub-pixel aliasing artifact triggered when rendering distant views of close-up optimized models; lacking low-pass pre-filtering, pixel grids severely undersample shrunken 2D Gaussian footprints. 
+
+• Blurring: Overly smoothed textures. When densification limits or multi-view inconsistencies prevent spawning high-frequency primitives, the optimizer over-expands Gaussian scales, function-ally degenerating them into spatial low-pass filters. 
+
+(iii) Dynamic & Temporal: 
+
+• Popping: Rendered results exhibit discontinuous flickering or jumping during camera motion. The common cause is that in-tersecting Gaussian spheres in space undergo irregular sorting order exchanges as the camera moves. 
+
+• Ghosting: Semi-transparent, trailing, or duplicate artifacts. As dynamic elements violate static assumption, optimizer lowers opacity to minimize cross-view photometric errors, forcefully blending transient objects into the static background. 
+
+(iv) Photometric Radiance: 
+
+• Color Outliers: Erratic color shifts or noise under novel views. Caused by unregularized high-degree SH overfitting limited training rays, and further amplified by imperfect multi-view exposure compensation or storage quantization errors. 
+
+## 3.2 Data Curation and Benchmark Construction 
+
+Source Data Mining & Pose Registration. To construct a taxonomy-aligned dataset, our source pool integrates 10K raw scenes with pose annotations from DL3DV [ 9 ] and 118K rigid sequences mined from SpatialVID-HQ [ 25 ] using a dynamic ratio threshold ( < 0.01 ). To ensure high-quality reconstruction, we utilize an enhanced DROID-SLAM [ 20 ] with Depth-Anything V2 [ 35 ] priors, featur-ing UniDepth [ 14 ] initialization, decoupled two-stage tracking, and geometric consistency filtering to prune high reprojection errors. 
+
+Physics-Grounded Trajectory Quality Filtering. Standard track-ing metrics often fail to capture high-frequency jitters severely degrading novel view synthesis. Therefore, we introduce a physics-grounded smoothness filter enforcing translational (jerk), rotational (angular acceleration), and directional consistency constraints. Us-ing Median Absolute Deviation (MAD), we robustly prune violating frames to distill 16,043 high-quality, registered static scenes. 
+
+Physics-Grounded Degradation Simulation. Based on 16K pris-tine scenes, we physically synthesize 25,616 paired clips via 3DGS rasterization replicating nine artifact categories: (1) Sparsity & Optimization Stage Intervention: extreme sparsity (e.g., 8× frame skipping) induces Needles, Floaters , and Popping during late-stage overfitting, while early-stage underfitting or dynamic objects trig-ger Blurring and Ghosting . (2) Random Checkpoint Sampling (1.5K– 12K iterations) captures the temporal evolution of degradations. (3) Explicit Parameter Perturbations: we induce Cracks via logarithmic scale compression, exacerbate Dilation via 20% point dropout, and trigger Color Outliers by injecting Gaussian noise into SH coeffi-cients, with resolution downsampling synthesizing Aliasing .
+
+The ArtifactWorld Benchmark. From 25,616 pairs, we partition 
+
+24,332 clips for training and 1,284 for the golden ArtifactWorld X. Wang et al. VAE  E    
+
+> VAE  D
+> AATF
+> 3DGS Reconstruction
+> 𝐳 𝐫𝐞𝐟  𝐳 𝐓 %𝟏
+> 𝐭𝐚𝐫𝐠𝐞𝐭 _𝐡𝐦
+> DiT
+> DiT
+> 𝐳 𝐫𝐞𝐟  𝐳 𝐓 %𝟏
+> 𝐭𝐚𝐫𝐠𝐞𝐭  𝐳 𝐡𝐞𝐚𝐭𝐦𝐚𝐩
+> LoRA1 LoRA2
+> DBA
+> N steps
+> Training Views
+> …
+> …
+> Rendered
+> Novel Views
+> Restored
+> Novel Views
+> …
+> Iterative
+
+Figure 3: ArtifactWorld Framework. Under a Homogeneous Dual-Model Paradigm within a diffusion transformer: (1) DBA extracts clean boundary references. (2) A predictor (optimized and inferred via LoRA1) generates artifact heatmaps. (3) A restoration model (optimized and inferred via LoRA2) leverages these heatmaps to synthesize high-fidelity frames via AATF. (4) Closed-loop optimization uses these frames to permanently eliminate 3DGS artifacts. 
+
+Benchmark . This manually audited test set ensures a balanced dis-tribution of all nine artifact categories, providing the most compre-hensive, rigorous benchmark for 3DGS restoration to date. 
+
+## 3.3 Artifact World Model for Data Scaling 
+
+Relying solely on the 3DGS rasterization pipeline to physically synthesize hundred-thousand-scale degraded videos is not only computationally prohibitive but also inflexible for specifying com-plex artifact combinations. To break this scaling bottleneck, we introduce a text-conditioned diffusion prior, designing a genera-tive data flywheel (Figure 2c). First, by employing a VQA strategy with balanced positive and negative samples, we fine-tune the Q-Align [ 27 ] model on 2,285 precisely annotated videos. Achieving a QA-level accuracy of 94.56% and an F1 score of 0.89, this VLM serves as a strict gatekeeper to distill 4,385 pairs of high-confidence pseudo-labeled samples from the physically simulated data. Sub-sequently, utilizing this 4K dataset, we fine-tune LTX-Video-2B to construct a controllable Artifact World Model. We introduce a com-binatorial prompting strategy (randomly sampling 1 to 9 artifact categories and shuffling them) to guide this model in learning the mapping from clean geometry to complex degradation patterns. By applying this generative prior to unseen videos from SpatialVID-HQ, we synthesize 83,188 multi-degradation clips. Merging these with the simulated data ultimately constructs a large-scale training set of 107,520 samples, thoroughly unlocking the data scaling ca-pabilities for 3DGS restoration. Further implementation details are provided in the Supplementary Material. 
+
+## 4 Methodology 4.1 Framework Overview 
+
+Our ArtifactWorld framework operates on a Flow Matching video diffusion method (LTX-Video [ 7]). Given a video 𝑉 , a pre-trained VAE encodes it into a compact latent 𝑧 = E ( 𝑉 ). The model learns to predict a velocity field 𝑣 𝜃 that constructs an ODE path from standard Gaussian noise 𝑧 1 ∼ N ( 0, 𝐼 ) to the data distribution 𝑧 0.To rectify sparse-view 3DGS artifacts, we propose a Homoge-neous Dual-Model Paradigm, unifying restoration within native self-attention layers (Figure 3). The coupled pipeline comprises: Isomorphic Artifact Prediction for spatial intensity guidance and Heatmap-Guided Video Restoration for intensity-adaptive feature routing (Sec. 4.3), alongside Closed-Loop Generative Reconstruc-tion (Sec. 4.4) to permanently eliminate 3DGS geometric defects. 
+
+## 4.2 Decoupled Boundary Anchoring (DBA) 
+
+For video-to-video generation constrained by reference frames, na-tive models often couple clean and noisy tokens within the same sequence, increasing optimization difficulty. To resolve this for both our predictor and restoration models, we propose Decoupled Boundary Anchoring (DBA). Instead of intra-sequence mixing, we isolate all conditional information into a highly structured refer-ence latent sequence z𝑟𝑒 𝑓 , anchored exclusively by clean GT sparse views at its temporal boundaries. The target latent z𝑡𝑎𝑟𝑔𝑒𝑡 𝑡 is strictly maintained as a homogeneous generative sequence. Specifically, the reference sequence is formulated as: 
+
+z𝑟𝑒 𝑓 [𝑖 ] =
+
+
+
+E ( V𝐺𝑇 [0]) , 𝑖 = 0
+
+E ( V𝐺𝑇 [− 1]) , 𝑖 ∈ [ 𝑇 − 𝑘,𝑇 − 1]E ( V𝑎𝑟𝑡𝑖 𝑓 𝑎𝑐𝑡 [𝑖 ]) , otherwise (1) where 𝑘 denotes the trailing anchor window size. Tailored to the asymmetric temporal compression of the LTX-Video latent space, we set 𝑘 = 8 to form a complete compressed chunk, ensuring robust terminal anchoring without introducing latent alignment bias. Through this decoupled formulation, the global self-attention mechanism can bidirectionally query these pristine spatial anchors. 
+
+## 4.3 Homogeneous Dual-Model Paradigm 
+
+Based on the shared DBA formulation, we unify artifact localization and restoration into a Homogeneous Dual-Model Paradigm using the same LTX-Video-13B backbone and Flow Matching objective. 
+
+Phase 1: Homogeneous Heatmap Predictor. Precise restoration demands pixel-level awareness of degraded regions. Instead of rely-ing on external feature extractors, we reframe artifact localization as a homogeneous video generation task. The predictor takes a concatenated doublet as input: z𝑝𝑟𝑒𝑑 𝑖𝑛𝑝𝑢𝑡 = Concat ([ z𝑟𝑒 𝑓 , z𝑡𝑎𝑟𝑔𝑒𝑡 _ℎ𝑚 𝑡 ]) ,where 𝑧 𝑡𝑎𝑟𝑔𝑒𝑡 _ℎ𝑚 𝑡 denotes the heatmap-specific noisy latent. Con-ditioned on the DBA-anchored reference, the model is fine-tuned via the standard flow matching objective (instantiated as a light-weight adapter, denoted as LoRA1) to predict an explicit artifact heatmap. To train this predictor, we offline-generate pseudo-GT heatmaps by computing the multi-layer perceptual feature discrep-ancies (LPIPS) between artifact-corrupted and clean videos. Unlike low-level pixel-wise metrics (e.g., MSE) that often overlook struc-tural defects, LPIPS leverages deep feature spaces to accurately capture human-perceptible 3DGS artifacts. ArtifactWorld: Scaling 3D Gaussian Splatting Artifact Restoration via Video Generation Models 
+
+Phase 2: Artifact-Aware Triplet Fusion. With the explicitly predicted heatmap serving as a native spatial prior, the restoration model (parameterized by a separate adapter, LoRA2, sharing the same frozen backbone) seamlessly extends the formulation into an Artifact-Aware Triplet Fusion (AATF). The input evolves into a homogeneous triplet : z𝑟𝑒𝑠𝑡 𝑖𝑛𝑝𝑢𝑡 = Concat ([ z𝑟𝑒 𝑓 , z𝑡𝑎𝑟𝑔𝑒𝑡 𝑡 , zℎ𝑒𝑎𝑡𝑚𝑎𝑝 ]) .Aligned with the generative nature of Flow Matching, we design a Piecewise Heatmap Decay strategy. This approach dynamically modulates the spatial mask to control the network’s utilization of different information dimensions within z𝑟𝑒 𝑓 . By defining two empirical thresholds 𝜏 1 and 𝜏 2 (0 < 𝜏 1 < 𝜏 2 < 1), the static mask is transformed into a time-dependent ˜zℎ𝑒𝑎𝑡𝑚𝑎𝑝 (𝑡 ):
+
+˜zℎ𝑒𝑎𝑡𝑚𝑎𝑝 (𝑡 ) =
+
+
+
+𝛼 (𝑡 )z𝑓 𝑢𝑙𝑙 + ( 1 − 𝛼 (𝑡 )) zℎ𝑒𝑎𝑡𝑚𝑎𝑝 , 𝑡 ∈ [ 𝜏 2, 1]
+
+zℎ𝑒𝑎𝑡𝑚𝑎𝑝 , 𝑡 ∈ [ 𝜏 1, 𝜏 2)
+
+𝛽 (𝑡 )zℎ𝑒𝑎𝑡𝑚𝑎𝑝 + ( 1 − 𝛽 (𝑡 )) z𝑛𝑢𝑙𝑙 , 𝑡 ∈ [ 0, 𝜏 1)
+
+(2) where z𝑓 𝑢𝑙𝑙 denotes an all-white mask (set to 1 except for boundary frames), representing the opening of global reconstruction per-mission; z𝑛𝑢𝑙𝑙 denotes an all-black mask (set to 0), representing the closure of explicit reconstruction permission; 𝛼 (𝑡 ) and 𝛽 (𝑡 )
+
+are monotonic interpolation functions. This scheduling scheme coordinates the guiding role of z𝑟𝑒 𝑓 through three steps: Firstly, during the initial integration stage ( 𝑡 ∈ [ 𝜏 2, 1]), the global permission provided by z𝑓 𝑢𝑙𝑙 allows the model to absorb color and style baselines from z𝑟𝑒 𝑓 while avoiding being rigidly anchored to erroneous local geometries caused by artifacts in the intermedi-ate frames, thereby establishing a coherent global topology. Then, during mid-stage denoising ( 𝑡 ∈ [ 𝜏 1, 𝜏 2)), the mask reverts to the 
+
+zℎ𝑒𝑎𝑡𝑚𝑎𝑝 constraint. This strictly anchors the generation process to the artifact-free regions of z𝑟𝑒 𝑓 , utilizing these high-confidence local structures as references while concentrating computational effort on repairing damaged areas. Finally, in the late low-noise stage ( 𝑡 ∈ [ 0, 𝜏 1)), the mask decays toward z𝑛𝑢𝑙𝑙 to close explicit modification commands. The model ceases structural intervention and instead extracts authentic high-frequency textures from z𝑟𝑒 𝑓 
+
+as detail baselines. Leveraging the DiT prior, the model achieves adaptive feature alignment and seamless blending between restored and anchored regions, significantly improving perceptual quality. The final triplet input, integrated with dynamic scheduling, is updated as z𝑖𝑛𝑝𝑢𝑡 (𝑡 ) = Concat ([ z𝑟𝑒 𝑓 , z𝑡𝑎𝑟𝑔𝑒𝑡 𝑡 , ˜zℎ𝑒𝑎𝑡𝑚𝑎𝑝 (𝑡 )]) .
+
+Masked Flow Matching Objective. To physically realize the aforementioned decoupled paradigm—which isolates the reference, heatmap, and target latent spaces—we apply a sequence-specific timestep assignment strategy during training. Given that the DiT architecture relies on timesteps to perceive the noise level of each token, the pristine reference tokens ( z𝑟𝑒 𝑓 ) and dynamic heatmap tokens ( ˜zℎ𝑒𝑎𝑡𝑚𝑎𝑝 ) are statically assigned a timestep of 0, firmly an-choring them as clean contexts. Conversely, the target generation sequence receives a uniformly sampled diffusion timestep 𝑡 ∈ ( 0, 1].Consequently, the dense timestep tensor for the full sequence is formulated as t𝑠𝑒𝑞 = [0, 𝑡 · 1, 0].Under this design, the optimization objective is strictly confined to the target generation space. Let v𝑡𝑎𝑟𝑔𝑒𝑡 𝜃 denote the sequence slice of the network’s predicted velocity field corresponding exclusively to the target tokens, and Δz = z𝑡𝑎𝑟𝑔𝑒𝑡  
+
+> 1
+
+− z𝑡𝑎𝑟𝑔𝑒𝑡  
+
+> 0
+
+represent the target velocity. The final restoration loss, denoted as L𝑟 for brevity, is computed via a Masked Flow Matching objective: 
+
+L𝑟 = E𝑡, z0,z1
+
+
+
+v𝑡𝑎𝑟𝑔𝑒𝑡 𝜃 (z𝑖𝑛𝑝𝑢𝑡 (𝑡 ), t𝑠𝑒𝑞 ) − Δz 22
+
+
+
+(3) where z𝑡𝑎𝑟𝑔𝑒𝑡  
+
+> 1
+
+∼ N ( 0, I) represents the sampled Gaussian noise, and 
+
+z𝑡𝑎𝑟𝑔𝑒𝑡  
+
+> 0
+
+is the clean ground-truth (GT) target latent. By explicitly slicing the loss computation, we ensure that gradients are back-propagated exclusively through the generative denoising task. This effectively isolates the generation process from the conditional spatial anchors at the optimization level, preventing potential en-tanglement during training. 
+
+## 4.4 Closed-Loop Generative Reconstruction 
+
+Following the restoration of the 2D frames, we employ an iterative generative reconstruction process to optimize the 3DGS representa-tion. To ensure both rendering quality and comprehensive angular coverage, we adopt the Reference-guided Trajectory sampling strat-egy introduced by GSFixer [ 38 ]. Specifically, the camera trajectory is formulated such that its start and end frames strictly correspond to two given sparse training views (reference views). The interme-diate trajectory is constructed by: (i) interpolating from the starting reference view to its nearest viewpoint on a spherical path, (ii) sampling intermediate novel views along this spherical path, and (iii) interpolating to the ending reference view. We render artifact-prone novel views along these trajectories and feed them into our proposed restoration model to obtain clean, artifact-free frames. These restored frames are then integrated into the training set to supervise the 3DGS optimization iteratively. During optimization, we freeze the video restoration model and update the 3DGS parameters using a combined loss function L:
+
+L = L𝑟𝑒𝑐𝑜𝑛 + 𝜆 · L 𝑔𝑒𝑛 (4) where L𝑟𝑒𝑐𝑜𝑛 is the reconstruction loss supervised by the original sparse views, and L𝑔𝑒𝑛 is the generative loss supervised by restored novel views. Both utilize standard photometric loss: 
+
+L∗ = 𝜆 𝑙 1 · L 1 + 𝜆 𝑆𝑆𝐼 𝑀 · L 𝑆𝑆𝐼 𝑀 (5) where 𝜆 𝑙 1 and 𝜆 𝑆𝑆𝐼 𝑀 are the loss weights. This straightforward distillation physically and permanently removes artifacts in the 3D space, completing our closed-loop framework. 
+
+## 5 Experiments 5.1 Experimental Setup 
+
+Datasets and Sparsity Protocol. We evaluate on two widely adopted benchmarks: the in-domain DL3DV dataset [ 9] (sharing the same domain as the training set but with unseen scenes) and the out-of-domain generalization dataset Mip-NeRF 360 [ 1], maintain-ing consistent scene configurations with GSFixer [ 38 ]. We employ a dual-sparsity protocol: first, a ratio-based protocol (uniformly sampling 5%, 10%, and 15% of total frames) to ensure standardized and unbiased difficulty across scenes of diverse scales; second, an extreme sparsity evaluation using exactly 3 views on Mip-NeRF 360, following the baseline [ 38 ], to validate robustness under highly restricted observations. Additionally, the 2D restoration capabil-ity is verified on the ArtifactWorld Benchmark, comprising 1,284 manually audited, taxonomy-aligned test clips. X. Wang et al. 5% Views 10% Views 15% Views 
+
+> 3DGS Difix3D GSFixer Ours GT
+
+Figure 4: Qualitative comparison of sparse-view 3D reconstruction. Across varying sparsity ratios (5%, 10%, 15%), ArtifactWorld consistently outperforms existing baselines by generating high-fidelity details closest to the ground truth. Table 1: Quantitative comparison on DL3DV and Mip-NeRF-360 datasets under different training view ratios. Best and second-best results are highlighted in bold and underline, respectively. ∗ denotes using the same camera trajectory as GSFixer.                                                                                       
+
+> Dataset Method PSNR ↑SSIM ↑LPIPS ↓
+> 5% 10% 15% 5% 10% 15% 5% 10% 15%
+> DL3DV 3DGS [8] 22.75 26.17 27.76 0.7737 0.8583 0.8880 0.2247 0.1597 0.1372 Difix3D ∗[28] 23.53 26.57 27.96 0.7885 0.8636 0.8913 0.2080 0.1520 0.1315
+> GSFixer [38] 23.44 26.45 27.93 0.7853 0.8615 0.8898 0.2161 0.1552 0.1334 ArtifactWorld (Ours) 24.56 27.14 28.27 0.8111 0.8722 0.8942 0.1970 0.1498 0.1341 Mip-NeRF-360 3DGS [8] 17.08 20.53 22.35 0.4533 0.5860 0.6440 0.4246 0.3192 0.2811 Difix3D ∗[28] 18.14 21.33 22.92 0.4873 0.6036 0.6545 0.4068 0.3078 0.2704
+> GSFixer [38] 18.73 21.50 22.86 0.4999 0.6044 0.6521 0.4212 0.3158 0.2761 ArtifactWorld (Ours) 19.97 22.56 23.79 0.5276 0.6274 0.6693 0.4075 0.3100 0.2773
+
+Evaluation Metrics. For sparse-view 3D reconstruction, we re-port standard novel view synthesis metrics: PSNR, SSIM [ 26 ], and LPIPS [ 41 ]. For 2D restoration, alongside the aforementioned met-rics, we additionally introduce CLIP-I [ 16 ] to evaluate semantic fidelity, and employ FVD [ 21 ] to quantify spatio-temporal distribu-tional discrepancies and temporal flickering. 
+
+Implementation Details. Our ArtifactWorld framework utilizes a frozen LTX-Video backbone with two task-specific adapters (LoRA1 for prediction and LoRA2 for restoration). Both adapters are fine-tuned via AdamW (lr= 3 × 10 −4, batch size 8, 14K iterations) on 8×
+
+A100 GPUs. The closed-loop 3DGS optimization strictly employs photometric losses ( L1 and SSIM). Due to space constraints, ex-haustive hyperparameters for the data pipeline and all models are relegated to the Supplementary Material. 
+
+## 5.2 Sparse-View 3D Reconstruction 
+
+We compare our framework against recent generative baselines and vanilla 3DGS across various densities and scenes. 
+
+Quantitative Analysis. As shown in Table 1, ArtifactWorld achieves consistent state-of-the-art (SOTA) results across 5%, 10%, and 15% sparsity ratios on both the in-domain DL3DV benchmark and the out-of-domain Mip-NeRF 360 dataset. On the DL3DV benchmark, our method demonstrates exceptional robustness, significantly out-performing baselines in PSNR, SSIM, and LPIPS metrics. More im-portantly, ArtifactWorld exhibits outstanding zero-shot general-ization capabilities on the unseen Mip-NeRF 360 scenes without any fine-tuning. Our data scaling and homogeneous architecture ensure high-fidelity restoration across diverse indoor and outdoor environments, reliably yielding superior numerical performance. 
+
+Qualitative Analysis. Visually, as illustrated in Figure 4, we com-prehensively compare the novel views rendered by different meth-ods. Specifically, columns 1, 3, and 5 showcase scenes from the DL3DV dataset, while columns 2, 4, and 6 present complex outdoor and indoor environments from Mip-NeRF 360. In both scenarios, vanilla 3DGS suffers from catastrophic geometric degradation, pro-ducing severe artifacts such as floaters and cracks. Previous gen-erative pipelines (e.g., Difix3D and GSFixer), although capable of repairing partial artifacts, still exhibit sub-optimal performance when handling severe degradation. In contrast, the reconstruction integrated with ArtifactWorld achieves the best visual results. 
+
+Resilience to Extreme Sparsity. To further explore the limits of generative reconstruction, we conduct a stress test under extreme sparsity using only 3 input views on the Mip-NeRF 360 dataset. As indicated by the metric comparisons in Table 2, our method achieves the most robust novel view synthesis quality. ArtifactWorld: Scaling 3D Gaussian Splatting Artifact Restoration via Video Generation Models Ta       
+
+> Input
+> TbTcTaTbTcTaTbTc
+> DOVE SeedVR2 Difix3D GSFixer Ours GT
+
+Figure 5: Qualitative comparison of 2D artifact restoration. Across sampled non-consecutive frames ( 𝑇 𝑎 < 𝑇 𝑏 < 𝑇 𝑐 ), ArtifactWorld visibly outperforms existing restoration baselines. Table 2: Performance under extreme 3-view sparsity. 
+
+Method PSNR ↑ SSIM ↑ LPIPS ↓
+
+SimpleNeRF[18] 13.27 0.283 0.741 ZeroNVS[17] 14.44 0.316 0.680 ReconFusion[29] 15.50 0.358 0.585 3DGS[8] 13.06 0.251 0.576 FSGS [43] 14.17 0.318 0.578 Difix3D[28] 13.92 0.298 0.578 GenFusion[30] 15.03 0.357 0.578 GSFixer[38] 15.61 0.370 0.559 ArtifactWorld (Ours) 16.13 0.397 0.557 
+
+## 5.3 2D Artifact Restoration Performance 
+
+Beyond the final 3D representation, we isolate and evaluate the core capability of our framework: correcting complex 3DGS arti-facts in the 2D video domain. On the benchmark comprising 1,284 clips, we comprehensively compare ArtifactWorld against two cat-egories of state-of-the-art baselines: general video generation and restoration models (DOVE, SeedVR2) and concurrent generative 3D reconstruction pipelines (Difix3D, GSFixer). 
+
+Qualitative Analysis. Visually, as illustrated in Figure 5, general video restoration priors typically struggle to address the highly coupled artifacts specific to 3DGS, while previous 3D generative pipelines falter in temporal coherency or lack sufficient restoration strength. In contrast, ArtifactWorld precisely localizes and elimi-nates artifacts, recovering underlying high-frequency details while rigorously preserving the original scene structure. 
+
+Quantitative Analysis. As shown in Table 3, ArtifactWorld demon-strates an overwhelming superiority across all dimensions. Notably, its exceptional CLIP-I and FVD scores further robustly validate the effectiveness of the proposed method in maintaining semantic fidelity and spatio-temporal consistency. 
+
+Table 3: Quantitative comparison of 2D artifact restoration. 
+
+Methods PSNR ↑ SSIM ↑ LPIPS ↓ CLIP-I ↑ FVD ↓
+
+DOVE [4] 20.12 0.6529 0.4062 0.8423 174.05 SeedVR2 [24] 17.58 0.5840 0.4271 0.8232 197.94 Difix3D [28] 20.21 0.6442 0.3617 0.8925 66.76 GSFixer [38] 20.19 0.6769 0.3834 0.8681 114.53 ArtifactWorld (Ours) 24.20 0.7547 0.2893 0.9663 33.92 
+
+Table 4: Ablation study of our proposed components. 
+
+DBA AATF Data Scaling PSNR ↑ SSIM ↑ LPIPS ↓× × × 23.44 0.7330 0.3118 
+
+✓ × × 23.99 0.7492 0.2948 
+
+✓ ✓ × 24.15 0.7530 0.2900 
+
+✓ ✓ ✓ 24.46 0.7572 0.2881 
+
+## 5.4 Ablation Studies and Empirical Analysis 
+
+For efficiency, we perform ablation analysis on 200 randomly se-lected samples from the evaluation set. 
+
+Effectiveness of Architecture and Data Scaling. As shown in Table 4, the native LTX-Video baseline (trained on 24K data) suffers from timestep feature coupling due to the direct concatenation of reference frames, which increases optimization difficulty (PSNR 23.44 dB, SSIM 0.7330). Introducing DBA eliminates this coupling constraint and provides bidirectional spatial anchors, effectively suppressing flickering and structural shifts (PSNR 24.00 dB, SSIM 0.7492). Integrating the AATF mechanism enables the network to leverage the heatmap to precisely target local corrupted regions, further improving the metrics to a PSNR of 24.15 dB and an SSIM of 0.7530. Finally, expanding to a diverse 107.5K dataset encompassing 9 artifact distributions achieves the optimal performance (PSNR 24.46 dB, LPIPS 0.2881). This demonstrates that high data diversity effectively fills the model’s cognitive blind spots regarding complex degradation patterns, substantially enhancing its robustness and generalization capabilities in real-world 3DGS scenarios. X. Wang et al. Tstart TxTend Tstart TxTend    
+
+> (a)
+> (b)
+> Heatmap ref Heatmap hm Frame ref Frame target Frame hm
+> Tstart TxTend
+> (c)
+
+Figure 6: Mechanistic Interpretability. 𝑇 start , 𝑇 𝑥 , and 𝑇 end 
+
+denote the initial, intermediate, and terminal frames, re-spectively. Frame ref , Frame target (visualized as the generated frame for clarity), and Frame hm represent the reference frame, target frame, and artifact heatmap, corresponding to latents 𝑧 ref , 𝑧 target  
+
+> 𝑡
+
+, and 𝑧 heatmap . Heatmap ref and Heatmap hm 
+
+visualize the spatial attention of the query token towards 
+
+𝑧 ref and 𝑧 heatmap , respectively. (Zoom in for details.) Continuous Intensity Fidelity. The Pearson Correlation Coeffi-cient (PCC) between the predicted continuous heatmaps and LPIPS pseudo-GTs (Sec. 4.3) reaches 0.578 on the test set. In dense pixel-wise regression, this positive correlation confirms the network successfully captures the relative severity ranking of 3DGS artifacts, providing a robust spatial prior for video restoration. 
+
+Mechanistic Interpretability. Figure 6 illustrates the attention distribution of query tokens in the target frame 𝑇 𝑥 towards the ref-erence ( 𝑧 𝑟𝑒 𝑓 ) and heatmap ( 𝑧 ℎ𝑒𝑎𝑡𝑚𝑎𝑝 ) latents. (1) Effectiveness of DBA: Queries visible in the boundary frames (Cases a and c) exhibit strong activations at corresponding boundaries in 𝐻𝑒𝑎𝑡𝑚𝑎𝑝 𝑟𝑒 𝑓 ,whereas occluded queries (Case b) show zero activation. This con-firms that DBA precisely anchors clean temporal contexts, effec-tively avoiding feature hallucinations caused by spatial misalign-ments. (2) Effectiveness of AATF: The network’s attention to the heatmap ( 𝐻𝑒𝑎𝑡𝑚𝑎𝑝 ℎ𝑚 ) strictly correlates with artifact severity. Case (b), suffering from severe artifacts, assigns peak attention to the heatmap to stimulate strong generative capacity for rebuilding corrupted structures. Case (a), with only mild artifacts, extracts abundant information from the reference frames, thus exhibiting weak heatmap attention for subtle corrections. Conversely, the artifact-free Case (c) shows zero heatmap activation, relying en-tirely on reference frames to extract reliable features. This pro-gression explicitly validates that AATF achieves intensity-adaptive feature routing based on artifact severity. 
+
+Ablation on Timestep-Scheduled Heatmap Decay. Table 5 ab-lates our dynamic scheduling across an 8-step denoising process. A 
+
+Table 5: Ablation on dynamic timestep scheduling. Evaluated across an 8-step denoising process. Exp Timestep Scheduling Strategy (Total: 8 Steps) PSNR ↑ SSIM ↑ LPIPS ↓                                                                       
+
+> Phase 1 (𝑡 ≥𝜏 2)Phase 2 (𝜏 1≤𝑡 <𝜏 2)Phase 3 (𝑡 <𝜏 1)1Constant 𝑧 ℎ𝑒𝑎𝑡𝑚𝑎𝑝 (8 steps) 24.428 0.7565 0.2885 2𝑧 𝑓 𝑢𝑙𝑙 (1 step) 𝑧 ℎ𝑒𝑎𝑡𝑚𝑎𝑝 (7 steps) 24.433 0.7565 0.2883 3𝑧 ℎ𝑒𝑎𝑡𝑚𝑎𝑝 (7 steps) 𝑧 𝑛𝑢𝑙𝑙 (1 step) 24.435 0.7566 0.2884 4𝑧 𝑓 𝑢𝑙𝑙 (1 step) 𝑧 ℎ𝑒𝑎𝑡𝑚𝑎𝑝 (6 steps) 𝑧 𝑛𝑢𝑙𝑙 (1 step) 24.439 0.7567 0.2882 5𝑧 𝑛𝑢𝑙𝑙 (1 step) 𝑧 ℎ𝑒𝑎𝑡𝑚𝑎𝑝 (6 steps) 𝑧 𝑓 𝑢𝑙𝑙 (1 step) 24.399 0.7566 0.2884 6Linear to 𝑧 ℎ𝑒𝑎𝑡𝑚𝑎𝑝 (4 steps) 𝑧 ℎ𝑒𝑎𝑡𝑚𝑎𝑝 (3 steps) 𝑧 𝑛𝑢𝑙𝑙 (1 step) 24.402 0.7550 0.2899 7𝑧 𝑓 𝑢𝑙𝑙 (1 step) 𝑧 ℎ𝑒𝑎𝑡𝑚𝑎𝑝 (3 steps) Linear to 𝑧 𝑛𝑢𝑙𝑙 (4 steps) 24.459 0.7572 0.2881
+
+Table 6: Computational footprint (runtime/memory) for gen-erative reconstruction on a single A100 GPU. 
+
+Method Time (min / scene) ↓ Memory (GB) ↓
+
+Difix3D [28] 27.8 13.6 GSFixer [38] 146.4 50.8 ArtifactWorld (Ours) 113.3 46.3 
+
+constant 𝑧 ℎ𝑒𝑎𝑡𝑚𝑎𝑝 mask (Exp 1) proves sub-optimal. Introducing a 1-step initial 𝑧 𝑓 𝑢𝑙𝑙 (Exp 2) or a 1-step final 𝑧 𝑛𝑢𝑙𝑙 (Exp 3) improves performance, yielding cumulative gains when combined (Exp 4). Reversing this order (Exp 5) or replacing the initial 1-step 𝑧 𝑓 𝑢𝑙𝑙 
+
+with a 4-step linear decay (Exp 6) degrades structural fidelity. Our optimal strategy (Exp 7) strictly maps to the proposed three-stage formulation to achieve the best restoration: a 1-step 𝑧 𝑓 𝑢𝑙𝑙 guidance in Phase 1, steady 𝑧 ℎ𝑒𝑎𝑡𝑚𝑎𝑝 anchoring for 3 steps in Phase 2, and a 4-step linear decay toward 𝑧 𝑛𝑢𝑙𝑙 in Phase 3. 
+
+## 5.5 Computational Footprint and Efficiency 
+
+To evaluate deployment, we benchmark our computational foot-print against state-of-the-art baselines on DL3DV, as in Table 6. Our Generative Reconstruction phase takes 113.3 minutes per scene. Though slower than Diffix (27.8 min), it is significantly more ef-ficient than GSFixer (146.4 min). Our approach requires 46.3 GB VRAM. While exceeding Diffix (13.6 GB), it is more memory-efficient than GSFixer (50.8 GB). This justified trade-off exchanges moderate memory overhead for superior generation and restoration perfor-mance. For industrial deployment, this footprint can be mitigated via lightweight diffusion models (e.g., Wan-1.3B [ 22 ]) or KV-cache techniques without altering the core pipeline. 
+
+## 6 Conclusion 
+
+We present ArtifactWorld, a scalable framework for resolving 3D Gaussian Splatting degradations under sparse observation. To over-come data bottlenecks, we established a phenomenological artifact taxonomy and synthesized a 107.5K video dataset via an automated generative flywheel. Architecturally, we proposed a homogeneous dual-model paradigm that unifies restoration within native self-attention layers. By combining an isomorphic heatmap predictor with Decoupled Boundary Anchoring, we formulate restoration as an intensity-guided triplet interaction, enforcing explicit spatial con-straints for precise structural repair and high spatio-temporal con-sistency. Extensive evaluations confirm that our approach achieves state-of-the-art performance in both artifact correction and robust 3D reconstruction. Future work will explore cross-resolution gener-ative priors to unlock the synthesis of ultra-high-definition details, achieving the reconstruction of high-resolution scenes. ArtifactWorld: Scaling 3D Gaussian Splatting Artifact Restoration via Video Generation Models 
+
+## References 
+
+[1] Jonathan T Barron, Ben Mildenhall, Dor Verbin, Pratul P Srinivasan, and Pe-ter Hedman. 2022. Mip-NeRF 360: Unbounded Anti-Aliased Neural Radiance Fields. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition . 5470–5479. [2] Andreas Blattmann, Tim Dockhorn, Sumith Kulal, Daniel Mendelevitch, Maciej Kilian, Dominik Lorenz, Yam Levi, Zion English, Vikram Voleti, Adam Letts, et al . 2023. Stable video diffusion: Scaling latent video diffusion models to large datasets. arXiv preprint arXiv:2311.15127 (2023). [3] Minghong Cai, Xiaodong Cun, Xiaoyu Li, Wenze Liu, Zhaoyang Zhang, Yong Zhang, Ying Shan, and Xiangyu Yue. 2025. Ditctrl: Exploring attention con-trol in multi-modal diffusion transformer for tuning-free multi-prompt longer video generation. In Proceedings of the Computer Vision and Pattern Recognition Conference . 7763–7772. [4] Zheng Chen, Zichen Zou, Kewei Zhang, Xiongfei Su, Xin Yuan, Yong Guo, and Yulun Zhang. 2025. DOVE: Efficient One-Step Diffusion Model for Real-World Video Super-Resolution. In Advances in Neural Information Processing Systems (NeurIPS) .[5] Jaeyoung Chung, Jeongtaek Oh, and Kyoung Mu Lee. 2024. Depth-regularized optimization for 3d gaussian splatting in few-shot images. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition . 811–820. [6] Michal Geyer, Omer Bar-Tal, Shai Bagon, and Tali Dekel. [n. d.]. TokenFlow: Consistent Diffusion Features for Consistent Video Editing. In The Twelfth Inter-national Conference on Learning Representations .[7] Yoav HaCohen, Nisan Chiprut, Benny Brazowski, Daniel Shalem, Dudu Moshe, Eitan Richardson, Eran Levin, Guy Shiran, Nir Zabari, Ori Gordon, et al . 2024. Ltx-video: Realtime video latent diffusion. arXiv preprint arXiv:2501.00103 (2024). [8] Bernhard Kerbl, Georgios Kopanas, Thomas Leimkühler, and George Drettakis. 2023. 3D Gaussian Splatting for Real-Time Radiance Field Rendering. ACM Transactions on Graphics (2023), 139–1. [9] Lu Ling, Yichen Sheng, Zhi Tu, Wentian Zhao, Cheng Xin, Kun Wan, Lantao Yu, Qianyu Guo, Zixun Yu, Yawen Lu, Xuanmao Li, Xingpeng Sun, Rohan Ashok, Aniruddha Mukherjee, Hao Kang, Xiangrui Kong, Gang Hua, Tianyi Zhang, Bedrich Benes, and Aniket Bera. 2024. DL3DV-10K: A Large-Scale Scene Dataset for Deep Learning-based 3D Vision. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) . 22160–22169. [10] Xi Liu, Chaoyi Zhou, and Siyu Huang. 2024. 3DGS-Enhancer: Enhancing Un-bounded 3D Gaussian Splatting with View-consistent 2D Diffusion Priors. arXiv preprint arXiv:2410.16266 (2024). Accepted by NeurIPS 2024 Spotlight. [11] Kangfu Mei, Mo Zhou, and Vishal M Patel. [n. d.]. Field-DiT: Diffusion Trans-former on Unified Video, 3D, and Game Field Generation. In The Thirteenth International Conference on Learning Representations .[12] Maxime Oquab, Timothée Darcet, Theo Moutakanni, Huy V. Vo, Marc Szafraniec, Vasil Khalidov, Pierre Fernandez, Daniel Haziza, Francisco Massa, Alaaeldin El-Nouby, Russell Howes, Po-Yao Huang, Hu Xu, Vasu Sharma, Shang-Wen Li, Wojciech Galuba, Mike Rabbat, Mido Assran, Nicolas Ballas, Gabriel Synnaeve, Ishan Misra, Herve Jegou, Julien Mairal, Patrick Labatut, Armand Joulin, and Piotr Bojanowski. 2023. DINOv2: Learning Robust Visual Features without Supervision. arXiv:2304.07193 [cs.CV] https://arxiv.org/abs/2304.07193 [13] Hyunwoo Park, Gun Ryu, and Wonjun Kim. 2025. Dropgaussian: Structural regularization for sparse-view gaussian splatting. In Proceedings of the computer vision and pattern recognition conference . 21600–21609. [14] Luigi Piccinelli, Yung-Hsu Yang, Christos Sakaridis, Mattia Segu, Siyuan Li, Luc Van Gool, and Fisher Yu. 2024. Unidepth: Universal monocular metric depth estimation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition . 10106–10116. [15] Tianhao Qi, Jianlong Yuan, Wanquan Feng, Shancheng Fang, Jiawei Liu, SiYu Zhou, Qian He, Hongtao Xie, and Yongdong Zhang. 2025. Maskˆ 2DiT: Dual Mask-based Diffusion Transformer for Multi-Scene Long Video Generation. In 
+
+Proceedings of the Computer Vision and Pattern Recognition Conference . 18837– 18846. [16] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sand-hini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, et al .2021. Learning Transferable Visual Models from Natural Language Supervision. In International Conference on Machine Learning (ICML) . PMLR, 8748–8763. [17] Kyle Sargent, Zizhang Li, Tanmay Shah, Charles Herrmann, Hong-Xing Yu, Yun-zhi Zhang, Eric Ryan Chan, Dmitry Lagun, Li Fei-Fei, Deqing Sun, et al . 2024. ZeroNVS: Zero-Shot 360-Degree View Synthesis from a Single Image. In Pro-ceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition .9420–9429. [18] Nagabhushan Somraj, Adithyan Karanayil, and Rajiv Soundararajan. 2023. Sim-pleNeRF: Regularizing Sparse Input Neural Radiance Fields with Simpler Solu-tions. In SIGGRAPH Asia . 1–11. [19] Xiangyu Sun, Joo Chan Lee, Daniel Rho, Jong Hwan Ko, Usman Ali, and Eun-byung Park. 2024. F-3dgs: Factorized coordinates and representations for 3d gaussian splatting. In Proceedings of the 32nd ACM International Conference on Multimedia . 7957–7965. [20] Zachary Teed and Jia Deng. 2021. Droid-slam: Deep visual slam for monocular, stereo, and rgb-d cameras. Advances in neural information processing systems 34 (2021), 16558–16569. [21] Thomas Unterthiner, Sjoerd van Steenkiste, Karol Kurach, Raphaël Marinier, Marcin Michalski, and Sylvain Gelly. 2019. FVD: A New Metric for Video Gener-ation. https://openreview.net/forum?id=rylgEULtdN [22] Team Wan, Ang Wang, Baole Ai, Bin Wen, Chaojie Mao, Chen-Wei Xie, Di Chen, Feiwu Yu, Haiming Zhao, Jianxiao Yang, Jianyuan Zeng, Jiayu Wang, Jingfeng Zhang, Jingren Zhou, Jinkai Wang, Jixuan Chen, Kai Zhu, Kang Zhao, Keyu Yan, Lianghua Huang, Mengyang Feng, Ningyi Zhang, Pandeng Li, Pingyu Wu, Ruihang Chu, Ruili Feng, Shiwei Zhang, Siyang Sun, Tao Fang, Tianxing Wang, Tianyi Gui, Tingyu Weng, Tong Shen, Wei Lin, Wei Wang, Wei Wang, Wenmeng Zhou, Wente Wang, Wenting Shen, Wenyuan Yu, Xianzhong Shi, Xiaoming Huang, Xin Xu, Yan Kou, Yangyu Lv, Yifei Li, Yijing Liu, Yiming Wang, Yingya Zhang, Yitong Huang, Yong Li, You Wu, Yu Liu, Yulin Pan, Yun Zheng, Yuntao Hong, Yupeng Shi, Yutong Feng, Zeyinzi Jiang, Zhen Han, Zhi-Fan Wu, and Ziyu Liu. 2025. Wan: Open and Advanced Large-Scale Video Generative Models. 
+
+arXiv preprint arXiv:2503.20314 (2025). [23] Jianyuan Wang, Minghao Chen, Nikita Karaev, Andrea Vedaldi, Christian Rup-precht, and David Novotny. 2025. VGGT: Visual Geometry Grounded Trans-former. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) . 5294–5306. [24] Jianyi Wang, Shanchuan Lin, Zhijie Lin, Yuxi Ren, Meng Wei, Zongsheng Yue, Shangchen Zhou, Hao Chen, Yang Zhao, Ceyuan Yang, et al . 2025. SeedVR2: One-Step Video Restoration via Diffusion Adversarial Post-Training. arXiv preprint arXiv:2506.05301 (2025). [25] Jiahao Wang, Yufeng Yuan, Rujie Zheng, Youtian Lin, Jian Gao, Lin-Zhuo Chen, Yajie Bao, Yi Zhang, Chang Zeng, Yanxi Zhou, Xiaoxiao Long, Hao Zhu, Zhaoxiang Zhang, Xun Cao, and Yao Yao. 2025. SpatialVID: A Large-Scale Video Dataset with Spatial Annotations. arXiv:2509.09676 [cs.CV] https: //arxiv.org/abs/2509.09676 [26] Zhou Wang, Alan C Bovik, Hamid R Sheikh, and Eero P Simoncelli. 2004. Image quality assessment: from error visibility to structural similarity. IEEE Transactions on Image Processing 13, 4 (2004), 600–612. [27] Haoning Wu, Zicheng Zhang, Weixia Zhang, Chaofeng Chen, Liang Liao, Chunyi Li, Yixuan Gao, Annan Wang, Erli Zhang, Wenxiu Sun, et al . 2024. Q-ALIGN: teaching LMMs for visual scoring via discrete text-defined levels. In Proceedings of the 41st International Conference on Machine Learning . 54015–54029. [28] Jay Zhangjie Wu, Yuxuan Zhang, Haithem Turki, Xuanchi Ren, Jun Gao, Mike Zheng Shou, Sanja Fidler, Zan Gojcic, and Huan Ling. 2025. Difix3D+: Improving 3D Reconstructions with Single-Step Diffusion Models. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) .[29] Rundi Wu, Ben Mildenhall, Philipp Henzler, Keunhong Park, Ruiqi Gao, Daniel Watson, Pratul P Srinivasan, Dor Verbin, Jonathan T Barron, Ben Poole, et al .2024. ReconFusion: 3D Reconstruction with Diffusion Priors. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition . 21551–21561. [30] Sibo Wu, Congrong Xu, Binbin Huang, Andreas Geiger, and Anpei Chen. 2025. GenFusion: Closing the Loop between Reconstruction and Generation via Videos. In Proceedings of the Computer Vision and Pattern Recognition Conference . 6078– 6088. [31] Rui Xie, Yinhong Liu, Penghao Zhou, Chen Zhao, Jun Zhou, Kai Zhang, Zhenyu Zhang, Jian Yang, Zhenheng Yang, and Ying Tai. 2025. STAR: Spatial-Temporal Augmentation with Text-to-Video Models for Real-World Video Super-Resolution. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) .[32] Yabo Xu, Jin Ding, Jianbin Zhang, Ping Tan, and Mingrui Li. 2026. Denoise-GS: Self-Supervised Denoising for Sparse-View 3D Gaussian Splatting. Sensors (Basel, Switzerland) 26, 2 (2026), 651. [33] Yiran Xu, Taesung Park, Richard Zhang, Yang Zhou, Eli Shechtman, Feng Liu, Jia-Bin Huang, and Difan Liu. 2025. Videogigagan: Towards detail-rich video super-resolution. In Proceedings of the Computer Vision and Pattern Recognition Conference . 2139–2149. [34] Yexing Xu, Longguang Wang, Minglin Chen, Sheng Ao, Li Li, and Yulan Guo. 2025. Dropoutgs: Dropping out gaussians for better sparse-view rendering. In 
+
+Proceedings of the Computer Vision and Pattern Recognition Conference . 701–710. [35] Lihe Yang, Bingyi Kang, Zilong Huang, Zhen Zhao, Xiaogang Xu, Jiashi Feng, and Hengshuang Zhao. 2024. Depth anything v2. Advances in Neural Information Processing Systems 37 (2024), 21875–21911. [36] Zhuoyi Yang, Jiayan Teng, Wendi Zheng, Ming Ding, Shiyu Huang, Jiazheng Xu, Yuanming Yang, Wenyi Hong, Xiaohan Zhang, Guanyu Feng, et al . [n. d.]. CogVideoX: Text-to-Video Diffusion Models with An Expert Transformer. In 
+
+The Thirteenth International Conference on Learning Representations .[37] Tianwei Yin, Qiang Zhang, Richard Zhang, William T Freeman, Fredo Durand, Eli Shechtman, and Xun Huang. 2025. From slow bidirectional to fast autoregressive video diffusion models. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition . 22963–22974. [38] Xingyilang Yin, Qi Zhang, Jiahao Chang, Ying Feng, Qingnan Fan, Xi Yang, Chi-Man Pun, Huaqi Zhang, and Xiaodong Cun. 2025. GSFixer: Improving 3D X. Wang et al. 
+
+Gaussian Splatting with Reference-Guided Video Diffusion Priors. arXiv preprint arXiv:2508.09667 (2025). [39] Jiawei Zhang, Jiahe Li, Xiaohan Yu, Lei Huang, Lin Gu, Jin Zheng, and Xiao Bai. 2024. Cor-gs: sparse-view 3d gaussian splatting via co-regularization. In 
+
+European conference on computer vision . Springer, 335–352. [40] Jiahui Zhang, Fangneng Zhan, Muyu Xu, Shijian Lu, and Eric Xing. 2024. Fregs: 3d gaussian splatting with progressive frequency regularization. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition . 21424– 21433. [41] Richard Zhang, Phillip Isola, Alexei A Efros, Eli Shechtman, and Oliver Wang. 2018. The Unreasonable Effectiveness of Deep Features as a Perceptual Met-ric. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) . 586–595. [42] Shangchen Zhou, Peiqing Yang, Jianyi Wang, Yihang Luo, and Chen Change Loy. 2024. Upscale-a-video: Temporal-consistent diffusion model for real-world video super-resolution. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition . 2535–2545. [43] Zehao Zhu, Zhiwen Fan, Yifan Jiang, and Zhangyang Wang. 2024. FSGS: Real-Time Few-Shot View Synthesis Using Gaussian Splatting. In European Conference on Computer Vision . 145–163. [44] Junhao Zhuang, Shi Guo, Xin Cai, Xiaohui Li, Yihao Liu, Chun Yuan, and Tianfan Xue. 2026. FlashVSR: Towards Real-Time Diffusion-Based Streaming Video Super-Resolution. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) .
