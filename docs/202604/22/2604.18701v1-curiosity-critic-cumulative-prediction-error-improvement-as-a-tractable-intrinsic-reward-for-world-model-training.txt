@@ -1,0 +1,865 @@
+Title: Curiosity-Critic: Cumulative Prediction Error Improvement as a Tractable Intrinsic Reward for World Model Training
+
+URL Source: https://arxiv.org/pdf/2604.18701v1
+
+Published Time: Wed, 22 Apr 2026 00:04:54 GMT
+
+Number of Pages: 17
+
+Markdown Content:
+# Curiosity-Critic: Cumulative Prediction Error Improvement as a Tractable Intrinsic Reward for World Model Training 
+
+Vin Bhaskara ∗
+
+Department of Computer Science University of Toronto 
+
+bhaskara@cs.toronto.edu 
+
+Haicheng Wang †
+
+Department of Computer Science University of Toronto 
+
+hcwang@cs.toronto.edu 
+
+## Abstract 
+
+Local prediction-error-based curiosity rewards focus on the current transition without considering the world model’s cumulative prediction error across all visited transitions. We introduce Curiosity-Critic , which grounds its intrinsic reward in the improvement of this cumulative objective, and show that it reduces to a tractable per-step form: the difference between the current prediction error and the asymptotic error baseline of the current state transition. We estimate this baseline online with a learned critic co-trained alongside the world model; regressing a single scalar, the critic converges well before the world model saturates, redirecting exploration toward learnable transitions without oracle knowledge of the noise floor. The reward is higher for learnable transitions and collapses toward the baseline for stochastic ones, effectively separating epistemic (reducible) from aleatoric (irreducible) prediction error online. Prior prediction-error curiosity formulations, from Schmidhuber (1991) to learned-feature-space variants, emerge as special cases corresponding to specific approximations of this baseline. Experiments on a stochastic grid world show that Curiosity-Critic outperforms prediction-error and visitation-count baselines in convergence speed and final world model accuracy. ‡
+
+## 1 Introduction 
+
+Reinforcement Learning (RL) aims to solve control problems by learning policies that maximize the expected cumulative future reward in environments with potentially complex and stochastic dynamics. Model-based RL methods learn an explicit representation of the environment – the “world model” [ 8] – and use it to plan [ 7]. Compared to model-free approaches, model-based methods offer the promise of higher sample efficiency and a reusable world model that transfers across tasks. In practice, however, their performance is bottlenecked by the quality of the world model: an inaccurate model leads to compounding planning errors. Efficiently training a robust world model is therefore the central challenge in model-based RL. Training a world model from trajectories sampled by a random exploration policy is highly sample inefficient. Schmidhuber [ 1, 2], Bellemare et al. [ 12 ] and Strehl et al. [ 3 ] introduced curiosity-driven exploration to address this: a “curious agent” receives an intrinsic reward for visiting transitions that are informative for world model training. Schmidhuber’s foundational formulations [ 1 , 2] reward the agent proportionally to the model’s raw prediction error [ 1] and its one-step improvement [ 2 ], each evaluated at the most recently visited  
+
+> ∗vin.bhaskara@gmail.com
+> †hcwang.1995@gmail.com
+> ‡Code available at https://github.com/vinbhaskara/Curiosity-Critic
+> arXiv:2604.18701v1 [cs.LG] 20 Apr 2026
+
+transition. A key limitation shared by both formulations is that the curiosity reward is computed solely from the current state transition, without accounting for the world model’s prediction error across the history of all previously visited transitions Dt. This provides no incentive to visit transitions that would globally reduce the world model’s cumulative error, and can cause degradation on previously learned transitions as exploration proceeds. A second, related limitation is that neither formulation cleanly separates aleatoric (intrinsic, irreducible) from epistemic (reducible) prediction error: Curiosity V1 [ 1] makes no such distinction at all and therefore becomes trapped at aleatoric transitions such as a “noisy TV” [ 6 , 4]; Curiosity V2 [ 2] attempts the distinction only through a noisy single-sample proxy, the post-update error, whose accuracy as an aleatoric estimate is by construction tied to the world model’s own convergence. In this work, we propose Curiosity-Critic : a curiosity reward grounded in the world model’s cumulative prediction error improvement over all visited transitions in Dt. We show that this seemingly intractable reward – requiring world model evaluation over the entire history – reduces to an equivalent tractable per-step form: the difference between the model’s current prediction error and its asymptotic error baseline at convergence. To estimate the asymptotic baseline online, we propose a learned neural critic model co-trained with the world model – the Curiosity-Critic architecture .We additionally show that Schmidhuber’s curiosity formulations [ 1 , 2] are special cases of our framework, corresponding to specific approximations of the asymptotic baseline. Experiments on a stochastic 2D grid world demonstrate that Curiosity-Critic consistently learns a more accurate world model with faster convergence than prediction-error and visitation-count baselines across multiple random seeds. The grid world is deliberately minimal: it is the smallest setting in which learnable and irreducibly unlearnable transitions coexist, so any measured advantage is attributable to the reward signal itself rather than to representation learning or architectural confounds. 
+
+## 2 Previous Works 
+
+Intrinsic motivation as a driver of exploration has a long history in both cognitive science and machine learning [ 10 ]. A prominent family of intrinsic curiosity rewards is based on the world model’s prediction error, where the agent is rewarded for visiting state transitions that the model is uncertain about. We review the two foundational formulations in this family, which our work directly builds upon. Schmidhuber [ 1] proposed an intrinsic curiosity reward proportional to the model’s prediction error at the current state transition. For convenience, we refer to this formulation as “Curiosity V1” [ 1]. The reward is given by: 
+
+rt(st, a t) = e(st, a t | θt) = ∥θt(st, a t) − st+1 ∥, (1) where e(·) denotes model error, ∥ · ∥ is the L2 norm, and θt(st, a t) is the prediction of the next state 
+
+st+1 by the world model at time t. This reward enables more efficient exploration than random action selection by directing the agent toward state transitions where the model is least reliable. Throughout this paper, θt(st, a t) denotes the world model’s output at time t, and θt is used as shorthand for the world model itself. We use e(·) as a generic notation for the world model’s prediction error on a transition, without committing to any specific form: e(·) may be an L2 or squared L2 distance on raw observations or in a learned feature space [ 6], a negative log-likelihood or KL divergence when θt outputs a distribution over next states, or any other consistent differentiable measure of prediction error. When we refer to “Curiosity V1” in the remainder of this paper, we mean the full class of intrinsic rewards rt = e(st, a t | θt) under any such choice of e(·); Schmidhuber’s 
+
+L2-on-observations [ 1] is the original instance, and ICM [ 6 ] is a learned-feature-space instance of the same conceptual reward. In general, real-world state transitions can be fundamentally non-deterministic and unlearnable. For example, consider a noisy TV [ 4] playing white noise. The next state st+1 of TV pixels is independent of the current state st, and hence is fundamentally unpredictable. In such environments, Curiosity V1 [ 1 ] fails to perform better than a random policy: highly noisy state transitions constantly trigger a positive curiosity reward that does not decay with time, since the world model cannot learn the intrinsic randomness of such transitions. The curious agent becomes stuck at such high-entropy basins of attraction. 2In a subsequent work [ 2], Schmidhuber proposed a reward based on the improvement of the world model rather than its raw error (for a broader treatment of intrinsic motivation as compression progress, see [ 9]). We refer to this as “Curiosity V2” for brevity. Specifically, the decrease in prediction error after one training step forms the curiosity reward: 
+
+rt(st, a t) = e(st, a t | θt) − e(st, a t | θt+1 )= ∥θt(st, a t) − st+1 ∥ − ∥ θt+1 (st, a t) − st+1 ∥, (2) where θt+1 is the world model after one gradient step on the transition (st, a t) → st+1 . Both error terms are evaluated on the same transition, so the environment is sampled only once. Since noisy transitions are unlearnable, the one-step improvement e(st, a t | θt) − e(st, a t | θt+1 ) is smaller for such transitions in expectation, and larger for learnable ones. Unlike Curiosity V1 [ 1 ], which rewards raw prediction error and therefore keeps assigning high reward to irreducibly noisy transitions, Curiosity V2 [2] naturally suppresses reward for unlearnable transitions as training proceeds. Both Curiosity V1 [ 1 ] and V2 [ 2] compute their reward based solely on the prediction error at the 
+
+current state transition (st, a t) → st+1 , without accounting for the world model’s prediction error across the full history of visited transitions. We discuss the consequences of this in the following section. A line of work extends Curiosity V1 by varying the choice of e(·). Pathak et al. [ 6] introduce the Intrinsic Curiosity Module (ICM), which measures a squared L2 error in a learned inverse-dynamics feature space. Burda et al. [ 4] conduct a large-scale empirical study across many environments and feature representations, confirming that the choice of feature space is critical in practice. These methods inherit Curiosity V1’s structure of rewarding raw per-step prediction error, and therefore inherit its blindness to the world model’s cumulative prediction error across visited transitions. Burda et al. [ 11 ] propose Random Network Distillation (RND), which measures curiosity as the error of a network trained to predict the output of a fixed random target network given the same input state; since the target is deterministic and state-dependent (rather than observation-dependent), the reward decays to zero as a state is visited repeatedly – effectively a soft count-based bonus immune to irreducible noise. Pathak et al. [ 14 ] measure curiosity as disagreement in next-state predictions across an ensemble of world models. For irreducibly stochastic transitions, however, the ensemble members keep disagreeing indefinitely – each observing different random outcomes – so this approach shares the noisy TV vulnerability, at the cost of training a full ensemble of world models. Houthooft et al. [13 ] and Bellemare et al. [ 12 ] take Bayesian and count-based perspectives respectively, also providing noise robustness at higher computational cost. All of these are orthogonal to our contribution, which addresses the cumulative objective rather than the per-step reward signal or exploration bonus. Our work is orthogonal to all of these: rather than designing a better per-step curiosity signal, we address how to aggregate prediction errors across all visited transitions into a principled cumulative objective. By showing that this objective reduces to a tractable per-step form, Curiosity-Critic is both computationally practical and theoretically motivated to improve world model accuracy globally – not just at the most recently visited transition – speeding up convergence and making it naturally robust to irreducible noise. The Curiosity-Critic is in principle composable with any of the above approaches. The experiment in this paper is a controlled proof of concept designed to isolate this mechanism; comprehensive empirical comparison on larger-scale pixel-based benchmarks is a natural avenue for future work. 
+
+## 3 Limitations of Per-Step Prediction Error Rewards 
+
+Both Curiosity V1 [ 1 ] and V2 [ 2 ] compute their intrinsic reward solely from the most recent state transition (st, a t) → st+1 . Consequently, neither reward incentivizes the agent to sample state transitions that reduce the world model’s prediction error across all learnable transitions visited so far, i.e., across Dt. This may fail to prevent the world model from degrading in predictive reliability across previously learned state transitions as training proceeds. In the case of Curiosity V1 [ 1], this problem is compounded: since its reward is the raw prediction error rather than the improvement, it provides no mechanism to distinguish learnable from unlearnable transitions at all. 3Additionally, neither reward explicitly incentivizes the curious agent to sample state transitions that improve generalization and thereby reduce the cumulative prediction error faster. Ideally, the curiosity reward should measure the world model’s total error improvement across all learnable transitions in Dt, not just at the current transition. This motivates our proposed cumulative prediction error improvement-based reward, introduced in the following section. 
+
+## 4 Cumulative Prediction Error Improvement as an Intrinsic Reward 
+
+We propose a curiosity reward based on the world model’s total prediction error improvement across all learnable state transitions visited up to time t.Consider the following curiosity reward rt that sums up the changes in prediction errors after a training update over all state transitions Dt = {s0, a 0, s 1, a 1, . . . , s t, a t} sampled up to time t:
+
+rt(st, a t | D t) = X  
+
+> t′≤t
+> (st′,a t′)∈D t
+
+{e(st′ , a t′ | θt) − e(st′ , a t′ | θt+1 )} , (3) where e(st′ , a t′ | θt) = ∥θt(st′ , a t′ ) − st′+1 ∥ is the model error in predicting a state transition sampled previously at time t′ from the history Dt with the model θt at time t. Note that in this notation, st′+1 corresponds to the true state observed at time t′ + 1 , and θt(st′ , a t′ ) corresponds to the prediction for the next state at t′ + 1 by the world model at time t. Also note that ∥ · ∥ represents the L2 norm above as the state st can generally be a multi-dimensional vector. Let D+ 
+
+> t
+
+and D− 
+
+> t
+
+denote the subsets of learnable and highly noisy state transitions in the transition history Dt up to time t, respectively. Therefore, we have Dt = D+ 
+
+> t
+
+∪ D − 
+
+> t
+
+. Let E[·] denote the expectation over all trajectories. Then, one notes that E [rt(st, a t | D t)] ≈ E [rt(st, a t | D + 
+
+> t
+
+)] , or 
+
+E [ X  
+
+> t′≤t
+> (st′,a t′)∈D t
+
+{e(st′ , a t′ | θt) − e(st′ ,a t′ | θt+1 )} ]
+
+≈ E [ X  
+
+> t′≤t
+> (st′,a t′)∈D +
+> t
+
+{e(st′ , a t′ | θt) − e(st′ , a t′ | θt+1 )} ],
+
+(4) in the limit |D t| → ∞ , since for the noisy (unlearnable) subset of the transitions D− 
+
+> t
+
+, the im-provement in prediction error after a model update θt → θt+1 will be zero in expectation. That is, 
+
+E [rt(st, a t | D − 
+
+> t
+
+)] ≈ 0, or 
+
+E [ X  
+
+> t′≤t
+> (st′,a t′)∈D −
+> t
+
+e(st′ , a t′ | θt) ] ≈ E [ X  
+
+> t′≤t
+> (st′,a t′)∈D −
+> t
+
+e(st′ , a t′ | θt+1 ) ]. (5) Therefore, our proposed curiosity reward in Eq. (3) measures the improvement in the cumulative prediction error of the learnable state transitions sampled up to time t after a training step θt → θt+1 
+
+on the most recently sampled state transition (st, a t) → st+1 .
+
+4.1 Tractable Reformulation: A Tight Telescoping Bound on the Cumulative Reward 
+
+Computing our curiosity reward in Eq. (3) at each time step t is prohibitive since it requires evaluating the world model over the entire dataset Dt of transitions sampled up to time t. With an increasing size of the dataset Dt with each time step t, the computational cost scales quadratically in time as 
+
+O(t2), assuming the cardinality of Dt scales linearly in t.In addition to the computational cost, our reward in the current form also requires maintaining a memory that scales linearly in time as O(t) to keep the history Dt up-to-date. Therefore, our formulation of the curiosity reward in Eq. (3) is not practical. 4In this section, we present an equivalent version of the reward that is efficient and scalable. Consider the cumulative future reward C(T ) that our curious agent maximizes in T steps with our proposed reward formulation rt in Eq. (3) (note that the condition (st′ , a t′ ) ∈ D t on the summation in the expression for rt(st, a t | D t) is dropped for brevity): 
+
+C(T ) = 
+
+> t=T
+
+X
+
+> t=0
+
+γt rt(st, a t | D t) (6) 
+
+=
+
+> t=T
+
+X
+
+> t=0
+
+γt X
+
+> t′≤t
+
+{e(st′ , a t′ | θt) − e(st′ , a t′ | θt+1 )} (7) 
+
+=
+
+> t=T
+
+X
+
+> t=0
+
+γt X
+
+> t′≤t
+
+e(st′ , a t′ | θt) −
+
+> t=T
+
+X
+
+> t=0
+
+γt X
+
+> t′≤t
+
+e(st′ , a t′ | θt+1 ). (8) We rewrite the second term in Eq. (8) by substituting t = p − 1:
+
+> t=T
+
+X
+
+> t=0
+
+γt X
+
+> t′≤t
+
+e(st′ , a t′ | θt+1 ) (9) 
+
+= 
+
+> p=T+1
+
+X
+
+> p=1
+
+γp−1 X
+
+> t′≤p−1
+
+e(st′ , a t′ | θp) (10) 
+
+= 
+
+> p=T+1
+
+X
+
+> p=1
+
+γp−1
+
+−e(sp, a p | θp) + X
+
+> t′≤p
+
+e(st′ , a t′ | θp)
+
+ (11) 
+
+= 
+
+> p=T+1
+
+X
+
+> p=1
+
+γp−1 X
+
+> t′≤p
+
+e(st′ , a t′ | θp) − 
+
+> p=T+1
+
+X
+
+> p=1
+
+γp−1e(sp, a p | θp) (12) 
+
+=
+
+ 
+
+> p=T+1
+
+X
+
+> p=0
+
+γp−1 X
+
+> t′≤p
+
+e(st′ , a t′ | θp)
+
+ − γ−1e(s0, a 0 | θ0) − 
+
+> p=T+1
+
+X
+
+> p=1
+
+γp−1e(sp, a p | θp) (13) 
+
+=
+
+
+
+> p=T
+
+X
+
+> p=0
+
+γp−1 X
+
+> t′≤p
+
+e(st′ , a t′ | θp) + γT X 
+
+> t′≤T+1
+
+e(st′ , a t′ | θT +1 )
+
+ − γ−1e(s0, a 0 | θ0) +  
+
+> p=T+1
+
+X
+
+> p=1
+
+γp−1e(sp, a p | θp)
+
+!
+
+(14) 
+
+= 1
+
+γ
+
+
+
+> p=T
+
+X
+
+> p=0
+
+γp X
+
+> t′≤p
+
+e(st′ , a t′ | θp)
+
+ + γT X 
+
+> t′≤T+1
+
+e(st′ , a t′ | θT +1 ) − 
+
+> p=T+1
+
+X
+
+> p=0
+
+γp−1e(sp, a p | θp)
+
+(15) 
+
+= 1
+
+γ
+
+
+
+> t=T
+
+X
+
+> t=0
+
+γt X
+
+> t′≤t
+
+e(st′ , a t′ | θt)
+
+ + γT X 
+
+> t′≤T+1
+
+e(st′ , a t′ | θT +1 ) − 
+
+> t=T+1
+
+X
+
+> t=0
+
+γt−1e(st, a t | θt),
+
+(16) where the last step renames p ← t.Putting this back in Eq. (8), we get: 5C(T ) = 
+
+
+
+1 − 1
+
+γ
+
+ 
+
+> t=T
+
+X
+
+> t=0
+
+γt X
+
+> t′≤t
+
+e(st′ , a t′ | θt)
+
+ − γT X 
+
+> t′≤T+1
+
+e(st′ , a t′ | θT +1 ) +  
+
+> t=T+1
+
+X
+
+> t=0
+
+γt−1e(st, a t | θt)
+
+(17) 
+
+=
+
+
+
+1 − 1
+
+γ
+
+ 
+
+> t=T
+
+X
+
+> t=0
+
+γt X
+
+> t′≤t
+
+e(st′ , a t′ | θt)
+
+| {z }
+
+> intractable history term
+
++ 1
+
+γ 
+
+> t=T+1
+
+X
+
+> t=0
+
+γt e(st, a t | θt) − γT +1 e(st, a t | θT +1 )
+
+!| {z }
+
+> tractable per-step term
+
+.
+
+(18) The goal of our curious agent is to maximize the world model’s accuracy by the end of training, not to accumulate discounted reward quickly. The agent therefore has no preference for immediate rewards, motivating the limit γ → 1. This limit serves as a tractability device: it eliminates the computationally intractable first term in Eq. (18) (which requires evaluating the world model over all of Dt), leaving a form that decomposes into per-step contributions. Moreover, the intractable history term in Eq. (18) is negative because the coefficient (1 − 1/γ ) is negative for γ ∈ (0 , 1) . So C(T ) in Eq. (18) is in fact upper-bounded by the tractable per-step term: 
+
+C(T ) ≤ 1
+
+γ 
+
+> t=T+1
+
+X
+
+> t=0
+
+h
+
+γt e(st, a t | θt) − γT +1 e(st, a t | θT +1 )
+
+i
+
+, γ ∈ (0 , 1) ,
+
+with slack −(1 − 1/γ ) PTt=0 γt P 
+
+> t′≤t
+
+e(st′ , a t′ | θt) ≥ 0 that vanishes as γ → 1. This is structurally 
+
+analogous to a variational upper bound on an intractable objective: the γ → 1 limit doubles as a 
+
+tightness condition – the unique value at which the tractable per-step surrogate term equals C(T )
+
+exactly. We can then identify an effective immediate reward reff  
+
+> t
+
+whose sum recovers C(T )|γ→1. Once identified, reff  
+
+> t
+
+is a standalone intrinsic signal that any RL algorithm can consume with its own choice of discount factor – the γ → 1 limit is only used to derive the per-step form, not to constrain the downstream policy optimizer. Concretely, setting γ → 1 in Eq. (18) gives: 
+
+C(T ) γ→1 = 
+
+> t=T+1
+
+X
+
+> t=0
+
+
+
+e(st, a t | θt) − e(st, a t | θT +1 )
+
+
+
+(19) 
+
+=
+
+> t=T
+
+X
+
+> t=0
+
+
+
+e(st, a t | θt) − e(st, a t | θT +1 )
+
+
+
+. (20) The collapse of Eq. (7) to a per-step reward in Eq. (20) is, at its core, a telescoping sum in the model parameters. Setting γ = 1 in Eq. (7) for C(T ) and re-summing the lower-triangular region 
+
+{(t, t ′) : 0 ≤ t′ ≤ t ≤ T } column-wise instead of row-wise (i.e., for fixed t′, letting t range over 
+
+{t′, t ′ + 1 , . . . , T }), 
+
+> T
+
+X
+
+> t=0
+
+X
+
+> t′≤t
+
+e(st′ , a t′ | θt) − e(st′ , a t′ | θt+1 ) =
+
+> T
+
+X
+
+> t′=0
+> T
+
+X
+
+> t=t′
+
+e(st′ , a t′ | θt) − e(st′ , a t′ | θt+1 ),
+
+the inner sum telescopes in t – successive θt and θt+1 terms share the transition (st′ , a t′ ) and cancel pairwise – leaving e(st′ , a t′ | θt′ ) − e(st′ , a t′ | θT +1 ), and relabelling t′ → t recovers Eq. (20) .Intuitively: each transition’s contribution to cumulative historical error improvement is simply its 
+
+current-visit error minus its end-of-training error. This is why an O(t)-wide history collapses to a per-step signal with no approximation. One notes that Eq. (20) can be rewritten as a cumulative future reward as: 
+
+C(T ) γ→1 =
+
+> t=T
+
+X
+
+> t=0
+
+γt reff  
+
+> t
+
+, (21) 6where γ → 1 and reff  
+
+> t
+
+is the effective immediate reward given by 
+
+reff  
+
+> t
+
+(st, a t) = e(st, a t | θt) − e(st, a t | θT +1 ). (22) The simplified effective immediate reward reff  
+
+> t
+
+in Eq. (22) is computationally tractable and, when used as the per-step reward, produces exactly the same cumulative objective C(T ) as the reward 
+
+rt in Eq. (3) , while avoiding prohibitive computation over the entire historical context. Note that, this equivalence is exact for any finite horizon T in the limit γ → 1 – no approximation has been introduced yet. The sole remaining challenge is estimating the term e(st, a t | θT +1 ) in Eq. (22) online. Bridging the gap between this exact quantity and an estimable target requires two distinct approximations: 
+
+(a) Horizon approximation. We replace the end-of-training parameters θT +1 with their asymptotic limit at model convergence, θT +1 → θ∞. This is exact as T → ∞ and is mild whenever training has had enough steps for the world model to approach convergence on the relevant transitions. 
+
+(b) Sample-to-expectation approximation. The quantity e(st, a t | θ∞) is a single-sample error evaluated at one realization of st+1 ∼ P (·| st, a t). We replace it with its expectation over the transition distribution, e(st, a t | θ∞) → EP [e(st, a t | θ∞)] . This step trades a noisy single-sample target for a stable one, and is what makes the baseline amenable to learned online estimation (Section 5.2). Each approximation is individually mild – (a) vanishes in the large-T limit and (b) is a standard variance-reduction step – and together they yield the final form of our proposed reward: 
+
+reff  
+
+> t
+
+(st, a t) ≈ e(st, a t | θt) − EP [e(st, a t | θ∞)] . (23) 
+
+Key insight. The world model’s expected total error improvement over the entire historical context 
+
+Dt after a training step (Eq. (3) ) is equivalent to the expected error improvement in predicting the 
+
+current transition (st, a t) → st+1 relative to its asymptotic error baseline (Eq. (23)). 
+
+4.2 Per-step Prediction Error Rewards as Special Cases 
+
+Schmidhuber’s formulations of prediction error-based curiosity, namely, Curiosity V1 [ 1] and Curios-ity V2 [2], naturally fit into the above framework. For instance, when the environment is assumed to be deterministic, the expected asymptotic error baseline for a transition (st, a t) → st+1 is EP [e(st, a t | θ∞)] = 0 , as a converged world model can ideally predict the state transition perfectly. Under this condition, our proposed reward in Eq. (23) reduces to the Curiosity V1 [1] reward with reff  
+
+> t
+
+(st, a t) = e(st, a t | θt).Now, consider the case where the expected asymptotic error baseline for a transition 
+
+EP [e(st, a t | θ∞)] is approximated by the error in the immediate future after one transition, i.e., 
+
+EP [e(st, a t | θ∞)] ≈ e(st, a t | θt+1 ). Under this condition, our proposed reward in Eq. (23) reduces to the Curiosity V2 [2] reward with reff  
+
+> t
+
+(st, a t) = e(st, a t | θt) − e(st, a t | θt+1 ).Our framework reveals Curiosity V1 [ 1 ] and V2 [ 2] as two points on a single axis: the same cumulative objective, approximated by setting the asymptotic error baseline to zero (Curiosity V1 [ 1]) or to a one-step post-update proxy (Curiosity V2 [ 2 ]). Because these reductions hold for any valid e(·), learned-feature-space variants of Curiosity V1 such as ICM [ 6] are also special cases of our framework under the zero-baseline approximation. Curiosity-Critic replaces this approximation with a learned estimator. 
+
+## 5 Estimating the Asymptotic Error Baseline EP [e(st, a t | θ∞)] 
+
+In this section, we show how EP [e(st, a t | θ∞)] can be estimated online during world model training, and introduce the Curiosity-Critic framework that implements this estimation. 
+
+5.1 Asymptotic Error Baseline: The Irreducible Noise Floor 
+
+Given a stochastic state transition (st, a t) → st+1 represented by a probability distribution P(·| st, a t),a fully trained world model’s prediction for st+1 approaches the expectation of the next state under 7P(·| st, a t):
+
+θ∞(st, a t) → EP [st+1 ] .
+
+This holds when the world model is trained with MSE loss, whose minimizer is the conditional mean; other losses (e.g., L1) converge to different statistics of P, each inducing a correspondingly different asymptotic baseline. Therefore, the asymptotic error baseline takes the form: 
+
+EP [e(st, a t | θ∞)] = EP [∥θ∞(st, a t) − st+1 ∥] (24) 
+
+= EP [∥EP [st+1 ] − st+1 ∥] , (25) which is the mean absolute deviation of st+1 under P(·| st, a t) – which is precisely the irreducible noise floor of the transition that no model can learn away with any amount of training. Subtracting it from e(st, a t | θt) leaves only the learnable component of the error as the reward signal reff  
+
+> t
+
+in Eq. (23) . In the fully stochastic limit, the baseline equals the current error and reff  
+
+> t
+
+→ 0; in the fully deterministic limit, the baseline is zero and reff  
+
+> t
+
+= e(st, a t | θt). In the general case – where transitions are neither fully learnable nor fully random – reff  
+
+> t
+
+is proportional to how much of the error remains learnable, providing a graded reward signal. Using Jensen’s inequality, one can also note that this is upper bounded by the square-root of the summed variance: 
+
+EP [∥EP [st+1 ] − st+1 ∥] ≤ pEP [∥EP [st+1 ] − st+1 ∥2] = 
+
+sX
+
+> i
+
+Var P (s(i)
+
+> t+1
+
+), (26) where i indexes the dimensions of the state st+1 .
+
+5.2 Estimating the Baseline Online: the Curiosity-Critic 
+
+The quantity EP [e(st, a t | θ∞)] is not directly observable, since neither P nor θ∞ are known. At each time step t, however, the agent observes a single sample st+1 from the environment. This observation is used to update the world model from θt to θt+1 , after which the post-update error 
+
+e(st, a t | θt+1 ) – the error of the updated model on the same transition – can be computed at no additional cost. This serves as the best single-sample estimate of the asymptotic baseline available at time t: as θt → θ∞, the post-update error converges to the irreducible noise floor of the transition. One could use this single-sample estimate directly as the baseline at each step – which is precisely what Curiosity V2 [ 2 ] does – but this has two drawbacks. First, it is noisy – a single sample is a high-variance estimate of EP [e(st, a t | θ∞)] . Second, since the post-update error only approaches the asymptotic baseline as θt+1 → θ∞, the accuracy of this baseline is by construction tied to the world model’s own convergence. A better approach is to learn to predict EP [e(st, a t | θ∞)] directly from (st, a t), using e(st, a t | θt+1 )
+
+as the regression target at each step. Such a learned estimator offers two advantages over the single-sample approach: it can generalise across similar transitions, pooling information from nearby states to produce accurate estimates even for infrequently visited ones; and predicting a single scalar is a considerably easier regression problem than predicting the full next state, suggesting the estimator can converge to an accurate baseline well before the world model itself converges. We verify this empirically in Section 6 (Figure 7). This early convergence allows the critic to guide exploration toward learnable transitions well ahead of world model convergence, improving both convergence speed and final world model accuracy. We formalise this estimator as the Curiosity-Critic in the following subsection. 
+
+5.3 The Curiosity-Critic Framework 
+
+We implement this idea as the Curiosity-Critic framework, summarised in Algorithm 1 and illustrated in Figure 1. A Neural Critic network ϕ is trained in parallel with the world model θ. At each step 
+
+t: (1) the world model θt computes the raw prediction θt(st, a t) and the resulting prediction error 
+
+e(st, a t | θt); (2) the world model is updated to θt+1 using the observed st+1 ; (3) the post-update error e(st, a t | θt+1 ) is used as the training target for the critic model ϕt; (4) the updated critic ϕt+1 
+
+produces the baseline estimate ϕt+1 (st, a t); and (5) the curiosity reward is formed as: 
+
+rt(st, a t) = e(st, a t | θt) − ϕt+1 (st, a t). (27) 8This reward is positive when the current model error exceeds the estimated noise floor – i.e., when the transition is still learnable – and near zero for stochastic, unlearnable transitions. The reward is then used as an RL signal (6) to update the curiosity agent policy πt, which selects the next action. 
+
+Algorithm 1 Curiosity-Critic (per environment step) 
+
+Require: World model θt, neural critic ϕt, policy πt, current state st 
+
+> 1:
+
+Sample action at ∼ πt(· | st); execute and observe st+1  
+
+> 2:
+
+ebefore ← e(st, a t | θt) // world model error before update  
+
+> 3:
+
+θt+1 ← GradStep( θt; st, a t, s t+1 ) // update world model  
+
+> 4:
+
+eafter ← e(st, a t | θt+1 ) // post-update error  
+
+> 5:
+
+ϕt+1 ← GradStep( ϕt; st, a t, e after ) // update critic to predict eafter  
+
+> 6:
+
+rt ← ebefore − ϕt+1 (st, a t) // curiosity reward (Eq. 23)  
+
+> 7:
+
+πt+1 ← PolicyUpdate( πt; st, a t, r t) // update policy with rt 
+
+> 8:
+
+return θt+1 , ϕ t+1 , π t+1 , s t+1 
+
+The Curiosity-Critic framework is agnostic to the specific error metric. Because the critic regresses the expected asymptotic value of whatever e(·) is in use, our method ports directly to feature-space formulations in the spirit of ICM [ 6], where the critic regresses the expected asymptotic feature-space error, and to distributional world models with log-likelihood or KL loss, where the critic regresses the conditional entropy of P(· | st, a t). Only e(·) changes; Eq. (23) and Algorithm 1 remain unchanged. 
+
+Self-correcting exploration. The co-training of the critic and the curious policy creates a natural self-correcting feedback loop. If the critic underestimates the noise floor for a stochastic transition, rt
+
+remains artificially high, causing the policy to keep revisiting that transition. Each revisit provides an additional training sample for the critic, driving ϕt+1 (st, a t) upward until it accurately reflects the irreducible error. Once it does, rt drops to near zero and the policy is redirected toward genuinely learnable transitions. 
+
+## 6 Experiments 
+
+Table 1: Final mean L2 prediction error on deterministic cells after 35,000 environment steps, averaged over five independent seeds (lower is better). Bold denotes the best non-oracle result. 
+
+Italicised rows use privileged knowledge of the environment’s noise floor and are included as reference. Method Seed 1 Seed 2 Seed 3 Seed 4 Seed 5 Mean ± Std Random 2.268 2.103 2.027 2.263 3.080 2.348 ± 0.377 
+
+Curiosity V1 [1] 7.287 7.054 7.093 7.256 6.882 7.114 ± 0.147 
+
+Curiosity V2 [2] 2.546 3.128 3.204 3.422 2.393 2.939 ± 0.398 
+
+Visitation Count [3] 5.676 5.693 4.578 5.052 6.939 5.588 ± 0.794 
+
+Ours (Tabular Critic) 1.921 2.025 1.827 1.938 1.851 1.912 ± 0.070 
+
+Ours (Neural Critic Model) 1.755 1.817 1.926 1.975 1.820 1.858 ± 0.080 
+
+Ours Oracle (Ground-Truth Critic) 1 .624 1 .733 1 .816 1 .753 1 .757 1 .736 ± 0 .063 
+
+We evaluate Curiosity-Critic against Curiosity V1 [ 1], Curiosity V2 [ 2], Visitation Count [ 3], and undirected Random exploration in a controlled stochastic grid world designed to isolate the core challenge: separating learnable from irreducibly unlearnable states. 
+
+Environment. The environment is a 30 × 30 grid world divided into two equal regions. The 
+
+deterministic region occupies the entire left half (all rows, columns 0–14), comprising 450 cells, each assigned a fixed 200-dimensional binary observation pattern (“TV pixels”), constructed as cyclic shifts of a shared random base vector such that neighbouring cells have strongly correlated observations. The stochastic region occupies the right half (columns 15–29); every visit independently re-samples an i.i.d. Bernoulli (0 .5) 200-dimensional binary vector, making prediction error irreducible regardless of training. The oracle irreducible noise floor is √200 × 0.5 ≈ 7.07 . The agent begins at cell (15 , 15) 
+
+— the centre row, on the stochastic side of the boundary. 9World Model                
+
+> θ
+> Neural Critic
+> ϕ
+> st, a tst, a t
+> e(st, a t|θt)ϕt+1 (st, a t)
+> world model error curiosity-critic
+> θt(st, a t)
+> 1
+> st+1
+> 2
+> e(st, a t|θt+1 )
+> 3
+> 4
+> rt=e(st, a t|θt)−ϕt+1 (st, a t)
+> 5
+> Curiosity Agent (updates πtand samples next action)
+> rt
+> 6
+
+Figure 1: Step-wise operation of The Curiosity-Critic Architecture . Solid black arrows : forward-pass flow. Dashed gray arrows : backward-pass training signals entering each model. Steps: (1) World Model computes the raw prediction θt(st, a t), then the prediction error e(st, a t | θt) (blue dashed box). 
+
+(2) World Model parameters are updated ( θt → θt+1 ) on the ground-truth observation st+1 . (3) Neural Critic parameters are updated ( ϕt → ϕt+1 ) on the post-update error e(st, a t | θt+1 ). (4) Neural Critic forward pass produces the curiosity-critic baseline ϕt+1 (st, a t) (orange dash-dot box). (5) Reward 
+
+rt = e(st, a t | θt) − ϕt+1 (st, a t) is computed; each term is enclosed in its matching box style from steps (1) and (4). (6) rt is used as an RL signal to update the Curiosity Agent policy πt; the agent then samples the next action. 
+
+Actions and transitions. At each step the agent selects one of four directional actions: Up, Down, Left, Right. Transitions are fully deterministic; boundary actions are excluded from the valid set at edge cells. 
+
+World model. Each cell (r, c ) is represented by a factored 60-dimensional input: the concatenation of one-hot (r) and one-hot (c) of length 30 each. The world model predicts the TV-pixel observation at the current cell (not the next state, since transitions are trivially deterministic). The Curiosity-Critic framework places no constraint on what the world model predicts – the theory requires only a consistent notion of prediction error, which here is the L2 error in predicting the current cell’s observation. This design isolates each curiosity signal’s ability to direct the agent toward learnable regions and away from irreducibly stochastic ones - the “noisy TV” problem of Burda et al. [ 4 ] - in a controlled grid world setting. 
+
+Evaluation. The primary metric is the mean L2 prediction error of the world model over all 450 deterministic cells, queried directly every 100 environment steps. A lower value reflects both faster convergence and more accurate world-model learning in the learnable region. All results are averaged over five independent seeds (seeds 1–5). The Visitation Count reward follows Strehl & Littman [ 3]and Bellemare et al. [12]: r(s) = 1 /pN (s), with N (s) initialised to 1 per state. 10 6.1 Training World model. The world model θ is a two-layer MLP: 60 (input) → 1024 ReLU 
+
+−−−→ 200 (output) ,
+
+trained with MSE loss using Adam [ 5] ( lr = 0 .001 , β1 = 0 .9, β2 = 0 .999 ). One gradient step is taken per environment step. Before the main loop, the model is warmed up for 100 steps under a random policy, a cold start common to all methods. 
+
+Curiosity-Critic. The Neural Critic Model ϕ is a small MLP, 60 (input) → 128 ReLU 
+
+−−−→ 1 (output, clamped ≥ 0),
+
+trained online with MSE loss to predict post-update world model error e(·| θt+1 ) at each visited state (one Adam step per environment step, lr = 0 .001 ). Because the critic shares the same factored one-hot encoding as the world model, it generalises its baseline estimate across cells sharing a row or column, building a reliable noise-floor estimate with fewer per-state visits. As an ablation, we also evaluate a Tabular Critic : a 30 ×30 lookup table of per-state EMA-mean values (decay 0.9) of the post-update world model error as a parameter-free alternative to the MLP critic. 
+
+Policy. A state-only V-table of size 30 × 30 tracks an exponential moving average of received intrinsic rewards per state and the agent acts greedily in V over valid neighbours: 
+
+V (s) ← V (s) + α rt − V (s),
+
+with step size α = 0 .05 . The V-table is uniformly initialised to 3.0 across all methods and seeds. This eliminates initial optimism asymmetries, ensuring that observed differences in learning dynamics are attributable solely to the intrinsic reward signal. At each step, with probability ε = 0 .3 a random valid action is sampled uniformly; otherwise the agent selects the action that maximises V among its neighbours: 
+
+at = arg max  
+
+> a∈A (st)
+
+V step( st, a ),
+
+where A(st) denotes the set of valid actions at state st.
+
+Reward normalisation. Before each V-table update, intrinsic rewards are divided by a running EMA estimate of their standard deviation (without mean subtraction, to preserve sign and positivity). This decouples reward magnitude from the learning rate, ensuring a fair comparison across methods with very different reward scales. 
+
+Oracle reference. The Oracle Critic uses the known analytical irreducible error as the baseline: √200 × 0.5 for stochastic cells and 0 for deterministic cells. This requires privileged knowledge of cell type and noise level unavailable in practice. It is included solely as a reference ceiling on what any critic-based approach can achieve with a perfect baseline estimate. All experiments run for 35 ,000 environment steps across five independent seeds. All re-sults are fully reproducible from the released code at https://github.com/vinbhaskara/ Curiosity-Critic .
+
+6.2 Results 
+
+Figure 2 shows the mean L2 error on deterministic cells over training. The right panel zooms into steps 25k–35k, excluding Curiosity V1 [ 1] and Visitation Count [ 3 ] to resolve differences among the methods that do converge. Figure 3 shows a frame from the trajectory animation (youtu.be/Jv1n346TWbQ ) at step 30,000. Figure 4 shows the fraction of environment steps spent in the deterministic region over time. Figures 5 and 6 visualise seed-averaged visitation heatmaps at the end of training and across three training windows, respectively. Final errors are summarised in Table 1. 
+
+Curiosity V1 [ 1]: complete failure in the presence of noise. Curiosity V1 [ 1] assigns intrinsic reward equal to the raw prediction error, which is irreducibly high for stochastic cells regardless of how much training has occurred. The agent rapidly converges to the noisy half of the grid: the deterministic-region visit fraction falls from 11 .2% in early training to essentially 0% by step 11 Figure 2: Mean L2 prediction error on deterministic cells versus environment steps, averaged over five seeds with ±1 standard deviation shading. Curiosity V1 [ 1 ] uses raw prediction error as the intrinsic reward; Curiosity V2 [ 2] uses the one-step reduction in prediction error. Left : full 35,000-step training run across all seven methods. Right : final 10,000 steps (steps 25k–35k), excluding Curiosity V1 [ 1 ]and Visitation Count [3] to resolve the ordering of the converging methods. Lower is better. 
+
+Figure 3: Snapshot of agent trajectories at environment step 30,000. Each panel shows one method; coloured blobs represent individual seeds (five seeds per method, simultaneously animated). Green cells are deterministic (learnable); grey cells are stochastic (irreducibly noisy). The rightmost column shows the live mean L2 prediction error trace up to this step. Curiosity V1 [ 1] (prediction error as intrinsic reward) and Curiosity V2 [ 2 ] (one-step learning progress as intrinsic reward) are shorthands used throughout. A full real-time animation is available at youtu.be/Jv1n346TWbQ .15,000 and remains there for the rest of the run. The mean error never drops below 6.8 across any individual seed and finishes at 7.114 ± 0.147 — indistinguishable from an untrained model evaluated on deterministic cells. This is the so-called noisy-TV failure [4, 6]. 
+
+Visitation Count [ 3 ]. The count-based bonus 1/pN (s) generates broad early coverage (deterministic-region fraction of 54 .6% in early training and 58 .7% in late training), which might naively suggest effective exploration. However, the bonus decays equally for every visited cell regardless of whether it is learnable, so the agent continues to allocate substantial time to stochastic cells throughout training. The world model can only improve on deterministic visits; the equal pressure toward stochastic cells dilutes learning, and the error plateaus between 5.5 and 5.9 from step 14,000 onward. The final error of 5.588 ± 0.794 is the second highest, and the seed variance (±0.794 ) is the highest among all methods. 12 Figure 4: Fraction of environment steps spent in the deterministic region (columns 0–14) over training, averaged over five seeds with ±1 standard deviation shading. Curiosity V1 [ 1] (prediction error as reward) collapses to zero within the first few thousand steps as it becomes entirely absorbed by stochastic cells. Ours (Neural Critic Model) builds up a consistently high deterministic-region fraction throughout training ( 70 .9% in the final 5,000 steps on average), closely tracking the oracle critic’s coverage ( 95 .3% ), without any privileged knowledge of cell type. Curiosity V2 [ 2] (one-step learning progress as reward) and Visitation Count [ 3] both achieve moderate coverage but fail to sustain or increase it over time. 
+
+Random exploration. As a baseline with no intrinsic reward, the agent acts uniformly at random, reaching 2.348 ± 0.377 at step 35 ,000 . That both Curiosity V2 [ 2] and Visitation Count [ 3] under-perform this baseline demonstrates that naive curiosity signals can actively harm exploration in the presence of irreducible stochasticity. 
+
+Curiosity V2 [ 2 ]. Its reward measures the one-step reduction in prediction error after a gradient update. In practice this signal is highly variable: a single update can produce a large error reduction on any cell, regardless of whether that cell lies in the deterministic or stochastic region. As a result the agent’s exploration is scattered, with a deterministic-region fraction of only 14 .6% in early training and 32 .2% in late training. The mean error does not drop below 3.0 until step 34 ,400 – a threshold our Neural Critic reaches more than 21 ,000 steps earlier – and the run finishes at 2.939 ± 0.398 ,worse than undirected random exploration. 
+
+Ours (Tabular Critic): even the simplest instantiation beats all baselines. As a sanity check, we also evaluate a minimal critic: a 30 ×30 EMA-mean lookup table that tracks the per-state post-update error with no generalisation across states. Despite its simplicity, this variant still reaches 1.912 ±0.070 
+
+for the final error. In comparison to the Neural Critic, its slower convergence ( < 3.0 error not reached until step 25 ,300 , versus 13 ,400 for the Neural Critic) and modest late-training deterministic-region fraction ( 32 .0% ) confirm that cross-state generalisation, provided by the neural critic, is key. 
+
+Ours (Neural Critic Model): fastest convergence, closest to oracle. Replacing the per-state EMA table with a small MLP critic yields a substantial improvement in convergence speed. The neural critic shares the same factored one-hot encoding as the world model, so a visit to one cell immediately informs the critic’s estimate for other cells in the same row or column. This generalisation allows the critic to calibrate its noise-floor estimate with far fewer per-state observations, redirecting exploration much earlier. The error curve drops below 3.0 at step 13 ,300 , nearly 12 ,000 steps ahead of the Tabular Critic and more than 21 ,000 steps ahead of Curiosity V2 [ 2]. The error continues to fall steeply: below 2.5 at step 16 ,000 , below 2.0 at step 26 ,700 . The final mean error of 1.858 ± 0.080 
+
+is the best among all non-oracle methods. The late-training deterministic-region fraction of 70 .9% 
+
+further confirms the neural critic’s stronger directional effect on exploration: the agent spends nearly three-quarters of the final 5,000 steps in the learnable half of the grid, compared to 42 .6% for random exploration. 13 Figure 5: Seed-averaged visitation heatmaps at the end of training (final 5,000 of 35,000 steps), shown for the five most representative methods. Each cell’s brightness encodes the fraction of time spent there, normalised per method. The cyan dashed line marks the boundary between the deterministic region (left) and the stochastic region (right). Ours (Neural Critic Model) concentrates the vast majority of late-training visits in the deterministic half, closely resembling the oracle critic’s pattern. Curiosity V1 [ 1] (prediction error as reward) shows the opposite: near-complete concentration in the stochastic region. Random exploration produces near-uniform coverage of both halves. Curiosity V1 and V2 are convenience shorthands for [1] and [2] respectively. 
+
+Oracle upper bound. The ideal-critic variant, which substitutes the true analytical irreducible error floor, achieves the strongest late-training focus ( 95 .3% deterministic-region fraction) and the lowest final error ( 1.736 ± 0.063 ). The ∼ 7% gap between the neural curiosity-critic method and the oracle in the final world model error represents the residual gap in the neural critic’s estimate of the noise floor. The neural critic serves as a practical approximation of the irreducible error floor, requiring no privileged knowledge of cell type or noise level. 
+
+Critic convergence. Figure 7 shows the mean neural critic estimate over all deterministic and all stochastic cells throughout training. For stochastic cells, the critic estimate rises to within 5% of the oracle noise floor ( √200 × 0.5 ≈ 7.07 ) by step 400 and oscillates closely around the oracle thereafter. For deterministic cells, the critic estimate rises in the first ∼ 500 steps (tracking the still-large post-update error early in world-model training), and then declines alongside the world model’s improving accuracy. This also directly confirms our claim in Section 5.2: the critic estimate for stochastic cells reaches within 5% of the oracle baseline by ∼ 1% of total training – well before the world model itself converges – confirming that the scalar-regression critic converges meaningfully earlier than the world model. 14 Figure 6: Seed-averaged visitation heatmaps at three training windows: Early (steps 0–5k), Mid (steps 15k–20k), and Late (steps 30–35k), shown for the five most representative methods. Rows correspond to training windows; columns to methods. The highlighted column (blue outline) shows Ours (Neural Critic Model), which exhibits a clear shift from broad early exploration to targeted late-training concentration in the deterministic region. The oracle critic (right most) maintains high deterministic-region focus throughout. All other methods either plateau or remain fixated on the stochastic region (Curiosity V1 [ 1 ], prediction error as reward) across all windows. Curiosity V1 and V2 are convenience shorthands for [1] and [2] respectively. 
+
+## 7 Conclusions and Future Work 
+
+We introduced Curiosity-Critic, a curiosity framework grounded in cumulative prediction error improvement that addresses the core failure mode of prior approaches: attraction to irreducibly stochastic transitions and slow world model convergence. The key idea is to subtract a learned critic – an estimate of the asymptotic error baseline – from the raw world model error, yielding a reward that is discriminative between learnable and unlearnable states. Experiments confirm that Curiosity-Critic outperforms prior baselines, with the neural critic approaching oracle performance despite having no privileged knowledge of the environment’s noise floor. 
+
+Limitations. The current experiments are conducted on a controlled grid world environment; behavior in high-dimensional or continuous settings is not yet characterized empirically. 
+
+Future work. A natural next step is to evaluate Curiosity-Critic in large-scale high-dimensional environments such as Atari [ 16 ] and VizDoom [ 15 ], where the world model and the critic network are convolutional. We plan to report results in these settings in a subsequent version of the paper. 
+
+## 8 Acknowledgments 
+
+We are thankful to Prof. Jimmy Ba at the University of Toronto for his early comments and feedback during the initial stages of this work. 15 Figure 7: Mean neural critic estimate over all deterministic cells (left) and all stochastic cells (right) versus environment steps, averaged over five seeds with ±1 standard deviation shading. The dashed horizontal line marks the oracle noise floor ( 0 for deterministic, √200 × 0.5 ≈ 7.07 for stochastic). The critic estimate for stochastic cells converges to within 5% of the oracle by step 400 ; the critic estimate for deterministic cells rises in the first ∼ 500 steps (tracking the large world model error early in training) and then declines as the world model learns the learnable region. 
+
+## References 
+
+[1] J. Schmidhuber. A possibility for implementing curiosity and boredom in model-building neural controllers. Proc. of the International Conference on Simulation of Adaptive Behavior: From Animals to Animats , p. 222-227, MIT Press (Feb 1991). [2] J. Schmidhuber. Curious Model-Building Control Systems. Proc. International Joint Conference on Neural Networks , Singapore, Vol. 2, p. 1458-1463 (Nov 1991). [3] A.L. Strehl, and M.L. Littman. An Analysis of Model-based Interval Estimation for Markov Decision Processes. Journal of Computer and System Sciences , Vol. 74, Issue 8, p. 1309-1331 (Dec 2008). [4] Y. Burda, H. Edwards, D. Pathak, A. Storkey, T. Darrell, A.A. Efros. Large-Scale Study of Curiosity-Driven Learning. International Conference on Learning Representations (ICLR) 
+
+(2019). [5] D.P. Kingma, and J. Ba. Adam: A Method for Stochastic Optimization. International Conference on Learning Representations (ICLR) (2015). [6] D. Pathak, P. Agrawal, A.A. Efros, T. Darrell. Curiosity-driven Exploration by Self-Supervised Prediction. Proceedings of the International Conference on Machine Learning (ICML) , p. 2778-2787 (2017). [7] R.S. Sutton. Integrated Architectures for Learning, Planning, and Reacting Based on Ap-proximating Dynamic Programming. Proceedings of the Seventh International Conference on Machine Learning , p. 216-224 (1990). [8] D. Ha, and J. Schmidhuber. World Models. arXiv:1803.10122 (2018). [9] J. Schmidhuber. Formal Theory of Creativity, Fun, and Intrinsic Motivation. IEEE Transactions on Autonomous Mental Development , Vol. 2, No. 3, p. 230-247 (2010). [10] P-Y. Oudeyer, and F. Kaplan. What is Intrinsic Motivation? A Typology of Computational Approaches. Frontiers in Neurorobotics , Vol. 1, p. 108 (2007). [11] Y. Burda, H. Edwards, A. Storkey, O. Klimov. Exploration by Random Network Distillation. 
+
+International Conference on Learning Representations (ICLR) (2019). 16 [12] M.G. Bellemare, S. Srinivasan, G. Ostrovski, T. Schaul, D. Saxton, R. Munos. Unifying Count-Based Exploration and Intrinsic Motivation. Advances in Neural Information Processing Systems (NeurIPS) , Vol. 29 (2016). [13] R. Houthooft, X. Chen, Y. Duan, J. Schulman, F. De Turck, P. Abbeel. VIME: Variational Information Maximizing Exploration. Advances in Neural Information Processing Systems (NeurIPS) , Vol. 29 (2016). [14] D. Pathak, D. Gandhi, A. Gupta. Self-Supervised Exploration via Disagreement. Proceedings of the International Conference on Machine Learning (ICML) , p. 5062-5071 (2019). [15] M. Kempka, M. Wydmuch, G. Runc, J. Toczek, W. Ja´ skowski. ViZDoom: A Doom-based AI Research Platform for Visual Reinforcement Learning. IEEE Conference on Computational Intelligence and Games , p. 1-8 (2016). [16] M. G. Bellemare, Y. Naddaf, J. Veness, M. Bowling. The Arcade Learning Environment: An Evaluation Platform for General Agents. Journal of Artificial Intelligence Research , Vol. 47, p. 253-279 (2013). 17

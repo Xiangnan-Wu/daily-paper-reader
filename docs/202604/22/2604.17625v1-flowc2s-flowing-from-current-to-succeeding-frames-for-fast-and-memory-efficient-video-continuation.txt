@@ -1,0 +1,867 @@
+Title: FlowC2S: Flowing from Current to Succeeding Frames for Fast and Memory-Efficient Video Continuation
+
+URL Source: https://arxiv.org/pdf/2604.17625v1
+
+Published Time: Tue, 21 Apr 2026 01:53:43 GMT
+
+Number of Pages: 22
+
+Markdown Content:
+# FlowC2S: Flowing from Current to Succeeding Frames for Fast and Memory-Efficient Video Continuation 
+
+## Hovhannes Margaryan 1 Quentin Bammey 2 Christian Sandor 11Team ARAI, Universit´ e Paris-Saclay, CNRS, LISN, France  
+
+> 2
+
+## LTCI, T´ el´ ecom Paris, Institut Polytechnique de Paris, France Generated Frames Input Frames 
+
+> Long Video Continuation
+
+Figure 1. FlowC2S generates video continuations starting the generation directly from the given frames. We achieve this by training a flow matching model between current and succeeding frame distributions with inherent optimal couplings and target inversion. Our method successfully halves the model input dimensionality, generates high-quality video continuations with only five sampling steps, and generalizes to video durations beyond those seen at training. See the appendix for more examples. 
+
+## Abstract 
+
+This paper introduces a novel methodology for gener-ating fast and memory-efficient video continuations. Our method, dubbed FlowC2S, fine-tunes a pre-trained text-to-video flow model to learn a vector field between the cur-rent and succeeding video chunks. Two design choices are key. First, we introduce inherent optimal couplings, uti-lizing temporally adjacent video chunks during training as a practical proxy for true optimal couplings, resulting in straighter flows. Second, we incorporate target inversion, injecting the inverted latent of the target chunk into the in-put representation to strengthen correspondences and im-prove visual fidelity. By flowing directly from current to succeeding frames, instead of the common combination of current frames with noise to generate a video continuation, we reduce the dimensionality of the model input by a factor of two. The proposed method, fine-tuned from LTXV and Wan, surpasses the state-of-the-art scores across quantita-tive evaluations with FID and FVD, with as few as five neu-
+
+1
+
+> arXiv:2604.17625v1 [cs.CV] 19 Apr 2026
+
+ral function evaluations. The code of FlowC2S is available at https://github.com/marghovo/FlowC2S. 
+
+## 1. Introduction 
+
+Recent advances in image and video generation [10, 11, 14, 48, 49, 52, 54, 70, 81] have dramatically improved the quality of synthetic media, largely due to diffusion- and flow-based models [12, 22, 28, 36, 38, 56–58]. Building on this progress, researchers have turned to video continua-tion : synthesizing a plausible sequence of frames given the current segment of a video. In essence, the goal of video continuation is to generate a temporally coherent and se-mantically consistent continuation of the input video seg-ment. Success in video continuation would enable key ap-plications in long-horizon video generation, world models, and immersive AR/VR environments. Indeed, AR/VR ap-plications must circumvent the lag introduced by the use of generative models. For example, editing a future frame instead of the current one ensures that it is ready when its timestamp arrives, keeping AR/VR displays synchronized with the real world despite model latency. However, generating a video continuation remains dif-ficult. Maintaining a plausible extension of a visual se-quence requires balancing two sometimes-competing ob-jectives: temporal coherence, to ensure realistic motion and smooth dynamics, and visual fidelity, to preserve sharp de-tails and semantic consistency across frames. To tackle this, state-of-the-art methods condition on the given frames and use Gaussian noise to generate a continuation [15–17, 75]. While effective, this design has key drawbacks: high mem-ory cost since the model must process both the conditioning frames and noise of output dimensionality, and slow infer-ence as multiple neural function evaluations (NFEs) are re-quired. This is even more of a problem considering that applications such as AR/VR, which rely on video continua-tion as a building block, require the methods to operate on embedded devices in near-real time. In this work, we introduce FlowC2S , an alternative to the video continuation task. Our model receives a chunk of video frames as input and generates the subsequent video chunk as a plausible continuation of the given input chunk. It preserves semantic coherence with the input while propa-gating global contextual information. Figure 1 summarizes our results. FlowC2S fine-tunes a pre-trained flow-based text-to-video model (e.g. LTXV [16] or Wan [63]) by modifying the initial distribution from the multivariate normal distri-bution to the distribution of current (or observed) frames. Then it learns a mapping between the input and succeeding frame distributions by flow matching [1, 36, 38]. By flowing directly from current to succeeding frames , FlowC2S by-passes the conventional paradigm of conditioning the model on input frames and using Gaussian noise to generate a video continuation. This results in a twofold reduction of model input dimensionality. Additionally, our model is trained using inherent optimal couplings, where the input and the following video chunk from the same video serve as the source and target, respectively. This approach leads to straighter flow trajectories and hence reduces the number of neural function evaluations required at inference to out-perform prior methods quantitatively. FlowC2S also uses inverted latents of the target video chunk, achieving im-proved visual quality. Our approach is capable of generat-ing coherent video continuations without explicit temporal conditioning on the given input video chunk. Fig. 2 illus-trates the key difference between the input design adopted by conventional methods and FlowC2S. The primary contributions of this paper are: • We propose a simple yet novel and efficient approach to video continuation by directly flowing from current to succeeding frames, leveraging 2× more memory-efficient input design, which yields – on the LTXV backbone as an example – approximately 50% lower peak GPU memory relative to LTXVCondition [16]. • Our method leverages inherent optimal couplings of in-put and succeeding frames as a proxy for the true opti-mal couplings, reducing the required neural function eval-uations for state-of-the-art quantitative results (e.g., 4× fewer NFEs on LTXV backbone). In addition, we lever-age target inversion for enhanced visual fidelity. • Through extensive experiments on multiple datasets [5, 44] and backbones [16, 63], we show that FlowC2S achieves competitive visual quality while substantially improving both GPU memory usage and NFEs. 
+
+## 2. Related Work 
+
+Text-to-Video Models. Text-to-video (T2V) diffusion [4, 8, 9, 19, 29, 42, 64, 66, 67, 67, 72] and flow models [7, 16, 26, 32, 41, 48, 50, 63, 81] are a class of condi-tional generative models that synthesize videos from text prompts. Stable Video Diffusion (SVD) [4] focuses on data curation and extends the backbone of Stable Diffusion (SD) [52] by temporal layers to capture inter-frame dynam-ics and improve consistency across the generated frames. SVD faces challenges with scalability, long-term tempo-ral modeling, and T2V alignment. To overcome these, CogVideoX [72] employs a 3D variational autoencoder (VAE) [13, 31, 61] for spatio-temporal compression and a diffusion transformer (DiT) [3, 46] with full 3D attention, where text and visual tokens are jointly processed via self-attention [62] to enhance semantic alignment. CogVideoX is computationally expensive due to the compression rate of its VAE. In contrast, LTXV [16] uses a VAE compression rate four times higher than CogVideoX and pretrains a 2B DiT via flow matching [1, 14, 36]. Wan [63] adopts similar 2Time Embedding 
+
+> Diffusion Transformer
+> Timestep Encoder
+> 0 ,…, 0, ...,
+> Timestep Encoder
+> …
+> Observed Frames
+> Future Frames
+> Noise
+> Diffusion Transformer
+> Time Embedding
+> Timestep Encoder
+> …
+
+(a) Conventional input design like LTXVCondition [16]. Time Embedding     
+
+> Diffusion Transformer
+> Timestep Encoder
+> 0 ,…, 0, ...,
+> Text Embedding
+> Time Embedding
+> Diffusion Transformer
+> Text Encoder
+> Timestep Encoder
+> Time-lapse of awhite camellia flower’s blooming process…
+> 0 ,…, 0, ...,
+> Input Frames
+> Future Frames
+> Noise
+> Timestep Encoder
+> …
+> Input Frames
+> Future Frames
+> Noise
+> Diffusion Transformer
+> Time Embedding
+> Timestep Encoder
+> …
+
+(b) Proposed input design. 
+
+Figure 2. (a) In conventional approaches, both the given input frames and additional Gaussian noise of the same size as the chunk to be generated are provided to the model at inference. Zero timesteps are used for the conditioning frames. (b) FlowC2S removes the noise; the model directly learns a vector field from current to succeeding frames and thus enables sampling from solely an input video chunk. 
+
+architectural and training principles – DiT, 3D VAE, flow matching – offering scalable models (1.3B and 14B DiTs) for diverse and high-quality T2V synthesis. 
+
+World- and Flow-Based Autoregressive T2V Models for Video Continuation. Recent methods that generate a video continuation are part of world [15, 17] and flow-based autoregressive T2V models [16, 75]. On the one hand, Vista [15] augments SVD with a latent-replacement scheme that injects up to three historical frames and in-troduces dynamics-enhancement and structure-preservation losses to improve realism. However, Vista struggles with computational efficiency and controllability. To address the latter, GEM [17] generates the succeeding frames from a reference frame with control over DINOv2 [45] features, human poses, and ego-trajectories. GEM adopts progres-sive noise levels on frames in training to allow generating the next frames. On the other hand, CausVid [75] distills a bi-directional T2V model into a uni-directional autoregres-sive student model using asymmetric distribution match-ing distillation [73, 74]. It employs a block-wise causal attention along with per-block noise level, preserving bi-directional attention within local blocks while enforcing causality across them. Finally, LTXVCondition [16] is pre-trained using different amounts of noise levels per-token [6, 30, 39, 53, 69] allowing generation of a video sequence from a conditioning chunk, which is given to the model as input with zero timestep. 
+
+## 3. Preliminaries 
+
+3.1. Flow Matching 
+
+Flow matching [1, 36, 38] is a training paradigm in genera-tive modeling. It learns to transform a sample from an initial distribution pinit (x0) – typically the standard multivariate normal distribution x0 ∼ N (0 , I d) of data dimensionality 
+
+d – into x1 where x1 comes from the data distribution pdata .This is accomplished by first perturbing the target data sam-ple during the training at a given time step t via a convex combination with noise: 
+
+x = tx 1 + (1 − t)x0, (1) where t ∼ U [0 ,1] is sampled uniformly from the unit interval. The perturbed input x is then passed to a time-conditioned neural network uθt (x). The model is trained to predict the velocity vector (x1 − x0), using the conditional flow matching loss: 
+
+LCFM (θ) = || uθt (x) − (x1 − x0)|| 2. (2) Once uθt (x) has been trained, a new sample from pdata 
+
+can be generated by first sampling x0 from the standard multivariate normal distribution and then following the ve-locity field predicted by the model using Euler discretiza-tion. In the case of linear probability paths, the initial distri-bution is not restricted to being Gaussian; a flow matching model can be trained between two arbitrary distributions. This motivates us to train a flow matching model between distributions of current and succeeding frames with the goal of generating a video continuation given an input chunk. 
+
+3.2. Flow Matching with Optimal Couplings 
+
+Multiple strategies exist for choosing a coupling – i.e. sam-pling a pair of x0 and x1 – during the training (e.g. in-dependent sampling [36, 59] or the use of optimal cou-plings (OC) [33, 51]). Formally, given the joint distribution 
+
+Π( pinit , p data ), the optimal coupling is given by the mini-mizer of the following optimization problem: 
+
+min 
+
+> π∈Π( pinit , p data )
+
+
+
+Eπ(x0,x 1)
+
+h
+
+∥x0 − x1∥2i 
+
+(3) This formulation corresponds to minimizing the squared 2-Wasserstein distance. Employing optimal couplings for sampling pairs of noise and data during training facilitates the learning of straighter flows for uθt (x), thereby reduc-ing the number of sampling steps required at inference time to achieve high-quality results in comparison to sampling independently during the training. However, computing op-timal couplings in high-dimensional spaces such as images 3Algorithm 1 Flowing From Current To Succeeding Frames  
+
+> 1:
+
+Require: pretrained uθ* 
+
+> t
+
+, Π( pc fc , p s fc ), ρ 
+
+> 2:
+
+uθt ← uθ∗ 
+
+> t
+> 3:
+
+for x0, x 1 ∼ Π with (x0, x 1) inherent optimal cou-plings do  
+
+> 4:
+
+μ1, σ 1 = VAE (x1), x1 ← μ1 
+
+> 5:
+
+μ0, σ 0 = VAE (x0) 
+
+> 6:
+
+// Compute inverted latent  
+
+> 7:
+
+ˆx1 = RF-Solver-Inversion( uθ∗ 
+
+> t
+
+, x 1) [65]  
+
+> 8:
+
+// Apply Target Inversion  
+
+> 9:
+
+if p < ρ then x0 ← μ0 + σ0 ˆx1 else x0 ← μ0 
+
+> 10:
+
+t ∼ U [0 , 1]  
+
+> 11:
+
+x ← (1 − t)x0 + tx 1 
+
+> 12:
+
+LCFM (θ) = uθt (x) − (x1 − x0) 2 
+
+> 13:
+
+Update θ using GD on LCFM (θ) 
+
+> 14:
+
+end for 
+
+or videos remains computationally intractable in practice. To address this, the authors of [51, 59] propose approximat-ing optimal couplings within a batch at training, demon-strating that such an approach leads to straighter trajecto-ries and a reduced number of inference steps in contrast to non-optimal couplings. 
+
+## 4. Method 
+
+4.1. Flowing from Current to Succeeding Frames 
+
+Given input frames, the goal of video continuation is to gen-erate the next video chunk that is semantically coherent with the given ones. We propose to flow directly from the input to the succeeding frames using flow matching. Our moti-vation is twofold. (1) By flowing directly from current to succeeding frames, FlowC2S avoids the conventional ap-proach – such as LTXVCondition [16] and CausVid [75] – of providing both given frames and additional noise at in-ference, thereby halving the input dimensionality. (2) We hypothesize that learning a vector field between current and succeeding frames may facilitate faster convergence and en-able more efficient inference-time sampling compared with mapping from noise to future frames. Formally, given x0
+
+from the distribution of the current frame chunks pc fc and 
+
+x1 from the distribution of succeeding frame chunks ps fc 
+
+our goal is to learn a parametric vector field uθt (x) to pre-dict the velocity between the input and succeeding chunks. In practice, flow matching is performed in a pre-trained 3D VAE’s [31] latent space. Algorithm 1 presents our training algorithm. 
+
+4.2. Inherent Optimal Couplings 
+
+As discussed in Section 3.2, learning a vector field with optimal couplings leads to improved convergence and straighter sample trajectories. However, in high-dimensional settings such as videos, computing exact op-timal couplings under a cost function is computationally in-tractable. Thus, we propose a practical and structure-aware approximation: treating temporally adjacent video chunks of the same video as inherently optimal or near-optimal cou-plings. Specifically, we partition a given video into consec-utive segments: the first segment serves as the input chunk 
+
+x0, and the second as the succeeding chunk x1. This pairing leverages the natural temporal continuity and semantic co-herence within a single video, which makes it significantly more consistent than random pairings of chunks across dif-ferent videos. Crucially, such intra-video couplings incur no additional computational overhead, yet act as a strong proxy for true optimal transport couplings. Empirically, we observe that using these temporally ordered pairs at train-ing results in decreased loss values (Fig. 4 (left)) and re-duces the number of neural function evaluations required for high-quality inference in comparison to independent pairs (Fig. 6a). This observation is consistent with prior findings that straighter flows can be achieved when optimal or approximate-optimal couplings are used [51, 59]. To empirically validate our hypothesis that consecutive chunks from the same video approximate optimal cou-plings, we compute pairwise Optimal Transport (OT) plans between a batch of video chunks. Specifically, we randomly sample ten videos from our training set, OpenVid [44], and divide each into chunks of 41 frames. We then solve the Monge–Kantorovich OT problem [27] subject to uniform marginals: 
+
+min 
+
+> π∈Rn×n
+> n
+
+X
+
+> i=1
+> n
+
+X
+
+> j=1
+
+Mij πij , (4) such that Pnj=1 πij = 1 
+
+> n
+
+, ∀i, Pni=1 πij = 1 
+
+> n
+
+, ∀j,where πij indicates the probability of matching source i
+
+with target j, n refers to the number of video chunks and 
+
+Mij denotes the pairwise squared Euclidean cost between the i-th and j-th video chunks. Fig. 3 presents heatmaps of the resulting OT plans under two different masking strategies: in Fig. 3a, self-matching is disallowed (i.e., a video chunk can not match with itself), whereas in Fig. 3b, each chunk is permitted to match only with succeeding chunks across videos. Red dashed lines in Fig. 3 demar-cate the boundaries between individual videos. The spuri-ous matches observed for the final chunk of each video in Fig. 3b are natural artifacts arising from the absence of valid succeeding chunks. The overall coupling patterns exhibit a strong preference for temporally adjacent segments within the same video; even in the absence of explicit temporal constraints, suggesting that such chunk pairs can serve as structure-aware, computation-free approximations of opti-mal couplings. 40 4 8 12 16 20 24 28 32 36 40 44 48 52 56 60 64 68 72 76                     
+
+> Target Chunks ( x1)
+> 0
+> 3
+> 6
+> 9
+> 12
+> 15
+> 18
+> 21
+> 24
+> 27
+> 30
+> 33
+> 36
+> 39
+> 42
+> 45
+> 48
+> 51
+> 54
+> 57
+> 60
+> 63
+> 66
+> 69
+> 72
+> 75
+> Input Chunks ( x0)
+> 0.000
+> 0.002
+> 0.004
+> 0.006
+> 0.008
+> 0.010
+> 0.012 (a) Disallowing a video chunk from matching with itself. 04812 16 20 24 28 32 36 40 44 48 52 56 60 64 68 72 76
+> Target Chunks ( x1)
+> 0
+> 3
+> 6
+> 9
+> 12
+> 15
+> 18
+> 21
+> 24
+> 27
+> 30
+> 33
+> 36
+> 39
+> 42
+> 45
+> 48
+> 51
+> 54
+> 57
+> 60
+> 63
+> 66
+> 69
+> 72
+> 75
+> Input Chunks ( x0)
+> 0.000
+> 0.002
+> 0.004
+> 0.006
+> 0.008
+> 0.010
+> 0.012 (b) Matching only with succeeding chunks across videos.
+
+Figure 3. Optimal Transport (OT) plan heatmaps between video chunks. We compute pairwise OT plans between a batch of video chunks, solving the Monge–Kantorovich OT problem with uniform marginals. Red dashed lines mark individual video boundaries. The structure of the transport plans reveals strong alignment between temporally adjacent chunks from the same video, even without explicit temporal constraints in (b). 
+
+4.3. Target Inversion 
+
+Replacing the multivariate normal distribution with the em-pirical distribution of the current frames when fine-tuning a pre-trained T2V model also changes the generative ob-jective faced by the pre-trained vector field, since the target vector field becomes the difference between succeeding and current chunks. To bridge this mismatch, we introduce Tar-get Inversion (TI): given a chunk of succeeding frames x1,we recover an inverted latent ˆx1 using RF-Solver inversion [65] and the pre-trained model such that the Euler solver reconstructs x1 from ˆx1. Then, during training, with prob-ability ρ, we leverage ˆx1 when sampling a latent represen-tation for the input frames. We hypothesize that this biases the model toward learning the residual shift-and-scale trans-formation applied to the inverted target latent. TI yields notable gains in user preference (Tab. 2). TI analysis by motion speed and camera movement is in the appendix. 
+
+## 5. Experiments 
+
+5.1. Experimental Setup 
+
+We evaluate FlowC2S on two backbones [16, 63] and two datasets [5, 44], comparing against world (Vista [15], GEM [17]) and autoregressive T2V methods (LTXVCondi-tion [16], CausVid [75]). 
+
+Datasets. We train our models on a randomly selected subset of 400K videos from OpenVid [44], a dataset of high-quality and diverse video clips. To mitigate abrupt scene transitions in videos, we apply a histogram-based scene change detector to segment videos into coherent clips. Additionally, in preparing the training dataset, we sam-ple only non-overlapping, consecutive video segments from each video to prevent any chunk from appearing in both the source and target distributions at training. For evaluation, we use a randomly sampled set of 2000 videos from Open-Vid and another random sample of 2000 videos from the NuScenes [5] validation set used by Vista [15]. 
+
+Evaluation Metrics. We analyze the number of total neural function evaluations (NFEs) and GPU memory over-head as measures of efficiency. The total NFE reflects the number of network passes through the diffusion (or flow) backbone. The quality of the generated videos is evaluated using the Fr´ echet Inception Distance (FID) [20], the Fr´ echet Video Distance (FVD) [60] against the ground truth chunk, as well as LPIPS s [77] at the input-output transition bound-ary to measure seam smoothness. For a fair comparison, the generated and ground-truth chunks are ensured to contain the same number of frames in all experiments. For evalua-tion, we generate video continuations given an input video chunk. Owing to input-frame constraints in Vista and the NuScenes validation set, we use 17 input frames and gen-erate the subsequent 17 frames. For ablation studies on the method and NFE, we set the number of current and succeed-ing frames to 41 and use a spatial resolution of 256 × 384 .In addition, we report a subset of VBench metrics [24] in the appendix, where we also provide more details on the evaluation protocol. 
+
+Implementation Details. We fine-tune our models ini-tialized from LTXV (2B) and Wan (1.3B) on H100 GPUs with a total batch size of 14,336 for 1406 steps, using 5Method Visual Quality Efficiency OpenVid NuScenes Total NFE ↓ k (MB / 10 6) ↓ b (MB) FID ↓ FVD ↓ LPIPS s ↓ FID ↓ FVD ↓ LPIPS s ↓
+
+Backbone: SVD (1.5B) 
+
+Vista [15] 0.38 184.33 0.37 3.50 368.08 0.49 50 20244.37 18 430.21 GEM [17] 1.47 413.60 0.55 1.89 251.13 0.61 117 6934.35 4194.67 
+
+Backbone: LTXV (2B) 
+
+LTXVCond. [16] 0.46 134.13 0.30 1.75 228.72 0.44 40 7103.22 −660.92 Ours 0.48 129.20 0.23 1.13 185.48 0.41 5 3552.32 −308.35 
+
+0.44 124.97 0.22 1.08 172.86 0.40 10 
+
+Backbone: Wan (1.3B) 
+
+CausVid [75] 0.30 379.16 0.32 1.28 812.46 0.43 5 93.35 4003.58 Ours 0.10 105.51 0.14 0.45 158.97 0.32 5 48.64 3998.74 
+
+0.06 98.46 0.13 0.33 125.63 0.31 10                
+
+> Table 1. Quantitative comparison on OpenVid and NuScenes (val.). Lower is better ( ↓). Best and second-best scores are bolded and underlined, respectively, within each backbone group. Total NFE: the number of forward evaluations. LTXVCond.: LTXVCondition. GPU memory scaling is approximated by Mem( V)≈k·(V / 10 6) + b(OLS); smaller kis better.
+
+AdamW [40] with a learning rate of 2 × 10 −4. We use 17 and 41 frame video chunks at training, spatially resized to 256 × 384 when using LTXV as a backbone, and to 
+
+240 × 416 when using Wan as a backbone. All training hyperparameters are in the appendix. 
+
+5.2. Comparison with State-of-the-Art 
+
+Efficiency and Quantitative Results. Table 1 provides a quantitative comparison between the state-of-the-art and FlowC2S (fine-tuned from LTXV and Wan) on the OpenVid and NuScenes validation sets and the total number of neural function evaluations (NFE) per method. For CausVid, NFE depends on the size of the KV cache, which we set equal to the number of input frames (i.e. 17). Our LTXV-based model achieves superior FID and FVD scores compared to LTXVCondition, while requiring four times fewer NFEs. Likewise, our Wan-based model outperforms CausVid at similar NFEs and has half the input model dimensionality. Moreover, our Wan-based model attains these quantitative results using a straightforward flow matching loss, without additional distillation as required by CausVid. Table 1 also presents an analysis of GPU memory over-head during generation in comparison to the state-of-the-art. We define the effective volume V as the product of the la-tent input tensor dimensions, c × f × h × w where c is the number of channels, f the number of frames, and h and w
+
+the spatial resolution. For each method, we evaluate the av-erage end-to-end GPU overhead (including VAE encoding and decoding) over 100 runs at multiple effective volumes. As different methods employ different VAE compression ratios, we ensure that the effective volumes are matched across models for a fair comparison, see the appendix for details. To characterize scaling behavior, we assume a lin-ear relationship of the form Mem (V ) ≈ k · (V / 10 6) + b
+
+where k denotes the slope (memory increase per million effective volume units) and b the intercept (constant over-head). k and b are estimated using ordinary least squares (OLS) regression. We compare our LTXV-based model to LTXVCondition and our Wan-based model to CausVid. In both cases, FlowC2S achieves almost a twofold reduction in 
+
+k, aligning with our goal of reducing input dimensionality. 
+
+Qualitative Results. Fig. 1 presents visualizations of video continuations on OpenVid (val.), generated by our LTXV-based model with total NFE of 10 at a resolution of 256 × 384 with 41 current and succeeding frames. The generated videos exhibit detailed motion, maintain tempo-ral coherence without explicit conditioning on the input frames, and yield logically plausible continuations of the given input video. Observe the gradual camera zoom-out in the sand-and-rock scene, which our method successfully generates. Similarly, notice how the boat moves from right to left, a motion that continues in the generated frames by our method. Additional visual results are in the appendix. 
+
+5.3. Ablation Studies 
+
+Effect of Fine-tuning, Inherent OC and TI. Fig. 4 ablates the principal design choices of FlowC2S: fine-tuning from a pre-trained T2V flow model (LTXV) rather than training from scratch; using inherent optimal couplings (OC) as a proxy for the true optimal couplings at training; and em-60 250 500 750 1000 1250 1500                
+
+> Training Steps
+> 0
+> 2
+> 4
+> 6
+> Training Loss
+> 0250 500 750 1000 1250 1500
+> Training Steps
+> 1
+> 2
+> 3
+> 4
+> Validation FID
+> 0250 500 750 1000 1250 1500
+> Training Steps
+> 200
+> 400
+> 600
+> 800
+> 1000
+> Validation FVD
+> w/ inherent OC, w/ TI (from scratch) w/o inherent OC, w/o TI w/ inherent OC, w/o TI w/ inherent OC, w/ TI
+
+Figure 4. Training loss (left), validation FID (middle), and FVD (right) across four experimental set-ups. Training from scratch with inherent Optimal Couplings (OC) and Target Inversion (TI) is ineffective in terms of training loss. Fine-tuning without inherent OC+TI yields worse FID and FVD than all other settings. Fine-tuning with inherent OC+TI attains the lowest loss and best validation FID and FVD across configurations; relative to inherent OC-only fine-tuning, quantitative scores are comparable, but inherent OC+TI yields better visual quality. Input Frames   
+
+> w/ Inherent OC, w/ TI (From Scratch)
+> w/o Inherent OC, w/o TI
+> w/ Inherent OC, w/o TI
+> w/ Inherent OC, w/ TI
+> Observed Frames
+> GT Future Frames
+> w/ Inherent OC, w/ TI (From Scratch)
+> w/o Inherent OC, w/o TI
+> w/ Inherent OC, w/o TI
+> w/ Inherent OC, w/ TI
+
+Figure 5. Visual comparison across four settings; frames shown with a stride of 13. Training from scratch w/ OC+TI shows visual artifacts, indicating poor convergence. Fine-tuning w/o OC+TI yields temporal incoherence and color shifts. Fine-tuning w/ OC+TI produces sharper, more consistent details than OC-only fine-tuning (see red rectangles). Overall, the w/ OC+TI setting achieves the best visual quality; more in appendix. 
+
+ploying target inversion (TI). We compare training losses and validation metrics (FID, FVD) across four configu-rations: (1) training from scratch with inherent OC+TI, (2) fine-tuning without inherent OC and without TI, (3) fine-tuning with inherent OC but without TI, and (4) fine-tuning with inherent OC+TI (Algorithm 1). In training from scratch, we initialize the DiT of LTXV with random weights. The implementation details of (2) and (3) are pro-vided in the appendix. Three main observations emerge. First, training from scratch with inherent OC+TI yields higher losses than fine-tuning from LTXV with inherent OC+TI, underscoring the importance of leveraging a pre-trained model’s prior knowledge about video generation for video continuation. Although at step 38 the model trained from scratch with inherent OC+TI reports lower FID and FVD scores than the other configurations, this effect is mis-leading. At such an early stage of training, the model has not yet learned meaningful dynamics and instead tends to generate results with minimal variation from the given in-put, which artificially improves FID and FVD when com-pared against the ground-truth segment. However, visually, the outputs in Fig. 5 reveal clear degradation, including in-terpolation artifacts. Second, omitting inherent OC and TI at fine-tuning increases losses and degrades FID and FVD relative to fine-tuning with inherent OC+TI. Although fine-tuning without OC+TI shows losses similar to training from scratch with inherent OC+TI, qualitative inspection reveals generated frames that are inconsistent with the condition-ing frames (Fig. 5); moreover, continuing fine-tuning with inherent OC+TI beyond step 38 further improves valida-70 10 20 30 40                         
+
+> Number of Function Evaluations (NFE)
+> 1
+> 2
+> 3
+> 4
+> FID
+> 010 20 30 40
+> Number of Function Evaluations (NFE)
+> 100
+> 200
+> 300
+> 400
+> FVD
+> 20 40 60 80 100
+> Number of Future Frames
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> 1.2
+> FID Scores
+> 100
+> 120
+> 140
+> 160
+> FVD Scores
+> w/ Inherent OC, w/ TI (From Scratch)
+> w/o Inherent OC, w/o TI
+> w/ Inherent OC, w/o TI
+> w/ Inherent OC, w/ TI Ours - LTXV (FID) Ours - LTXV (FVD) 010 20 30 40
+> Number of Function Evaluations (NFE)
+> 1
+> 2
+> 3
+> 4
+> FID
+> 010 20 30 40
+> Number of Function Evaluations (NFE)
+> 100
+> 200
+> 300
+> 400
+> FVD
+> 20 40 60 80 100
+> Number of Future Frames
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> 1.2
+> FID Scores
+> 100
+> 120
+> 140
+> 160
+> FVD Scores
+> w/ Inherent OC, w/ TI (From Scratch)
+> w/o Inherent OC, w/o TI
+> w/ Inherent OC, w/o TI
+> w/ Inherent OC, w/ TI Ours - LTXV (FID) Ours - LTXV (FVD)
+
+(a) Ablation on the number of function evaluations (NFE). 0 10 20 30 40            
+
+> Number of Function Evaluations (NFE)
+> 1
+> 2
+> 3
+> 4
+> FID
+> 010 20 30 40
+> Number of Function Evaluations (NFE)
+> 100
+> 200
+> 300
+> 400
+> FVD
+> 20 40 60 80 100
+> Number of Future Frames
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> 1.2
+> FID Scores
+> 100
+> 120
+> 140
+> 160
+> FVD Scores
+> w/ Inherent OC, w/ TI (From Scratch)
+> w/o Inherent OC, w/o TI
+> w/ Inherent OC, w/o TI
+> w/ Inherent OC, w/ TI Ours - LTXV (FID) Ours - LTXV (FVD)
+
+(b) Ablation on number of frames. 
+
+Figure 6. Ablations on NFE and number of frames: (a) With inherent OC+TI, 5–10 NFEs equate or surpass 40 NFEs on FID/FVD and outperform fine-tuning without inherent OC/TI, indicating FlowC2S preserves high visual and temporal quality with fewer NFEs; (b) FlowC2S keeps FID/FVD stable as number of generated frames in video continuation grows, generalizing beyond its 17/41-frame training. 
+
+Metric w/ TI Similar w/o TI Overall Preference 47.5 36.2 16.2 Temporal Coherence 47.5 34.4 18.1 Visual Quality 49.4 35.0 15.6 
+
+Table 2. Human preference study comparing results with and with-out Target Inversion (TI). Percentages indicate the fraction of pair-wise comparisons in which each method was preferred. 
+
+tion FID. Finally, fine-tuning with inherent OC+TI and with inherent OC-only attains comparable losses and FID and FVD, yet inherent OC+TI yields visibly higher perceptual quality in the generated videos (Fig. 5). 
+
+Ablation on NFE. Fig. 6a reports a quantitative abla-tion over NFEs for FlowC2S fine-tuned from LTXV across the four experimental settings indicated above (see the ap-pendix for visual results). Using 5–10 NFEs matches or outperforms the 40-NFE setting on both FID and FVD when fine-tuning with inherent OC and TI, demonstrating that high perceptual quality and temporal coherence can be achieved with notably fewer sampling steps. Excluding in-herent OC and TI results in substantially worse FID and FVD at NFE = 40 than fine-tuning with inherent OC and TI at NFE = 10 . This supports our design choice that leverag-ing inherent optimal couplings at training enables efficient inference without sacrificing fidelity. 
+
+Ablation on Long Video Continuation. Fig. 6b presents a quantitative analysis of performance as a func-tion of # generated frames with visuals in Fig. 1 and the appendix. FlowC2S, fine-tuned from LTXV, maintains con-sistent FID and FVD as # generated frames grows – despite being trained only on 17- and 41-frame video chunks – in-dicating stable per-frame fidelity, temporal coherence, and effective generalization to the generation of long video con-tinuations across the evaluated ranges. 
+
+User Study on TI. To validate the perceptual quality improvement with TI, we conducted a user study with 15 participants comparing outputs with inherent OC, without TI and with inherent OC, with TI across 20 videos. Par-ticipants were shown the input video along with two re-sults—one with and one without TI—in randomized order. The video order was also randomized among participants. Users evaluated visual quality, temporal coherence, and overall preference. For each question, participants could choose either of the generated videos or indicate a similar quality. As shown in Tab. 2, users exhibited a three times stronger preference for outputs with TI. 
+
+## 6. Limitations 
+
+Our training dataset is curated to exclude scene transitions, limiting the model’s ability to generate complex motions and abrupt scene changes. In addition, all training exper-iments use fixed-length chunks (17 and 41 frames). The method empirically generalizes to longer videos but does not yet model variable-length inputs. Future work includes training with heterogeneous chunk lengths and adding con-trollability via explicit conditioning (e.g., rendering maps, camera trajectories) [18, 25, 43, 71, 76, 78, 80] for user-directed dynamics. Further limitations and directions are in the appendix. 
+
+## 7. Conclusion 
+
+This paper introduced FlowC2S, a video continuation approach that directly flows from input to succeeding frames. Our method fine-tunes text-to-video priors (e.g., LTXV/Wan) from the distribution of current to succeed-ing frames, adopting inherent optimal couplings via adja-cent chunks, and integrating target inversion into the train-ing. Empirically, FlowC2S achieves state-of-the-art FID and FVD scores with as few as five neural function eval-uations, while delivering a 2× reduction in model input di-mensionality relative to the state-of-the-art. 8Acknowledgments 
+
+This work was granted access to the HPC resources of IDRIS under the allocations 2023-AD011014851, 2025-A0191016617, 2025-AD011016617R1 and 2025-AD011016643 made by GENCI, and supported by French government funding managed by the National Research Agency (ANR) under the Investments for the Future pro-gram (PIA) with the grant ANR-22-EXEN-0002 (eNSEM-BLE project). The authors would like to thank Vicky Kalo-geiton for her helpful insights and fruitful discussions. 
+
+## References 
+
+[1] Michael S. Albergo and Eric Vanden-Eijnden. Building nor-malizing flows with stochastic interpolants, 2023. 2, 3, 19 [2] Michael S. Albergo, Nicholas M. Boffi, and Eric Vanden-Eijnden. Stochastic interpolants: A unifying framework for flows and diffusions, 2025. 14 [3] Fan Bao, Shen Nie, Kaiwen Xue, Yue Cao, Chongxuan Li, Hang Su, and Jun Zhu. All are worth words: A vit backbone for diffusion models, 2023. 2 [4] Andreas Blattmann, Tim Dockhorn, Sumith Kulal, Daniel Mendelevitch, Maciej Kilian, Dominik Lorenz, Yam Levi, Zion English, Vikram Voleti, Adam Letts, Varun Jampani, and Robin Rombach. Stable video diffusion: Scaling latent video diffusion models to large datasets, 2023. 2, 13 [5] Holger Caesar, Varun Bankiti, Alex H. Lang, Sourabh Vora, Venice Erin Liong, Qiang Xu, Anush Krishnan, Yu Pan, Gi-ancarlo Baldan, and Oscar Beijbom. nuscenes: A multi-modal dataset for autonomous driving, 2020. 2, 5, 13 [6] Boyuan Chen, Diego Marti Monso, Yilun Du, Max Sim-chowitz, Russ Tedrake, and Vincent Sitzmann. Diffusion forcing: Next-token prediction meets full-sequence diffu-sion, 2024. 3 [7] Guibin Chen, Dixuan Lin, Jiangping Yang, Chunze Lin, Junchen Zhu, Mingyuan Fan, Hao Zhang, Sheng Chen, Zheng Chen, Chengcheng Ma, Weiming Xiong, Wei Wang, Nuo Pang, Kang Kang, Zhiheng Xu, Yuzhe Jin, Yupeng Liang, Yubing Song, Peng Zhao, Boyuan Xu, Di Qiu, De-bang Li, Zhengcong Fei, Yang Li, and Yahui Zhou. Skyreels-v2: Infinite-length film generative model, 2025. 2 [8] Haoxin Chen, Menghan Xia, Yingqing He, Yong Zhang, Xiaodong Cun, Shaoshu Yang, Jinbo Xing, Yaofang Liu, Qifeng Chen, Xintao Wang, Chao Weng, and Ying Shan. Videocrafter1: Open diffusion models for high-quality video generation, 2023. 2 [9] Haoxin Chen, Yong Zhang, Xiaodong Cun, Menghan Xia, Xintao Wang, Chao Weng, and Ying Shan. Videocrafter2: Overcoming data limitations for high-quality video diffusion models, 2024. 2 [10] Shoufa Chen, Chongjian Ge, Yuqi Zhang, Yida Zhang, Fengda Zhu, Hao Yang, Hongxiang Hao, Hui Wu, Zhichao Lai, Yifei Hu, Ting-Che Lin, Shilong Zhang, Fu Li, Chuan Li, Xing Wang, Yanghua Peng, Peize Sun, Ping Luo, Yi Jiang, Zehuan Yuan, Bingyue Peng, and Xiaobing Liu. Goku: Flow based video generative foundation models, 2025. 2, 18 [11] Xiaoliang Dai, Ji Hou, Chih-Yao Ma, Sam Tsai, Jialiang Wang, Rui Wang, Peizhao Zhang, Simon Vandenhende, Xi-aofang Wang, Abhimanyu Dubey, Matthew Yu, Abhishek Kadian, Filip Radenovic, Dhruv Mahajan, Kunpeng Li, Yue Zhao, Vladan Petrovic, Mitesh Kumar Singh, Simran Mot-wani, Yi Wen, Yiwen Song, Roshan Sumbaly, Vignesh Ra-manathan, Zijian He, Peter Vajda, and Devi Parikh. Emu: Enhancing image generation models using photogenic nee-dles in a haystack, 2023. 2, 18 [12] Prafulla Dhariwal and Alexander Nichol. Diffusion models beat gans on image synthesis. In Advances in Neural Infor-mation Processing Systems , pages 8780–8794. Curran Asso-ciates, Inc., 2021. 2, 19 [13] Patrick Esser, Robin Rombach, and Bj¨ orn Ommer. Taming transformers for high-resolution image synthesis, 2021. 2 [14] Patrick Esser, Sumith Kulal, Andreas Blattmann, Rahim Entezari, Jonas M¨ uller, Harry Saini, Yam Levi, Dominik Lorenz, Axel Sauer, Frederic Boesel, Dustin Podell, Tim Dockhorn, Zion English, Kyle Lacey, Alex Goodwin, Yan-nik Marek, and Robin Rombach. Scaling rectified flow trans-formers for high-resolution image synthesis, 2024. 2, 14, 18 [15] Shenyuan Gao, Jiazhi Yang, Li Chen, Kashyap Chitta, Yi-hang Qiu, Andreas Geiger, Jun Zhang, and Hongyang Li. Vista: A generalizable driving world model with high fidelity and versatile controllability. In Advances in Neural Informa-tion Processing Systems (NeurIPS) , 2024. 2, 3, 5, 6, 13 [16] Yoav HaCohen, Nisan Chiprut, Benny Brazowski, Daniel Shalem, Dudu Moshe, Eitan Richardson, Eran Levin, Guy Shiran, Nir Zabari, Ori Gordon, Poriya Panet, Sapir Weiss-buch, Victor Kulikov, Yaki Bitterman, Zeev Melumian, and Ofir Bibi. Ltx-video: Realtime video latent diffusion, 2024. 2, 3, 4, 5, 6, 13, 18 [17] Mariam Hassan, Sebastian Stapf, Ahmad Rahimi, Pedro M B Rezende, Yasaman Haghighi, David Br¨ uggemann, Isinsu Katircioglu, Lin Zhang, Xiaoran Chen, Suman Saha, Marco Cannici, Elie Aljalbout, Botao Ye, Xi Wang, Aram Davtyan, Mathieu Salzmann, Davide Scaramuzza, Marc Pollefeys, Paolo Favaro, and Alexandre Alahi. Gem: A generaliz-able ego-vision multimodal world model for fine-grained ego-motion, object dynamics, and scene composition con-trol, 2024. 2, 3, 5, 6, 13 [18] Hao He, Yinghao Xu, Yuwei Guo, Gordon Wetzstein, Bo Dai, Hongsheng Li, and Ceyuan Yang. Cameractrl: Enabling camera control for text-to-video generation, 2025. 8, 19 [19] Roberto Henschel, Levon Khachatryan, Hayk Poghosyan, Daniil Hayrapetyan, Vahram Tadevosyan, Zhangyang Wang, Shant Navasardyan, and Humphrey Shi. Streamingt2v: Con-sistent, dynamic, and extendable long video generation from text, 2025. 2 [20] Martin Heusel, Hubert Ramsauer, Thomas Unterthiner, Bernhard Nessler, and Sepp Hochreiter. Gans trained by a two time-scale update rule converge to a local nash equilib-rium, 2018. 5 [21] Jonathan Ho and Tim Salimans. Classifier-free diffusion guidance, 2022. 13 [22] Jonathan Ho, Ajay Jain, and Pieter Abbeel. Denoising dif-fusion probabilistic models. In Advances in Neural Infor-
+
+9mation Processing Systems , pages 6840–6851. Curran Asso-ciates, Inc., 2020. 2, 19 [23] Chen Hou and Zhibo Chen. Training-free camera control for video generation, 2025. 19 [24] Ziqi Huang, Yinan He, Jiashuo Yu, Fan Zhang, Chenyang Si, Yuming Jiang, Yuanhan Zhang, Tianxing Wu, Qingyang Jin, Nattapol Chanpaisit, Yaohui Wang, Xinyuan Chen, Limin Wang, Dahua Lin, Yu Qiao, and Ziwei Liu. VBench: Com-prehensive benchmark suite for video generative models. In 
+
+Proceedings of the IEEE/CVF Conference on Computer Vi-sion and Pattern Recognition , 2024. 5, 13 [25] Zeyinzi Jiang, Zhen Han, Chaojie Mao, Jingfeng Zhang, Yulin Pan, and Yu Liu. Vace: All-in-one video creation and editing, 2025. 8, 19 [26] Yang Jin, Zhicheng Sun, Ningyuan Li, Kun Xu, Kun Xu, Hao Jiang, Nan Zhuang, Quzhe Huang, Yang Song, Yadong Mu, and Zhouchen Lin. Pyramidal flow matching for effi-cient video generative modeling, 2025. 2 [27] L. V. Kantorovich. On a problem of monge. Uspekhi Matem-aticheskikh Nauk , 3(2):225–226, 1948. In Russian. 4 [28] Tero Karras, Miika Aittala, Jaakko Lehtinen, Janne Hellsten, Timo Aila, and Samuli Laine. Analyzing and improving the training dynamics of diffusion models, 2024. 2 [29] Levon Khachatryan, Andranik Movsisyan, Vahram Tade-vosyan, Roberto Henschel, Zhangyang Wang, Shant Navasardyan, and Humphrey Shi. Text2video-zero: Text-to-image diffusion models are zero-shot video generators, 2023. 2[30] Jihwan Kim, Junoh Kang, Jinyoung Choi, and Bohyung Han. Fifo-diffusion: Generating infinite videos from text without training, 2024. 3 [31] Diederik P Kingma and Max Welling. Auto-encoding varia-tional bayes, 2022. 2, 4, 13 [32] Weijie Kong, Qi Tian, Zijian Zhang, Rox Min, Zuozhuo Dai, Jin Zhou, Jiangfeng Xiong, Xin Li, Bo Wu, Jianwei Zhang, Kathrina Wu, Qin Lin, Junkun Yuan, Yanxin Long, Aladdin Wang, Andong Wang, Changlin Li, Duojun Huang, Fang Yang, Hao Tan, Hongmei Wang, Jacob Song, Jiawang Bai, Jianbing Wu, Jinbao Xue, Joey Wang, Kai Wang, Mengyang Liu, Pengyu Li, Shuai Li, Weiyan Wang, Wenqing Yu, Xinchi Deng, Yang Li, Yi Chen, Yutao Cui, Yuanbo Peng, Zhentao Yu, Zhiyu He, Zhiyong Xu, Zixiang Zhou, Zun-nan Xu, Yangyu Tao, Qinglin Lu, Songtao Liu, Dax Zhou, Hongfa Wang, Yong Yang, Di Wang, Yuhong Liu, Jie Jiang, and Caesar Zhong. Hunyuanvideo: A systematic framework for large video generative models, 2025. 2, 18 [33] Nikita Kornilov, Petr Mokrov, Alexander Gasnikov, and Alexander Korotin. Optimal flow matching: Learning straight trajectories in just one step, 2024. 3 [34] Guojun Lei, Chi Wang, Rong Zhang, Yikai Wang, Hong Li, and Weiwei Xu. Animateanything: Consistent and con-trollable animation for video generation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 27946–27956, 2025. 19 [35] Jingyun Liang, Yuchen Fan, Kai Zhang, Radu Timofte, Luc Van Gool, and Rakesh Ranjan. Movideo: Motion-aware video generation with diffusion models, 2024. 19 [36] Yaron Lipman, Ricky T. Q. Chen, Heli Ben-Hamu, Maxi-milian Nickel, and Matt Le. Flow matching for generative modeling, 2023. 2, 3, 19 [37] Chen Liu and Tobias Ritschel. Generative video bi-flow. In 
+
+Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , pages 19363–19372, 2025. 13, 14, 16 [38] Xingchao Liu, Chengyue Gong, and Qiang Liu. Flow straight and fast: Learning to generate and transfer data with rectified flow, 2022. 2, 3, 19 [39] Yaofang Liu, Yumeng Ren, Xiaodong Cun, Aitor Artola, Yang Liu, Tieyong Zeng, Raymond H. Chan, and Jean michel Morel. Redefining temporal modeling in video diffu-sion: The vectorized timestep approach, 2024. 3 [40] Ilya Loshchilov and Frank Hutter. Decoupled weight decay regularization, 2019. 6, 13 [41] Guoqing Ma, Haoyang Huang, Kun Yan, Liangyu Chen, Nan Duan, Shengming Yin, Changyi Wan, Ranchen Ming, Xiao-niu Song, Xing Chen, Yu Zhou, Deshan Sun, Deyu Zhou, Jian Zhou, Kaijun Tan, Kang An, Mei Chen, Wei Ji, Qil-ing Wu, Wen Sun, Xin Han, Yanan Wei, Zheng Ge, Aojie Li, Bin Wang, Bizhu Huang, Bo Wang, Brian Li, Changxing Miao, Chen Xu, Chenfei Wu, Chenguang Yu, Dapeng Shi, Dingyuan Hu, Enle Liu, Gang Yu, Ge Yang, Guanzhe Huang, Gulin Yan, Haiyang Feng, Hao Nie, Haonan Jia, Hanpeng Hu, Hanqi Chen, Haolong Yan, Heng Wang, Hongcheng Guo, Huilin Xiong, Huixin Xiong, Jiahao Gong, Jianchang Wu, Jiaoren Wu, Jie Wu, Jie Yang, Jiashuai Liu, Jiashuo Li, Jingyang Zhang, Junjing Guo, Junzhe Lin, Kaixiang Li, Lei Liu, Lei Xia, Liang Zhao, Liguo Tan, Liwen Huang, Liy-ing Shi, Ming Li, Mingliang Li, Muhua Cheng, Na Wang, Qiaohui Chen, Qinglin He, Qiuyan Liang, Quan Sun, Ran Sun, Rui Wang, Shaoliang Pang, Shiliang Yang, Sitong Liu, Siqi Liu, Shuli Gao, Tiancheng Cao, Tianyu Wang, Weipeng Ming, Wenqing He, Xu Zhao, Xuelin Zhang, Xianfang Zeng, Xiaojia Liu, Xuan Yang, Yaqi Dai, Yanbo Yu, Yang Li, Yi-neng Deng, Yingming Wang, Yilei Wang, Yuanwei Lu, Yu Chen, Yu Luo, Yuchu Luo, Yuhe Yin, Yuheng Feng, Yuxi-ang Yang, Zecheng Tang, Zekai Zhang, Zidong Yang, Binx-ing Jiao, Jiansheng Chen, Jing Li, Shuchang Zhou, Xiangyu Zhang, Xinhao Zhang, Yibo Zhu, Heung-Yeung Shum, and Daxin Jiang. Step-video-t2v technical report: The practice, challenges, and future of video foundation model, 2025. 2 [42] Xin Ma, Yaohui Wang, Xinyuan Chen, Gengyun Jia, Ziwei Liu, Yuan-Fang Li, Cunjian Chen, and Yu Qiao. Latte: La-tent diffusion transformer for video generation, 2025. 2 [43] Yue Ma, Kunyu Feng, Zhongyuan Hu, Xinyu Wang, Yucheng Wang, Mingzhe Zheng, Xuanhua He, Chenyang Zhu, Hongyu Liu, Yingqing He, Zeyu Wang, Zhifeng Li, Xiu Li, Wei Liu, Dan Xu, Linfeng Zhang, and Qifeng Chen. Controllable video generation: A survey, 2025. 8, 19 [44] Kepan Nan, Rui Xie, Penghao Zhou, Tiehan Fan, Zhen-heng Yang, Zhijie Chen, Xiang Li, Jian Yang, and Ying Tai. Openvid-1m: A large-scale high-quality dataset for text-to-video generation. arXiv preprint arXiv:2407.02371 , 2024. 2, 4, 5, 13, 15 [45] Maxime Oquab, Timoth´ ee Darcet, Theo Moutakanni, Huy V. Vo, Marc Szafraniec, Vasil Khalidov, Pierre Fernandez, 
+
+10 Daniel Haziza, Francisco Massa, Alaaeldin El-Nouby, Rus-sell Howes, Po-Yao Huang, Hu Xu, Vasu Sharma, Shang-Wen Li, Wojciech Galuba, Mike Rabbat, Mido Assran, Nico-las Ballas, Gabriel Synnaeve, Ishan Misra, Herve Jegou, Julien Mairal, Patrick Labatut, Armand Joulin, and Piotr Bo-janowski. Dinov2: Learning robust visual features without supervision, 2023. 3 [46] William Peebles and Saining Xie. Scalable diffusion models with transformers, 2023. 2 [47] Stefano Peluchetti. Non-denoising forward-time diffusions, 2023. 14 [48] Xiangyu Peng, Zangwei Zheng, Chenhui Shen, Tom Young, Xinying Guo, Binluo Wang, Hang Xu, Hongxin Liu, Mingyan Jiang, Wenjun Li, Yuhui Wang, Anbang Ye, Gang Ren, Qianran Ma, Wanying Liang, Xiang Lian, Xiwen Wu, Yuting Zhong, Zhuangyan Li, Chaoyu Gong, Guojun Lei, Leijun Cheng, Limin Zhang, Minghao Li, Ruijie Zhang, Silan Hu, Shijie Huang, Xiaokang Wang, Yuanheng Zhao, Yuqi Wang, Ziang Wei, and Yang You. Open-sora 2.0: Train-ing a commercial-level video generation model in $200k, 2025. 2, 18 [49] Dustin Podell, Zion English, Kyle Lacey, Andreas Blattmann, Tim Dockhorn, Jonas M¨ uller, Joe Penna, and Robin Rombach. Sdxl: Improving latent diffusion models for high-resolution image synthesis, 2023. 2, 18 [50] Adam Polyak, Amit Zohar, Andrew Brown, Andros Tjandra, Animesh Sinha, Ann Lee, Apoorv Vyas, Bowen Shi, Chih-Yao Ma, Ching-Yao Chuang, David Yan, Dhruv Choudhary, Dingkang Wang, Geet Sethi, Guan Pang, Haoyu Ma, Ishan Misra, Ji Hou, Jialiang Wang, Kiran Jagadeesh, Kunpeng Li, Luxin Zhang, Mannat Singh, Mary Williamson, Matt Le, Matthew Yu, Mitesh Kumar Singh, Peizhao Zhang, Pe-ter Vajda, Quentin Duval, Rohit Girdhar, Roshan Sumbaly, Sai Saketh Rambhatla, Sam Tsai, Samaneh Azadi, Samyak Datta, Sanyuan Chen, Sean Bell, Sharadh Ramaswamy, Shelly Sheynin, Siddharth Bhattacharya, Simran Motwani, Tao Xu, Tianhe Li, Tingbo Hou, Wei-Ning Hsu, Xi Yin, Xi-aoliang Dai, Yaniv Taigman, Yaqiao Luo, Yen-Cheng Liu, Yi-Chiao Wu, Yue Zhao, Yuval Kirstain, Zecheng He, Zijian He, Albert Pumarola, Ali Thabet, Artsiom Sanakoyeu, Arun Mallya, Baishan Guo, Boris Araya, Breena Kerr, Carleigh Wood, Ce Liu, Cen Peng, Dimitry Vengertsev, Edgar Schon-feld, Elliot Blanchard, Felix Juefei-Xu, Fraylie Nord, Jeff Liang, John Hoffman, Jonas Kohler, Kaolin Fire, Karthik Sivakumar, Lawrence Chen, Licheng Yu, Luya Gao, Markos Georgopoulos, Rashel Moritz, Sara K. Sampson, Shikai Li, Simone Parmeggiani, Steve Fine, Tara Fowler, Vladan Petro-vic, and Yuming Du. Movie gen: A cast of media foundation models, 2025. 2 [51] Aram-Alexandre Pooladian, Heli Ben-Hamu, Carles Domingo-Enrich, Brandon Amos, Yaron Lipman, and Ricky T. Q. Chen. Multisample flow matching: Straightening flows with minibatch couplings, 2023. 3, 4 [52] Robin Rombach, Andreas Blattmann, Dominik Lorenz, Patrick Esser, and Bj¨ orn Ommer. High-resolution image synthesis with latent diffusion models. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 10684–10695, 2022. 2 [53] David Ruhe, Jonathan Heek, Tim Salimans, and Emiel Hoogeboom. Rolling diffusion models, 2024. 3 [54] Team Seawead, Ceyuan Yang, Zhijie Lin, Yang Zhao, Shanchuan Lin, Zhibei Ma, Haoyuan Guo, Hao Chen, Lu Qi, Sen Wang, Feng Cheng, Feilong Zuo, Xuejiao Zeng, Ziyan Yang, Fangyuan Kong, Meng Wei, Zhiwu Qing, Fei Xiao, Tuyen Hoang, Siyu Zhang, Peihao Zhu, Qi Zhao, Jiangqiao Yan, Liangke Gui, Sheng Bi, Jiashi Li, Yuxi Ren, Rui Wang, Huixia Li, Xuefeng Xiao, Shu Liu, Feng Ling, Heng Zhang, Houmin Wei, Huafeng Kuang, Jerry Duncan, Junda Zhang, Junru Zheng, Li Sun, Manlin Zhang, Renfei Sun, Xiaobin Zhuang, Xiaojie Li, Xin Xia, Xuyan Chi, Yanghua Peng, Yuping Wang, Yuxuan Wang, Zhongkai Zhao, Zhuo Chen, Zuquan Song, Zhenheng Yang, Jiashi Feng, Jianchao Yang, and Lu Jiang. Seaweed-7b: Cost-effective training of video generation foundation model, 2025. 2, 18 [55] Yuyang Shi, Valentin De Bortoli, Andrew Campbell, and Ar-naud Doucet. Diffusion schr¨ odinger bridge matching, 2023. 14 [56] Jascha Sohl-Dickstein, Eric Weiss, Niru Maheswaranathan, and Surya Ganguli. Deep unsupervised learning using nonequilibrium thermodynamics. In Proceedings of the 32nd International Conference on Machine Learning , pages 2256–2265, Lille, France, 2015. PMLR. 2, 19 [57] Jiaming Song, Chenlin Meng, and Stefano Ermon. Denois-ing diffusion implicit models. In International Conference on Learning Representations , 2021. [58] Yang Song, Jascha Sohl-Dickstein, Diederik P. Kingma, Ab-hishek Kumar, Stefano Ermon, and Ben Poole. Score-based generative modeling through stochastic differential equa-tions, 2021. 2, 19 [59] Alexander Tong, Kilian Fatras, Nikolay Malkin, Guillaume Huguet, Yanlei Zhang, Jarrid Rector-Brooks, Guy Wolf, and Yoshua Bengio. Improving and generalizing flow-based gen-erative models with minibatch optimal transport, 2024. 3, 4 [60] Thomas Unterthiner, Sjoerd van Steenkiste, Karol Kurach, Raphael Marinier, Marcin Michalski, and Sylvain Gelly. To-wards accurate generative models of video: A new metric & challenges, 2019. 5 [61] Aaron van den Oord, Oriol Vinyals, and Koray Kavukcuoglu. Neural discrete representation learning, 2018. 2 [62] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszko-reit, Llion Jones, Aidan N. Gomez, Lukasz Kaiser, and Illia Polosukhin. Attention is all you need, 2023. 2 [63] Team Wan, Ang Wang, Baole Ai, Bin Wen, Chaojie Mao, Chen-Wei Xie, Di Chen, Feiwu Yu, Haiming Zhao, Jianx-iao Yang, Jianyuan Zeng, Jiayu Wang, Jingfeng Zhang, Jin-gren Zhou, Jinkai Wang, Jixuan Chen, Kai Zhu, Kang Zhao, Keyu Yan, Lianghua Huang, Mengyang Feng, Ningyi Zhang, Pandeng Li, Pingyu Wu, Ruihang Chu, Ruili Feng, Shiwei Zhang, Siyang Sun, Tao Fang, Tianxing Wang, Tianyi Gui, Tingyu Weng, Tong Shen, Wei Lin, Wei Wang, Wei Wang, Wenmeng Zhou, Wente Wang, Wenting Shen, Wenyuan Yu, Xianzhong Shi, Xiaoming Huang, Xin Xu, Yan Kou, Yangyu Lv, Yifei Li, Yijing Liu, Yiming Wang, Yingya Zhang, Yi-tong Huang, Yong Li, You Wu, Yu Liu, Yulin Pan, Yun 
+
+11 Zheng, Yuntao Hong, Yupeng Shi, Yutong Feng, Zeyinzi Jiang, Zhen Han, Zhi-Fan Wu, and Ziyu Liu. Wan: Open and advanced large-scale video generative models, 2025. 2, 5, 13, 18 [64] Jiuniu Wang, Hangjie Yuan, Dayou Chen, Yingya Zhang, Xiang Wang, and Shiwei Zhang. Modelscope text-to-video technical report, 2023. 2 [65] Jiangshan Wang, Junfu Pu, Zhongang Qi, Jiayi Guo, Yue Ma, Nisha Huang, Yuxin Chen, Xiu Li, and Ying Shan. Taming rectified flow for inversion and editing, 2025. 4, 5 [66] Yaohui Wang, Xinyuan Chen, Xin Ma, Shangchen Zhou, Ziqi Huang, Yi Wang, Ceyuan Yang, Yinan He, Jiashuo Yu, Peiqing Yang, Yuwei Guo, Tianxing Wu, Chenyang Si, Yum-ing Jiang, Cunjian Chen, Chen Change Loy, Bo Dai, Dahua Lin, Yu Qiao, and Ziwei Liu. Lavie: High-quality video gen-eration with cascaded latent diffusion models, 2023. 2 [67] Jay Zhangjie Wu, Yixiao Ge, Xintao Wang, Weixian Lei, Yuchao Gu, Yufei Shi, Wynne Hsu, Ying Shan, Xiaohu Qie, and Mike Zheng Shou. Tune-a-video: One-shot tuning of image diffusion models for text-to-video generation, 2023. 2 [68] Shitao Xiao, Yueze Wang, Junjie Zhou, Huaying Yuan, Xin-grun Xing, Ruiran Yan, Chaofan Li, Shuting Wang, Tiejun Huang, and Zheng Liu. Omnigen: Unified image genera-tion, 2024. 19 [69] Desai Xie, Zhan Xu, Yicong Hong, Hao Tan, Difan Liu, Feng Liu, Arie Kaufman, and Yang Zhou. Progressive autoregres-sive video diffusion models, 2025. 3 [70] Enze Xie, Junsong Chen, Junyu Chen, Han Cai, Haotian Tang, Yujun Lin, Zhekai Zhang, Muyang Li, Ligeng Zhu, Yao Lu, and Song Han. Sana: Efficient high-resolution im-age synthesis with linear diffusion transformers, 2024. 2, 18 [71] Dejia Xu, Weili Nie, Chao Liu, Sifei Liu, Jan Kautz, Zhangyang Wang, and Arash Vahdat. Camco: Camera-controllable 3d-consistent image-to-video generation, 2024. 8, 19 [72] Zhuoyi Yang, Jiayan Teng, Wendi Zheng, Ming Ding, Shiyu Huang, Jiazheng Xu, Yuanming Yang, Wenyi Hong, Xiao-han Zhang, Guanyu Feng, Da Yin, Yuxuan Zhang, Weihan Wang, Yean Cheng, Bin Xu, Xiaotao Gu, Yuxiao Dong, and Jie Tang. Cogvideox: Text-to-video diffusion models with an expert transformer, 2025. 2, 18 [73] Tianwei Yin, Micha¨ el Gharbi, Taesung Park, Richard Zhang, Eli Shechtman, Fredo Durand, and William T. Freeman. Im-proved distribution matching distillation for fast image syn-thesis, 2024. 3 [74] Tianwei Yin, Micha¨ el Gharbi, Richard Zhang, Eli Shecht-man, Fredo Durand, William T. Freeman, and Taesung Park. One-step diffusion with distribution matching distillation, 2024. 3 [75] Tianwei Yin, Qiang Zhang, Richard Zhang, William T Free-man, Fredo Durand, Eli Shechtman, and Xun Huang. From slow bidirectional to fast autoregressive video diffusion mod-els. 2025. 2, 3, 4, 5, 6, 13, 16 [76] Lvmin Zhang, Anyi Rao, and Maneesh Agrawala. Adding conditional control to text-to-image diffusion models, 2023. 8, 19 [77] Richard Zhang, Phillip Isola, Alexei A Efros, Eli Shechtman, and Oliver Wang. The unreasonable effectiveness of deep features as a perceptual metric. In CVPR , 2018. 5 [78] Yabo Zhang, Yuxiang Wei, Dongsheng Jiang, Xiaopeng Zhang, Wangmeng Zuo, and Qi Tian. Controlvideo: Training-free controllable text-to-video generation, 2023. 8, 19 [79] Wenliang Zhao, Lujia Bai, Yongming Rao, Jie Zhou, and Jiwen Lu. Unipc: A unified predictor-corrector framework for fast sampling of diffusion models, 2023. 14 [80] Sixiao Zheng, Zimian Peng, Yanpeng Zhou, Yi Zhu, Hang Xu, Xiangru Huang, and Yanwei Fu. Vidcraft3: Camera, object, and lighting control for image-to-video generation, 2025. 8, 19 [81] Zangwei Zheng, Xiangyu Peng, Tianji Yang, Chenhui Shen, Shenggui Li, Hongxin Liu, Yukun Zhou, Tianyi Li, and Yang You. Open-sora: Democratizing efficient video production for all, 2024. 2, 18 [82] Linqi Zhou, Aaron Lou, Samar Khanna, and Stefano Ermon. Denoising diffusion bridge models, 2023. 14 [83] Yuan Zhou, Qiuyue Wang, Yuxuan Cai, and Huan Yang. Al-legro: Open the black box of commercial-level video gener-ation model, 2024. 18 [84] Yujie Zhou, Jiazi Bu, Pengyang Ling, Pan Zhang, Tong Wu, Qidong Huang, Jinsong Li, Xiaoyi Dong, Yuhang Zang, Yuhang Cao, Anyi Rao, Jiaqi Wang, and Li Niu. Light-a-video: Training-free video relighting via progressive light fusion, 2025. 19 
+
+12 FlowC2S: Flowing from Current to Succeeding Frames for Fast and Memory-Efficient Video Continuation 
+
+# Supplementary Material 
+
+This supplementary material presents additional imple-mentation details of FlowC2S with further details on the ab-lation studies, offers extended visual results, and concludes with a discussion of its limitations. In Appendix A1, we describe the implementation of the method, evaluation setup, the protocol used for the NuScenes dataset [5], and details of the analysis on the ef-fective GPU memory volume. Appendix A2 reports additional quantitative results; in particular, evaluation using VBench [24] metrics on Open-Vid [44] and NuScenes [5], comparison with Bi-Flow [37], and the effect of video chunk size during training. Appendix A3 provides the algorithms used in the abla-tion studies, complementing the main algorithm described in the paper. In Appendix A4, we report additional visual results for both our method and the ablation variants. Finally, Appendix A5 discusses the limitations of the proposed method and outlines potential directions for future work. 
+
+## A1. Implementation and Evaluation Details 
+
+A1.1. Training Details 
+
+The proposed FlowC2S method is fine-tuned from two text-to-video backbones: LTXV [16] and Wan [63]. All abla-tion studies are run exclusively on LTXV as LTXV’s VAE [31] provides a higher overall compression ratio than Wan, yielding faster training and lower compute/memory cost un-der the same hardware budget (i.e., for the Wan backbone, we double the number of devices relative to LTXV to ensure a matched batch size.). Unless stated otherwise, we use the AdamW optimizer [40] with a learning rate of 0.0002. The complete set of hyperparameters used for fine-tuning from both LTXV and Wan is listed in Table 3. 
+
+A1.2. Evaluation Setup 
+
+We evaluate the proposed FlowC2S approach for generating video continuations against world [15, 17] and autoregres-sive [16, 75] text-to-video methods in a video continuation setting with a fixed number of frames: each model receives 17 conditioning (or input) frames and generates the next 17 frames. The 17/17 choice is driven by the maximum se-quence length that fits in memory for Vista [15] (i.e., 34 total frames per sample) on a single NVIDIA H100 GPU with 80 GB of memory. To ensure a fair comparison, we adopt the same 17-frame input and 17-frame output for all methods, including ours. Table 4 reports all evaluation hy-perparameters across methods (e.g., input/generation reso-lution, classifier-free guidance scale [21], and other runtime settings). 
+
+A1.2.1. NuScenes Protocol 
+
+For the NuScenes dataset [5], we use the validation split from Vista (150 scenes; 750 videos per camera position). We aggregate three camera views – FRONT, BACK, and FRONT-LEFT – and randomly sample 2,000 videos for evaluation to match the sample count of our OpenVid [44] validation set. The exact validation indices for OpenVid and NuScenes are provided with this supplementary material. 
+
+A1.3. Details on Effective Volume for GPU Memory Analysis 
+
+We compare GPU memory usage across world and autore-gressive text-to-video models that rely on different back-bones and therefore different VAE compression ratios. To ensure a fair comparison across all methods, we match (or closely approximate) the effective volume per run and per method. Vista and GEM [17] use the SVD [4] backbone; LTXVCondition uses LTXV [16]; CausVid [75] uses Wan [63]; our method is fine-tuned and evaluated with LTXV and Wan backbones. We characterize the VAE latent space by c × f × h × w
+
+(the number of channels, the number of frames, height, and width): SVD 4 × 1 × 8 × 8, LTXV 128 × 8 × 32 × 32 , Wan 
+
+16 × 4 × 8 × 8. Table 5 lists representative configurations used in the main-text GPU memory study across five effec-tive volumes, including effective volumes for SVD, LTXV, and Wan, and the latent number of conditioning (or input) frames for each run. For consistency, SVD-based meth-ods are run at 576 × 1024 resolution, and LTXV/Wan-based methods at 480 × 832 .
+
+## A2. Extended Experimental Results 
+
+A2.1. Additional Quantitative Comparisons 
+
+A2.1.1. Evaluation Results Using VBench Metrics 
+
+This section reports additional quantitative results on Open-Vid [44] and NuScenes [5] using the following metrics from VBench [24]: subject consistency, background consistency, 13 Configuration LTXV-based Wan-based 
+
+Batch Size / GPU 64 32 Accumulate Step 8 8Optimizer AdamW AdamW 
+
+β1 0.9 0.9 
+
+β2 0.99 0.99 Learning Rate 0.0002 0.0002 Learning Rate Schedule Linear Cosine Training Steps 1450 1450 Resolution 256 ×384 240 ×416 Number of Frames 17, 41 17, 41 Shifting True True Weighting Scheme Logit Normal Uniform Num Layers 28 30 
+
+p 0.7 0.7 Pre-trained Model LTX-Video-2b-v0.9.5 Wan2.1-T2V-1.3B Sampler FlowMatchEulerDiscreteScheduler [14] UniPCMultistepScheduler [79] Sample Steps 40 50 Classifier-Free Guidance Scale 3.5 5Device NVIDIA H100 80 GB ×28 NVIDIA H100 80 GB ×56 Training Strategy AMP / DDP / BFloat16 AMP / DDP / BFloat16 
+
+> Table 3. Fine-tuning hyper-parameters used in our experiments.
+
+Method H W In Out (img/lat) Out-L Blk (frames) Total NFE CFG Rnd Vista 576 1024 17 17 17 N.A. 50 2.5 1GEM 576 576 17 17 17 N.A. 117 1.5 1CausVid 480 832 17 17 5 5 5 1 N.A. LTXVCondition 256 256 17 17 3 N.A. 40 3.5 N.A. Ours (LTXV) 256 384 17 17 3 N.A. 5/6/10 3.5 N.A. Ours (Wan) 240 416 17 17 5 N.A. 5/6/10 5 N.A. 
+
+> Table 4. Evaluation hyper-parameters across all methods being compared. H: Height, W: Width, In: the number of conditioning or input frames, Out: the number of output frames, Out-L: the number of output frames in the latent space, Blk: frames per block, NFE: number of function evaluations, CFG: classifier-free guidance scale, Rnd: number of sampling rounds, N.A.: not applicable.
+
+and motion smoothness (Table 6). Table 6 also reports ef-ficiency metrics, measuring total NFE and GPU memory scaling; full details are provided in the main paper and in Appendix A1.3. On OpenVid, FlowC2S (Wan) surpasses CausVid in subject consistency, background consistency, and motion smoothness, while requiring only half the input dimension-ality. On NuScenes, the same trend holds for background consistency and motion smoothness, with a negligible drop in subject consistency. 
+
+A2.1.2. Comparison with Bi-Flow 
+
+Bi-flow [37] augments flow matching with noise perturba-tions at training, similar to bridge models [2, 47, 55, 82] and learns a joint objective to predict both the velocity and noise. Bi-flow generates a video autoregressively from a single-frame, one frame at a time. Yet modeling an entire video segment by a single frame discards the inter-frame structure that models rely on to produce coherent motion, leading to temporal artifacts that compound over extended sequences. Table 7 reports a quantitative comparison between Bi-Flow and FlowC2S on the OpenVid and NuScenes valida-14 # VSVD VLTXV/Wan FSVD FLTXV FWan 
+
+1 294,912 299,520 5 41 92 368,640 399,360 8 57 13 3 479,232 499,200 10 73 17 4 589,824 599,040 13 89 21 5 884,736 898,560 16 137 33     
+
+> Table 5. Representative data used in the GPU–memory analysis across five effective volumes. VSVD : the effective volume for meth-ods based on the SVD backbone, VLTXV/Wan : the effective volume for methods that use LTXV or Wan as a backbone, FSVD : the la-tent number of conditioning frames used in methods based on the SVD backbone, FLTXV : the latent number of conditioning (or in-put) frames used in methods based on the LTXV backbone and
+> FWan : the latent number of conditioning (or input) frames used in methods that use the Wan backbone.
+
+tion sets, with both methods trained from the LTXV back-bone. Since Bi-Flow operates in a frame-by-frame autore-gressive manner, generating a 17-frame continuation re-quires 85 total NFEs (5 NFEs per frame), whereas FlowC2S produces the entire chunk in a single pass with only 5 NFEs. Despite this substantial reduction in NFEs, FlowC2S out-performs single-frame Bi-flow across all metrics. 
+
+A2.1.3. Effect of Chunk Size 
+
+We validate the importance of multi-frame video chunks in FlowC2S by ablating the chunk size L used during train-ing, including the single-frame case ( L = 1 ). All models use the LTXV backbone, are trained on OpenVid for 1406 steps, and evaluated with 17 input and 17 generated frames at inference for a controlled comparison. Results are summarized in Tab. 8. Increasing L consis-tently improves across all metrics, demonstrating that multi-frame temporal context is essential for high-quality and ef-ficient video continuation – a single frame is insufficient to capture the inter-frame video structure. 
+
+A2.2. Per-Category Analysis of TI 
+
+To analyze the influence of TI on generated video quality, this section reports FID and FVD across NFEs on the cate-gorized OpenVid [44] validation set. First, we detail the cat-egorization procedure; then we present the full per-category results. We categorize our OpenVid validation set along two axes: motion intensity and camera motion type, yielding a 12 categories. 
+
+Motion intensity is determined by the motion score pro-vided in the OpenVid metadata, which quantifies the mag-nitude of scene and object motion. We partition videos into the following three equally-sized groups: slow, medium, and fast (the 33rd and 67th percentiles of the motion score distribution serve as boundaries). 
+
+Camera motion type is also taken from the meta-data of OpenVid. We define four groups based on keyword matching: (i) static—no camera movement; (ii) pan/tilt—horizontal or vertical camera rotation; (iii) zoom—focal length changes; and (iv) complex—two or more simultaneous camera motion types (e.g., pan with zoom). Figures 7 and 8 isolate the contribution of TI by com-paring w/ inherent OC, w/o TI (blue) against w/ inherent OC, w/ TI (red) across all twelve categories. We make the following observations. First, the benefit of TI is strongly conditioned on camera motion type, and FID and FVD re-spond to TI differently. Second, FID values remain consistent across most cate-gories, with the exception of Slow + Zoom, which yields a higher FID than the remaining categories; in this case, w/ inherent OC, w/ TI achieves lower FID than w/ inherent OC, w/o TI. FVD values remain consistent across static camera categories, but are higher under zoom. The follow-ing paragraphs discuss each category in detail. 
+
+Static categories. Across all three motion speeds, w/ TI and w/o TI are nearly indistinguishable in both FID and FVD. This indicates that TI provides no measurable benefit when inter-chunk displacement is negligible. Under static camera conditions, the temporal coupling alone provides a sufficiently well-conditioned source distribution, and the vector field near the timestep zero requires no additional calibration. 
+
+Pan/Tilt categories .TI helps most in this category, on both metrics. In FID, red lies below blue across all speeds, with the gap most pronounced in Slow + Pan/Tilt. In FVD, the same ordering holds: red is below blue and remains stable across NFE, while blue shows a mild upward drift at higher NFE. Pan/Tilt motion produces globally trans-lated but otherwise predictable target latents — the regime where we hypothesize that structured camera motion pro-duces more predictable target latents, making the inverted initialization more informative than in other categories. 
+
+Zoom categories. In FID, red is generally below blue — the benefit of TI is present but moderate, and in Slow + Zoom the two curves actually cross, with blue out-performing red at intermediate NFE before red recovers at higher NFE. In FVD, w/o TI degrades with increasing NFE in Medium + Zoom and Fast + Zoom, while w/ TI remains comparatively stable or improves slightly. 
+
+Complex categories. In FID, w/ TI is at or below blue across all speeds, with the gap widening for medium and 15 Method Visual Quality Efficiency OpenVid NuScenes Total NFE ↓ k (MB / 10 6) ↓ b (MB) Subj. Cons. ↑
+
+Bg. Cons. ↑
+
+Mot. Smooth. ↑
+
+Subj. Cons. ↑
+
+Bg. Cons. ↑
+
+Mot. Smooth. ↑
+
+CausVid [75] 97.30 96.31 99.09 94.25 94.16 97.85 5 93.35 4003.58 Ours 98.37 98.43 99.29 92.89 95.77 98.25 5 48.64 3998.74   
+
+> Table 6. Quantitative comparison on OpenVid and NuScenes (val) using VBench Metrics. Subj.: Subject, Bg.: Background, Cons.: Consistency, Mot.: Motion, Smooth.: Smoothness.
+
+Method OpenVid NuScenes FID ↓ FVD ↓ LPIPS s ↓ FID ↓ FVD ↓ LPIPS s ↓
+
+Bi-flow [37] 3.34 674.12 0.34 3.99 873.96 0.53 Ours 0.48 129.20 0.23 1.13 185.48 0.41 
+
+> Table 7. Quantitative comparison with Bi-flow on OpenVid and NuScenes (val) using the LTXV backbone. FlowC2S is reported at 5 NFE. Lower is better ( ↓); best scores in bold.
+
+L FID ↓ FVD ↓ LPIPS s ↓
+
+1 6.81 1390.84 0.39 17 0.52 146.94 0.31 41 0.50 126.54 0.24      
+
+> Table 8. Impact of chunk size Lat training on OpenVid. All models use the LTXV backbone with 5 NFEs. Lower is better (↓); best scores in bold.
+
+fast speeds. In FVD, w/ TI and w/o TI trade positions across NFE in several panels, most visibly in Fast + Com-plex, where neither curve dominates cleanly. The complex category represents a mix of multiple cam-era motion types. We hypothesize that the predictabil-ity assumption underlying TI, that structured motion con-strains the source distribution, is weakest here, since com-plex motion produces less predictable inter-segment transi-tions. The partial FVD benefit nevertheless suggests TI still improves quality on average, even if the temporal coherence benefit is less stable than under structured camera types. 
+
+## A3. Ablation Algorithms 
+
+In addition to the main training algorithm described in the paper, in this section, we include two auxiliary variants used in our ablation studies for the assessment of the pri-mary design decisions of FlowC2S. Specifically, we pro-vide pseudocode for: fine-tuning without Inherent Optimal Couplings (OC) and without Target Inversion (TI) (Algo-rithm 2); and fine-tuning with Inherent OC but without Tar-get Inversion (Algorithm 3). In Algorithm 2, current and succeeding frames are sam-pled independently from their respective distributions, with no target inversion applied. By contrast, Algorithm 3 in-corporates Inherent OC, ensuring coupling between current and succeeding frame chunks as described in the main text, while still omitting target inversion. 
+
+## A4. Additional Visual Results 
+
+This section presents additional qualitative results of gen-erated continuations from FlowC2S (Fig. 9), visual com-parisons from ablations on its principal design choices (Fig. 10), as well as studies varying the number of neural function evaluations (NFEs) (Fig. 11) and the number of frames in the generated videos (Fig. 12). The current video chunks are taken from the OpenVid validation set, and the continuations are generated with our model, fine-tuned from LTXV. We set the number of input and generated frames to 
+
+41 and resolution to 256 × 384 in the examples provided in Fig. 9, Fig. 10, and Fig. 11. Fig. 9 shows the input frames and the generated con-tinuations by our method. FlowC2S produces video con-tinuations that exhibit detailed and strong temporal coher-ence with the observed context; all achieved without ex-plicit conditioning mechanisms, but simply by taking the current frames directly as an input to the model. For instance, the motion of the boat traversing left to right with accompanying water dynamics is reproduced with coherent detail. In another case, the car advanc-ing from the background toward the foreground continues seamlessly in the generated continuation, maintaining con-sistency with both camera dynamics and temporal flow. Thus, FlowC2S preserves logical structure and temporal re-alism in generated videos. 16 0.0                                                
+
+> 0.3
+> 0.6
+> 0.9
+> 1.2
+> FID
+> Slow +Static Slow +Pan/Tilt Slow +Zoom Slow +Complex
+> 0.0
+> 0.3
+> 0.6
+> 0.9
+> 1.2
+> FID
+> Medium +Static Medium +Pan/Tilt Medium +Zoom Medium +Complex
+> 110 20 30 40
+> NFE
+> 0.0
+> 0.3
+> 0.6
+> 0.9
+> 1.2
+> FID
+> Fast +Static
+> 110 20 30 40
+> NFE
+> Fast +Pan/Tilt
+> 110 20 30 40
+> NFE
+> Fast +Zoom
+> 110 20 30 40
+> NFE
+> Fast +Complex
+> w/ inherent OC, w/o TI w/ inherent OC, w/ TI
+
+Figure 7. Per-category FID vs. NFE comparing w/ inherent OC, w/o TI (blue) and w/ inherent, OC w/ TI (red). The benefit of TI is strongest under Pan/Tilt camera motion and Fast+Zoom and negligible under static camera. 0                                               
+
+> 250
+> 500
+> 750
+> 1000
+> FVD
+> Slow +Static Slow +Pan/Tilt Slow +Zoom Slow +Complex
+> 0
+> 250
+> 500
+> 750
+> 1000
+> FVD
+> Medium +Static Medium +Pan/Tilt Medium +Zoom Medium +Complex
+> 110 20 30 40
+> NFE
+> 0
+> 250
+> 500
+> 750
+> 1000
+> FVD
+> Fast +Static
+> 110 20 30 40
+> NFE
+> Fast +Pan/Tilt
+> 110 20 30 40
+> NFE
+> Fast +Zoom
+> 110 20 30 40
+> NFE
+> Fast +Complex
+> w/ inherent OC, w/o TI w/ inherent OC, w/ TI
+
+Figure 8. Per-category FVD vs. NFE comparing w/ inherent OC, w/o TI (blue) and w/ inherent, OC w/ TI (red). FVD is substantially higher under zoom than other camera types. Under a static camera, the two variants are indistinguishable. 
+
+Fig. 10 presents the current frames as input and the re-sults produced by the model trained by the following four configuration variants: training from scratch with Inherent OC and TI, fine-tuning from LTXV without OC and TI, fine-tuning with OC but without TI, and fine-tuning with both OC and TI. Training from scratch with OC and TI leads to blurring and visual artifacts and close similarity with the provided input frames, reflecting poor convergence and the signifi-cance of using a pre-trained model as an initialization. Sim-17 Algorithm 2 Flowing From Current To Succeeding Frames (w/o Inherent OC, w/o Target Inversion)  
+
+> 1:
+
+Require: pretrained uθ∗ 
+
+> t
+> 2:
+
+uθt ← uθ∗ 
+
+> t
+> 3:
+
+for x0 ∼ pc fc , x 1 ∼ ps fc do  
+
+> 4:
+
+μ1, σ 1 = VAE (x1), x1 ← μ1 
+
+> 5:
+
+μ0, σ 0 = VAE (x0), x0 ← μ0 
+
+> 6:
+
+t ∼ U [0 , 1]  
+
+> 7:
+
+x ← (1 − t)x0 + tx 1 
+
+> 8:
+
+LCFM (θ) = uθt (x) − (x1 − x0) 2 
+
+> 9:
+
+Update θ using GD on LCFM (θ) 
+
+> 10:
+
+end for 
+
+ilarly, fine-tuning without OC and TI produces unstable re-sults, with noticeable artifacts and color discrepancies (e.g., in the boat and car examples). By contrast, incorporat-ing both OC and TI during fine-tuning yields markedly im-proved visual fidelity. For instance, in the sea-and-mountain example, the inherent OC-only setting generates blurred sand textures, while the joint inherent OC and TI setting re-stores sharper, more realistic details, as highlighted by red boxes in Fig. 10. Fig. 11 illustrates the input frames and the videos gen-erated by the proposed FlowC2S method with 1, 5, 6, 10, and 40 NFEs. As shown, a single NFE is inadequate for generating video continuations, yielding results with severe motion blur (e.g., in the white car sequence). In contrast, using 5–10 NFEs produces video continuations of compet-itive fidelity to that obtained with 40 NFEs, demonstrating that our method achieves good visual quality with reduced NFEs. Fig. 12 depicts the input frames and generated video re-sults of generating long video continuations. In this ex-ample, the number of current and generated frames by the model is set to 113. Although FlowC2S is trained only on 17- and 41-frame video chunks, it generalizes to substan-tially longer video continuations. For example, in the tractor sequence, its generated motion from backward to forward constitutes a plausible temporal continuation with respect to the provided input frames. 
+
+## A5. Limitations and Future Work 
+
+FlowC2S delivers a 2× reduction in input dimensionality and achieves state-of-the-art video continuation in quanti-tative metrics with substantially fewer NFEs, yet important limitations remain. Below, we elaborate on the constraints outlined in the main text and describe corresponding av-enues for future work. 
+
+Complex Scenes and Motions. While quantitative met-rics (FID and FVD) and the visual results presented in 
+
+Algorithm 3 Flowing From Current To Succeeding Frames (w/ Inherent OC, w/o Target Inversion)  
+
+> 1:
+
+Require: pretrained uθ∗ 
+
+> t
+
+, Π( pc fc , p s fc ) 
+
+> 2:
+
+uθt ← uθ∗ 
+
+> t
+> 3:
+
+for x0, x 1 ∼ Π with (x0, x 1) inherent optimal cou-plings do  
+
+> 4:
+
+μ1, σ 1 = VAE (x1), x1 ← μ1 
+
+> 5:
+
+μ0, σ 0 = VAE (x0), x0 ← μ0 
+
+> 6:
+
+t ∼ U [0 , 1]  
+
+> 7:
+
+x ← (1 − t)x0 + tx 1 
+
+> 8:
+
+LCFM (θ) = uθt (x) − (x1 − x0) 2 
+
+> 9:
+
+Update θ using GD on LCFM (θ) 
+
+> 10:
+
+end for 
+
+the main text indicate that our method generates plausi-ble video continuations for a diverse set of input frames (including natural, cinematic, and human-centric scenes), the model struggles to handle highly complex motions and abrupt scene transitions. This limitation primarily arises from our dataset construction pipeline: to mitigate abrupt scene changes, we employ a histogram-based scene change detector in order to segment videos into temporally coher-ent chunks, thereby simplifying the training distribution and enabling evaluation under restricted computational and data budgets. Therefore, future work will explore training the proposed method on less constrained datasets that retain complex scenes with abrupt transitions, with the goal of improving the model’s generalization and robustness to challenging motion and scene dynamics. 
+
+Heterogeneous Video Chunk Lengths. In the main text, we showed that FlowC2S maintains stable FID and FVD and strong visual quality for long video continua-tion with visuals in Fig. 12 with 113 current and generated frames; despite training solely on 17- and 41-frame chunks. Beyond this range, however, results become degraded with visible interpolation artifacts with the input frames. Fig. 13 illustrates representative failure cases at longer video con-tinuation (129 input and generated frames). Consistent with prior evidence in text-to-image [11, 14, 49, 70] and text-to-video [10, 16, 32, 48, 54, 63, 72, 81, 83] literature, exposure to diverse spatial and temporal scales during training improves inference-time robustness of dif-fusion and flow-based models. Thus, a natural next step is therefore to train the proposed FlowC2S approach with het-erogeneous video chunk lengths, broadening temporal cov-erage of the model and strengthening generalization for the generation of very long video continuations. 
+
+Controllability. While the proposed method introduces a new perspective on video continuations, flowing directly from current to succeeding frames, yielding both a twofold reduction in input dimensionality and fewer neural func-18 Generated Frames Input Frames Figure 9. Additional visual results on OpenVid (val). FlowC2S, fine-tuned from LTXV, generates video continuations that are both temporally coherent and visually plausible, maintaining consistency with the content of the input frames. Frames shown at stride 20. 
+
+tion evaluations compared to existing methods, the current framework does not leverage additional conditioning sig-nals such as text prompts, depth maps, motion or camera trajectories. After the arrival of diffusion [12, 22, 56–58] and flow [1, 36, 38] models, controllability has become a key in im-age and video generation [18, 23, 25, 34, 35, 43, 68, 71, 76, 78, 80, 84]. Extending FlowC2S to incorporate aux-19 Input Frames   
+
+> w/ Inherent OC, w/ TI (From Scratch)
+> w/o Inherent OC, w/o TI
+> w/ Inherent OC, w/o TI
+> w/ Inherent OC, w/ TI
+> Input Frames
+> w/ Inherent OC, w/ TI (From Scratch)
+> w/o Inherent OC, w/o TI
+> w/ Inherent OC, w/o TI
+> w/ Inherent OC, w/ TI
+
+Figure 10. Additional visual results on ablation across four training setups (frames shown with stride 13). Training from scratch with OC+TI introduces visual artifacts, manifested as noticeable interpolation effects between the given input frames and the generated outputs. Fine-tuning without OC+TI results in generated videos with temporal inconsistencies with the current frames and color shifts. Incorporating both OC and TI during fine-tuning yields sharper details than OC-only fine-tuning (see red boxes). 
+
+iliary signals is therefore a promising direction for future work, enabling richer, more adaptable, and user-guided gen-eration of video continuations; in particular, augmenting the current architecture with conditioning signals including scene geometry (e.g., depth or normal maps), object-level motion cues, and camera trajectories could provide fine-grained spatial and temporal control over the synthesized content and better align the generated video continuations with user intent and downstream application constraints. 20 Input Frames 
+
+> NFE=1
+> NFE=5
+> NFE=6
+> NFE=10
+> NFE=40
+> Input Frames
+> NFE=1
+> NFE=5
+> NFE=6
+> NFE=10
+> NFE=40
+
+Figure 11. Ablation on neural function evaluations (NFEs). Frames are shown with a stride of 13. 5–10 NFEs yield quality comparable to 40 NFEs, whereas a single NFE produces blurry, degraded outputs. Generated Frames Input Frames 
+
+Figure 12. Long video continuation. The number of input and future frames is 113, and the frames are visualized with a stride of 28. Despite being trained only on 17- and 41-frame sequences, FlowC2S successfully generates coherent long-video continuations. 
+
+21 Generated Frames Input Frames Figure 13. Failure cases for very long continuation. Shown are 129 input and generated frames (visualized with a stride of 28). Beyond 113-frame video chunks, FlowC2S degrades, exhibiting interpolation artifacts and reduced coherence with the given context. 
+
+22

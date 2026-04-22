@@ -1,0 +1,711 @@
+Title: Capability-Aware Heterogeneous Control Barrier Functions for Decentralized Multi-Robot Safe Navigation
+
+URL Source: https://arxiv.org/pdf/2604.13245v1
+
+Published Time: Thu, 16 Apr 2026 00:09:24 GMT
+
+Number of Pages: 8
+
+Markdown Content:
+# Capability-Aware Heterogeneous Control Barrier Functions for Decentralized Multi-Robot Safe Navigation 
+
+Joonkyung Kim 1, Yanze Zhang 2, Wenhao Luo 2, Yiwei Lyu 1,∗
+
+Abstract — Safe navigation for multi-robot systems requires enforcing safety without sacrificing task efficiency under decen-tralized decision-making. Existing decentralized methods often assume robot homogeneity, making shared safety requirements non-uniformly interpreted across heterogeneous agents with structurally different dynamics, which could lead to avoidance obligations not physically realizable for some robots and thus cause safety violations or deadlock. In this paper, we pro-pose Capability-Aware Heterogeneous Control Barrier Function (CA-HCBF), a decentralized framework for consistent safety enforcement and capability-aware coordination in heteroge-neous robot teams. We derive a canonical second-order control-affine representation that unifies holonomic and nonholonomic robots under acceleration-level control via canonical transfor-mation and backstepping, preserving forward invariance of the safe set while avoiding relative-degree mismatch across heterogeneous dynamics. We further introduce a support-function-based directional capability metric that quantifies each robot’s ability to follow its motion intent, deriving a pairwise responsibility allocation that distributes the safety burden proportionally to each robot’s motion capability. A feasibility-aware clipping mechanism further constrains the allocation to each agent’s physically achievable range, mitigating infeasible constraint assignments common in dense decentralized CBF settings. Simulations with up to 30 heterogeneous robots and a physical multi-robot demonstration show improved safety and task efficiency over baselines, validating real-world applicability across robots with distinct kinematic constraints. [Project Page] 
+
+I. I NTRODUCTION 
+
+With recent advances in robotics, multi-robot systems (MRS) have gained significant attention for collaborative tasks such as exploration and mapping [1], search-and-rescue [2], [3], autonomous delivery [4], and warehouse automation [5], [6]. However, as the number of robots in a shared workspace increases, ensuring safe navigation becomes significantly more complex: higher robot density amplifies collision risk, while overly conservative avoidance degrades team efficiency. A prominent class of methods for enforcing safety in MRS is optimization-based safety filtering, which modifies nominal control commands to satisfy formally specified safety constraints. Within this class, control barrier function (CBF) [7], [8] approaches have become widely used as they provide a principled mechanism to maintain forward invariance of a safe set by solving a quadratic programming (QP) at each control step [9]. CBF-based navigation can be implemented in centralized or decentralized forms. Central-ized formulations better coordinate team behavior but scale poorly. Decentralized formulations scale more naturally, but 
+
+> 1
+
+Department of Computer Science and Engineering, Texas A&M Uni-versity, 2Department of Computer Science, University of Illinois Chicago, 
+
+> ∗
+
+Corresponding author: yiweilyu@tamu.edu I need forward speed just to turn. I can go backward, but �ght maneuvers are s �ll di ffi cult. Could you give me a li �le more room?     
+
+> Car-like (CL)
+> I can only move forward and need speed just to turn. My ability to maneuver out of the way is quite limited. Could you go around me instead?
+> Forward-only Car (FO)
+> I have the greatest fl exibility in mo �on. I can take on more responsibility if needed.
+> Double Integrator (DI)
+> Ican freely combine speed and turning within limits. I will also take on some more responsibility.
+> Unicycle (UNI)
+> I trade speed for turning, but I can s �ll rotate in place to go around if needed.
+> Di ff eren �al Drive (DD)
+
+(a) 
+
+(b) 
+
+Fig. 1: (a) Five mobile robots with heterogeneous kinematic classes (DI, UNI, DD, CL, FO) navigate toward individual goals. Each robot’s statement reflects its directional motion capability, ranging from the unconstrained DI to the restricted CL and FO, motivating the capability-aware responsibility allocation in Section IV. (b) Feasible control sets Ui in the (v, ω ) space and their analytical definitions for the four nonholonomic kinematic classes (Section III-B). The DI is omitted as it is holonomic and not parameterized by (v, ω ).
+
+their performance depends critically on how safety respon-sibilities are distributed among peer agents [8], [10], [11]. Despite this progress, safe and efficient decentralized navigation for heterogeneous robot teams remains an open challenge. Most decentralized MRS navigation pipelines implicitly rely on a homogeneity assumption: robots share the same kinematic structure and can interpret and realize avoidance requirements in comparable ways [8], [12]. In realistic heterogeneous teams, robots can differ not only in parameters (e.g., speed limits or footprint) but also in structural dynamics (e.g., holonomic vs. nonholonomic motion, different actuation constraints, and different effec-tive control authority), as illustrated in Fig. 1(a). These differences complicate decentralized safety filtering in two ways: (i) a shared safety requirement may not translate into a consistent, implementable constraint across robots with different dynamics, and (ii) naively treating all robots as equally capable can yield inefficient coordination, where robots with limited maneuverability are assigned aggressive avoidance roles while more agile robots are underutilized. We argue that safe and efficient decentralized navigation for heterogeneous robot teams hinges on two requirements: 
+
+> arXiv:2604.13245v1 [cs.RO] 14 Apr 2026
+
+a safety mechanism that remains well-defined across struc-turally different dynamics, and a coordination mechanism that distributes avoidance effort according to each robot’s directional motion capability, alleviating the burden of in-feasible control assignments. In this paper, we propose 
+
+Capability-Aware Heterogeneous Control Barrier Function 
+
+(CA-HCBF ), a decentralized framework addressing both re-quirements. Our main contributions include: (1) a unified second-order CBF formulation for structurally heterogeneous robots, which unifies five holonomic and nonholonomic models (Double Integrator, Unicycle, Differential Drive, Car-like, and Forward-only car) via canonical transformation and backstepping, and enables consistent safety enforcement un-der acceleration-level control across heterogeneous dynam-ics, (2) a support-function-based directional capability metric for pairwise responsibility allocation with a feasibility-aware safeguard, distributing avoidance burden according to each robot’s motion capability while reducing infeasible constraint assignments in dense decentralized interactions, and (3) validation through large-scale simulations with up to 30 heterogeneous robots and a physical multi-robot experiment, demonstrating that CA-HCBF maintains safety at higher densities and yields more efficient trajectories than other baselines (fewer freezes and faster task completion), while remaining implementable on real platforms with distinct kinematic constraints. II. R ELATED WORK 
+
+Multi-agent collision avoidance has been studied through several classes of approaches reflecting different tradeoffs among safety guarantees, scalability, and cooperation. Veloc-ity obstacle (VO)-based methods [13]–[15] are computation-ally efficient but provide guarantees only in velocity space under finite-horizon assumptions. Artificial Potential Field (APF)-based methods [16], [17] offer lightweight reactive avoidance but lack formal continuous-time safety guaran-tees and may suffer from local minima. Model Predictive Control (MPC)-based approaches [18], [19] enforce safety over a receding horizon but scale poorly with the number of agents. CBFs [7] act as real-time safety filters that minimally modify a nominal controller to ensure forward invariance of a safe set, and admit both centralized and decentralized implementations [8]. Centralized formulations yield globally coordinated solutions but face quadratic growth in pairwise constraints, limiting scalability. Decentralized formulations allow each agent to solve an independent QP, improving scal-ability but often leading to less cooperative and conservative behavior as each agent optimizes only its own input. This tradeoff motivates responsibility allocation strate-gies, which distribute pairwise constraint enforcement be-tween agents [20], [21], extending the reciprocal avoidance idea [14] to asymmetric, capability-aware distributions. Ex-isting methods exploit parametric heterogeneity within a shared model class [22], [23]. Another fundamental chal-lenge arises under structural heterogeneity, where agents differ in kinematic class or relative degree, causing CBF constraints derived for one model to not uniformly constrain another [24], [25]. Some approaches handle this by modeling neighbors as worst-case dynamic obstacles [26], at the cost of non-cooperative and overly conservative behavior. Extending responsibility allocation to structurally heterogeneous teams therefore requires a unified safety formulation that consis-tently accommodates different dynamic models [27], [28]. Another persistent challenge in decentralized CBF frame-works is QP infeasibility: as multiple pairwise constraints become active simultaneously, their intersection may be-come empty, rendering the decoupled QP infeasible [29]. Decentralized agents optimize only over their own input space, making infeasibility more likely than in centralized formulations that search for solutions in the jointly higher-dimensional action space [8], [11]. Structural heterogeneity further sharpens this risk, as nonholonomic agents have lim-ited admissible control sets and higher order relative degree constraints narrow the feasible region [24], [25], [30]. Exist-ing strategies such as soft constraint relaxation [9], priority-based hierarchies [31], and margin inflation [32] address this by trading off formal guarantees or nominal performance. An alternative is to incorporate feasibility awareness directly into responsibility allocation, verifying that the assigned burden falls within each agent’s feasibility-compatible interval and providing a fallback strategy when combined capability is insufficient. III. P RELIMINARY 
+
+We briefly review the CBF framework for multi-robot collision avoidance and the canonical velocity-level kine-matic representation for nonholonomic mobile robots, which forms the basis of the unified acceleration-level formulation introduced in Section IV. 
+
+A. Control Barrier Function (CBF) 
+
+CBFs [7] provide a systematic approach to characterize admissible control inputs that guarantee safety for control-affine systems ˙x = f (x) + g(x)u, where x ∈ X ⊂ Rn is the system state, u ∈ U ⊂ Rm is the control input, U is the set of admissible inputs, and f , g are locally Lipschitz. Given a continuously differentiable function h : Rn → R, define the safe set H = {x ∈ X : h(x) ≥ 0}. The time derivative of h
+
+along system trajectories is ˙h(x, u) = Lf h(x) + Lg h(x)u,where Lf h and Lg h denote Lie derivatives along f and g.
+
+Definition 1 (Control Barrier Function [7]) . The function h
+
+is a CBF if there exists an extended class K function κ(·)
+
+such that for all x ∈ X ,
+
+sup 
+
+> u∈U
+
+Lf h(x) + Lg h(x)u ≥ − κ(h(x)) . (1) Adopting κ(h) = γh with user-defined parameter γ ≥
+
+0 [7], [8], the admissible safe control set becomes 
+
+B(x) = {u ∈ U : Lf h + Lg h u + γh (x) ≥ 0} . (2) Any Lipschitz controller satisfying u(x) ∈ B (x) renders H
+
+forward invariant [7]. This framework extends to multi-robot collision avoid-ance [22]. For each pair (i, j ), we define the pairwise safety function with the safety margin Rsafe ∈ R, where pi, pj ∈R2 denote the positions of agents i and j extracted from their states xi, xj :
+
+hij (pi, pj ) := ∥pi − pj ∥2 − R2safe . (3) We denote the safe set Cij := {(pi, pj ) | hij ≥ 0}. The admissible safe control set enforcing forward invariance of 
+
+Cij is 
+
+Bij (x) = u ∈ U : Lf hij + Lg hij u + γij hij ≥ 0 ,
+
+(4) where γij ≥ 0 governs the response aggressiveness near the safety boundary. Any controller satisfying u ∈ B ij (x) for all pairs (i, j ) guarantees collision-free operation [7], [8]. 
+
+B. Canonical Representation for Nonholonomic Agents 
+
+Unlike holonomic agents, nonholonomic wheeled robots are subject to kinematic constraints that prohibit instanta-neous lateral motion, and thus impose various constraints in terms of achievable u when designing effective individual robot controller to collaboratively enforce Eq. (4) for safety. Although these platforms differ in actuation mechanisms and physical configurations, they admit a common simplified kinematic representation under the assumption that steering dynamics are handled by a lower-level controller [33]. 
+
+Definition 2 (Canonical Simplified Model [33]) . The state of agent i is qi = [ ϕi, x i, y i]⊤, where (xi, y i) ∈ R2 is the Cartesian position and ϕi ∈ (−π, π ] is the heading angle, with velocity-level control input ui = [ vi, ω i]⊤ (vi: forward speed, ωi: angular velocity). The kinematics are governed by 
+
+˙qi =
+
+
+
+˙ϕi
+
+˙xi
+
+˙yi
+
+ =
+
+
+
+0 1cos ϕi 0sin ϕi 0
+
+vi
+
+ωi
+
+
+
+, (5) which encodes the nonholonomic constraint ˙yi cos ϕi −
+
+˙xi sin ϕi = 0, (i.e., the projection of [ ˙ xi, ˙yi]⊤ onto the lateral direction [− sin ϕi, cos ϕi]⊤ orthogonal to the heading is zero), stating that the agent can only move instantaneously along its heading direction. The distinct kinematic characteristics of each agent type are captured through their feasible control sets Ui, which are parameterized by the maximum forward speed vmax , maxi-mum angular velocity ωmax , maximum steering angle ψmax ,and wheelbase ℓ, with the resulting geometry in the (v, ω )
+
+space illustrated in Fig. 1b. Thus, while all agents share the same kinematic structure Eq. (5), different kinematic classes are distinguished by their respective Ui.While the canonical representation unifies all nonholo-nomic agent types under a common kinematic structure, it does not immediately admit CBF-based safety enforcement in Eq. (4) as the nonholonomic constraint prevents indepen-dent control of the Cartesian position (xi, y i). To address this, we employ a reference point transformation [33], whose dynamics are affine in ui, enabling direct application of CBF methods. 
+
+Definition 3 (Reference-Point Operational State) . For agent 
+
+i, we define a reference point at a look-ahead distance xr > 0
+
+along the heading direction, with Cartesian position 
+
+pi(qi) = 
+
+xi + xr cos ϕi
+
+yi + xr sin ϕi
+
+
+
+. (6) 
+
+Lemma 1 (Reference-Point Velocity Mapping) . The time derivative of pi satisfies ˙pi = J(qi) ui, where the canonical Jacobian J(qi) ∈ R2×2 is 
+
+J(qi) = 
+
+cos ϕi −xr sin ϕi
+
+sin ϕi xr cos ϕi
+
+
+
+. (7) 
+
+Since det( J(qi)) = xr > 0 for all ϕi, J is invertible and 
+
+ui 7 → ˙pi is a bijective affine transformation. Proof. Direct differentiation of Eq. (6) and substitution of Eq. (5) yields                                      
+
+> ˙pi=
+> ˙xi−xrsin ϕi˙ϕi
+> ˙yi+xrcos ϕi˙ϕi
+> 
+> =
+> vicos ϕi−xrωisin ϕi
+> visin ϕi+xrωicos ϕi
+> 
+> =J(qi)ui.
+> The determinant follows as det( J) = xr(cos 2ϕi+ sin 2ϕi) =
+> xr>0.■
+
+Remark 1. Since desired velocity ˙pi can be achieved via 
+
+ui = J−1(qi) ˙ pi, this structure yields control-affine dynam-ics in pi, enabling direct application in CBF-based safety enforcement in Section IV. IV. C APABILITY -A WARE DECENTRALIZED CBF FOR 
+
+HETEROGENEOUS MULTI -R OBOT SYSTEMS 
+
+We present a decentralized CBF framework for hetero-geneous multi-robot teams that provides formal pairwise collision-avoidance guarantees. Building on the canonical representation from Section III, we map all agents into a unified operational space, extend the first-order dynamics to an acceleration-controlled setting via backstepping, and introduce a cooperative responsibility-allocation strategy ac-counting for heterogeneous motion capabilities. 
+
+A. System Model 
+
+We consider a heterogeneous team of N mobile robots, indexed by i ∈ {1, . . . , N }, operating in a shared 2D workspace. Each robot belongs to one of five kinematic classes: holonomic Double Integrator (DI), or nonholonomic Unicycle (UNI), Differential-Drive (DD), Car-Like (CL), and Forward-Only (FO). The full state of robot i is xi =[q⊤ 
+
+> i
+
+, ν⊤ 
+
+> i
+
+]⊤ ∈ R5, where qi = [ ϕi, x i, y i]⊤ is the configu-ration and νi = [ vi, ω i]⊤ is the velocity state as defined in Eq. (5). Each robot is modeled as a second-order control-affine system ˙xi = fi(xi) + gi(xi) ui, where the control input ui := ˙νi = [ ˙ vi, ˙ωi]⊤ ∈ R2 represents generalized accelerations with bounds ui ∈ Uacc  
+
+> i
+
+. Here, Uacc  
+
+> i
+
+is the acceleration-level admissible set induced by enforcing that the integrated velocity νi(t) remains within the velocity-level constraint set Ui of Section III-B at each time step. The objective is to design decentralized acceleration inputs 
+
+ui(t) ∈ U acc  
+
+> i
+
+(xi(t)) navigating each robot toward its goal gi
+
+while guaranteeing pairwise collision avoidance for all time. 
+
+B. Unified Operational-Space Model 
+
+Direct CBF synthesis on qi is complicated by nonholo-nomic constraints and the heterogeneous structure of fi, g i
+
+across kinematic classes. We address both issues by express-ing all agents in a shared operational space via the reference-point transformation (Definition 3, Lemma 1), which yields a 2D output pi with dynamics affine in ui for all five kinematic classes, enabling a uniform CBF formulation regardless of the underlying kinematic structure. Differentiating ˙pi = J(qi)νi yields the second-order operational-space dynamics: 
+
+¨pi = ˙J(qi, νi) νi
+
+| {z }
+
+> ηi(xi)
+
++J(qi) ui, (8) where the drift term ηi(xi) ∈ R2 captures the centripetal acceleration induced by heading rotation, which is nonzero whenever the robot is turning ( ωi̸ = 0 ): 
+
+ηi = ωi
+
+− sin ϕi −xr cos ϕi
+
+cos ϕi −xr sin ϕi
+
+
+
+νi. (9) This yields the unified control-affine form 
+
+¨pi = ηi(xi) + Gi(xi) ui, (10) where Gi := J(qi) with det( Gi) = xr̸ = 0 , with the DI corresponding to the special case Gi = I2 and ηi = 0.Since Gi is invertible, any constraint on ¨pi can be expressed as a linear inequality in ui. All five classes now share the same operational-space structure (pi, ηi, G i), enabling a unified CBF formulation that applies across heterogeneous dynamics. 
+
+C. Pairwise Safety via Backstepping CBF 1) Relative Degree and Backstepping Construction: For every pair (i, j ) with i̸ = j, let ∆pij := pi − pj and 
+
+∆ ˙ pij := ˙pi − ˙pj . We define the pairwise safety function 
+
+hij := ∥∆pij ∥2 − R2 
+
+> ij
+
+, where Rij > 0 is the predefined safety distance (see Section IV-E), with safe set C := {x |
+
+hij (x) ≥ 0, ∀ i̸ = j}. The first two time derivatives are 
+
+˙hij = 2 ∆ p⊤ 
+
+> ij
+
+∆ ˙ pij , ¨hij = 2 ∥∆ ˙ pij ∥2 + 2 ∆ p⊤ 
+
+> ij
+
+∆¨ pij . (11) Since ui enters only through ¨pi in ¨hij , hij has relative degree two with respect to ui, precluding direct application of a standard first-order CBF [24]. To address this, we employ a backstepping construction [34], [35] that augments hij with a velocity-dependent term. For design parameters λ1, λ 2 > 0,define ψij := ˙hij + λ1 hij and the augmented safe set 
+
+Caug  
+
+> ij
+
+:= (xi, xj ) | hij ≥ 0 ∧ ψij ≥ 0 . (12) Intuitively, ψij ≥ 0 acts as a velocity-level safety margin: as the pair approaches the boundary ( hij → 0), the allowable closing rate ˙hij must also approach zero, preventing agents from reaching the boundary at high relative speed. Applying a first-order CBF condition to ψij via ˙ψij + λ2ψij ≥ 0 and expanding ˙ψij = ¨hij + λ1 ˙hij yields 
+
+¨hij + ( λ1 + λ2) ˙hij + λ1λ2 hij ≥ 0. (13) 
+
+2) Coupled Constraint and Decentralized Decomposition: 
+
+Substituting (10) and (11) into (13), the joint constraint coupling both agents is: 
+
+2 ∆ p⊤
+
+> ij
+
+ Giui − Gj uj
+
+ + 2 ∆ p⊤ 
+
+> ij
+
+(ηi − ηj ) + Υ ij ≥ 0, (14) where Υij := 2 ∥∆ ˙ pij ∥2 +( λ1 +λ2) ˙hij +λ1λ2 hij collects all state-dependent terms, with Υij = Υ ji . Since (14) couples 
+
+ui and uj , solving it jointly would require centralized coor-dination. To enable decentralized execution, we introduce a responsibility parameter αij ∈ [0 , 1] that splits enforcement between agents, where agent i is assigned a share αij of the total constraint demand, yielding the decoupled constraint 
+
+2 ∆ p⊤ 
+
+> ij
+
+Gi ui ≥ − 2 ∆ p⊤ 
+
+> ij
+
+ηi − αij Υij , (15) while agent j simultaneously enforces the complementary share (1 −αij ). Together, the two local constraints recover the joint constraint (14) by construction. The capability-aware choice of αij is detailed in Section IV-F. 
+
+3) Decentralized Safe Control for Individual Agent: At each control step, agent i solves the following QP: 
+
+u∗ 
+
+> i
+
+= arg min  
+
+> ui∈R2
+
+∥ui − unom  
+
+> i
+
+∥2
+
+s.t. a⊤ 
+
+> ij
+
+ui ≥ bij , ∀ j̸ = i, 
+
+ui ∈ U acc  
+
+> i
+
+(xi),
+
+(16) where unom  
+
+> i
+
+is the nominal control input, a⊤ 
+
+> ij
+
+:= 2 ∆ p⊤ 
+
+> ij
+
+Gi(xi) ∈ R1×2, and bij := −2 ∆ p⊤ 
+
+> ij
+
+ηi(xi) −
+
+αij Υij ∈ R. The kinematic constraint ui ∈ Uacc  
+
+> i
+
+(xi)
+
+encodes the model-specific input bounds. The QP (16) has linear constraints with respect to ui and can be solved efficiently using standard QP solvers (e.g., OSQP [36]). When infeasibility arises, existing strategies discussed in Section II can be adopted if needed. We assume all agents simultaneously enforce (15) in their respective QPs. 
+
+Definition 4 (Capability-Aware Heterogeneous CBF (CA-HCBF)) . For a heterogeneous multi-robot system, the CA-HCBF for a pair (i, j ) is the augmented barrier function 
+
+ψij := ˙hij + λ1hij , defined over the unified operational space (Section IV-B), with the decentralized constraint (15) enforced by each agent using complementary responsibility parameters αij and αji = 1 − αij detailed in Section IV-F 
+
+D. Safety Guarantee 
+
+Theorem 2 (Heterogeneous Pairwise Safety) . Suppose all agents simultaneously enforce (15) , each QP (16) is feasible for all t ≥ 0, and (xi(0) , xj (0)) ∈ C aug  
+
+> ij
+
+for all i̸ = j. Then the augmented safe set Caug  
+
+> ij
+
+is forward invariant for any pair (i, j ) with heterogeneous dynamics satisfying (10) . In particular, hij (t) ≥ 0 and ψij (t) ≥ 0 for all t ≥ 0, implying 
+
+∥pi(t) − pj (t)∥ ≥ Rij .Proof. Since all agents enforce (15), summing the individual constraints of agents i and j with weights αij and 1 − αij 
+
+recovers (14), equivalent to ˙ψij + λ2ψij ≥ 0. By the CBF theorem [7], ψij (t) ≥ 0 for all t ≥ 0 given (xi(0) , xj (0)) ∈Caug  
+
+> ij
+
+. Since ψij ≥ 0 implies hij (t) ≥ hij (0) e−λ1t ≥ 0,forward invariance of Caug  
+
+> ij
+
+follows. ■
+
+E. From Reference-Point Safety to Physical Safety 
+
+Since the CBF constraint is formulated at the reference-point level, we show that an appropriate choice of Rij 
+
+suffices to guarantee physical collision avoidance. Let rphys 
+
+> i
+
+denote the physical bounding radius of robot i, and define the per-agent CBF radius rcbf  
+
+> i
+
+:= xr,i + rphys  
+
+> i
+
+and the pairwise safety distance Rij := rcbf  
+
+> i
+
++ rcbf  
+
+> j
+
+.Proposition 1 (Physical Safety) . If ∥pi(t) − pj (t)∥ ≥ Rij 
+
+for all t ≥ 0, then ∥ci(t) − cj (t)∥ ≥ rphys  
+
+> i
+
++ rphys  
+
+> j
+
+for all 
+
+t ≥ 0, where ci denotes the geometric center of robot i.
+
+Proof. Since ∥pi − ci∥ = xr,i , the triangle inequality gives 
+
+∥ci − cj ∥ ≥ ∥ pi − pj ∥ − xr,i − xr,j ≥ Rij − xr,i − xr,j =
+
+rphys  
+
+> i
+
++ rphys  
+
+> j
+
+. ■
+
+Remark 2. Together with Theorem 2, Proposition 1 es-tablishes end-to-end physical collision avoidance: the CBF radius rcbf  
+
+> i
+
+compensates for the reference-point offset xr,i 
+
+while covering the physical extent rphys  
+
+> i
+
+of the robot. 
+
+F. Capability-Aware Responsibility Allocation 
+
+The joint constraint (14) is decomposed into individual constraints via αij ∈ [0 , 1] . Rather than fixing αij = 
+
+> 12
+
+(assuming all agents are homogeneous), we propose a capability-aware allocation assigning greater responsibility to the agent with more motion freedom, while ensuring neither agent is assigned a burden it cannot physically satisfy. 
+
+1) Control Capability via Support Function: To quantify each agent’s capability along an arbitrary direction, we employ the support function of the admissible control set 
+
+Uacc  
+
+> i
+
+:
+
+SU (d) := max  
+
+> u∈U
+
+d⊤u, (17) which measures the maximum projection of u along the direction d, i.e., the furthest extent of U along d. This is used to evaluate both the separating capability along the avoidance direction and the progress capability toward the goal, forming the basis of the allocation strategy described below. The maximum separating acceleration agent i can produce along the separation direction ∆pij = pi − pj is obtained by evaluating the support function of GiUacc  
+
+> i
+
+, the admissible control set transformed into operational space by Gi:
+
+ρiij := SGiUacc  
+
+> i
+
+(2∆ pij ) = max  
+
+> k
+
+Aij u(k) 
+
+> i
+
+, (18) where Aij := 2∆ p⊤ 
+
+> ij
+
+Gi ∈ R1×2 is the CBF constraint row vector from (15), and {u(k) 
+
+> i
+
+} are the vertices of Uacc  
+
+> i
+
+.Incorporating the heading-rotation drift, the effective net capability is 
+
+¯ρiij := max  ρiij + 2 ∆ p⊤ 
+
+> ij
+
+ηi, 0 , (19) and symmetrically for agent j. Since ηi contributes to the CBF constraint independently of ui, ¯ρiij captures the total effective separating capability of agent i, combining both its control authority and the drift already acting in the avoidance direction. 
+
+2) Intent-Oriented Alpha: We assign more responsibil-ity to the agent that can better absorb avoidance effort without deviating from its nominal trajectory. Let di := ˙pnom  
+
+> i
+
+− ˙pi denote the velocity gap between the nominal and actual operational-space velocity. The progress capability 
+
+σi := max ui∈U acc  
+
+> i
+
+d⊤ 
+
+> i
+
+Gi ui measures how much agent i can accelerate toward its nominal motion direction, giving the progress-oriented responsibility parameter 
+
+αprog  
+
+> ij
+
+:= σi
+
+σi + σj + ϵ , (20) where ϵ > 0 prevents division by zero. An agent with high 
+
+σi can take on more avoidance responsibility without being significantly deflected from its nominal trajectory. 
+
+3) Feasibility-Aware Clipping: While αprog  
+
+> ij
+
+is desirable from a goal-reaching standpoint, it may render the individual QP infeasible if the assigned burden exceeds the agent’s kinematic capability. Agent i’s QP is feasible iff ¯ρiij ≥−αij Υij , and symmetrically for agent j. This condition becomes active when Υij < 0, i.e., when the agents are approaching each other and the CBF constraint demands a separating response. Dividing by −Υij > 0 yields the feasible interval for αij :
+
+αmin := max 0, 1 − ¯ρjij 
+
+−Υij 
+
+!
+
+, α max := min 1, ¯ρiij 
+
+−Υij 
+
+!
+
+,
+
+(21) where αmax is the maximum share agent i can accommo-date and αmin is the minimum to keep agent j’s QP feasible. The final parameter is 
+
+αij =
+
+(
+
+clip  αprog  
+
+> ij
+
+, α min , α max 
+
+ if αmin ≤ αmax , 
+
+> 12
+
+otherwise , (22) for Υij < 0, and αij = αprog  
+
+> ij
+
+when Υij ≥ 0. When αmin >αmax , the combined capability ¯ρiij + ¯ ρjij is insufficient to cover the total demand −Υij , and no decentralized split can render both individual QPs feasible simultaneously. In this work, we fall back to equal splitting with αij = 12 , preserving the complementarity αij +αji = 1 , even though the assigned share may exceed each agent’s individually feasible range (αij > α max ). If the resulting QP remains infeasible after all allocation adjustments, full braking is applied as a last-resort fallback to maintain safety. 
+
+Remark 3. The feasible interval (21) is well-defined when-ever ¯ρiij + ¯ ρjij ≥ − Υij , which corresponds to the feasibility condition in Theorem 2. When violated, no decentralized allocation can guarantee feasibility, though this does not necessarily imply global infeasibility, as agent j contributes in the opposite direction in (14) and a centralized formulation may still admit a feasible solution. V. E XPERIMENTS 
+
+Although Theorem 2 provides a theoretical pairwise safety guarantee, this does not directly translate to perfect safety in practice. In dense environments, constraints from multiple neighbors stack simultaneously [22], making QP feasibility increasingly difficult to maintain in decentralized settings. To analyze the practical behavior of our method and eval-uate the effect of capability-aware allocation and feasibility-aware clipping within this gap between theory and practice, we validate through (i) random start-goal navigation simu-lations with up to N = 30 heterogeneous robots, (ii) an ablation study on the capability-aware allocation strategy, and (iii) a five-robot physical experiment involving all five kinematic classes. TABLE I: Performance comparison across team sizes ( N ∈ { 10 , 20 , 30 }, 50 trials each).                                                                                             
+
+> N= 10 N= 20 N= 30
+> Method AR (%) ↑#Viol ↓Mean V ↓AR (%) ↑#Viol ↓Mean V ↓AR (%) ↑#Viol ↓Mean V ↓
+> CA-HCBF (Ours) 97.4 0.1 (0.5) 0.001 (0.008) 94.7 1.2 (2.0) 0.003 (0.008) 89.6 5.1 (9.6) 0.018 (0.035)
+> APF + Tracking ( w=0 .9)94.2 4.3 (2.8) 0.273 (0.112) 90.9 22.7 (6.4) 0.280 (0.075) 87.1 59.7 (11.6) 0.279 (0.066) APF + Tracking( w=0 .5)89.4 2.1 (2.0) 0.200 (0.147) 86.1 13.5 (3.8) 0.267 (0.064) 80.7 37.9 (9.4) 0.271 (0.048) APF + Tracking( w=0 .1)46.2 0.0 (0.1) 0.005 (0.034) 22.5 0.1 (0.4) 0.041 (0.124) 15.5 1.0 (1.3) 0.179 (0.206) APF + HOCBF 42.4 2.5 (1.6) 0.196 (0.124) 36.6 11.5 (7.3) 0.271 (0.086) 29.9 25.2 (9.9) 0.264 (0.065) APF + sRCBF 33.4 0.0 (0.1) 0.000 (0.000) 3.9 1.4 (3.1) 0.056 (0.097) 1.0 1.4 (2.8) 0.046 (0.078) PD + sRCBF 24.6 1.1 (2.2) 0.028 (0.100) 4.4 5.7 (10.5) 0.029 (0.071) 0.9 3.2 (3.8) 0.040 (0.068)
+
+Results are reported as mean (std). Bold with dark shading indicates best performance per metric; light shading indicates second best. 
+
+AR (%): goal arrival rate; # Viol : number of pairwise safety violations; Mean V : mean violation depth (m). t = 0 t = 12 t = 30 t = 6      
+
+> Fig. 2: Random start–goal scenario with 30 robots (5 per model) at multiple timestamps. At t=0, robots start from random positions; × marks indicate assigned goals. UNI (blue circle), DI (light-blue circle), DD (green diamond), CL (red rectangle), FO (purple sector). The dashed circle denotes
+> rcbf
+> i(Section IV-E), with its center representing the robot’s reference point (operational state position)
+
+A. Experimental Setup 
+
+Simulation Environment : We evaluate on an unbounded 2D plane, with starts and goals sampled within an 11 ×11 m 2
+
+region, using N ∈ { 10 , 20 , 30 } robots, each consisting of an equal number of agents from all five kinematic classes (DI, UNI, DD, CL, FO). Each robot is assigned a random start-goal pair with a minimum start-to-goal distance of 4.0 m and minimum inter-agent initial separation of 1.5 m (see Fig. 2), repeated over 50 independent trials. Agent parameters are summarized in Table II. The simulation timestep is ∆t =0.05 s , with a maximum of 1000 steps per trial. A robot is considered to have reached its goal within 0.3 m . CBF gains are set to λ1 = λ2 = 2 .0, and the QP is solved using OSQP [36] with tolerances of 10 −5. For CL and FO agents, a steering acceleration floor of 0.1 is added to prevent excessive QP infeasibility at zero forward velocity, where admissible lateral acceleration collapses to zero. Note that the velocity-level constraint still prohibits actual lateral motion. 
+
+Nominal Controller : All agents share a decentralized APF [16] as the nominal controller, which computes a de-sired operational-space velocity ˙pnom  
+
+> i
+
+= w f att  
+
+> i
+
++(1 −w) f rep  
+
+> i
+
+,where f att  
+
+> i
+
+is the attractive force vector directing agent i
+
+toward its goal, f rep  
+
+> i
+
+is the repulsive force vector that drives                                                 
+
+> TABLE II: Per-agent kinematic and physical parameters. Parameter DI UNI DD CL FO Look-ahead xir(m) –0.1 0.1 0.2 0.2
+> vmax (m/s) 1.0 1.0 1.0 1.0 1.0
+> amax (m/s 2)2.0 2.0 –2.0 2.0
+> ˙ωmax (rad/s 2)–8.0 –10.0 10.0 Wheelbase ℓ(m) ––0.5 0.5 0.5 Physical radius (m) 0.3 0.3 0.3 ––Body size (W ×H) (m) –––0.3×0.60.3×0.6
+
+the agent away from neighboring robots with magnitude decaying as 1/d 3 
+
+> ij
+
+, where dij is the distance to neighbor j,and w ∈ [0 , 1] controls the trade-off between goal-seeking and collision avoidance 1 The velocity ˙pnom  
+
+> i
+
+is converted to a nominal acceleration unom  
+
+> i
+
+using a proportional controller. For DI agents, unom  
+
+> i
+
+is applied directly, while nonholonomic agents track it via speed and heading controllers. 
+
+Evaluation Metrics : To evaluate safety and efficiency, we measure three metrics. Arrival rate (AR ) (%) is the fraction of robots reaching their goal within Tmax = 1000 
+
+steps. Violation count (# Viol ) is the number of dis-tinct pairwise collision events where ∥pi −pj ∥ < R ij . Mean violation depth (Mean V ) is the average penetration depth max(0 , R ij − ∥ pi − pj ∥) over all violating pairs and timesteps, measuring how far robots have exceeded the safety distance Rij .
+
+B. Baselines 
+
+We compare our approach against following baselines: 
+
+APF + Tracking (w ∈ {0.1, 0.5, 0.9}). The nominal APF controller with varying w (Section V-A), without any safety filter. This baseline evaluates how much safety can be achieved through safety-aware nominal control alone in heterogeneous multi-robot navigation, and assesses the safety-efficiency trade-off induced by varying the weighting parameter without a formal safety guarantee. 
+
+APF + HOCBF. A backstepping-based high-order CBF applied in the operational space, following the second-order formulation (acceleration control) but assuming all agents behave as holonomic double integrators. Specifically, the drift term ηi arising from heading rotation (Section IV-B) is neglected, and nonholonomic agents track the prescribed   
+
+> 1All methods using APF as the nominal controller adopt w= 0 .9, unless otherwise noted
+
+operational-space commands via speed and heading con-trollers. This baseline isolates the effect of heterogeneity-aware modeling. 
+
+sRCBF (PD / APF). A smooth Robust CBF (sRCBF) [26] applied to the canonical form of each agent, treating others as dynamic obstacles bounded by their maximum velocities, providing a model-agnostic formal safety guarantee without requiring knowledge of other agents’ dynamics. Two nominal controllers are evaluated: the Proportional-Derivative (PD) controller following the original formulation [26], and the APF controller for fair comparison under identical nominal planning conditions. Both variants assume worst-case neigh-bor behavior without cooperative coordination. 
+
+C. Random Start-Goal Navigation 
+
+The main results are summarized in Table I. Our CA-HCBF achieves the highest arrival rate at N = 10 and 
+
+N = 20 (97 .4% and 94 .7%) and remains competitive at 
+
+N = 30 (89 .6%), while maintaining consistently low safety violations. Even at N = 30 , the mean violation depth remains at 0.018 m, confirming that the backstepping CBF formulation and capability-aware allocation jointly preserve safety without sacrificing goal-reaching efficiency. In contrast, the APF-only baselines expose a fundamental safety-efficiency trade-off governed by w: at w=0 .9, arrival rates are high but violations are substantial (up to 59.7 at 
+
+N =30 ), while w=0 .1 nearly eliminates violations at the cost of near-zero arrival rates (15.5% at N =30 ), confirming that manual weight tuning cannot reconcile both objectives simultaneously. APF + HOCBF applies the same second-order CBF struc-ture but assumes all agents are holonomic double integrators, neglecting the drift term ηi. Despite using an identical CBF formulation, arrival rates drop sharply to 42 .4%, 36 .6%, and 
+
+29 .9% at N = 10 , 20 , 30 , while violations remain substantial (2.5, 11 .5, 25 .2). This confirms that neglecting kinematic heterogeneity leads to constraint violations and degraded cooperative navigation behavior even with a CBF safety filter applied. The sRCBF-based baselines take the opposite extreme: despite achieving low violation counts, both exhibit near-zero arrival rates at N = 20 and N = 30 (below 5%). By treating neighbors as worst-case obstacles, sRCBF avoids the chal-lenges of heterogeneous CBF synthesis at the cost of exces-sive conservatism, effectively freezing agents in place. This non-cooperative assumption becomes increasingly detrimen-tal as N grows, demonstrating that heterogeneity-awareness and cooperative responsibility sharing are essential for scal-able navigation. 
+
+D. Ablation Study 
+
+While the results above demonstrate the overall effective-ness of CA-HCBF, we further isolate the contribution of the capability-aware allocation by comparing three variants: (1) Equal allocation ( αij = 12 ) (red), (2) Capability-Aware allocation without feasibility clipping (blue), and (3) the full CA-HCBF with feasibility-aware clipping (green). All other components are held identical. N = 10 N = 20 N = 30        
+
+> Number of Robots (N)
+> 0
+> 200
+> 400
+> 600
+> 800
+> 1000
+> Avg. Infeasibility Events
+> (per trial)
+> 52.2
+> 349.4
+> 999.4
+> 24.1
+> 223.7
+> 736.6
+> 39.4
+> 183.3
+> 669.6
+> QP Infeasibility Events Across Team Sizes
+> Baseline (Equal Allocation)
+> Capability-Aware Allocation
+> Capability- & Feasibility-Aware Allocation
+> Fig. 3: Average QP infeasibility events per trial across N∈ { 10 ,20 ,30 }
+> for three allocation strategies. The proposed capability- and feasibility-aware allocation reduces failures, with the gap widening as Nincreases.
+
+As shown in Fig. 3, QP infeasibility events increase with 
+
+N across all variants, reflecting the growing difficulty of decentralized feasibility in denser environments. At N = 30 ,the proposed method reduces infeasibility events from 999.4 (equal) to 669.6 (33% reduction), directly translating to fewer safety violations: from 8.1 to 5.1. At N = 10 , the capability-only variant achieves the fewest infeasibility events (24.1 vs. 39.4), as feasibility clipping introduces small overhead under sparse interactions. At larger N , however, enforcing 
+
+[αmin , α max ] becomes increasingly critical, with the full method achieving the lowest counts (183.3 and 669.6 at 
+
+N = 20 and N = 30 ). These results confirm that capability-aware allocation effectively mitigates QP infeasibility and its downstream effect on safety violations, where kinematic constraints and a growing number of pairwise interactions jointly restrict the feasible solution space in decentralized heterogeneous deployments. 
+
+E. Physical Robot Validation 
+
+To confirm that the simulation results transfer to real hardware, we validate on five LIMO Pro robots [37], each configured to operate as a different kinematic class (DI, UNI, DD, CL, FO), with vmax = 0 .3 m /s, safety margin 
+
+0.02 m , and body size 322 × 222 mm for safe operation. 2 As shown in Fig. 1a, all five robots are initialized symmetrically and assigned goals at opposite sides, requiring simultaneous navigation through a shared central region. CA-HCBF suc-cessfully guides all robots to their goals while maintaining safe separation, whereas sRCBF deadlocks in the central region due to overly conservative worst-case assumptions. These results confirm that the proposed method transfers effectively to physical deployment. VI. C ONCLUSION 
+
+We propose CA-HCBF, a decentralized CBF framework that provides a unified second-order formulation mapping five kinematic classes (DI, UNI, DD, CL, FO) into a common operational space, addressing inconsistent CBF formulation across heterogeneous dynamic models while preserving for-ward invariance of the pairwise safe set. We further intro-duce a support-function-based capability-aware responsibil-ity allocation with feasibility-aware clipping, alleviating QP   
+
+> 2All robots are equipped with omni-directional wheels supporting both holonomic and nonholonomic operation via software-level mode switching. As LIMO Pro accepts only velocity-level commands, acceleration outputs are converted by multiplying by ∆tat each control step.
+
+infeasibility that arises when multi-robot interactions and kinematic constraints collectively exceed a robot’s feasibility range. Simulations with up to 30 heterogeneous robots and a physical five-robot experiment validate the proposed frame-work, demonstrating improved safety and task efficiency over representative baselines. Despite its effectiveness, this approach is not without limitations. The canonical kinematic model abstracts certain low-level dynamics (e.g., ideal steer-ing acceleration), and feasibility-aware clipping cannot fully eliminate QP infeasibility when the combined capability of peer agents is insufficient to satisfy total constraint demand in dense or constrained scenarios. Future work will therefore extend pairwise responsibility and capability reasoning to the neighborhood level, enabling more jointly consistent avoidance decisions in decentralized settings. REFERENCES [1] L. Gao, G. Battistelli, and L. Chisci, “Random-finite-set-based dis-tributed multirobot slam,” IEEE Transactions on Robotics , vol. 36, no. 6, pp. 1758–1777, 2020. [2] D. S. Drew, “Multi-agent systems for search and rescue applications,” 
+
+Current Robotics Reports , vol. 2, no. 2, pp. 189–200, 2021. [3] J. P. Queralta, J. Taipalmaa, B. C. Pullinen, V. K. Sarker, T. N. Gia, H. Tenhunen, M. Gabbouj, J. Raitoharju, and T. Westerlund, “Collaborative multi-robot search and rescue: Planning, coordination, perception, and active vision,” IEEE Access , vol. 8, pp. 191 617– 191 643, 2020. [4] A. Camisa, A. Testa, and G. Notarstefano, “Multi-robot pickup and delivery via distributed resource allocation,” IEEE Transactions on Robotics , vol. 39, no. 2, pp. 1106–1118, 2022. [5] P. R. Wurman, R. D’Andrea, and M. Mountz, “Coordinating hundreds of cooperative, autonomous vehicles in warehouses,” AI magazine ,vol. 29, no. 1, pp. 9–9, 2008. [6] J. Li, A. Tinka, S. Kiesel, J. W. Durham, T. S. Kumar, and S. Koenig, “Lifelong multi-agent path finding in large-scale warehouses,” in Proc. of AAAI Conf. on Artificial Intelligence (AAAI) , vol. 35, no. 13, 2021, pp. 11 272–11 281. [7] A. D. Ames, S. Coogan, M. Egerstedt, G. Notomista, K. Sreenath, and P. Tabuada, “Control barrier functions: Theory and applications,” in Proc. of European Control Conference (ECC) . IEEE, 2019, pp. 3420–3431. [8] L. Wang, A. D. Ames, and M. Egerstedt, “Safety barrier certificates for collisions-free multirobot systems,” IEEE Transactions on Robotics ,vol. 33, no. 3, pp. 661–674, 2017. [9] A. D. Ames, X. Xu, J. W. Grizzle, and P. Tabuada, “Control barrier function based quadratic programs for safety critical systems,” IEEE Transactions on Automatic Control , vol. 62, no. 8, pp. 3861–3876, 2016. [10] J. Zeng, B. Zhang, and K. Sreenath, “Safety-critical model predic-tive control with discrete-time control barrier function,” in Proc. of American Control Conference (ACC) . IEEE, 2021, pp. 3882–3889. [11] X. Tan and D. V. Dimarogonas, “Distributed implementation of control barrier functions for multi-agent systems,” IEEE Control Systems Letters , vol. 6, pp. 1879–1884, 2021. [12] C. Dawson, S. Gao, and C. Fan, “Safe control with learned certificates: A survey of neural lyapunov, barrier, and contraction methods for robotics and control,” IEEE Transactions on Robotics , vol. 39, no. 3, pp. 1749–1767, 2023. [13] P. Fiorini and Z. Shiller, “Motion planning in dynamic environments using velocity obstacles,” The Int. Journal of Robotics Research ,vol. 17, no. 7, pp. 760–772, 1998. [14] J. Van den Berg, M. Lin, and D. Manocha, “Reciprocal velocity obstacles for real-time multi-agent navigation,” in Proc. of IEEE Int. Conf. on Robotics and Automation (ICRA) , 2008, pp. 1928–1935. [15] J. Van Den Berg, S. J. Guy, M. Lin, and D. Manocha, “Reciprocal n-body collision avoidance,” in Proc. of Int. Symposium of Robotics Research . Springer, 2011, pp. 3–19. [16] O. Khatib, “Real-time obstacle avoidance for manipulators and mobile robots,” The Int. Journal of Robotics Research , vol. 5, no. 1, pp. 90–98, 1986. [17] D. Zhang, X. Zhang, Z. Zhang, B. Zhu, and Q. Zhang, “Reinforced potential field for multi-robot motion planning in cluttered environ-ments,” in Proc. of IEEE/RSJ Int. Conf. on Intelligent Robots and Systems (IROS) . IEEE, 2023, pp. 699–704. [18] L. Dai, Q. Cao, Y. Xia, and Y. Gao, “Distributed mpc for formation of multi-agent systems with collision avoidance and obstacle avoidance,” 
+
+Journal of the Franklin Institute , vol. 354, no. 4, pp. 2068–2085, 2017. [19] C. E. Luis, M. Vukosavljev, and A. P. Schoellig, “Online trajectory generation with distributed model predictive control for multi-robot motion planning,” IEEE Robotics and Automation Letters , vol. 5, no. 2, pp. 604–611, 2020. [20] R. K. Cosner, Y. Chen, K. Leung, and M. Pavone, “Learning respon-sibility allocations for safe human-robot interaction with applications to autonomous driving,” in Proc. of IEEE Int. Conf. on Robotics and Automation (ICRA) . IEEE, 2023, pp. 9757–9763. [21] I. Remy, D. Fridovich-Keil, and K. Leung, “Learning responsibility allocations for multi-agent interactions: A differentiable optimization approach with control barrier functions,” in Proc. of American Control Conference (ACC) . IEEE, 2025, pp. 3213–3220. [22] L. Wang, A. Ames, and M. Egerstedt, “Safety barrier certificates for heterogeneous multi-robot systems,” in Proc. of American Control Conference (ACC) . IEEE, 2016, pp. 5213–5218. [23] Y. Lyu, W. Luo, and J. M. Dolan, “Responsibility-associated multi-agent collision avoidance with social preferences,” in Proc. of IEEE Int. Conf. on Intelligent Transportation Systems . IEEE, 2022, pp. 3645–3651. [24] W. Xiao and C. Belta, “Control barrier functions for systems with high relative degree,” in Proc. of IEEE Conf. on Decision and Control (CDC) . IEEE, 2019, pp. 474–479. [25] S. Liu, W. Xiao, and C. A. Belta, “Auxiliary-variable adaptive control lyapunov barrier functions for spatio-temporally constrained safety-critical applications,” in Proc. of IEEE Conf. on Decision and Control (CDC) . IEEE, 2024, pp. 8098–8104. [26] K. H. Kim, M. Diagne, and M. Krsti´ c, “Robust control barrier function design for high relative degree systems: Application to unknown moving obstacle collision avoidance,” in Proc. of American Control Conference (ACC) . IEEE, 2025, pp. 355–360. [27] X. Tan and D. V. Dimarogonas, “Compatibility checking of multiple control barrier functions for input constrained systems,” in Proc. of IEEE Conf. on Decision and Control (CDC) . IEEE, 2022, pp. 939– 944. [28] M. Marley, R. Skjetne, and A. R. Teel, “Hybrid control barrier func-tions for continuous-time systems,” IEEE Transactions on Automatic Control , vol. 69, no. 10, pp. 6605–6619, 2024. [29] J. Zeng, B. Zhang, Z. Li, and K. Sreenath, “Safety-critical control using optimal-decay control barrier function with guaranteed point-wise feasibility,” in Proc. of American Control Conference (ACC) .IEEE, 2021, pp. 3856–3863. [30] Q. Nguyen and K. Sreenath, “Exponential control barrier functions for enforcing high relative-degree safety-critical constraints,” in Proc. of American Control Conference (ACC) . IEEE, 2016, pp. 322–328. [31] J. Lee, J. Kim, and A. D. Ames, “Hierarchical relaxation of safety-critical controllers: Mitigating contradictory safety conditions with application to quadruped robots,” in Proc. of IEEE/RSJ Int. Conf. on Intelligent Robots and Systems (IROS) . IEEE, 2023, pp. 2384–2391. [32] Y. Chen, A. Singletary, and A. D. Ames, “Guaranteed obstacle avoidance for multi-robot operations with limited actuation: A control barrier function approach,” IEEE Control Systems Letters , vol. 5, no. 1, pp. 127–132, 2020. [33] K. M. Lynch and F. C. Park, Modern Robotics . Cambridge University Press, 2017. [34] M. Krstic and M. Bement, “Nonovershooting control of strict-feedback nonlinear systems,” IEEE Transactions on Automatic Control , vol. 51, no. 12, pp. 1938–1943, 2006. [35] A. J. Taylor, P. Ong, T. G. Molnar, and A. D. Ames, “Safe back-stepping with control barrier functions,” in Proc. of IEEE Conf. on Decision and Control (CDC) . IEEE, 2022, pp. 5775–5782. [36] B. Stellato, G. Banjac, P. Goulart, A. Bemporad, and S. Boyd, “Osqp: An operator splitting solver for quadratic programs,” Mathematical Programming Computation , vol. 12, no. 4, pp. 637–672, 2020. [37] AgileX Robotics, “LIMO Pro mobile robot platform,” https://global. agilex.ai/products/limo-pro, accessed: January 2026.

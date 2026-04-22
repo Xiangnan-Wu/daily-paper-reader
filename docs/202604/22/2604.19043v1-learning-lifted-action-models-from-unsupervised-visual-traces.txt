@@ -1,0 +1,924 @@
+Title: Learning Lifted Action Models from Unsupervised Visual Traces
+
+URL Source: https://arxiv.org/pdf/2604.19043v1
+
+Published Time: Wed, 22 Apr 2026 00:33:46 GMT
+
+Number of Pages: 18
+
+Markdown Content:
+# Learning Lifted Action Models from Unsupervised Visual Traces 
+
+Kai Xi, Stephen Gould, Sylvie Thi´ ebaux 
+
+> 1
+
+School of Computing, The Australian National University 
+
+> 2
+
+LAAS-CNRS, Universit´ e de Toulouse oliver.xi@anu.edu.au, stephen.gould@anu.edu.au, sylvie.thiebaux@anu.edu.au 
+
+Abstract 
+
+Efficient construction of models capturing the preconditions and effects of actions is essential for applying AI planning in real-world domains. Extensive prior work has explored learn-ing such models from high-level descriptions of state and/or action sequences. In this paper, we tackle a more challeng-ing setting: learning lifted action models from sequences of state images, without action observation. We propose a deep learning framework that jointly learns state prediction, action prediction, and a lifted action model. We also introduce a mixed-integer linear program (MILP) to prevent prediction collapse and self-reinforcing errors among predictions. The MILP takes the predicted states, actions, and action model over a subset of traces and solves for logically consistent states, actions, and action model that are as close as possi-ble to the original predictions. Pseudo-labels extracted from the MILP solution are then used to guide further training. Experiments across multiple domains show that integrating MILP-based correction helps the model escape local optima and converge toward globally consistent solutions. 
+
+Code — https://github.com/xikaioliver/ROSAME 
+
+1 Introduction 
+
+AI planning enables intelligent agents to generate sequences of actions that achieve specified goals in complex environ-ments. A core requirement for planning is an action model, specifying the preconditions and effects of actions, that al-lows a planner to reason about how actions change the state of the world. However, acquiring such models manually is often labor-intensive, error-prone, and expensive. This has motivated a growing body of research on learning action models from data, particularly from plan execution traces. Much of the existing work focuses on learning symbolic action models from example traces composed of high-level, symbolic states and/or actions (Yang, Wu, and Jiang 2007; Cresswell and Gregory 2011; Zhuo and Kambhampati 2013; Aineto, Celorrio, and Onaindia 2019; Juba, Le, and Stern 2021; Lamanna and Serafini 2024; G¨ osgens, Jansen, and Geffner 2025). While these approaches assume structured symbolic inputs, real-world data often comes in raw percep-tual forms such as images or videos. With the advancement 
+
+Copyright © 2026, Association for the Advancement of Artificial Intelligence (www.aaai.org). All rights reserved. 
+
+of deep learning, it has become feasible to make state and action predictions directly from such visual inputs, opening the door to learning action models from visual observations. Two representative works in this direction are Lat-plan (Asai et al. 2022) and ROSAME (Xi, Gould, and Thi´ ebaux 2024). Latplan is an unsupervised framework that learns action models from pairs of state images represent-ing valid transitions in the environment. However, the re-sulting models are propositional and uninterpretable, with both states and actions encoded in an opaque latent space. To solve a new problem, Latplan requires images of the initial and goal states. In addition, its latent propositional representation is tied to a fixed object set and therefore cannot generalize to planning instances involving differ-ent objects. In contrast, ROSAME is a neuro-symbolic ac-tion model learner that computes probabilistic precondi-tions and effects for action schemas. When combined with deep learning-based state predictors, ROSAME learns lifted, human-readable action models from visual traces. However, it assumes that the executed actions are fully observed. Here, we address some of the limitations of Latplan and ROSAME by learning lifted, human-readable action models from visual traces consisting of state images, without action supervision. To this end, we develop a deep learning frame-work that jointly learns to predict states, executed actions, and a lifted action model. While this framework can operate independently, we observe that it is often prone to predic-tion collapse and self-reinforcing errors among predictions, which prevent convergence to globally consistent solutions. To overcome this, we introduce a mixed-integer linear program (MILP) as an external source of logical consis-tency. The MILP corrects a small subset of predicted traces and the action model so that they satisfy the logical con-straints of planning while remaining close to the neural model’s original predictions. We extract pseudo-labels from the MILP solution and use them to supervise further training of the deep learning framework. This feedback loop enables the model to escape local optima and correct its own errors. We evaluate our approach across several classical plan-ning domains using two different types of visual representa-tions. The experimental results show that integrating MILP-based correction substantially improves convergence and logical consistency in most cases, enabling recovery of the ground-truth action models without error. 
+
+> arXiv:2604.19043v1 [cs.AI] 21 Apr 2026
+
+2 Preliminaries 
+
+A typed planning domain D = ⟨T , P, A, M ⟩ consists of: a set T of types, a set P of predicates, a set A of action schemas, and an action model M specifying the precondi-tions, add and delete effects of each action schema. The types in T are organized into a tree (or hierarchy). We say that a type t′ subsumes type t iff t′ is either t or an ancestor of t in the tree. A predicate ρ ∈ P is a tuple 
+
+⟨name, params ⟩, where name is a symbol and params is a list of types. We write name (ρ) and params (ρ) for the name and parameters of ρ, respectively. Similarly, an action schema α ∈ A is a tuple ⟨name, params ⟩ whose name and parameters are denoted by name (α) and params (α),respectively. We borrow from SAM (Juba, Le, and Stern 2021) and define a parameter binding between a pred-icate ρ and an action schema α as an injective function 
+
+bρ,α : params (ρ) → params (α) that maps every param-eter params (ρ)i of ρ to a parameter of α subsumed by 
+
+params (ρ)i. A parameter-bound predicate for an action schema α is a pair of the form ⟨ρ, b ρ,α ⟩, where bρ,α is a valid parameter binding between ρ and α.Given P and A, our goal is to learn an action model 
+
+M mapping each action schema α, to a triple M (α) =
+
+⟨Pre( α), Add( α), Del( α)⟩ of sets of parameter-bound pred-icates representing its (positive) preconditions, add and delete effects. We denote by M(P, A) the set of candidate action models over the given predicates and action schemas. A planning instance I = ⟨O, D ⟩ consists of a set of ob-jects O and a planning domain D. Each object o ∈ O is associated with a leaf type type (o) ∈ T of the type hierar-chy. A binding of a predicate ρ is an injective function bρ :
+
+params (ρ) → O mapping every parameter params (ρ)i
+
+of ρ to an object o ∈ O such that params (ρ)i subsumes 
+
+type (o). A proposition p is a pair ⟨ρ, b ρ⟩ where ρ is a pred-icate and bρ is a binding for ρ. We say that proposition 
+
+p = ⟨ρ, b ρ⟩ is a ground instance of predicate ρ. Similarly, a binding of an action schema α is defined like a binding of a predicate, i.e., an injective function bα : params (α) → O
+
+where ∀i, params (α)i subsumes type (bα(params (α)i)) .An action a = ⟨α, b α⟩, where α is an action schema and bα
+
+is a binding for α, is a ground instance of the action schema 
+
+α. The preconditions of a grounded action a = ⟨α, b α⟩, de-noted by Pre( a), is the set of propositions created by taking every parameter-bound predicate ⟨ρ, b ρ,α ⟩ in the precondi-tions of the action schema Pre( α) and grounding ρ with the binding bα ◦ bρ,α . The effects of a grounded action a are de-fined in a similar manner, and the action model M (a) for the grounded action a is ⟨Pre( a), Add( a), Del( a)⟩. Given a planning instance I, we write PI for the set of propositions, 
+
+AI for the set of actions, and S ⊆ 2PI for the set of states .Let I be a planning instance, s ∈ S be a state, a ∈ AI be an action. We say that a is applicable in s iff Pre( a) ⊆
+
+s. The result of applying a in s is the successor state 
+
+res (s, a ) = ( s \ Del( a)) ∪ Add( a). A state trace for plan-ning instance I is a state sequence e = ( s1, s 2, . . . , s |e|+1 ).The length |e| of the trace is its number of transitions. We say that a trace is k-step if it has length k. We refer to s1
+
+as the initial state and s|e|+1 as the final state of the trace. 
+
+Figure 1: Observations in a visual trace τ compared to the state trace e. Symbol s denotes states and X denotes images. Shaded nodes are observed. ROSAME ROSAME  
+
+> ... ... Visual Trace
+> ROSAME
+> Current State Prediction
+> CV model CV model
+> Next State Inference
+
+Figure 2: Integrating ROSAME with a state predictor to learn action models from visual traces with fully observed actions, adapted from Xi, Gould, and Thi´ ebaux (2024). State trace e is consistent with an action model M if and only if, according to M , for all t ∈ 1, . . . , |e|, there exists an action at that is applicable in st and res (st, a t) = st+1 .In the following, we write EkM for the set of state traces of length k that are consistent with action model M .
+
+3 Problem Formulation 
+
+We now formalize the problem considered in this paper. For an execution trace e, we observe only a visual trace ,
+
+τ = ( s1, X 2, X 3, . . . , X |e|, s |e|+1 ),
+
+where s1 and s|e|+1 are states, and each Xt is an image of the corresponding intermediate state. We are given a dataset {τj }nj=1 of such visual traces generated under a do-main DM = ⟨T , P, A, M ⟩ for an unknown action model 
+
+M ∈ M (P, A). Our assumptions are as follows. • The initial and final states are fully observed. Having known initial and final states helps prevent degenerate solutions and ensures that the learned state representation remains human-readable. Importantly, we do not include images for these states. • Each intermediate observation Xt is a fully observed im-age of its underlying state, i.e., it fully determines the state. Note that the converse is not true: several different images can represent the same state. • The predicate set P and action schema set A (names and parameter signatures) are given. • For each trace, the object set O is given. For simplicity, our notations assume that all traces share the same object set O, but in principle, traces may come from instances with different object sets. • Our implementation uses ROSAME (Xi, Gould, and Thi´ ebaux 2024) as a component, where add effects and preconditions cannot intersect, and only preconditions may be deleted. This assumption can easily be relaxed. Fig. 1 illustrates our observations in a 6-step visual trace compared to the ground-truth state trace. Given a visual trace τj , we wish to use a neural network with parameters θ to predict the underlying state trace e. Ide-ally, we aim to jointly choose an action model M and neu-ral network parameters θ to maximize the log-likelihood of the visual traces being observations of state traces consistent with the action model M :
+
+ℓ(M, θ ) = 
+
+> n
+
+X
+
+> j=1
+
+log 
+
+X 
+
+> e∈E |τj|
+> M
+
+Pr( e | τj ; θ)
+
+ .
+
+In practice, this formulation is intractable: evaluating joint distributions over all propositions across all time steps and summing over e ∈ E |τj | 
+
+> M
+
+is computationally prohibitive. Fur-thermore, optimizing over discrete action models is hard. To make learning feasible, we introduce the following three relaxations: 1. We relax the trace prediction to be the product of marginal state probabilities at each time step. 2. Following ROSAME, we further relax each state predic-tion to a probabilistic state vector ps t ∈ [0 , 1] |PI | list-ing the marginal probabilities of each proposition. 3. Also following ROSAME, instead of optimizing directly over the discrete space of action models, we compute a probability distribution over action models and mod-ify the successor operator res to be probabilistic so that 
+
+res (ps t, a ) gives the expected next probabilistic state. Under these relaxations, the probability of a trace e given a visual trace τ factorizes as 
+
+Pr( e | τ ) = Y
+
+> t
+
+Pr( st+1 | st, X t+1 )= Y
+
+> t
+
+X
+
+> a∈AI
+
+Pr( st+1 , a | st, X t+1 )= Y
+
+> t
+
+X
+
+> a∈AI
+
+Pr( a | st, s t+1 ) Pr( st+1 | st, X t+1 ),
+
+where Xt denotes the image observation at time t. Since the state images are fully observed, Pr( st+1 | st, X t+1 ) = Pr( st+1 | Xt+1 ), giving 
+
+Pr( e | τ ) = Y
+
+> t
+
+X
+
+> a∈AI
+
+Pr( a | st, s t+1 ) Pr( st+1 | Xt+1 ).
+
+We predict these distributions with two neural networks: a state predictor with parameters θs that estimates Pr( st |
+
+Xt; θs) and outputs ps t, and an action predictor with pa-rameters θa that estimates Pr( a | st, s t+1 ; θa). The initial and final states come directly from the input; intermediate 
+
+ps t are predicted from images. We compute a probability distribution over action models with parameters θM , which can be obtained using ROSAME (see Sec. 4). We then minimize 
+
+E   
+
+> M∼Pr( M;θM)
+
+X
+
+> j,t
+
+Lj,t (M ).
+
+where for each trace j and step t, the loss Lj,t (M ) is 
+
+E
+
+> a∼Pr( a|ps t,ps t+1 ;θa)
+
+h
+
+∥res (ps t, a ) − ps t+1 ∥22 + L(a, ps t)
+
+i
+
+,
+
+and L(a, ps t) is a relaxed loss measuring applicability of action a in state ps t.Note that the loss decomposes over traces and time steps. For clarity in what follows, we define the loss for a single time step t, omitting the trace index j; the final objective is the sum of these losses across all traces and time steps. 
+
+4 ROSAME 
+
+Xi, Gould, and Thi´ ebaux (2024) presented a neuro-symbolic action model learner—ROSAME—and integrated it with a deep learning state predictor to enable action model learning from sequences of interleaved state images and observed ac-tions. We build on this work by extending ROSAME to en-able action model learning without observing the actions. ROSAME is a learnable model that takes as input a grounded action and outputs the grounded preconditions, add effects, and delete effects of that action. To achieve this, ROSAME learns a neural network for each action schema, whose outputs are the lifted preconditions and effects for the schema. Given an action at performed at step t, ROSAME first looks up its action schema α and computes three vec-tors: pre α, add α, and del α, where each component repre-sents the probability of a parameter-bound predicate being a precondition, an add effect, or a delete effect, respectively. These lifted conditions and effects are then mapped to their grounded counterparts for that action, i.e., pre at , add at ,and del at . Each value in these grounded vectors represents the probability that a proposition is a precondition or effect of the action. This probability is copied from the correspond-ing lifted vector if a parameter binding exists that unifies the proposition with the action; otherwise, it is set to zero. Given a state prediction ps t and an observed action at,ROSAME computes the preconditions and effects of at and infers the next state as 
+
+cps at = ps t ⊙ (1 − del at ) + (1 − ps t) ⊙ add at , (1) where ⊙ denotes elementwise product. This predicted state should be close to the next state pre-diction ps t+1 derived from the next state image. Accord-ingly, we define the prediction loss as: 
+
+Lpred = MSE( cps at , ps t+1 ) (2) In addition, all preconditions of at must hold in ps t. That is, a proposition cannot be a precondition of at and simulta-neously be false in ps t. This gives rise to an action applica-bility loss: 
+
+Lapp = MSE( pre at ⊙ (1 − ps t), 0) (3) ROSAME also introduces a prior bias loss that encour-ages learning parameter-bound predicates as preconditions, in order to recover prevail conditions—preconditions that are not deleted by actions (B¨ ackstr¨ om and Nebel 1995): 
+
+Lbias = MSE( pre at , 1) (4) If a proposition remains true both before and after an action, it could be a prevail condition, an add effect, or irrelevant to the action. In such cases, the prior bias loss encourages including the proposition as a precondition. The total loss used to train ROSAME for the observed action at is: 
+
+Lat = Lpred + Lapp + λ · L bias (5) where λ is a hyperparameter that controls the strength of the bias term. Gradients are directly backpropagated through the neural networks associated with the action schemas, allow-ing the model to learn a consistent lifted action model. For different actions, ROSAME operates like a lookup ta-ble: it selects and runs the neural network corresponding to the action schema. ROSAME provides a differentiable and logically consistent way to compute preconditions and ef-fects. In principle, it can be integrated with any deep learn-ing framework that expects such structured inputs and out-puts. Fig. 2 illustrates how ROSAME is integrated with a deep learning-based state predictor to enable action model learning from sequences of state images and fully observ-able actions. A hyperparameter γ ≥ 1 is used to upweight the prediction loss at the final step, since the final state is fully observed. We treat ROSAME as a black-box action model learner. In particular, it provides the probability distribution over ac-tion models Pr( M ; θM ) used in our framework. Conceptu-ally, our method does not rely on any ROSAME-specific ar-chitecture; it is compatible with any action model learner that produces probabilistic preconditions and effects in a similar form. 
+
+5 Deep Learning Framework 
+
+Action Prediction and Regularization. In this work, we assume that actions are not observed in the visual traces. As such, we introduce an additional neural network that pre-dicts the action from two consecutive states. Its output is a probability distribution over actions, Pr( at | ps t, ps t+1 ).To compute the loss in the absence of observed actions, we take the expected value over the ROSAME loss in Eq. 5 for all possible actions to get: 
+
+¯Lat = X
+
+> at∈AI
+
+Pr( at | ps t, ps t+1 )Lat (6) This formulation allows the preconditions and effects for different actions to remain separate during next-state infer-ence and applicability checking (Eq. 2 and 3), while also providing a training signal that encourages the neural net-work to predict the most consistent action for each step. However, in practice, action prediction often gets stuck in local minima under the above loss. We found that this arises because some actions are much more similar to each other—both visually and semantically—than to others. For example, in blocksworld, the only difference between 
+
+pickup( b1) and unstack( b1, b 2) lies in the state they apply to. Confusing them incurs less loss than predicting an unre-lated action like putdown( b1) . These ambiguities lead to a loss landscape with many local minima, making it difficult for gradient-based optimization to reach the correct solution. Visual Trace 
+
+> State Prediction
+> State Inference
+> State Predictor
+> Action Predictor
+> State Predictor
+> ROSAME
+> Action Predictor
+> ROSAME
+> Action Prediction
+> State Predictor
+> Action Predictor
+> ROSAME
+> ... ... ...
+
+Figure 3: Deep learning framework that predicts states, ac-tions and the action model; a scaling factor γ ≥ 1 empha-sizes losses at the fully observed initial and final steps. To mitigate this issue, we introduce a simple self-regularization loss that helps the learning process escape such local minima by using the locally best action as an aux-iliary target. For an action at, the log-probability that its in-ferred next state cps at matches the state prediction ps t+1 is: 
+
+log Pr pred = 
+
+> |PI|
+
+X
+
+> i=1
+
+log cps at⊙ps t+1 +(1 − cps at )⊙(1 −ps t+1 ) 
+
+> i
+
+(7) 
+
+Similarly, the log-probability of action at being applicable in state ps t is: 
+
+log Pr app = 
+
+> |PI|
+
+X
+
+> i=1
+
+log 1 − pre at ⊙ (1 − ps t) 
+
+> i
+
+(8) We define the locally best action as: 
+
+a∗ 
+
+> t
+
+= argmax [log Pr pred + log Pr app ] (9) Finally, we augment the loss from Eq. 6 with an additional cross-entropy term that encourages the action prediction to match a∗ 
+
+> t
+
+:
+
+Lt = ¯Lat + CE(Pr( at | ps t, ps t+1 ), a ∗ 
+
+> t
+
+) (10) Fig. 3 presents our framework for learning a lifted action model from visual traces. Since we assume that the initial and final states are fully observed, we introduce a hyperpa-rameter γ ≥ 1 to scale the first-step applicability loss and the last-step prediction loss. This encourages consistency with the available observations. 
+
+6 MILP Solution Fixer 
+
+The framework described above can, in principle, solve the relaxed task defined in Sec. 3. A globally optimal solu-tion exists in which the predicted states, actions, and ac-tion model align with the ground truth. However, in practice, without any action supervision, the system is susceptible to collapse to degenerate solutions—internally consistent pre-dictions of states, actions, and an action model that do not reflect the true underlying dynamics. Moreover, small sys-tematic mistakes early in training can lead to self-reinforcing local optima, where errors in the state predictions, action predictions, and the learned action model repeatedly support one another rather than being corrected. In such cases, the model can become stuck in configurations where significant inconsistencies with the visual traces persist, and gradient-based training alone struggles to repair these errors. To prevent such collapse and correct persistent logical in-consistencies, we introduce an external source of regulariza-tion. Specifically, we formulate a mixed-integer linear pro-gramming (MILP) problem that extracts a logically consis-tent set of states, actions, and a lifted action model that re-main as close as possible to the outputs of the deep learn-ing framework. In the deep learning framework, logical con-straints are imposed only through soft relaxations and can therefore be violated. The MILP repairs these errors by en-forcing hard constraints while making minimal edits to the predicted states, actions, and action model. This corrective mechanism guides learning away from degenerate solutions and enables the system to escape self-reinforcing local op-tima. Training converges when neural predictions and MILP solutions agree globally across all training examples. In the MILP, we define binary decision variables pre, add, and del, indexed by action schema α and parameter-bound predicate ⟨ρ, b ρ,α ⟩, indicating whether ⟨ρ, b ρ,α ⟩ is a lifted precondition, add effect, or delete effect of α. These cor-respond to the structure produced by ROSAME. We also de-fine binary variables act and hol, where act [a, t ] indicates whether action a is executed at time t, and hol [p, t ] indicates whether proposition p holds at time t.We further introduce auxiliary step-level indica-tors stepadd, stepdel, and steppre, where stepadd [p, t ],stepdel [p, t ], and steppre [p, t ] indicate whether proposition 
+
+p is added, deleted or required as a precondition at time t,respectively. For a proposition p = ⟨ρ, b ρ⟩, we define its actors as the set of all actions whose parameters can be bound to instanti-ate p: actors (p) = {a = ⟨α, b α⟩ | ∃ bρ,α s.t. bρ = bα ◦ bρ,α }.The inputs to the MILP are the state and action predic-tions from the deep learning model, the fully observed ini-tial and final states, and the lifted action model predicted by ROSAME. Specifically, OBS (p, t ) denotes the predicted probability that proposition p holds at time t, and OBS (a, t )
+
+denotes the probability that action a is executed at time t.Similarly, ROS Pre , ROS Add , and ROS Del denote the predicted probabilities that a parameter-bound predicate is a precondi-tion, add effect, or delete effect of an action schema. The objective of the MILP is to maximize the agreement 
+
+between the binary decision variables and the soft predic-tions. For example, the agreement term for propositions is: 
+
+OBS (p, t ) · hol [p, t ] + (1 − OBS (p, t )) · (1 − hol [p, t ]) ,
+
+which is rewritten in linear form below (up to a constant). We present the formulation for a single trace below; ex-tending it to multiple traces simply replicates the hol, act, and step-level indicator variables for each trace, while shar-ing the lifted action model variables pre, add, and del across all traces. The objectives in Eq. 11–12 are then summed over all traces. Eq. 16 adds a prior bias term consistent with Eq. 5, using the same hyperparameter λ.
+
+maximize 
+
+> pre ,add ,del ,act ,hol
+
+X
+
+> p,t
+
+(2 · OBS (p, t ) − 1) · hol [p, t ] + (11) 
+
+X
+
+> a,t
+
+(2 · OBS (a, t ) − 1) · act [a, t ] + (12) 
+
+X
+
+> α, ⟨ρ,b ρ,α ⟩
+
+(2 ·ROS Pre (α, ⟨ρ, b ρ,α ⟩)−1) ·pre [α, ⟨ρ, b ρ,α ⟩]+ (13) 
+
+X
+
+> α, ⟨ρ,b ρ,α ⟩
+
+(2 ·ROS Add (α, ⟨ρ, b ρ,α ⟩)−1) ·add [α, ⟨ρ, b ρ,α ⟩]+ (14) 
+
+X
+
+> α, ⟨ρ,b ρ,α ⟩
+
+(2 ·ROS Del (α, ⟨ρ, b ρ,α ⟩)−1) ·del [α, ⟨ρ, b ρ,α ⟩]+ (15) 
+
+X
+
+> α, ⟨ρ,b ρ,α ⟩
+
+λ · pre [α, ⟨ρ, b ρ,α ⟩] (16) s.t. ∀α and ⟨ρ, b ρ,α ⟩,
+
+pre [α, ⟨ρ, b ρ,α ⟩] + add [α, ⟨ρ, b ρ,α ⟩] ≤ 1 (17) pre [α, ⟨ρ, b ρ,α ⟩] ≥ del [α, ⟨ρ, b ρ,α ⟩] (18) 
+
+∀p ∈ s1, hol [p, 1] = 1 (19) 
+
+∀p / ∈ s1, hol [p, 1] = 0 (20) 
+
+∀p ∈ s|e|+1 , hol [p, |e| + 1] = 1 (21) 
+
+∀p / ∈ s|e|+1 , hol [p, |e| + 1] = 0 (22) 
+
+∀t, X
+
+> a∈AI
+
+act [a, t ] = 1 (23) 
+
+∀t, ∀p = ⟨ρ, b ρ⟩, ∀a = ⟨α, b α⟩ ∈ actors (p),
+
+stepadd [p, t ] ≤ add [α, ⟨ρ, b ρ,α ⟩] + 1 − act [a, t ] (24) stepadd [p, t ] ≥ add [α, ⟨ρ, b ρ,α ⟩] + act [a, t ] − 1 (25) stepdel [p, t ] ≤ del [α, ⟨ρ, b ρ,α ⟩] + 1 − act [a, t ] (26) stepdel [p, t ] ≥ del [α, ⟨ρ, b ρ,α ⟩] + act [a, t ] − 1 (27) steppre [p, t ] ≤ pre [α, ⟨ρ, b ρ,α ⟩] + 1 − act [a, t ] (28) steppre [p, t ] ≥ pre [α, ⟨ρ, b ρ,α ⟩] + act [a, t ] − 1 (29) stepadd [p, t ] ≤ X
+
+> a∈actors (p)
+
+act [a, t ] (30) stepdel [p, t ] ≤ X
+
+> a∈actors (p)
+
+act [a, t ] (31) steppre [p, t ] ≤ X
+
+> a∈actors (p)
+
+act [a, t ] (32) hol [p, t + 1] ≥ stepadd [p, t ] (33) 
+
+1 − hol [p, t + 1] ≥ stepdel [p, t ] (34) hol [p, t ] ≥ steppre [p, t ] (35) stepadd [p, t ] ≥ hol [p, t + 1] − hol [p, t ] (36) stepdel [p, t ] ≥ hol [p, t ] − hol [p, t + 1] (37) 
+
+Eq. 17 and 18 enforce the validity of the lifted action model according to ROSAME’s assumptions: add effects and preconditions cannot intersect, and only preconditions may be deleted. Eq. 19–22 enforce that the proposition truth values at time steps 1 and |e| + 1 match the observed ini-tial and final states. Eq. 23 ensures that exactly one action is executed per timestep. Eq. 24–29 use variables act [a, t ] to activate the auxiliary step-level indicators when an action is executed. These con-straints ensure that, if action a is chosen at time t, its cor-responding preconditions and effects are correctly reflected in steppre, stepadd, and stepdel. Conversely, Eq. 30–32 en-sure that the auxiliary step-level indicators remain zero if no action capable of influencing proposition p is executed at t.NN  
+
+> MILP
+> Logically Consistent DL Predictions Deep Learning Loss
+> (ROSAME)
+> (ROSAME)
+> Pseudo-label
+
+Figure 4: MILP module integrated as a plug-in to generate pseudo-labels from predicted states, actions and the action model, which guide further training. Finally, Eq. 33–35 ensure that the step-level effects and preconditions are properly reflected in the pre- and post-states, and Eq. 36–37 encode the frame axioms. In addition to probabilistic predictions encoded in the ob-jectives, we can also encode deterministic knowledge—such as a partial action model, known states or actions, back-ground knowledge, static predicates, and model restrictions such as well-formedness (G¨ osgens, Jansen, and Geffner 2025)—as constraints directly into the MILP when such in-formation is available. 
+
+Integrating MILP with the Framework 
+
+Ideally, we would formulate a single MILP over all traces in the training dataset. However, this is infeasible in practice: the solving time grows rapidly with the number of variables, which scales with both the number of traces and the length of each trace. Instead, at regular intervals during training, we solve a MILP on a small, randomly selected subset of traces from the dataset. We integrate the MILP solver as a plug-in module within the deep learning framework. The deep learning model is trained independently, and periodically we sample several visual traces from the dataset. For each sampled trace, we obtain its predicted states and predicted actions from the neural predictors, and we obtain the lifted action model from ROSAME. Using these predictions, we construct a MILP whose objective measures how closely a logically consis-tent solution aligns with them. Solving the MILP yields a globally consistent explanation of the sampled traces, from which we derive pseudo-labels that supervise subsequent training. Fig. 4 illustrates this iterative interaction. In this work, we treat action schema names and parame-ters as pure symbols, ignoring their semantic meaning. As a result, permuting schema names with identical signatures, or permuting parameters of the same type within a schema, produces another valid representation of the same underly-ing action model. Consequently, multiple equivalent solu-tions may exist due to this symmetry. The deep learning model may converge to one such variant, while the MILP may produce another. To align these representations, we enumerate all valid permutations of schema names and pa-rameters for the MILP solution. For each permutation, we evaluate its agreement with the ROSAME action model ac-cording to Eq. 13–15. We then select the permutation with the highest agreement and apply it to the MILP solution be-fore extracting pseudo-labels. 
+
+MILP Pseudo-label Supervision 
+
+The MILP solution provides pseudo-labels for three com-ponents of the neural model: the state predictor, the action predictor, and ROSAME. 
+
+State supervision. For each time step t, the binary state vector s⋆t ∈ { 0, 1}|PI | is obtained from the MILP decision variables via s⋆t,i = 1 iff hol [pi, t ] = 1 . This serves as the target for the probabilistic state prediction ps t. We supervise this prediction using binary cross-entropy. 
+
+Action supervision. Since the MILP enforces that exactly one action is executed at each time step, we define a⋆t ∈ AI
+
+as the (unique) action satisfying act[ a⋆t ,t] = 1. We replace the self-regularization target a∗ 
+
+> t
+
+in Sec. 5, with a⋆t as the cross-entropy target. 
+
+Action model supervision. For each action schema α and parameter-bound predicate ⟨ρ, b ρ,α ⟩, ROSAME predicts a probability distribution over four mutually exclusive cases: irrelevant (not used in the action model), add effect, precon-dition (but not delete effect), or delete effect. From the MILP decision variables pre, add, and del, we determine the target case c⋆ ∈ { 1, 2, 3, 4}. We then train ROSAME using the cross-entropy loss against c⋆, averaged over all pairs of ac-tion schemas and parameter-bound predicates. 
+
+Pseudo-label Aging and Updating 
+
+The quality of a MILP solution depends strongly on the ac-curacy of the neural predictions used to construct it. Early in training, these predictions may be noisy, and solving the MILP on a small subset of traces can yield solutions that do not generalize across the dataset. Moreover, MILP solutions obtained at different epochs may not be mutually consistent. To account for this, we apply an exponential decay to each pseudo-label based on its age. If a pseudo-label is created at epoch e0, then at epoch e > e 0 its loss contribution is weighted by ψ e−e0 with ψ < 1. This schedule ensures that older pseudo-labels gradually lose influence, while newer pseudo-labels—derived from increasingly accurate predic-tions—are emphasized. When a trace is sampled again dur-ing training, its pseudo-labels are recomputed and replace the previous ones. Finally, the MILP objective itself is flexible: we may in-clude all, some, or weighted combinations of its terms de-pending on our confidence in the corresponding neural pre-dictions. This flexibility allows the MILP to emphasize re-liable predictions while downweighting inconsistent ones, thereby providing more effective supervision for learning. 
+
+7 Experiments 
+
+We implement the deep learning framework in PyTorch 2.6 and use Gurobi 12.0.1 as the MILP solver. All experiments were conducted on a machine equipped with an AMD Ryzen 9 9900X CPU (12 logical cores), 24 GB of RAM, and a single NVIDIA RTX 4090 GPU. Domains |PI | |AI | # Steps # Fixes TL(MILP)[s] Err Agree State Acc Action Acc t/ep[s] Blocksworld (MNIST grid) 36 50 3 4 60 0 0.977 97.81% 85.33% 2.50 Gripper 28 50 9 3 150 0 0.978 100% 100% 2.91 Logistics 72 196 9 3 150 0 0.983 99.89% 99.56% 10.64 Blocksworld (Synthesized) 36 50 3 3 60 0 0.976 99.29% 88.67% 1.51 Hanoi 55 120 5 3 90 0 0.940 98.55% 81.40% 4.77 8-puzzle 153 576 5 3 90 0 0.985 99.77% 92.60% 14.54 
+
+Table 1: Evaluation results across domains. TL: MILP time limit; t/ep: average training time per epoch. 
+
+Visual trace dataset. We use the same dataset as Xi, Gould, and Thi´ ebaux (2024). There are five do-mains—Blocksworld, Gripper, Logistics, Hanoi, and 8-puzzle—and two types of visualization: (1) digit and letter figures from the MNIST (Deng 2012) and EMNIST (Cohen et al. 2017) datasets to represent objects and backgrounds, arranged in grids for Blocksworld, Gripper, and Logistics; and (2) synthesized images rendered with the PDDLGym library (Silver and Chitnis 2020) for Blocksworld, Hanoi, and 8-puzzle. Note that multiple distinct images may repre-sent the same state. For Blocksworld (both visual representa-tions), block piles may occupy different horizontal positions on the table; for Gripper, balls may appear in different posi-tions within the same room; and for Logistics, objects may occupy different grid cells assigned to the same location. The object sets for each domain are fixed across all traces: 5 blocks for Blocksworld (both visual representations); 6 balls, 2 grippers, and 2 rooms for Gripper; 6 packages, 2 cities (each with 2 locations, one of which is an airport), 2 trucks, and 2 airplanes for Logistics; 4 discs and 3 pegs for Hanoi; and 8 tiles on a 3 × 3 board for 8-puzzle. For each trace, we sample a random state as the initial state using a problem generator, and generate a trace by ran-dom walk, uniformly selecting an applicable action at every step. For Blocksworld and 8-puzzle, the generator is pro-vided by the PDDL-generators library (Seipp, Torralba, and Hoffmann 2022); for the remaining domains, we implement problem generators ourselves, since the library does not sup-port generating the range of random initial states we require. 
+
+Training. We generate 2,000 traces per domain and split them into training and test sets (90:10). We train for 5,000 epochs using Adam with β = (0 .9, 0.999) , learning rate 
+
+10 −4, and batch size 128. We set the prior-bias weight 
+
+λ = 0 .4 and the supervision weight γ = 10 . We also apply data augmentation with image variations of the same state. Training proceeds in two phases. We begin by training the deep learning model alone for 50 epochs, without MILP in-tegration. At every epoch thereafter, we randomly sample a small set of 3–4 traces from the training set and formulate a corresponding MILP problem. Each MILP is solved with a time limit, and pseudo-labels are extracted from the best feasible solution, if any. These pseudo-labels are used to su-pervise the neural model, with their influence annealed over time using an exponential decay factor ψ = 0 .99 .
+
+Evaluation and results. To evaluate the learned action model, we follow Xi, Gould, and Thi´ ebaux (2024) in report-ing the Error , defined as the syntactic difference between the learned and ground-truth models under the best valid per-mutation of action schema names and parameters. We also report the maximum agreement score (normalized to [0 , 1] )between the learned model and the ground truth (as defined in Sec. 6). For state prediction, we compute proposition-wise accuracy using a threshold of 0.5. For action prediction, we report accuracy under the best-matching schema and param-eter permutation identified during evaluation. Tab. 1 summarizes the results. For each domain, we re-port results for the longest trace length we considered given the time available. We recover the ground-truth action model (up to permutation) and achieve high accuracy in both state and action prediction across all domains. In addition to eval-uation metrics, we report the number of traces which the MILP aims to fix at each epoch, the MILP time limit, and the average training time per epoch. We give longer time limits to longer traces, since the MILP problems are larger. During training, we observe that the MILP often requires substantial time to fix traces in early epochs and may produce subopti-mal corrections under the time limit. As training progresses, MILP problems become easier to solve, and the average time per epoch becomes much lower than the time limit. In general, the problem becomes harder as visual traces become longer, for two reasons. First, longer visual traces provide weaker indirect supervision for intermediate states. Second, the complexity of solving the MILP grows rapidly with trace length, limiting how much correction the MILP can provide. In our experiments, agreement with the ground truth model consistently decreases as trace length increases. Interestingly, however, state and action accuracy sometimes increase for longer traces. Our hypothesis is that, since pseudo-labels are generated via MILP, longer traces yield more pseudo-supervision for both states and actions, which can counteract the increased learning difficulty. 
+
+Ablation study. Fig. 5 compares learning outcomes with and without MILP. Each bar shows the change in perfor-mance obtained by adding MILP on top of the baseline trained without MILP. Where needed, incorporating pseudo-label supervision from MILP prevents prediction collapse and helps training escape local optima, enabling conver-gence to a globally consistent solution. Including MILP re-duces model error, improves agreement with the ground truth, and increases both state and action prediction accu-racy. For Logistics and 8-puzzle, however, the baseline neu-ral model already attains a correct solution without MILP. The MILP objective incorporates terms corresponding to state predictions, action predictions, and the action model predicted by ROSAME. As discussed in Sec. 6, this objec-BW-M 
+
+> Grip
+> Log
+> BW-S
+> Hanoi
+> 8-puz
+> −10.0
+> −7.5
+> −5.0
+> −2.5
+> 0.0
+> Δ Err
+> Error count
+> BW-M
+> Grip
+> Log
+> BW-S
+> Hanoi
+> 8-puz
+> 0.0
+> 0.1
+> 0.2
+> Δ Agree
+> Agreement
+> BW-M
+> Grip
+> Log
+> BW-S
+> Hanoi
+> 8-puz
+> 0
+> 5
+> 10
+> Δ State Acc (%)
+> State accuracy
+> BW-M
+> Grip
+> Log
+> BW-S
+> Hanoi
+> 8-puz
+> 0
+> 25
+> 50
+> 75
+> Δ Action Acc (%)  Action accuracy
+
+Figure 5: Ablation of MILP correction. Bars show (with MILP) – (without MILP). BW-M   
+
+> Grip
+> Log
+> BW-S
+> Hanoi
+> 8-puz
+> 0
+> 2
+> 4
+> 6
+> 8
+> Err
+> Error count
+> BW-M
+> Grip
+> Log
+> BW-S
+> Hanoi
+> 8-puz
+> 0.80
+> 0.85
+> 0.90
+> 0.95
+> 1.00
+> Agree
+> Agreement
+> BW-M
+> Grip
+> Log
+> BW-S
+> Hanoi
+> 8-puz
+> 90.0
+> 92.5
+> 95.0
+> 97.5
+> 100.0
+> State Acc (%)
+> State accuracy
+> BW-M
+> Grip
+> Log
+> BW-S
+> Hanoi
+> 8-puz
+> 60
+> 80
+> 100
+> Action Acc (%)
+> Action accuracy
+> State State+Action State+Action+Model (default)
+
+Figure 6: Comparison among different MILP objectives tive can be flexibly customized. Fig. 6 compares three dif-ferent configurations of the MILP objective: (1) using only state predictions, (2) using both state and action predictions, and (3) using all terms. While several domains show compa-rable results across the three configurations, in Blocksworld (both visual representations) including all three terms sig-nificantly outperforms the other two. Allowing fewer terms in the objective increases correction flexibility but reduces fidelity to the neural model’s predictions; these effects com-pete and are difficult to balance. Identifying a more princi-pled way to balance these terms remains future work. 
+
+8 Conclusion, Related and Future Work 
+
+Our work contributes to the broader problem of automati-cally constructing planning models from data. Beyond ac-tion model learning, a fully autonomous pipeline also in-volves defining or inventing a symbolic vocabulary that is sufficient for planning (Konidaris, Kaelbling, and Lozano-Perez 2014; Konidaris, Kaelbling, and Lozano-P´ erez 2018; Liang et al. 2025; Athalye et al. 2025), abstracting avail-able data into a symbolic representation (James, Rosman, and Konidaris 2022; Verma, Marpally, and Srivastava 2022; Liang et al. 2025), repairing or reconciling inconsistencies in the learned models (Gragera et al. 2023; Lin, Grastien, and Bercher 2023), and integrating the resulting models with ex-ecutable low-level skills (Chitnis et al. 2022; Shah, Nagpal, and Srivastava 2025). In this work, we focus on the inter-section of symbolic abstraction and action model learning in the context of visual observations. In particular, we ad-dress errors and uncertainty introduced during abstraction by leveraging constraints induced by action model and trace consistency. Works that focus on other components of this pipeline are complementary but outside the scope of this pa-per. Ultimately, a complete solution will require a unified framework that jointly addresses all components. In this paper, we propose a framework for learning lifted action models from visual traces without action supervision. A closely related line of work is Latplan (Asai and Fuku-naga 2017, 2018; Asai and Kajino 2019; Asai and Muise 2020; Asai et al. 2022), an unsupervised framework that learns latent, propositional action models from state image pairs. Latplan does not rely on a known symbolic vocabulary or fully specified initial/final states like we do. Meanwhile, its learned model is uninterpretable, cannot generalize to in-stances with different object counts or visual styles, and can-not be used to plan without images. In contrast, we assume access to the domain’s predicates and action schema signa-tures, which allow us to leverage ROSAME (Xi, Gould, and Thi´ ebaux 2024) to learn lifted, interpretable action models that generalize across instances. They also enable us to cre-ate a simpler and more transparent framework than Latplan. Bonet and Geffner (2020) investigate a different but re-lated setting, where lifted action models—as well as predi-cates and action schemas—are learned from a labeled graph representing the state space structure for small instances. Rodriguez et al. (2021) extend this framework to handle par-tial knowledge of the graph and a limited form of noise that obscures the identity of the target state for certain transi-tions. These approaches rely on different assumptions and offer complementary strengths. Our MILP model is also related to model repair meth-ods such as FAMA (Aineto, Celorrio, and Onaindia 2019), which learns or repairs lifted action models—sometimes us-ing only initial and final states—via compilation into clas-sical planning with context-dependent effects. A key differ-ence is that our approach incorporates probabilistic knowl-edge about states, actions, and the action model, whereas FAMA requires deterministic knowledge (which may also be incorporated in our MILP). While it may be possible to simulate our MILP within the FAMA compilation by us-ing context-dependent action costs, few optimal planners support this feature (Geißer, Keller, and Mattm¨ uller 2016; Ivankovic, Gordon, and Haslum 2019), and those that do re-main less competitive than mature MILP solvers. The scalability of our approach is currently bounded by the complexity of solving the MILP. Future work will explore more scalable constraint-solving or approxima-tion techniques that preserve logical structure while reduc-ing computational cost, enabling correction over more and longer traces. Another important direction is to remove the assumption that predicates and action schemas are provided. Acknowledgments 
+
+This work was funded by the Australian Research Coun-cil (ARC) under the Discovery Project grant DP220103815 and by the Artificial and Natural Intelligence Toulouse In-stitute (ANITI) under the grant agreement ANR-23-IACL-0002. We also thank the the anonymous reviewers for their helpful suggestions. 
+
+References 
+
+Aineto, D.; Celorrio, S. J.; and Onaindia, E. 2019. Learn-ing Action Models with Minimal Observability. Artificial Intelligence , 275: 104–137. Asai, M.; and Fukunaga, A. 2017. Classical Planning in Deep Latent Space: From Unlabeled Images to PDDL (and back). In Proceedings of the 12th International Workshop on Neural-Symbolic Learning and Reasoning (NeSy-17) .Asai, M.; and Fukunaga, A. 2018. Classical Planning in Deep Latent space: Bridging the Subsymbolic-Symbolic Boundary. In Proceedings of the 32nd AAAI Conference on Artificial Intelligence (AAAI-18) .Asai, M.; and Kajino, H. 2019. Towards Stable Symbol Grounding with Zero-Suppressed State Autoencoder. In 
+
+Proceedings of the 29th International Conference on Auto-mated Planning and Scheduling (ICAPS-19) , 592–600. Asai, M.; Kajino, H.; Fukunaga, A.; and Muise, C. 2022. Classical Planning in Deep Latent Space. Journal of Artifi-cial Intelligence Research , 74: 1599–1686. Asai, M.; and Muise, C. 2020. Learning Neural-Symbolic Descriptive Planning Models via Cube-Space Priors: The Voyage Home (to STRIPS). In Proceedings of the 29th International Joint Conference on Artificial Intelligence (IJCAI-20) , 2676–2682. Athalye, A.; Kumar, N.; Silver, T.; Liang, Y.; Lozano-P´ erez, T.; and Kaelbling, L. P. 2025. Predicate invention from pix-els via pretrained vision-language models. In AAAI 2025 Workshop LM4Plan .B¨ ackstr¨ om, C.; and Nebel, B. 1995. Complexity Results for SAS+ Planning. Computational Intelligence , 11(4): 625– 655. Bonet, B.; and Geffner, H. 2020. Learning First-Order Sym-bolic Representations for Planning from the Structure of the State Space. In Proceedings of the 24th European Confer-ence on Artificial Intelligence (ECAI-20) , 2322–2329. Chitnis, R.; Silver, T.; Tenenbaum, J. B.; Lozano-P´ erez, T.; and Kaelbling, L. P. 2022. Learning Neuro-Symbolic Rela-tional Transition Models for Bilevel Planning. In Proceed-ings of the 2022 IEEE/RSJ International Conference on In-telligent Robots and Systems (IROS-22) , 4166–4173. IEEE. Cohen, G.; Afshar, S.; Tapson, J.; and Van Schaik, A. 2017. EMNIST: Extending MNIST to Handwritten Letters. In 
+
+Proceedings of the International Joint Conference on Neural Networks (IJCNN-17) , 2921–2926. Cresswell, S.; and Gregory, P. 2011. Generalised Domain Model Acquisition from Action Traces. In Proceedings of the 21st International Conference on Automated Planning and Scheduling (ICAPS-11) , 42–49. Deng, L. 2012. The MNIST Database of Handwritten Digit Images for Machine Learning Research. IEEE Signal Pro-cessing Magazine , 29(6): 141–142. Geißer, F.; Keller, T.; and Mattm¨ uller, R. 2016. Abstractions for Planning with State-Dependent Action Costs. In Pro-ceedings of the 26th International Conference on Automated Planning and Scheduling (ICAPS-16) , 140–148. G¨ osgens, J.; Jansen, N.; and Geffner, H. 2025. Learning Lifted STRIPS Models from Action Traces Alone: A Sim-ple, General, and Scalable Solution. In Proceedings of the 35th International Conference on Automated Planning and Scheduling (ICAPS-25) .Gragera, A.; Fuentetaja, R.; Garc´ ıa-Olaya, ´A.; and Fern´ andez, F. 2023. A planning approach to repair do-mains with incomplete action effects. In Proceedings of the 33rd International Conference on Automated Planning and Scheduling (ICAPS-23) , volume 33, 153–161. Ivankovic, F.; Gordon, D.; and Haslum, P. 2019. Planning with Global State Constraints and State-Dependent Action Costs. In Proceedings of the 29th International Conference on Automated Planning and Scheduling (ICAPS-19) , 232– 236. James, S.; Rosman, B.; and Konidaris, G. 2022. Au-tonomous Learning of Object-Centric Abstractions for High-Level Planning. In Proceedings of the 10th Interna-tional Conference on Learning Representations (ICLR-22) .Juba, B.; Le, H. S.; and Stern, R. 2021. Safe Learning of Lifted Action Models. In Proceedings of the 18th Interna-tional Conference on Principles of Knowledge Representa-tion and Reasoning (KR-21) , 379–389. Konidaris, G.; Kaelbling, L.; and Lozano-Perez, T. 2014. Constructing symbolic representations for high-level plan-ning. In Proceedings of the 28th AAAI Conference on Artifi-cial Intelligence (AAAI-14) , volume 28. Konidaris, G. D.; Kaelbling, L. P.; and Lozano-P´ erez, T. 2018. From Skills to Symbols: Learning Symbolic Rep-resentations for Abstract High-Level Planning. Journal of Artificial Intelligence Research , 61: 215–289. Lamanna, L.; and Serafini, L. 2024. Action Model Learn-ing from Noisy Traces: a Probabilistic Approach. In Pro-ceedings of the 34th International Conference on Automated Planning and Scheduling (ICAPS-24) , 342–350. Liang, Y.; Kumar, N.; Tang, H.; Weller, A.; Tenenbaum, J. B.; Silver, T.; Henriques, J. F.; and Ellis, K. 2025. Visu-alPredicator: Learning Abstract World Models with Neuro-Symbolic Predicates for Robot Planning. In Proceedings of the 13th International Conference on Learning Representa-tions (ICLR-25) .Lin, S.; Grastien, A.; and Bercher, P. 2023. Towards au-tomated modeling assistance: An efficient approach for re-pairing flawed planning domains. In Proceedings of the 37th AAAI Conference on Artificial Intelligence (AAAI-23) , vol-ume 37, 12022–12031. Rodriguez, I. D.; Bonet, B.; Romero, J.; and Geffner, H. 2021. Learning First-Order Representations for Planning from Black Box States: New Results. In Proceedings of the 18th International Conference on Principles of Knowledge Representation and Reasoning (KR-21) , 539–548. Seipp, J.; Torralba, ´ A.; and Hoffmann, J. 2022. PDDL Gen-erators. https://doi.org/10.5281/zenodo.6382173. Shah, N.; Nagpal, J.; and Srivastava, S. 2025. From Real World to Logic and Back: Learning Generalizable Rela-tional Concepts For Long Horizon Robot Planning. In Con-ference on robot learning . PMLR. Silver, T.; and Chitnis, R. 2020. PDDLGym: Gym Environ-ments from PDDL Problems. In International Conference on Automated Planning and Scheduling (ICAPS) PRL Work-shop .Verma, P.; Marpally, S. R.; and Srivastava, S. 2022. Discov-ering User-Interpretable Capabilities of Black-Box Planning Agents. In Proceedings of the 19th International Conference on Principles of Knowledge Representation and Reasoning (KR-22) .Xi, K.; Gould, S.; and Thi´ ebaux, S. 2024. Neuro-Symbolic Learning of Lifted Action Models from Visual Traces. In 
+
+Proceedings of the 34th International Conference on Auto-mated Planning and Scheduling (ICAPS-24) , 653–662. Yang, Q.; Wu, K.; and Jiang, Y. 2007. Learning Action Mod-els from Plan Examples using Weighted MAX-SAT. Artifi-cial Intelligence , 171(2-3): 107–143. Zhuo, H. H.; and Kambhampati, S. 2013. Action-Model Acquisition from Noisy Plan Traces. In Proceedings of the 23rd International Joint Conference on Artificial Intel-ligence (IJCAI-13) , 2444–2450. A ROSAME Implementation Details 
+
+In this section, we provide technical details about the im-plementation of ROSAME (Xi, Gould, and Thi´ ebaux 2024). Note however that they are not needed to understand the pa-per. Given a set of predicate symbols P and action symbols 
+
+A, ROSAME assumes that any valid action model must sat-isfy the following two constraints: • add effects and preconditions cannot intersect, i.e., 
+
+Add( α) ∩ Pre( α) = ∅;• only preconditions can be deleted, i.e., Del( α) ⊆
+
+Pre( α).Based on these constraints, ROSAME enumerates all valid relationships between an action schema α and a parameter-bound predicate ⟨ρ, b ρ,α ⟩. There are four mutually exclusive cases: • Case 1: ⟨ρ, b ρ,α ⟩ is not involved in the action model of 
+
+α.• Case 2: ⟨ρ, b ρ,α ⟩ is an add effect only. • Case 3: ⟨ρ, b ρ,α ⟩ is a precondition only. • Case 4: ⟨ρ, b ρ,α ⟩ is both a precondition and a delete ef-fect (but not an add effect). ROSAME frames the task of learning action models as a classification problem: for each pair (α, ⟨ρ, b ρ,α ⟩), it pre-dicts which of the four cases applies. To do this, ROSAME trains a deep learning classifier for each action schema α,where the inputs are fixed latent vectors—one for each parameter-bound predicate ⟨ρ, b ρ,α ⟩—and the outputs are probability distributions over the four cases. Let −→pr α, ⟨ρ,b ρ,α ⟩ denote the predicted probability vector for the four cases. These probabilities are then decoded into the lifted precondition and effect indicators via: 
+
+pre α, ⟨ρ,b ρ,α ⟩ = −→pr α, ⟨ρ,b ρ,α ⟩ · (0 , 0, 1, 1) 
+
+add α, ⟨ρ,b ρ,α ⟩ = −→pr α, ⟨ρ,b ρ,α ⟩ · (0 , 1, 0, 0) 
+
+del α, ⟨ρ,b ρ,α ⟩ = −→pr α, ⟨ρ,b ρ,α ⟩ · (0 , 0, 0, 1) 
+
+These expressions compute the expected value for each label by summing over the compatible cases. For instance, the probability that ⟨ρ, b ρ,α ⟩ is a precondition is the sum of the probabilities assigned to cases 3 and 4. By aggregating the outputs over all parameter-bound predicates, ROSAME constructs the full lifted precondition and effect vectors pre α, add α, and del α for each action schema α.
+
+B Visual Trace Dataset 
+
+Fig. 7–13 present example visual traces for the domains and visual representations we use in our experiments. In each ex-ample, we show the fully observed initial and final states, the intermediate state images, and the ground-truth actions ex-ecuted (which we do not provide to the model during train-ing). We now detail how we implement trace rendering. 
+
+Blocksworld (MNIST grid) In Blocksworld, we use an object set of five blocks. To render state images with MNIST digits, for each trace we select random figures for digits 1–5 to represent the five blocks. The environment is organized as a 6 × 5 grid of cells. If a block is on the table, we ran-domly place it in one of five grid cells in the bottom row. If a block is held by the arm, we place it in the middle cell of the top row. If it is on top of another block, its position is the cell above its supporting block. We fill the backgrounds with randomly selected figures for digit 0. When we progress through the trace, if the executed action is a pickup action, we move the block to the middle cell of the top row and fill the cell it leaves with a random figure for digit 0. If the executed action is a putdown action, we randomly select an unoccupied cell in the bottom row and move the block there, and fill the cell it leaves (which is the middle cell of the top row) with a random figure for digit 0. stack and unstack are implemented similarly, except that the origin and the desti-nation become the cell above the supporting block. Cells that are not affected by the executed action remain unchanged. 
+
+Gripper In Gripper, we use an object set of six balls, two grippers, and two rooms. To render state images, for each trace we select random figures for digits 1–6 to represent the six balls. Each room is represented as a 2 × 6 grid of cells, and the two rooms are stacked vertically. If a ball is in a room, we randomly place it in one of six grid cells in the bottom row of that room. The two grippers are rendered as two cells with their background and foreground colors flipped. If the grippers are at a room, we place them at the two top-left cells of that room. If a gripper holds a ball, we fill its cell with the figure for that ball. Otherwise, we fill it with a random figure for digit 0. We also fill the back-grounds with randomly selected figures for digit 0. When we progress through the trace, if the executed action is a 
+
+pick action, we move the ball to the cell of the gripper, flip its color, and fill the cell it leaves with a random figure for digit 0. If it is a drop action, we move the ball from the cell of the gripper to a randomly selected, unoccupied bottom-row cell of the room, and flip its color back. If it is a move 
+
+action, we move the two grippers to the top-left of the other room and fill the cells they leave with two random figures for digit 0 with normal color. 
+
+Logistics In Logistics, we use an object set of six pack-ages, two cities (each with two locations, one of which is an airport), two trucks (one in each city), and two airplanes. To render state images, for each trace we select random fig-ures for digits 1–6 to represent the six packages, two ran-dom figures for letter T to represent the trucks, and two random figures for letter A to represent the airplanes. We use four different colors to distinguish the two trucks and two airplanes. Each location is organized as a 3 × 3 grid of cells, and we stack the two locations in each city horizon-tally (the left one is the normal location, the right one the airport), and then stack the two cities vertically. If a pack-age, truck, or airplane is at a location, we randomly place it in one of the cells assigned to that location. If a package is in a truck or airplane, we find the location of the vehi-cle and randomly place the package in one of the cells as-Initial state 
+
+arm-empty 
+
+clear(b2) 
+
+clear(b3) 
+
+clear(b5) 
+
+on-table(b1) 
+
+on-table(b2) 
+
+on-table(b4) 
+
+on(b3,b4) 
+
+on(b5,b1) 
+
+unstack(b5,b1) putdown(b5) 
+
+Final state 
+
+(last action: pickup(b5)) 
+
+clear(b1) 
+
+clear(b2) 
+
+clear(b3) 
+
+on-table(b1) 
+
+on-table(b2) 
+
+on-table(b4) 
+
+holding(b5) 
+
+on(b3,b4) Figure 7: A 3-step visual trace example for Blocksworld (MNIST grid). Initial state 
+
+at-robby(r1) 
+
+at(b3,r2) 
+
+at(b4,r1) 
+
+at(b5,r2) 
+
+at(b6,r2) 
+
+carry(b1,g1) 
+
+carry(b2,g2) 
+
+move(r1,r2) drop(b1,r2,g1) pick(b1,r2,g1) move(r2,r1) move(r1,r2) drop(b2,r2,g2) drop(b1,r2,g1) pick(b5,r2,g2) 
+
+Final state 
+
+(last action: pick(b1,r2,g1)) 
+
+at-robby(r2) 
+
+at(b2,r2) 
+
+at(b3,r2) 
+
+at(b4,r1) 
+
+at(b6,r2) 
+
+carry(b1,g1) 
+
+carry(b5,g2) 
+
+Figure 8: A 9-step visual trace example for Gripper. Initial state 
+
+at(t1,l1-2) 
+
+at(a1,l1-2) 
+
+at(p6,l2-2) 
+
+at(t2,l2-2) 
+
+at(a2,l2-2) 
+
+in(p1,a2) 
+
+in(p2,a1) 
+
+in(p3,t1) 
+
+in(p4,a2) 
+
+in(p5,t2) 
+
+in-city(l1-1,c1) 
+
+... 
+
+unload-airplane(p1,a2,l2-2) load-truck(p1,t2,l2-2) drive-truck(t1,l1-2,l1-1,c1) load-airplane(p6,a2,l2-2) unload-truck(p3,t1,l1-1) unload-airplane(p6,a2,l2-2) load-truck(p6,t2,l2-2) load-truck(p3,t1,l1-1) Final state 
+
+(last action: 
+
+unload-truck(p3,t1,l1-1)) 
+
+at(p3,l1-1) 
+
+at(t1,l1-1) 
+
+at(a1,l1-2) 
+
+at(t2,l2-2) 
+
+at(a2,l2-2) 
+
+in(p1,t2) 
+
+in(p2,a1) 
+
+in(p4,a2) 
+
+in(p5,t2) 
+
+in(p6,t2) 
+
+in-city(l1-1,c1) 
+
+... 
+
+Figure 9: A 9-step visual trace example for Logistics. Initial state 
+
+arm-empty 
+
+clear(b2) 
+
+clear(b3) 
+
+clear(b5) 
+
+on-table(b1) 
+
+on-table(b2) 
+
+on-table(b4) 
+
+on(b3,b4) 
+
+on(b5,b1) 
+
+unstack(b5,b1) putdown(b5) 
+
+Final state 
+
+(last action: pickup(b5)) 
+
+clear(b1) 
+
+clear(b2) 
+
+clear(b3) 
+
+on-table(b1) 
+
+on-table(b2) 
+
+on-table(b4) 
+
+holding(b5) 
+
+on(b3,b4) 
+
+Figure 10: A 3-step visual trace example for Blocksworld (Synthesized). Initial state 
+
+arm-empty 
+
+clear(b2) 
+
+clear(b3) 
+
+clear(b5) 
+
+on-table(b1) 
+
+on-table(b2) 
+
+on-table(b4) 
+
+on(b3,b4) 
+
+on(b5,b1) 
+
+unstack(b5,b1) putdown(b5) 
+
+Final state 
+
+(last action: pickup(b5)) 
+
+clear(b1) 
+
+clear(b2) 
+
+clear(b3) 
+
+on-table(b1) 
+
+on-table(b2) 
+
+on-table(b4) 
+
+holding(b5) 
+
+on(b3,b4) 
+
+Figure 11: An alternative visual trace corresponding to the same underlying state trace as Fig. 10. Initial state 
+
+clear(d1) 
+
+clear(d3) 
+
+clear(peg3) 
+
+on(d1,d2) 
+
+on(d2,peg2) 
+
+on(d3,d4) 
+
+on(d4,peg1) 
+
+smaller(d2,d1) 
+
+smaller(d3,d1) 
+
+smaller(d4,d1) 
+
+smaller(peg1,d1) 
+
+... 
+
+move(d1,d2,d3) move(d2,peg2,peg3) move(d1,d3,d2) move(d1,d2,peg2) Final state 
+
+(last action: 
+
+move(d1,peg2,d2)) 
+
+clear(d1) 
+
+clear(d3) 
+
+clear(peg2) 
+
+on(d1,d2) 
+
+on(d2,peg3) 
+
+on(d3,d4) 
+
+on(d4,peg1) 
+
+smaller(d2,d1) 
+
+smaller(d3,d1) 
+
+smaller(d4,d1) 
+
+smaller(peg1,d1) 
+
+... 
+
+Figure 12: A 5-step visual trace example for Hanoi. Initial state 
+
+at(t_2,p_1_1) 
+
+at(t_6,p_1_2) 
+
+at(t_4,p_1_3) 
+
+at(t_3,p_2_1) 
+
+at(t_8,p_2_2) 
+
+at(t_5,p_2_3) 
+
+at(t_1,p_3_2) 
+
+at(t_7,p_3_3) 
+
+empty(p_3_1) 
+
+neighbor(p_1_1,p_1_2) 
+
+neighbor(p_1_1,p_2_1) 
+
+... 
+
+move(t_3,p_2_1,p_3_1) move(t_3,p_3_1,p_2_1) move(t_1,p_3_2,p_3_1) move(t_7,p_3_3,p_3_2) Final state 
+
+(last action: 
+
+move(t_7,p_3_2,p_3_3)) 
+
+at(t_2,p_1_1) 
+
+at(t_6,p_1_2) 
+
+at(t_4,p_1_3) 
+
+at(t_3,p_2_1) 
+
+at(t_8,p_2_2) 
+
+at(t_5,p_2_3) 
+
+at(t_1,p_3_1) 
+
+at(t_7,p_3_3) 
+
+empty(p_3_2) 
+
+neighbor(p_1_1,p_1_2) 
+
+neighbor(p_1_1,p_2_1) 
+
+... 
+
+Figure 13: A 5-step visual trace example for 8-puzzle. Domains |PI | |AI | # Steps # Fixes TL(MILP)[s] Err Agree State Acc Action Acc t/epoch[s] Blocksworld (MNIST grid) 36 50 3 4 60 0 0.977 97.81% 85.33% 2.50 Gripper 28 50 3360 0 0.990 97.07% 83.33% 1.07 5 90 0 0.984 100% 100% 1.60 7 120 0 0.980 100% 100% 2.03 9 150 0 0.978 100% 100% 2.91 Logistics 72 196 3360 0 0.992 99.28% 98.33% 2.67 5 90 0 0.987 99.62% 97.80% 4.42 7 120 0 0.984 99.83% 99.71% 6.43 9 150 0 0.983 99.89% 99.56% 10.64 Blocksworld (Synthesized) 36 50 3 3 60 0 0.976 99.29% 88.67% 1.51 Hanoi 55 120 3 3 60 0 0.942 96.42% 62.00% 2.35 5 90 0 0.940 98.55% 81.40% 4.77 8-puzzle 153 576 3 3 60 0 0.990 99.85% 96.33% 8.34 5 90 0 0.985 99.77% 92.60% 14.54 
+
+Table 2: Full evaluation results 
+
+Domain Err Agree State Acc Action Acc Blocksworld (MNIST grid) w/o MILP 10 0.784 89.22% 13.67% with MILP 0 0.977 97.81% 85.33% Gripper w/o MILP 6 0.724 86.22% 7.60% with MILP 0 0.978 100% 100% Logistics w/o MILP 0 0.979 99.93% 99.67% with MILP 0 0.983 99.89% 99.56% Blocksworld (Synthesized) w/o MILP 4 0.899 93.90% 66.67% with MILP 0 0.976 99.29% 88.67% Hanoi w/o MILP 0 0.926 97.15% 57.60% with MILP 0 0.940 98.55% 81.40% 8-puzzle w/o MILP 0 0.985 99.90% 97.40% with MILP 0 0.985 99.77% 92.60% 
+
+Table 3: Comparison between with and without MILP 
+
+Domains MILP Objective Err Agree State Acc Action Acc Blocksworld (MNIST Grid) State 7 0.876 90.79% 56.00% State, Action 6 0.883 91.62% 60.00% State, Action, Model 0 0.977 97.81% 85.33% Gripper State 0 0.978 100% 100% State, Action 0 0.978 99.85% 99.22% State, Action, Model 0 0.978 100% 100% Logistics State 0 0.983 99.86% 99.67% State, Action 0 0.983 99.91% 99.56% State, Action, Model 0 0.983 99.89% 99.56% Blocksworld (Synthesized) State 8 0.820 91.79% 52.67% State, Action 6 0.861 93.54% 63.00% State, Action, Model 0 0.976 99.29% 88.67% Hanoi State 0 0.932 98.18% 75.60% State, Action 0 0.936 98.43% 78.40% State, Action, Model 0 0.940 98.55% 81.40% 8-puzzle State 0 0.985 99.90% 97.60% State, Action 0 0.985 99.79% 94.40% State, Action, Model 0 0.985 99.77% 92.60% 
+
+Table 4: Comparison among different MILP objectives signed to that location and color the figure with the vehicle’s assigned color. When we progress through the trace, if the executed action is a load -truck or load -airplane action, we color the package with the color assigned to the vehicle. If it is an unload -truck or unload -airplane action, we color the package back to black. If it is a drive -truck or fly -airplane 
+
+action, we move the vehicle, together with all packages in-side it, by placing them randomly in the cells assigned to the target location, and fill the cells they leave with random figures for digit 0. 
+
+Blocksworld (Synthesized) We rely on the renderer im-plemented in the PDDLGym library (Silver and Chitnis 2020) to generate synthesized state images in Blocksworld. The object set has five blocks, and there are five slots on the table. When a block is on the table, or when it is put down, it is placed randomly in one of the empty slots. As a result, multiple visual traces may correspond to the same underly-ing state trace. Fig. 10 and Fig. 11 show two visual traces that correspond to the same underlying state trace. 
+
+C Experimental Results 
+
+Tab. 2 presents the full evaluation results across all domains. In these experiments, we vary the trace length from 3 to the maximum considered in the paper for each given domain. Tab. 3 compares learning outcomes with and without the MILP module (corresponding to Fig. 5 in the main paper). Tab. 4 shows the results for different configurations of the MILP objective (corresponding to Fig. 6 in the main paper). 
+
+D Examples of Learned Action Models 
+
+Fig. 14–18 present examples of the learned action models. As discussed in Sec. 6, we consider permutations of schema names with identical signatures, as well as permutations of parameters of the same type within a schema, to be equiva-lent to the ground truth. (define (domain blocks) (:requirements :strips :typing) (:types object) (:predicates (arm-empty )(clear ?a - object) (on-table ?a - object) (holding ?a - object) (on ?a - object ?b - object)) (:action pickup :parameters (?a - object) :precondition (and (holding a)) :effect (and (arm-empty) (clear a) (on-table a) (not (holding a))) )(:action putdown :parameters (?a - object) :precondition (and (arm-empty) (clear a) (on-table a)) :effect (and (not (arm-empty)) (not (clear a)) (not (on-table a)) (holding a)) )(:action stack :parameters (?a - object ?b - object) :precondition (and (clear b) (holding a)) :effect (and (arm-empty) (clear a) (not (clear b)) (not (holding a)) (on a b)) )(:action unstack :parameters (?a - object ?b - object) :precondition (and (arm-empty) (clear b) (on b a)) :effect (and (not (arm-empty)) (clear a) (not (clear b)) (holding b) (not (on b a))) ))
+
+Figure 14: Learned model for the Blocksworld domain. (define (domain gripper) (:requirements :strips :typing) (:types room ball gripper - object) (:predicates (at-robby ?a - room) (at ?a - ball ?b - room) (free ?a - gripper) (carry ?a - ball ?b - gripper)) (:action move :parameters (?a - room ?b - room) :precondition (and (at-robby b)) :effect (and (at-robby a) (not (at-robby b))) )(:action pick :parameters (?a - ball ?b - gripper ?c - room) :precondition (and (at-robby c) (carry a b)) :effect (and (at a c) (free b) (not (carry a b))) )(:action drop :parameters (?a - ball ?b - gripper ?c - room) :precondition (and (at-robby c) (at a c) (free b)) :effect (and (not (at a c)) (not (free b)) (carry a b)) ))
+
+Figure 15: Learned model for the Gripper domain. (define (domain logistics) (:requirements :strips :typing) (:types movable location city - object obj transport - movable truck airplane - transport airport - location) (:predicates (at ?a - location ?b - movable) (in ?a - obj ?b - transport) (in-city ?a - city ?b - location)) (:action load-truck :parameters (?a - location ?b - obj ?c - truck) :precondition (and (at a b) (at a c)) :effect (and (not (at a b)) (in b c)) )(:action load-airplane :parameters (?a - airplane ?b - airport ?c - obj) :precondition (and (at b a) (at b c)) :effect (and (not (at b c)) (in c a)) )(:action unload-truck :parameters (?a - location ?b - obj ?c - truck) :precondition (and (at a c) (in b c)) :effect (and (at a b) (not (in b c))) )(:action unload-airplane :parameters (?a - airplane ?b - airport ?c - obj) :precondition (and (at b a) (in c a)) :effect (and (at b c) (not (in c a))) )(:action drive-truck :parameters (?a - city ?b - location ?c - location ?d - truck) :precondition (and (at b d) (in-city a b) (in-city a c)) :effect (and (not (at b d)) (at c d)) )(:action fly-airplane :parameters (?a - airplane ?b - airport ?c - airport) :precondition (and (at b a)) :effect (and (not (at b a)) (at c a)) ))
+
+Figure 16: Learned model for the Logistics domain. (define (domain hanoi) (:requirements :strips :typing) (:types disc - object) (:predicates (clear ?a - object) (on ?a - disc ?b - object) (smaller ?a - disc ?b - object)) (:action move :parameters (?a - disc ?b - object ?c - object) :precondition (and (clear a) (clear b) (on a c) (smaller a b) (smaller a c)) :effect (and (not (clear b)) (clear c) (on a b) (not (on a c))) ))
+
+Figure 17: Learned model for the Hanoi domain. 
+
+(define (domain 8-puzzle) (:requirements :strips :typing) (:types tile position - object) (:predicates (at ?a - position ?b - tile) (blank ?a - position) (neighbor ?a - position ?b - position)) (:action move :parameters (?a - position ?b - position ?c - tile) :precondition (and (at a c) (blank b) (neighbor a b) (neighbor b a)) :effect (and (not (at a c)) (at b c) (blank a) (not (blank b))) ))
+
+Figure 18: Learned model for the 8-puzzle domain.

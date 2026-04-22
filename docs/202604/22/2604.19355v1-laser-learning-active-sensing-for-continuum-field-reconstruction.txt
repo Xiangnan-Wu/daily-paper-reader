@@ -1,0 +1,1316 @@
+Title: LASER: Learning Active Sensing for Continuum Field Reconstruction
+
+URL Source: https://arxiv.org/pdf/2604.19355v1
+
+Published Time: Wed, 22 Apr 2026 01:08:25 GMT
+
+Number of Pages: 24
+
+Markdown Content:
+LASER: Learning Active Sensing for Continuum Field Reconstruction 
+
+Huayu Deng 1 Jinghui Zhong 1 Xiangming Zhu 1 Yunbo Wang 1 Xiaokang Yang 1
+
+Abstract 
+
+High-fidelity measurements of continuum physi-cal fields are essential for scientific discovery and engineering design but remain challenging under sparse and constrained sensing. Conventional re-construction methods typically rely on fixed sen-sor layouts, which cannot adapt to evolving phys-ical states. We propose LASER , a unified, closed-loop framework that formulates active sensing as a Partially Observable Markov Decision Process (POMDP). At its core, LASER employs a contin-uum field latent world model that captures the underlying physical dynamics and provides intrin-sic reward feedback. This enables a reinforcement learning policy to simulate “what-if” sensing sce-narios within a latent imagination space. By con-ditioning sensor movements on predicted latent states, LASER navigates toward potentially high-information regions beyond current observations. Our experiments demonstrate that LASER con-sistently outperforms static and offline-optimized strategies, achieving high-fidelity reconstruction under sparsity across diverse continuum fields. 
+
+1. Introduction 
+
+Achieving high-fidelity observation of continuum physi-cal fields, such as fluid flows, stress-strain distributions, or spatiotemporal temperature fields, is fundamental to scien-tific discovery and engineering systems, with broad impact on climate modeling, material analysis, and industrial con-trol (Evans, 2022; Brunton & Kutz, 2022; Takamoto et al., 2022). In practice, however, physical, economic, and en-vironmental constraints often restrict sensing to a sparse and discrete set of spatial locations, making the full field only partially observable (Huang et al., 2024; Serrano et al., 2023; 2024; Luo et al., 2024; Ma et al., 2025). This intrinsic mismatch between the continuous nature of physical dy-namics and the sparsity of discrete observations creates a twofold challenge: One must not only reconstruct the global 
+
+> 1
+
+MoE Key Lab of Artificial Intelligence, AI Institute, School of Computer Science, Shanghai Jiao Tong University. Correspon-dence to: Yunbo Wang <yunbow@sjtu.edu.cn >.
+
+Preprint. April 22, 2026. Agent World Model  
+
+> action
+> -
+> Sparse
+> Observations
+> Reward from Error
+> Physics
+> States Latents
+> . . .
+> . . .
+
+Figure 1. Overview of the closed-loop LASER framework. 
+
+The agent θ optimizes sensing actions at based on reconstruction rewards rt and next-step observations ot+1 from the environment 
+
+ϕ. The side panel illustrates the temporal evolution of high-fidelity physical states and their corresponding low-dimensional latents. 
+
+field from limited data (Koupa ¨ı et al., 2025; Serrano et al., 2024; Alkin et al., 2024; Serrano et al., 2023) but also solve the inverse problem of optimal sensor placement to ensure the most informative regions are captured. Empirically, sensor placement is a primary determinant of reconstruction accuracy. Even with an identical reconstruc-tion model, varying the sensing layout can lead to dramati-cally different results (Ma et al., 2025). While contemporary methods explore the joint optimization of sensing and re-construction, they predominantly rely on decoupled, offline paradigms whereby sensor locations are optimized over a global training distribution but remain static during infer-ence (Ma et al., 2025). These static layouts fail to provide the instance-specific adaptivity necessary for handling non-stationary field dynamics. We propose LASER (Learning A ctive Se nsing for Contin-uum Field Reconstruction ), a unified, closed-loop frame-work that tightly integrates sparse field recovery, latent dynamics modeling, and active sensing (as shown in Ta-ble 1). We formalize active sensing as a Partially Observable Markov Decision Process (POMDP), where sensor locations are treated as controllable actions. The core of our solution to this POMDP is a continuum field latent world model .We refer to this architecture as a “world model” because it serves as a surrogate of the physical environment. It not only captures the underlying spatiotemporal dynamics but also provides intrinsic reward feedback based on reconstruc-1                         
+
+> arXiv:2604.19355v1 [cs.LG] 21 Apr 2026 LASER: Learning Active Sensing for Continuum Field Reconstruction
+> Table 1. Comparison of continuum field reconstruction and sensing methods. Unlike existing approaches, LASER uniquely integrates forward prediction with active, optimized sensor place-ment to handle sparse observations in a closed-loop framework. Model Sparse Forward Placement Active Obs. Predict Optim. Sensing DiffusionPDE (2024) ✗✗✗✗
+> AROMA (2024) ✓✓✗✗
+> PhySense (2025) ✓✗✓✗
+> LASER (Ours) ✓✓✓✓
+
+tion fidelity. This world model enables the reinforcement learning (RL) agent to simulate “what-if” sensing scenarios and plan optimal movements by predicting the field’s future evolution within a latent space. More concretely, as illustrated in Figure 1, the RL policy is trained to generate proactive sensor displacements at each time step by conditioning on both the current sparse mea-surements and the predicted latent states provided by the world model. Upon action execution, the agent queries new observations from the training dataset, while rewards are computed based on the reconstruction fidelity evalu-ated by the world model. This mechanism forms a closed “sensing-reconstruction-evaluation” optimization loop with-out requiring interaction with a live physical system. The primary contributions of this work are as follows: • We introduce LASER, an RL-based framework that for-malizes sensor placement as a POMDP. Our method en-ables instance-specific sensing strategies in response to evolving physical conditions. • We develop a latent “world model” for continuum fields that integrates field reconstruction with latent forward modeling. This predictive architecture allows the sens-ing policy to “look ahead” and navigate toward high-information regions beyond current observations. • Extensive experiments demonstrate that LASER achieves superior fidelity across diverse physical domains. It is shown to outperform existing approaches with fixed or offline-optimized sensing layouts consistently. 
+
+2. Related Work 
+
+Learning-based methods have shown strong modeling capa-bility for continuum fields (Long et al., 2018; Kochkov et al., 2021; Pfaff et al., 2021; Li et al., 2020; 2021; Han et al., 2022; Poli et al., 2022; Serrano et al., 2024). These meth-ods span a diverse set of architectural paradigms, including CNN models tailored to dense and uniform grids (Stachen-feld et al., 2022; Ummenhofer et al., 2020; Guan et al., 2022; Zhu et al., 2024), GNNs that naturally support ir-regular meshes and flexible discretizations (Battaglia et al., 2016; Pfaff et al., 2021; Janny et al., 2023; Deng et al., 2025), implicit neural representations that enable continu-ous spacetime modeling (Yin et al., 2023; Luo et al., 2024; Serrano et al., 2023), and transformer-based operators that support efficient global reasoning and fast solution of para-metric PDEs (Hao et al., 2023; Wu et al., 2022; 2024; Alkin et al., 2024; Iakovlev et al., 2023; Steeven et al., 2024). Collectively, these models achieve high predictive accuracy and strong generalization, but typically rely on idealized assumptions of dense and complete observations, limiting their applicability in realistic settings with sparse, irregular, noisy, or partial measurements. Recent models begin to address field reconstruction un-der sparse observations, but assume fixed, predefined sens-ing locations across time and trajectories (Serrano et al., 2024; Luo et al., 2024; Steeven et al., 2024; Iakovlev & L ¨ahdesm ¨aki, 2025). DiffusionPDE (Huang et al., 2024) con-ditions score-based generative models (Song et al., 2021) on sparse observations, but relies on random or fixed layouts and incurs a high computational cost due to the need for thousands of sampling steps. PhySense (Ma et al., 2025) op-timizes sensor locations offline over a global training distri-bution, yielding static layouts that lack instance-level adap-tivity to non-stationary dynamics (Wu et al., 2022; Deng et al., 2025). Moreover, both lines of work focus on per-step reconstruction and do not support autoregressive rollout with dynamically adapting sensing locations. 
+
+3. Problem Definition 
+
+We consider a dynamical physical system characterized by a continuum field ut : Ω → RC defined over a spatial do-main Ω ⊂ Rd, where C represents the number of physical quantities ( e.g. , velocity, pressure). The system evolves with unknown, non-stationary spatiotemporal dynamics: 
+
+ut+1 = F(ut). In practice, the full field ut is not directly observable. Instead, we obtain sparse, pointwise measure-ments at N controllable sensor locations Xt = {x(i) 
+
+> t
+
+}Ni=1 :
+
+ot =
+
+n 
+
+x(i) 
+
+> t
+
+, ut(x(i) 
+
+> t
+
+)
+
+o Ni=1 
+
+, x(i) 
+
+> t
+
+∈ Ω, N ≪ |D| , (1) where D is a discrete candidate set of possible sensor posi-tions. Our objective is to learn an active sensing policy π
+
+that sequentially optimizes sensor displacements at = ∆ Xt
+
+to minimize the long-term reconstruction error across Ω:
+
+min  
+
+> π,ϕ
+
+Eu1: T
+
+h TX
+
+> t=1
+
+L (ut, ˆut(oπ
+
+> 1: t
+
+; ϕ)) 
+
+i
+
+, (2) where ˆut is the field reconstructed by a parametrized model 
+
+ϕ from the history of observations gathered under the policy 
+
+π up to time t, and L denotes the reconstruction error. 
+
+4. Method 
+
+In this section, we introduce the technical details of our LASER method. Unlike traditional passive reconstruction 2LASER: Learning Active Sensing for Continuum Field Reconstruction 
+
+pipelines, LASER treats sensor placement as an online, adaptive process governed by a reinforcement learning (RL) policy. At its core, the framework leverages a continuum field latent world model to capture the underlying spatiotem-poral dynamics of the field ut. We formalize this process as a Partially Observable Markov Decision Process (POMDP) defined over the latent states of the world model, where the agent’s actions are informed by “imagined” future states. The following subsections detail the components of our approach: Section 4.1 formalizes active sensing over con-tinuum fields as a POMDP and motivates the transition to a latent-based decision framework. Section 4.2 describes the architecture of the continuum field latent world model, which provides the predictive transitions and intrinsic re-wards. Section 4.3 and Section 4.4 present the policy net-work architecture and the policy optimization algorithm. 
+
+4.1. Active Sensing as a Latent POMDP 
+
+As illustrated in Figure 2, we define the POMDP by the tuple M = ( S, A, O, E, Tϕ, Rϕ, γ ) as follows: • Latent state st = [ zt, ht]: The agent models the latent state at time t as the combination of the current latent code 
+
+zt, which encodes the most recent sparse observations, and a recurrent history ht, which maintains a memory of the field’s evolution. • Action at: The sensing action corresponds to the displace-ment vector ∆Xt for the sensor array, which is continuous and bounded by practical sensor movement constraints. • Observation ot and the emission function E: As defined in Eq. (1), we obtain ut(x(i)
+
+t ) at continuous coordinates 
+
+x(i)
+
+t via bilinear interpolation from the nearest grid points, as ut is defined on a discrete grid in our experiments. • Latent transition Tϕ: The world model predicts the evolu-tion of the latent state: zt+1 ∼ pdyn 
+
+ϕ (· | zt, h<t ).• Reward rt: The reward signal is defined as the negative reconstruction error evaluated by the world model’s de-coder: rt = −L  ut+1 , ˆut+1 (oπt+1 ; ϕ).• Discount factor γ ∈ [0 , 1) : The factor balances immediate and long-term future rewards. 
+
+Proactive sensing via latent imagination. Effective sens-ing requires the agent to anticipate future field states rather than merely reacting to past measurements. Consequently, as shown in Figure 2(b), we condition the policy πθ on the predicted future latent state ˆzt+1 , effectively enabling the agent to “imagine” the impending field configuration: 
+
+at ∼ πθ (· | ˆzt+1 , ot), ˆzt+1 ∼ pdyn 
+
+ϕ (· | zt, h<t ). (3) This design shifts the sensing paradigm from reactive (sam-pling the current field) to proactive (anticipating and tar-geting informative regions of the future field), enabling the agent to strategically position sensors where they will be most valuable for the impending reconstruction task. Encoder 
+
+Latent Dynamics 
+
+Decoder 
+
+<latexit sha1_base64="DzM+bwz6qyBlBx4vSInfy6pAYHo=">AAAB7HicbVBNS8NAEJ3Ur1q/qh69BIvgqSQi1WPRi8cKpi20oWy2m3bpZjfsToQS+hu8eFDEqz/Im//GbZuDVh8MPN6bYWZelApu0PO+nNLa+sbmVnm7srO7t39QPTxqG5VpygKqhNLdiBgmuGQBchSsm2pGkkiwTjS5nfudR6YNV/IBpykLEzKSPOaUoJUCNchxNqjWvLq3gPuX+AWpQYHWoPrZHyqaJUwiFcSYnu+lGOZEI6eCzSr9zLCU0AkZsZ6lkiTMhPni2Jl7ZpWhGyttS6K7UH9O5CQxZppEtjMhODar3lz8z+tlGF+HOZdphkzS5aI4Ey4qd/65O+SaURRTSwjV3N7q0jHRhKLNp2JD8Fdf/kvaF3W/UW/cX9aaN0UcZTiBUzgHH66gCXfQggAocHiCF3h1pPPsvDnvy9aSU8wcwy84H98r7o7x</latexit> 
+
+ot
+
+<latexit sha1_base64="RUhFJPPJP/SXvVPG9hdXVVbMKH0=">AAAB6nicbVBNS8NAEJ3Ur1q/qh69LBbBU0lEqseiF48V7Qe0oWy2m3bpZhN2J0IJ/QlePCji1V/kzX/jts1BWx8MPN6bYWZekEhh0HW/ncLa+sbmVnG7tLO7t39QPjxqmTjVjDdZLGPdCajhUijeRIGSdxLNaRRI3g7GtzO//cS1EbF6xEnC/YgOlQgFo2ilB93HfrniVt05yCrxclKBHI1++as3iFkacYVMUmO6npugn1GNgkk+LfVSwxPKxnTIu5YqGnHjZ/NTp+TMKgMSxtqWQjJXf09kNDJmEgW2M6I4MsveTPzP66YYXvuZUEmKXLHFojCVBGMy+5sMhOYM5cQSyrSwtxI2opoytOmUbAje8surpHVR9WrV2v1lpX6Tx1GEEziFc/DgCupwBw1oAoMhPMMrvDnSeXHenY9Fa8HJZ47hD5zPH2uqjeg=</latexit> 
+
+rt
+
+<latexit sha1_base64="GMW1c+Lo9drrJUrH90AcDj415RQ=">AAAB7nicbVBNS8NAEJ3Ur1q/qh69LBbBiyURqR6LXjxWsB/QhrLZbtqlm03YnQgl9Ed48aCIV3+PN/+N2zYHbX0w8Hhvhpl5QSKFQdf9dgpr6xubW8Xt0s7u3v5B+fCoZeJUM95ksYx1J6CGS6F4EwVK3kk0p1EgeTsY38389hPXRsTqEScJ9yM6VCIUjKKV2rqf4YU37ZcrbtWdg6wSLycVyNHol796g5ilEVfIJDWm67kJ+hnVKJjk01IvNTyhbEyHvGupohE3fjY/d0rOrDIgYaxtKSRz9fdERiNjJlFgOyOKI7PszcT/vG6K4Y2fCZWkyBVbLApTSTAms9/JQGjOUE4soUwLeythI6opQ5tQyYbgLb+8SlqXVa9WrT1cVeq3eRxFOIFTOAcPrqEO99CAJjAYwzO8wpuTOC/Ou/OxaC04+cwx/IHz+QMM8o9m</latexit> 
+
+rt→1
+
+<latexit sha1_base64="hUkLNwwBjajnsRqz2x5wKOniqug=">AAAB6nicbVBNS8NAEJ34WetX1aOXxSJ4KolI9Vj04rGi/YA2lM120y7dbMLuRKihP8GLB0W8+ou8+W/ctjlo64OBx3szzMwLEikMuu63s7K6tr6xWdgqbu/s7u2XDg6bJk414w0Wy1i3A2q4FIo3UKDk7URzGgWSt4LRzdRvPXJtRKwecJxwP6IDJULBKFrp/qmHvVLZrbgzkGXi5aQMOeq90le3H7M04gqZpMZ0PDdBP6MaBZN8UuymhieUjeiAdyxVNOLGz2anTsipVfokjLUthWSm/p7IaGTMOApsZ0RxaBa9qfif10kxvPIzoZIUuWLzRWEqCcZk+jfpC80ZyrEllGlhbyVsSDVlaNMp2hC8xZeXSfO84lUr1buLcu06j6MAx3ACZ+DBJdTgFurQAAYDeIZXeHOk8+K8Ox/z1hUnnzmCP3A+fwB32o3w</latexit> 
+
+zt <latexit sha1_base64="5vfTnUKrwAApggOl6ORxKn2CFi4=">AAAB7nicbVBNS8NAEJ34WetX1aOXxSIIQklEqseiF48V7Ae0oWy2m3bpZhN2J0IN/RFePCji1d/jzX/jts1BWx8MPN6bYWZekEhh0HW/nZXVtfWNzcJWcXtnd2+/dHDYNHGqGW+wWMa6HVDDpVC8gQIlbyea0yiQvBWMbqd+65FrI2L1gOOE+xEdKBEKRtFKradehufepFcquxV3BrJMvJyUIUe9V/rq9mOWRlwhk9SYjucm6GdUo2CST4rd1PCEshEd8I6likbc+Nns3Ak5tUqfhLG2pZDM1N8TGY2MGUeB7YwoDs2iNxX/8zophtd+JlSSIldsvihMJcGYTH8nfaE5Qzm2hDIt7K2EDammDG1CRRuCt/jyMmleVLxqpXp/Wa7d5HEU4BhO4Aw8uIIa3EEdGsBgBM/wCm9O4rw4787HvHXFyWeO4A+czx8WNo9s</latexit> 
+
+zt+1 
+
+<latexit sha1_base64="yGJtWfZnUygPSCQlTQOGwgro0eo=">AAAB7HicbVBNS8NAEJ3Ur1q/qh69LBbBU0lEqseiF48VTFtoQ9lsN+3SzSbsToQS+hu8eFDEqz/Im//GbZuDVh8MPN6bYWZemEph0HW/nNLa+sbmVnm7srO7t39QPTxqmyTTjPsskYnuhtRwKRT3UaDk3VRzGoeSd8LJ7dzvPHJtRKIecJryIKYjJSLBKFrJHw9ynA2qNbfuLkD+Eq8gNSjQGlQ/+8OEZTFXyCQ1pue5KQY51SiY5LNKPzM8pWxCR7xnqaIxN0G+OHZGzqwyJFGibSkkC/XnRE5jY6ZxaDtjimOz6s3F/7xehtF1kAuVZsgVWy6KMkkwIfPPyVBozlBOLaFMC3srYWOqKUObT8WG4K2+/Je0L+peo964v6w1b4o4ynACp3AOHlxBE+6gBT4wEPAEL/DqKOfZeXPel60lp5g5hl9wPr4BITaO6g==</latexit> 
+
+ht
+
+<latexit sha1_base64="Q+JCoJwaasTbrhXfl5S+ha9r4go=">AAAB9HicbVDLSgNBEOz1GeMr6tHLYBAEIeyKRI9BLx4jmAckS5idzCZDZh/O9Abist/hxYMiXv0Yb/6Nk2QPmljQUFR1093lxVJotO1va2V1bX1js7BV3N7Z3dsvHRw2dZQoxhsskpFqe1RzKULeQIGSt2PFaeBJ3vJGt1O/NeZKiyh8wEnM3YAOQuELRtFIbndIMX3KeimeO1mvVLYr9gxkmTg5KUOOeq/01e1HLAl4iExSrTuOHaObUoWCSZ4Vu4nmMWUjOuAdQ0MacO2ms6MzcmqUPvEjZSpEMlN/T6Q00HoSeKYzoDjUi95U/M/rJOhfu6kI4wR5yOaL/EQSjMg0AdIXijOUE0MoU8LcStiQKsrQ5FQ0ITiLLy+T5kXFqVaq95fl2k0eRwGO4QTOwIErqMEd1KEBDB7hGV7hzRpbL9a79TFvXbHymSP4A+vzB+/akjk=</latexit> 
+
+ˆzt+1 
+
+<latexit sha1_base64="YbF91cm1uv0veZ6CDaKBDhxKT/g=">AAAB7nicbVBNS8NAEJ3Ur1q/qh69BIsgCCURqR6LXjxWsB/QhrLZbtqlm92wOxFK6I/w4kERr/4eb/4bt20O2vpg4PHeDDPzwkRwg5737RTW1jc2t4rbpZ3dvf2D8uFRy6hUU9akSijdCYlhgkvWRI6CdRLNSBwK1g7HdzO//cS04Uo+4iRhQUyGkkecErRSW/UzvPCn/XLFq3pzuKvEz0kFcjT65a/eQNE0ZhKpIMZ0fS/BICMaORVsWuqlhiWEjsmQdS2VJGYmyObnTt0zqwzcSGlbEt25+nsiI7Exkzi0nTHBkVn2ZuJ/XjfF6CbIuExSZJIuFkWpcFG5s9/dAdeMophYQqjm9laXjogmFG1CJRuCv/zyKmldVv1atfZwVanf5nEU4QRO4Rx8uIY63EMDmkBhDM/wCm9O4rw4787HorXg5DPH8AfO5w8FSI9h</latexit> 
+
+ot+1 
+
+. . . 
+
+. . . 
+
+. . . 
+
+. . . 
+
+<latexit sha1_base64="DzM+bwz6qyBlBx4vSInfy6pAYHo=">AAAB7HicbVBNS8NAEJ3Ur1q/qh69BIvgqSQi1WPRi8cKpi20oWy2m3bpZjfsToQS+hu8eFDEqz/Im//GbZuDVh8MPN6bYWZelApu0PO+nNLa+sbmVnm7srO7t39QPTxqG5VpygKqhNLdiBgmuGQBchSsm2pGkkiwTjS5nfudR6YNV/IBpykLEzKSPOaUoJUCNchxNqjWvLq3gPuX+AWpQYHWoPrZHyqaJUwiFcSYnu+lGOZEI6eCzSr9zLCU0AkZsZ6lkiTMhPni2Jl7ZpWhGyttS6K7UH9O5CQxZppEtjMhODar3lz8z+tlGF+HOZdphkzS5aI4Ey4qd/65O+SaURRTSwjV3N7q0jHRhKLNp2JD8Fdf/kvaF3W/UW/cX9aaN0UcZTiBUzgHH66gCXfQggAocHiCF3h1pPPsvDnvy9aSU8wcwy84H98r7o7x</latexit> 
+
+ot <latexit sha1_base64="YbF91cm1uv0veZ6CDaKBDhxKT/g=">AAAB7nicbVBNS8NAEJ3Ur1q/qh69BIsgCCURqR6LXjxWsB/QhrLZbtqlm92wOxFK6I/w4kERr/4eb/4bt20O2vpg4PHeDDPzwkRwg5737RTW1jc2t4rbpZ3dvf2D8uFRy6hUU9akSijdCYlhgkvWRI6CdRLNSBwK1g7HdzO//cS04Uo+4iRhQUyGkkecErRSW/UzvPCn/XLFq3pzuKvEz0kFcjT65a/eQNE0ZhKpIMZ0fS/BICMaORVsWuqlhiWEjsmQdS2VJGYmyObnTt0zqwzcSGlbEt25+nsiI7Exkzi0nTHBkVn2ZuJ/XjfF6CbIuExSZJIuFkWpcFG5s9/dAdeMophYQqjm9laXjogmFG1CJRuCv/zyKmldVv1atfZwVanf5nEU4QRO4Rx8uIY63EMDmkBhDM/wCm9O4rw4787HorXg5DPH8AfO5w8FSI9h</latexit> 
+
+ot+1 
+
+<latexit sha1_base64="hUkLNwwBjajnsRqz2x5wKOniqug=">AAAB6nicbVBNS8NAEJ34WetX1aOXxSJ4KolI9Vj04rGi/YA2lM120y7dbMLuRKihP8GLB0W8+ou8+W/ctjlo64OBx3szzMwLEikMuu63s7K6tr6xWdgqbu/s7u2XDg6bJk414w0Wy1i3A2q4FIo3UKDk7URzGgWSt4LRzdRvPXJtRKwecJxwP6IDJULBKFrp/qmHvVLZrbgzkGXi5aQMOeq90le3H7M04gqZpMZ0PDdBP6MaBZN8UuymhieUjeiAdyxVNOLGz2anTsipVfokjLUthWSm/p7IaGTMOApsZ0RxaBa9qfif10kxvPIzoZIUuWLzRWEqCcZk+jfpC80ZyrEllGlhbyVsSDVlaNMp2hC8xZeXSfO84lUr1buLcu06j6MAx3ACZ+DBJdTgFurQAAYDeIZXeHOk8+K8Ox/z1hUnnzmCP3A+fwB32o3w</latexit> 
+
+zt
+
+<latexit sha1_base64="xoBS20U5iIR3aHQaO/Em+ynUpWI=">AAAB7nicbVBNS8NAEJ3Ur1q/qh69LBZBEEoiUj0WvXisYD+gDWWz3bRLN5uwOxFK6I/w4kERr/4eb/4bt20O2vpg4PHeDDPzgkQKg6777RTW1jc2t4rbpZ3dvf2D8uFRy8SpZrzJYhnrTkANl0LxJgqUvJNoTqNA8nYwvpv57SeujYjVI04S7kd0qEQoGEUrtUf9DC+8ab9ccavuHGSVeDmpQI5Gv/zVG8QsjbhCJqkxXc9N0M+oRsEkn5Z6qeEJZWM65F1LFY248bP5uVNyZpUBCWNtSyGZq78nMhoZM4kC2xlRHJllbyb+53VTDG/8TKgkRa7YYlGYSoIxmf1OBkJzhnJiCWVa2FsJG1FNGdqESjYEb/nlVdK6rHq1au3hqlK/zeMowgmcwjl4cA11uIcGNIHBGJ7hFd6cxHlx3p2PRWvByWeO4Q+czx/6c49a</latexit> 
+
+ht+1 
+
+<latexit sha1_base64="yGJtWfZnUygPSCQlTQOGwgro0eo=">AAAB7HicbVBNS8NAEJ3Ur1q/qh69LBbBU0lEqseiF48VTFtoQ9lsN+3SzSbsToQS+hu8eFDEqz/Im//GbZuDVh8MPN6bYWZemEph0HW/nNLa+sbmVnm7srO7t39QPTxqmyTTjPsskYnuhtRwKRT3UaDk3VRzGoeSd8LJ7dzvPHJtRKIecJryIKYjJSLBKFrJHw9ynA2qNbfuLkD+Eq8gNSjQGlQ/+8OEZTFXyCQ1pue5KQY51SiY5LNKPzM8pWxCR7xnqaIxN0G+OHZGzqwyJFGibSkkC/XnRE5jY6ZxaDtjimOz6s3F/7xehtF1kAuVZsgVWy6KMkkwIfPPyVBozlBOLaFMC3srYWOqKUObT8WG4K2+/Je0L+peo964v6w1b4o4ynACp3AOHlxBE+6gBT4wEPAEL/DqKOfZeXPel60lp5g5hl9wPr4BITaO6g==</latexit> 
+
+ht
+
+<latexit sha1_base64="5vfTnUKrwAApggOl6ORxKn2CFi4=">AAAB7nicbVBNS8NAEJ34WetX1aOXxSIIQklEqseiF48V7Ae0oWy2m3bpZhN2J0IN/RFePCji1d/jzX/jts1BWx8MPN6bYWZekEhh0HW/nZXVtfWNzcJWcXtnd2+/dHDYNHGqGW+wWMa6HVDDpVC8gQIlbyea0yiQvBWMbqd+65FrI2L1gOOE+xEdKBEKRtFKradehufepFcquxV3BrJMvJyUIUe9V/rq9mOWRlwhk9SYjucm6GdUo2CST4rd1PCEshEd8I6likbc+Nns3Ak5tUqfhLG2pZDM1N8TGY2MGUeB7YwoDs2iNxX/8zophtd+JlSSIldsvihMJcGYTH8nfaE5Qzm2hDIt7K2EDammDG1CRRuCt/jyMmleVLxqpXp/Wa7d5HEU4BhO4Aw8uIIa3EEdGsBgBM/wCm9O4rw4787HvHXFyWeO4A+czx8WNo9s</latexit> 
+
+zt+1 
+
+. . . 
+
+. . . 
+
+. . . 
+
+. . . 
+
+. . . 
+
+. . . 
+
+(a) Latent World Model (b) POMDP Formulation for Active Sensing 
+
+. . . 
+
+Figure 2. The LASER graphical model. (a) Latent world model with jointly trained encoder, dynamics, and decoder. (b) Active sensing as a POMDP, where the policy interacts with the world model and receives updated latent states and rewards. 
+
+4.2. Continuum Field Latent World Model 
+
+We develop a continuum field reconstruction model ϕ that serves as a high-fidelity surrogate of the physical environ-ment. Following the paradigm established in Model-Based RL, notably the “World Models” of Ha & Schmidhuber (2018), our architecture is characterized as a world model by its integration of three essential components: 1. Latent representation module ( penc 
+
+ϕ ): Our encoder maps sparse, irregular observations into compressed latent states to capture the underlying physics of global fields. 2. State transition module ( pdyn 
+
+ϕ ): We implement a latent dynamics module that predicts the next-step latent state 
+
+ˆzt+1 conditioned on current history. 3. Reward evaluation module: Our decoder ( pdec 
+
+ϕ ) recon-structs the full continuum field from the latent state, di-rectly computing the reconstruction fidelity that serves as a differentiable reward signal. 
+
+Sparse observation encoder. Like Serrano et al. (2024), our encoder maps a variable set of sparse observations ot =
+
+{(x(i)
+
+t , ut(x(i)
+
+t )) } to a fixed size Gaussian latent variable 
+
+zt ∈ RM ×dz . A set of learnable latent queries Q ∈ RM ×dq
+
+attends to embeddings of the observation coordinates and values, yielding a permutation-invariant representation. This enables the encoder to process an arbitrary number of sen-sors at arbitrary locations, thereby forming the agent’s “be-lief” state: zt ∼ penc 
+
+ϕ (· | ot) = N  μϕ(ot), σ2
+
+ϕ(ot).
+
+Latent dynamics predictor. To enable proactive decision-making (see Eq. (3)), the agent must reason about the future 
+
+state of the field. We introduce a GRU module to main-tain a recurrent history ht = GRU ϕ(ht−1, zt), where ht
+
+is zero-initialized at t = 0 . The dynamics predictor is then implemented as a conditional diffusion model (Peebles & Xie, 2023) that forecasts the next latent state by condition-ing on both the current zt and the historical summary ht:
+
+ˆzt+1 ∼ pdyn 
+
+ϕ (· | zt, ht). Concretely, the model denoises 3LASER: Learning Active Sensing for Continuum Field Reconstruction . . . 
+
+> . . .  . . .
+> . . .
+> . . .
+
+M x d 
+
+<latexit sha1_base64="dhH3NxfPAro663MheYoU1HKkfr0=">AAAB+XicbVDLSsNAFJ3UV62vqEs3wSK4KolIdVl047KCfUAbwmQyaYdOZsLMTaGE/okbF4q49U/c+TdO2iy09cAwh3PuZc6cMOVMg+t+W5WNza3tnepubW//4PDIPj7papkpQjtEcqn6IdaUM0E7wIDTfqooTkJOe+HkvvB7U6o0k+IJZin1EzwSLGYEg5EC2x6Gkkd6lpgrl/MAArvuNtwFnHXilaSOSrQD+2sYSZIlVADhWOuB56bg51gBI5zOa8NM0xSTCR7RgaECJ1T7+SL53LkwSuTEUpkjwFmovzdynOginJlMMIz1qleI/3mDDOJbP2cizYAKsnwozrgD0ilqcCKmKAE+MwQTxUxWh4yxwgRMWTVTgrf65XXSvWp4zUbz8breuivrqKIzdI4ukYduUAs9oDbqIIKm6Bm9ojcrt16sd+tjOVqxyp1T9AfW5w9XQJQj</latexit> 
+
+ot
+
+<latexit sha1_base64="6NKoNQPWm3kx2ZiMYvAg9zuQxsw=">AAAB+3icbVA7T8MwGHTKq5RXKCOLRYXEVCUIFcYKFsYi0YfUhshxnNaqY0e2g6ii/BUWBhBi5Y+w8W9w2gzQcpLl0933yecLEkaVdpxvq7K2vrG5Vd2u7ezu7R/Yh/WeEqnEpIsFE3IQIEUY5aSrqWZkkEiC4oCRfjC9Kfz+I5GKCn6vZwnxYjTmNKIYaSP5dn0UCBaqWWyuTOS+fnB9u+E0nTngKnFL0gAlOr79NQoFTmPCNWZIqaHrJNrLkNQUM5LXRqkiCcJTNCZDQzmKifKyefYcnholhJGQ5nAN5+rvjQzFqohnJmOkJ2rZK8T/vGGqoysvozxJNeF48VCUMqgFLIqAIZUEazYzBGFJTVaIJ0girE1dNVOCu/zlVdI7b7qtZuvuotG+LuuogmNwAs6ACy5BG9yCDugCDJ7AM3gFb1ZuvVjv1sditGKVO0fgD6zPH4hHlMY=</latexit> 
+
+o1
+
+t
+
+<latexit sha1_base64="OzlXrTMzAFvE/QEdxwA3qdbiw1I=">AAAB+3icbVA7T8MwGHR4lvIKZWSxqJCYqqRChbGChbFI9CG1IXIcp7Xq2JHtIKoof4WFAYRY+SNs/BucNgO0nGT5dPd98vmChFGlHefbWlvf2NzaruxUd/f2Dw7to1pPiVRi0sWCCTkIkCKMctLVVDMySCRBccBIP5jeFH7/kUhFBb/Xs4R4MRpzGlGMtJF8uzYKBAvVLDZXJnJfPzR9u+40nDngKnFLUgclOr79NQoFTmPCNWZIqaHrJNrLkNQUM5JXR6kiCcJTNCZDQzmKifKyefYcnhklhJGQ5nAN5+rvjQzFqohnJmOkJ2rZK8T/vGGqoysvozxJNeF48VCUMqgFLIqAIZUEazYzBGFJTVaIJ0girE1dVVOCu/zlVdJrNtxWo3V3UW9fl3VUwAk4BefABZegDW5BB3QBBk/gGbyCNyu3Xqx362MxumaVO8fgD6zPH4nLlMc=</latexit> 
+
+o2
+
+t
+
+<latexit sha1_base64="M4Thv9y3esuwpxWjeHd/SlQsuFM=">AAAB+3icbVDNS8MwHE39nPOrzqOX4BA8jVZkehx68SQT3AdstaRpuoWlSUlScZT+K148KOLVf8Sb/43p1oNuPgh5vPf7kZcXJIwq7Tjf1srq2vrGZmWrur2zu7dvH9S6SqQSkw4WTMh+gBRhlJOOppqRfiIJigNGesHkuvB7j0QqKvi9nibEi9GI04hipI3k27VhIFioprG5MpH7+uHWt+tOw5kBLhO3JHVQou3bX8NQ4DQmXGOGlBq4TqK9DElNMSN5dZgqkiA8QSMyMJSjmCgvm2XP4YlRQhgJaQ7XcKb+3shQrIp4ZjJGeqwWvUL8zxukOrr0MsqTVBOO5w9FKYNawKIIGFJJsGZTQxCW1GSFeIwkwtrUVTUluItfXibds4bbbDTvzuutq7KOCjgCx+AUuOACtMANaIMOwOAJPINX8Gbl1ov1bn3MR1escucQ/IH1+QO0O5Tj</latexit> 
+
+oN
+
+t
+
+> . . .
+
+<latexit sha1_base64="ijfbeaQJhecC9AvuDeGC4LXPAAM=">AAAB7HicbVBNS8NAEJ34WetX1aOXxSJ4KolI9Vj04kkqmLbQxrLZbtqlm03YnQil9Dd48aCIV3+QN/+N2zYHbX0w8Hhvhpl5YSqFQdf9dlZW19Y3Ngtbxe2d3b390sFhwySZZtxniUx0K6SGS6G4jwIlb6Wa0ziUvBkOb6Z+84lrIxL1gKOUBzHtKxEJRtFKPu3i4123VHYr7gxkmXg5KUOOerf01eklLIu5QiapMW3PTTEYU42CST4pdjLDU8qGtM/blioacxOMZ8dOyKlVeiRKtC2FZKb+nhjT2JhRHNrOmOLALHpT8T+vnWF0FYyFSjPkis0XRZkkmJDp56QnNGcoR5ZQpoW9lbAB1ZShzadoQ/AWX14mjfOKV61U7y/Ktes8jgIcwwmcgQeXUINbqIMPDAQ8wyu8Ocp5cd6dj3nripPPHMEfOJ8/oxuOlw==</latexit> 
+
+aN
+
+t
+
+<latexit sha1_base64="Ouz9Z02nGHZDVjrf5BLVGaL3o80=">AAAB7HicbVBNS8NAEJ3Ur1q/qh69LBbBU0lEqseiF48VTFtoY9lsN+3SzSbsToRS+hu8eFDEqz/Im//GbZuDtj4YeLw3w8y8MJXCoOt+O4W19Y3NreJ2aWd3b/+gfHjUNEmmGfdZIhPdDqnhUijuo0DJ26nmNA4lb4Wj25nfeuLaiEQ94DjlQUwHSkSCUbSST3v46PXKFbfqzkFWiZeTCuRo9Mpf3X7CspgrZJIa0/HcFIMJ1SiY5NNSNzM8pWxEB7xjqaIxN8FkfuyUnFmlT6JE21JI5urviQmNjRnHoe2MKQ7NsjcT//M6GUbXwUSoNEOu2GJRlEmCCZl9TvpCc4ZybAllWthbCRtSTRnafEo2BG/55VXSvKh6tWrt/rJSv8njKMIJnMI5eHAFdbiDBvjAQMAzvMKbo5wX5935WLQWnHzmGP7A+fwBdyeOeg==</latexit> 
+
+a1
+
+t
+
+<latexit sha1_base64="BgOklxFAPEWXjUDtQIUU3pXzJEA=">AAAB7HicbVBNS8NAEJ3Ur1q/qh69LBbBU0mKVI9FLx4r2FpoY9lsN+3SzSbsToQS+hu8eFDEqz/Im//GbZuDtj4YeLw3w8y8IJHCoOt+O4W19Y3NreJ2aWd3b/+gfHjUNnGqGW+xWMa6E1DDpVC8hQIl7ySa0yiQ/CEY38z8hyeujYjVPU4S7kd0qEQoGEUrtWgfH2v9csWtunOQVeLlpAI5mv3yV28QszTiCpmkxnQ9N0E/oxoFk3xa6qWGJ5SN6ZB3LVU04sbP5sdOyZlVBiSMtS2FZK7+nshoZMwkCmxnRHFklr2Z+J/XTTG88jOhkhS5YotFYSoJxmT2ORkIzRnKiSWUaWFvJWxENWVo8ynZELzll1dJu1b16tX63UWlcZ3HUYQTOIVz8OASGnALTWgBAwHP8ApvjnJenHfnY9FacPKZY/gD5/MHeKuOew==</latexit> 
+
+a2
+
+t
+
+N obs. 
+
+N x D N x D N x C 
+
+<latexit sha1_base64="H1va/izimcLK3wQcAhGcMqZvd1U=">AAAB+HicbVBNS8NAEN3Ur1o/GvXoZbEIglASkeqx6MVjBfsBbQyb7bZdutmE3YnQhvwSLx4U8epP8ea/cdvmoK0PBh7vzTAzL4gF1+A431ZhbX1jc6u4XdrZ3dsv2weHLR0lirImjUSkOgHRTHDJmsBBsE6sGAkDwdrB+Hbmt5+Y0jySDzCJmReSoeQDTgkYybfLvRGBdJr5KZy72aPr2xWn6syBV4mbkwrK0fDtr14/oknIJFBBtO66TgxeShRwKlhW6iWaxYSOyZB1DZUkZNpL54dn+NQofTyIlCkJeK7+nkhJqPUkDExnSGCkl72Z+J/XTWBw7aVcxgkwSReLBonAEOFZCrjPFaMgJoYQqri5FdMRUYSCyapkQnCXX14lrYuqW6vW7i8r9Zs8jiI6RifoDLnoCtXRHWqgJqIoQc/oFb1ZU+vFerc+Fq0FK585Qn9gff4AlSWTDQ==</latexit> 
+
+ˆz1
+
+t+1 
+
+<latexit sha1_base64="5PJsqYCqVDPtYBK3dhBTZxV40vY=">AAAB+HicbVBNS8NAEN34WetHox69LBZBEEpSpHosevFYwX5AG8Nmu2mXbjZhdyK0ob/EiwdFvPpTvPlv3LY5aOuDgcd7M8zMCxLBNTjOt7W2vrG5tV3YKe7u7R+U7MOjlo5TRVmTxiJWnYBoJrhkTeAgWCdRjESBYO1gdDvz209MaR7LBxgnzIvIQPKQUwJG8u1Sb0ggm0z9DC7c6WPVt8tOxZkDrxI3J2WUo+HbX71+TNOISaCCaN11nQS8jCjgVLBpsZdqlhA6IgPWNVSSiGkvmx8+xWdG6eMwVqYk4Ln6eyIjkdbjKDCdEYGhXvZm4n9eN4Xw2su4TFJgki4WhanAEONZCrjPFaMgxoYQqri5FdMhUYSCyapoQnCXX14lrWrFrVVq95fl+k0eRwGdoFN0jlx0heroDjVQE1GUomf0it6sifVivVsfi9Y1K585Rn9gff4AlqmTDg==</latexit> 
+
+ˆz2
+
+t+1 
+
+<latexit sha1_base64="WrqBXcy2VfJHPETuS8lwZrrNKKI=">AAAB+HicbVDLSsNAFJ34rPXRqEs3g0UQhJKIVJdFN26ECvYBbQyT6aQdOpmEmRuhDfkSNy4UceunuPNvnD4W2nrgwuGce7n3niARXIPjfFsrq2vrG5uFreL2zu5eyd4/aOo4VZQ1aCxi1Q6IZoJL1gAOgrUTxUgUCNYKhjcTv/XElOaxfIBRwryI9CUPOSVgJN8udQcEsnHuZ3Dm5o93vl12Ks4UeJm4c1JGc9R9+6vbi2kaMQlUEK07rpOAlxEFnAqWF7upZgmhQ9JnHUMliZj2sunhOT4xSg+HsTIlAU/V3xMZibQeRYHpjAgM9KI3Ef/zOimEV17GZZICk3S2KEwFhhhPUsA9rhgFMTKEUMXNrZgOiCIUTFZFE4K7+PIyaZ5X3Gqlen9Rrl3P4yigI3SMTpGLLlEN3aI6aiCKUvSMXtGbNbZerHfrY9a6Ys1nDtEfWJ8/v5WTKQ==</latexit> 
+
+ˆzM
+
+t+1 
+
+<latexit sha1_base64="cY2QvgmmTQ1jv4vqoexWz/ZoHBE=">AAACA3icbVDLSsNAFJ3UV62vqDvdBIsgCCURqS6LblxWsA9oQphMJu3QyYOZG6GGgBt/xY0LRdz6E+78GydtFtp6YJjDOfdy7z1ewpkE0/zWKkvLK6tr1fXaxubW9o6+u9eVcSoI7ZCYx6LvYUk5i2gHGHDaTwTFocdpzxtfF37vngrJ4ugOJgl1QjyMWMAIBiW5+oE9wpDZXsx9OQnVlz3kuZvBqZW7et1smFMYi8QqSR2VaLv6l+3HJA1pBIRjKQeWmYCTYQGMcJrX7FTSBJMxHtKBohEOqXSy6Q25cawU3whioV4ExlT93ZHhUBYbqsoQw0jOe4X4nzdIIbh0MhYlKdCIzAYFKTcgNopADJ8JSoBPFMFEMLWrQUZYYAIqtpoKwZo/eZF0zxpWs9G8Pa+3rso4qugQHaETZKEL1EI3qI06iKBH9Ixe0Zv2pL1o79rHrLSilT376A+0zx8ZEZh3</latexit> 
+
+ˆzt+1 
+
+> Predictive Latent
+> Belief
+
+Sparse Observations 
+
+Displacement 
+
+> Embedder
+
+Q
+
+> Embedder
+
+V
+
+K
+
+> MLP
+> Self-Attention Blocks  N x
+> Cross-Attention Blocks
+
+Figure 3. The LASER policy architecture. The network employs a cross-attention mechanism to fuse the predicted latent state ˆzt+1 
+
+and current sparse observations ot, outputting continuous sensor displacements for the next time step. 
+
+a noise-corrupted latent ˜zt+1 over K steps. The resulting predictive latent ˆzt+1 incorporates trend information be-yond the immediate observation, providing the policy with a forward-looking basis for deciding where to sense next. 
+
+Continuum field decoder and reward evaluation. The decoder mirrors the design in AROMA and ENMA (Koupa ¨ıet al., 2025): It is an implicit neural representation (a coordinate-based MLP) that conditions on zt and any spa-tial coordinate x ∈ Ω to reconstruct the field continuously: 
+
+ˆut(x) = pdec 
+
+ϕ (· | zt, x). By evaluating the reconstruction error against high-fidelity ground truth, the decoder defines the reward rt = −L (ut+1 , ˆut+1 ), aligning policy optimiza-tion with the ultimate goal of full-field accuracy. 
+
+Training. The world model is trained entirely offline on a dataset of high-fidelity spatiotemporal field sequences u1: T .Different from AROMA, where sensor locations are fixed per trajectory, we randomly sample a new set of sensor locations x(i)
+
+t uniformly from Ω. This forces the model to learn a robust representation that is invariant to specific sensor layouts, thereby generalizing better to the diverse observation patterns encountered during active sensing. The model is trained by maximizing a variational lower bound, combining a reconstruction loss, a latent regularization term, and the diffusion loss for the dynamics: 
+
+Lworld (ϕ) = E
+
+h
+
+− log pdec 
+
+ϕ (ut | zt)
+
+| {z }
+
+Lrecon 
+
++ β · D KL 
+
+ penc 
+
+ϕ (zt | ot) ∥ N (0 , I )| {z }
+
+KL divergence 
+
++ λ · ∥ ϵ − ϵϕ( ˜ zt+1 , k, zt, ht)∥2
+
+| {z }
+
+Ldiffusion 
+
+i
+
+, (4) where ϵ is the true noise added in the diffusion forward process and ϵϕ is the denoising network. 
+
+4.3. Policy Network 
+
+Based on the pre-trained latent world model ϕ, the policy network receives the predictive latent state ˆzt+1 from the world model’s dynamics module and the current sparse ob-servations ot, and outputs continuous sensor displacement actions at = ∆ Xt. As shown in Figure 3, πθ is imple-mented as a Transformer-based architecture designed to handle variable sensor configurations. The policy is parame-terized as a conditional Gaussian distribution, with mean μθ
+
+and log-standard deviation log σθ output by the network. To capture fine-grained spatial dependencies, we encode sensor coordinates using a multi-scale Fourier feature embedding: 
+
+γpos (x) = 
+
+h
+
+x, {γs(x)}s∈S 
+
+i
+
+, (5) 
+
+γs
+
+pos (x) = 
+
+h
+
+sin( xωs), cos( xω s)
+
+i
+
+, (6) where ωs are log-uniformly sampled frequencies at scale s.Each query vector q(i) = [ γpos (x(i)
+
+t ); Embed( ut(x(i)
+
+t ))] is formed by concatenating positional encodings and embed-ded sparse observations, producing Q ∈ RN ×dq .The core reasoning occurs through a multi-scale cross-attention mechanism , where the encoded queries interact with the predictive latent state ˆzt+1 . Here, the world model’s “imagined” future serves as the key and value context: 
+
+q(s) = linear (s)
+
+q (q), k(s), v(s) = linear (s)
+
+k,v ( ˆ zt+1 ), (7) 
+
+f = M
+
+s∈S 
+
+softmax 
+
+ q(s)(k(s))⊤
+
+√cs
+
+
+
+v(s), (8) where ⊕ denotes concatenation across scales. This inter-action allows the policy to weigh current measurements against the anticipated global dynamics. Following cross-attention, a series of self-attention blocks capture inter-sensor interactions to ensure coordinated move-ment across the array, yielding the feature set f ′. Finally, an MLP head projects these features to produce sensor dis-placement parameters μθ , log σθ = Proj( f ′) ∈ RN ×2d,where d is the spatial dimension of displacements. Actions are sampled as a(i)
+
+t ∼ N  μ(i)
+
+θ , diag (( σ(i)
+
+θ )2), and clipped to [−amax , a max ] to respect practical movement constraints. This architecture enables LASER to strategically reposition sensors by jointly reasoning about anticipated field dynam-ics, current measurements, and spatial context. 
+
+4.4. Reinforcement Learning Algorithm 
+
+In LASER, the RL agent learns to maximize reconstruction fidelity by interacting with the latent world model. LASER leverages an on-policy policy gradient method to solve the POMDP defined in Section 4.1. The overall learning proce-dure is briefly summarized in Algorithm 1. 
+
+Environment interaction. To prevent overfitting to spe-cific initial conditions, each training episode begins by ran-domly selecting a trajectory and a starting timestep t0 from the offline dataset. The environment is reset to the ground-truth field ut0 , and sensors are initialized with a uniform 4LASER: Learning Active Sensing for Continuum Field Reconstruction 
+
+Algorithm 1 The training algorithm of LASER. 
+
+Initialize policy parameters θ, old policy θold ← θ.Initialize dynamic filtering threshold τ ← − inf .
+
+while not converged do 
+
+Initialize D ← ∅ .
+
+for episode e = 1 ..E do 
+
+Sample initial field ut0 and sensor locations xt0 .
+
+for time step t = t0 → t0 + T − 1 do 
+
+Encode observation and predict next latent ˆzt+1 .
+
+// Dynamic group filtering with look-ahead rewards 
+
+for group g = 1 ..G do 
+
+Sample action agt ∼ πθ (· | ˆzt+1 , ot).Perform forward rollout { ˆzt+h}Hh=1 .Compute lookahead rlookahead ,g t with Eq. (12). Compute minima Rmin .
+
+if ∀g, r lookahead ,g t < τ and iteration > 1 then Exclude this group. 
+
+Store ( ˆ zt+1 , ot, {agt , r gt }Gg=1 ) in D.Update history ht+1 ← GRU( ht, zt).Update quality threshold τ ← mean ({Rmin }).
+
+// Policy optimization 
+
+for epoch e = 1 ..N epoch do 
+
+Sample mini-batch B ∼ D .Compute GRPO objective JGRPO (θ) with Eq. (11). Update policy parameters θ ← θ − η∇θ JGRPO (θ).Update old policy θold ← θ.
+
+spatial distribution over Ω. Throughout the episode, the world model’s recurrent state ht is updated with each new encoded zt to reflect the evolving dynamics. 
+
+Policy optimization with GRPO. We employ Group Rel-ative Policy Optimization (GRPO) (Guo et al., 2025; Yu et al., 2025; Zheng et al., 2025; Liu et al., 2026) to optimize 
+
+πθ . GRPO is an on-policy RL algorithm that inherits the stability of Proximal Policy Optimization (PPO) (Schulman et al., 2017) while replacing the traditional value function with group-relative advantage estimation. At each timestep 
+
+t, we sample G independent action groups {agt }Gg=1 from the current policy πθ (·| ˆzt+1 , ot). Each action in the group leads to a transition to the next state and yields an immediate reward rgt . The advantage Ag,t is calculated by normalizing 
+
+rgt against the statistics of the entire group: 
+
+Ag,t = rgt − mean( {rg′ 
+
+> t
+
+}Gg′=1 )std( {rg′ 
+
+> t
+
+}Gg′=1 ) , (9) where the mean and standard deviation are computed across the G sampled rewards at that timestep. To maintain stable gradient estimates, we apply a secondary normalization step within each training mini-batch B (Liu et al., 2026; Zhu et al., 2026) where μB = mean {Ag,t | (Ag,t ) ∈ B} and 
+
+σB = std {Ag,t | (Ag,t ) ∈ B} :
+
+ˆAg,t = Ag,t − μB
+
+σB + ϵnorm 
+
+. (10) Here, ϵnorm is a small constant for numerical stability. The policy network is then updated by maximizing: 
+
+JGRPO (θ) = E( ˆ zt+1 ,ot,agt ,r gt )∼D θold 
+
+h 1
+
+G
+
+> G
+
+X
+
+> g=1
+
+1
+
+N
+
+> N
+
+X
+
+> i=1
+
+min 
+
+
+
+sg,t (θ) ˆAg,t , clip( ·, 1 − ϵ, 1 + ϵ) ˆAg,t 
+
+ i 
+
+, (11) where sg,t (θ) = πθ (ai,g t | ˆzt+1 ,ot)    
+
+> πθold (ai,g t|ˆzt+1 ,ot)
+
+is the importance sam-pling ratio, θold denotes the policy parameters before the update, and ϵ is a clipping hyperparameter. This group-relative approach directly contrasts the information gain of different movement strategies. 
+
+Dynamic group filtering. Standard GRPO treats all sam-pled groups equally. However, in active sensing, certain action configurations may be systematically uninformative, such as sensors clustering in low-variance regions, leading to noisy gradient estimates. To this end, we propose dy-namic group filtering. For each group, we calculate the minimum reward over group Rmin = min g {rgt }. Groups that consistently fall below a running mean of Rmin are iden-tified as low-quality and excluded from the rollout buffer. This mechanism allows the optimization process to remain focused on high-quality, informative trajectories. 
+
+Predictive reward rollouts. To transcend one-step GRPO optimization, LASER evaluates the impact of an action over a future horizon. After executing at to obtain the proposed sensor placement Xt+1 , we freeze this configuration and use the world model’s latent dynamics module pdyn  
+
+> ϕ
+
+to per-form an H-step rollout conditioned on the current history, where H = 3 in our experiments. This yields a sequence of predicted latent states { ˆzt+k}Hh=1 . Each predicted state is decoded to ˆut+k to evaluate its reconstruction fidelity, forming a weighted lookahead reward: 
+
+rlookahead  
+
+> t
+
+=
+
+PHh=1 γh−1rt+h
+
+PHh=1 γh−1 . (12) This reward formulation directly encourages LASER to place sensors in locations that will remain informative over multiple future time steps. 
+
+5. Experiments 
+
+We evaluate LASER across three datasets with distinct phys-ical patterns, including (i) Turbulent Navier-Stokes Flow, 
+
+(ii) Shallow-Water Equations, and (iii) real-world global Sea Surface Temperature (SST) with irregular land constraints. 
+
+Table 2. Summary of benchmarks. 
+
+Benchmark Geometry #Dim Resolution Navier-Stokes Regular Grid 2D 64 × 64 
+
+Shallow-Water Regular Grid 3D 64 × 128 
+
+SST Land Constraints 3D 171 × 360 
+
+5LASER: Learning Active Sensing for Continuum Field Reconstruction 
+
+Table 3. Rollout mean squared error (MSE) on the Navier-Stokes and Shallow-water benchmarks. The same randomly sampled initial sensor placement at t = 0 is used for all methods, and rollouts are conditioned on sparse observations with ot=0 
+
+# Obs. ↓ dataset → NS ν1e−3 (×10 −1) NS ν1e−5 (×10 −1) Shallow-Water (×10 −2)
+
+Model ↓ In-t Out-t Avg In-t Out-t Avg In-t Out-t Avg 
+
+256 AROMA (2024) 0.191 0.635 0.413 0.180 5.876 3.028 1.472 1.739 1.606 LASER ( ϕ) 0.006 0.090 0.050 0.073 5.228 2.730 0.006 0.074 0.050 
+
+128 AROMA (2024) 0.279 0.860 0.570 0.202 5.932 3.067 1.227 1.369 1.298 LASER ( ϕ) 0.024 0.290 0.157 0.108 6.007 3.057 0.016 0.113 0.064 
+
+64 AROMA (2024) 0.683 1.519 1.101 0.267 6.166 3.217 1.293 1.476 1.385 LASER ( ϕ) 0.209 0.589 0.399 0.196 6.081 3.138 0.138 0.274 0.206 
+
+Table 4. Reconstruction error comparison in MSE under static and active sensing strategies. AROMA, DiffusionPDE, and LASER( ϕ)are evaluated using fixed sensor layouts. The final three models (PhySense, LASER ppo , and LASER) utilize optimized sensing trajectories, in which LASER ppo replaces the sensing policy optimization method with PPO. # Obs. ↓ dataset → NS ν1e−3 (×10 −3) NS ν1e−5 (×10 −1) Shallow-Water (×10 −3)
+
+Model ↓ In-t Out-t Avg In-t Out-t Avg In-t Out-t Avg 
+
+256 AROMA (2024) 2.180 3.260 2.720 0.065 1.909 0.987 12.64 12.55 12.59 DiffusionPDE (2024) 1.339 1.349 1.344 0.887 1.302 1.094 2.734 3.617 3.175 LASER ( ϕ) 0.258 0.764 0.478 0.019 1.198 0.608 0.053 0.833 0.443 PhySense (2025) 0.114 0.611 0.376 0.018 1.202 0.610 0.050 0.661 0.355 LASER PPO 0.103 0.510 0.304 0.019 1.162 0.590 0.046 0.607 0.326 LASER 0.096 0.483 0.302 0.017 1.188 0.603 0.042 0.465 0.257 
+
+128 AROMA (2024) 5.971 5.661 5.816 0.125 2.443 1.284 14.78 14.47 14.63 DiffusionPDE (2024) 7.651 5.567 6.609 1.257 1.724 1.490 4.977 7.097 6.037 LASER ( ϕ) 0.562 1.070 0.818 0.033 1.382 0.707 0.079 0.764 0.421 PhySense (2025) 0.180 0.622 0.370 0.027 1.360 0.693 0.058 0.685 0.369 LASER PPO 0.134 0.561 0.353 0.032 1.346 0.688 0.064 0.627 0.345 LASER 0.149 0.493 0.321 0.031 1.343 0.688 0.052 0.492 0.299 
+
+64 AROMA (2024) 21.90 18.65 20.27 0.328 3.596 1.962 15.63 17.27 16.45 DiffusionPDE (2024) 5.924 7.162 6.543 0.921 2.369 1.645 6.921 9.354 8.138 LASER ( ϕ) 0.229 0.821 0.524 0.058 1.717 0.887 0.344 1.500 0.920 PhySense (2025) 0.196 0.736 0.466 0.055 1.681 0.868 0.057 0.766 0.411 LASER PPO 0.193 0.599 0.396 0.056 1.527 0.790 0.083 0.829 0.456 LASER 0.169 0.726 0.434 0.055 1.559 0.801 0.133 0.587 0.386 
+
+5.1. Experimental Setup 
+
+As presented in Table 2, our experiments encompass both datasets in the 2D and 3D domains: • 2D Navier-Stokes Equation (Li et al., 2021; Constantin & Foia s¸ , 1988): The equation is expressed with the vorticity form on the unit torus, ∂w ∂t + u · ∇ w = ν∆w + f , ∇u = 0 for x ∈ Ω, t > 0,where ν is the viscosity coefficient. We consider two differ-ent versions ν = 10 −3 (NS ν1e−3) and ν = 10 −5 (NS ν1e−5). 
+
+• 3D Shallow-Water Equation (Serrano et al., 2023; Yin et al., 2023): This equation approximates fluid flow on the Earth’s surface. The data includes the vorticity w and height 
+
+h of the fluid. • Sea Surface Temperature (Jean-Michel et al., 2021; Ma et al., 2025): daily sea surface temperature at approximately 1◦ resolution from the GLORYS12 dataset with intricate land-sea constraints. We evaluate LASER from two perspectives to assess both its forward modeling fidelity and its decision-making efficacy: 
+
+• Rollout assessment for the latent world model ( ϕ): We first evaluate the reconstruction and prediction performance of the world model under randomly sampled sensor config-urations. In this scenario, we compare LASER only with methods that support forward prediction. • Online recon-struction with active sensing ( θ): We then assess the cou-pled performance of the field reconstruction and the adaptive sensor placement policy. We compare LASER against the state of the art from Table 1, including AROMA (Serrano et al., 2024), DiffusionPDE (Huang et al., 2024), and Phy-Sense (Ma et al., 2025). Furthermore, we include an RL baseline, termed LASER ppo , in which the proposed sensing strategy is replaced with a standard PPO policy (Schulman et al., 2017). See more details in Appendix D and E. 
+
+5.2. Experiments on Simulated PDE Datasets Setups. We evaluate our method on the Navier-Stokes and Shallow-Water benchmarks under a temporal extrapolation setting. Each trajectory is divided into two equal-length segments: the first half, denoted as In-t , and the second half, 6LASER: Learning Active Sensing for Continuum Field Reconstruction AROMA 
+
+LASER 
+
+AROMA 
+
+LASER 
+
+AROMA 
+
+LASER  
+
+> <latexit sha1_base64="HXOXE11HK+T6p8yNpWQz89FS0hw=">AAACCHicbVC7TsMwFHV4lvIqMDIQUSGxUCWACmMFCxMqgj6kNooc96a16jiR7SCqKCMLv8LCAEKsfAIbf4ObZoCWI1k+PvceXd/jRYxKZVnfxtz8wuLScmGluLq2vrFZ2tpuyjAWBBokZKFoe1gCoxwaiioG7UgADjwGLW94Oa637kFIGvI7NYrACXCfU58SrLTklva6Ch60L8nu5Po2Td2ky2M3seHoRD9KZatiZTBniZ2TMspRd0tf3V5I4gC4IgxL2bGtSDkJFooSBmmxG0uIMBniPnQ05TgA6STZIql5oJWe6YdCH67MTP3tSHAg5SjwdGeA1UBO18bif7VOrPxzJ6E8ihVwMhnkx8xUoTlOxexRAUSxkSaYCKr/apIBFpgonV1Rh2BPrzxLmscVu1qp3pyWaxd5HAW0i/bRIbLRGaqhK1RHDUTQI3pGr+jNeDJejHfjY9I6Z+SeHfQHxucP1ziafw==</latexit>
+
+NS ω1e→3 
+
+> <latexit sha1_base64="Mg8Ya+FRVAxk44TPuSZj9pIFg8Q=">AAACCHicbVC7TsMwFHV4lvIqMDIQUSGxUCUICmMFCxMqgj6kNooc96a16jiR7SCqKCMLv8LCAEKsfAIbf4ObZoCWI1k+PvceXd/jRYxKZVnfxtz8wuLScmGluLq2vrFZ2tpuyjAWBBokZKFoe1gCoxwaiioG7UgADjwGLW94Oa637kFIGvI7NYrACXCfU58SrLTklva6Ch60L8nu5Po2Td2ky2M3seHoVD9KZatiZTBniZ2TMspRd0tf3V5I4gC4IgxL2bGtSDkJFooSBmmxG0uIMBniPnQ05TgA6STZIql5oJWe6YdCH67MTP3tSHAg5SjwdGeA1UBO18bif7VOrPxzJ6E8ihVwMhnkx8xUoTlOxexRAUSxkSaYCKr/apIBFpgonV1Rh2BPrzxLmscVu1qp3pyUaxd5HAW0i/bRIbLRGaqhK1RHDUTQI3pGr+jNeDJejHfjY9I6Z+SeHfQHxucP2kSagQ==</latexit>
+
+NS ω1e→5 
+
+> <latexit sha1_base64="BngHCL7XtmI5lHFt/9t3Zph3ws8=">AAAB/3icbVDLSgMxFM3UV62vUcGNm8EiuLHMiFQ3QsGNy4r2Ae1QMumdNjSTDElGLWMX/oobF4q49Tfc+Tem7Sy09UDgcM493JsTxIwq7brfVm5hcWl5Jb9aWFvf2Nyyt3fqSiSSQI0IJmQzwAoY5VDTVDNoxhJwFDBoBIPLsd+4A6mo4Ld6GIMf4R6nISVYG6lj77U1PJhcetPHjIn74wbWIEcdu+iW3AmceeJlpIgyVDv2V7srSBIB14RhpVqeG2s/xVJTwmBUaCcKYkwGuActQzmOQPnp5P6Rc2iUrhMKaR7XzkT9nUhxpNQwCsxkhHVfzXpj8T+vlejw3E8pjxMNnEwXhQlztHDGZThdKoFoNjQEE0nNrQ7pY4mJ6UAVTAne7JfnSf2k5JVL5evTYuUiqyOP9tEBOkIeOkMVdIWqqIYIekTP6BW9WU/Wi/VufUxHc1aW2UV/YH3+ALeAlo0=</latexit>
+
+Shallow-Water 
+
+> Error  Error  Error
+
+Figure 4. Long-term rollout performance under high sparsity (N = 64 ). We highlight the predictive errors of the LASER latent world model during extended temporal horizons. 
+
+denoted as Out-t . The model is trained exclusively on the 
+
+In-t segment, using a budget of 256 randomly sampled sen-sor locations. At test time, the model autoregressively rolls out the learned dynamics starting from t = 0 over the entire 
+
+Out-t horizon. Performance within the In-t interval reflects the model’s forecasting accuracy under the training regime, while performance on Out-t measures its ability to extrap-olate beyond the training horizon. To further stress-test the framework’s robustness, we evaluate prediction perfor-mance under varying sensing budgets ( N ∈ { 256 , 128 , 64 }). This assesses the generalization ability when subjected to reduced sensing coverage and unseen sensor layouts. 
+
+Dynamics rollout performance. We train the latent world model, LASER( ϕ), with randomly sampled sensor loca-tions over the spatial domain at every training step. At test time, we randomly sample an initial sensor configuration at t = 0 and use the same placement. Given the resulting partial observation ot=0 , we encode it into the latent space, perform latent rollouts using the learned dynamics model. As shown in Table 3 , LASER( ϕ) consistently outperforms DiffusionPDE PhySense LASER 
+
+> <latexit  sha1_base64="HXOXE11HK+T6p8yNpWQz89FS0hw=">AAACCHicbVC7TsMwFHV4lvIqMDIQUSGxUCWACmMFCxMqgj6kNooc96a16jiR7SCqKCMLv8LCAEKsfAIbf4ObZoCWI1k+PvceXd/jRYxKZVnfxtz8wuLScmGluLq2vrFZ2tpuyjAWBBokZKFoe1gCoxwaiioG7UgADjwGLW94Oa637kFIGvI7NYrACXCfU58SrLTklva6Ch60L8nu5Po2Td2ky2M3seHoRD9KZatiZTBniZ2TMspRd0tf3V5I4gC4IgxL2bGtSDkJFooSBmmxG0uIMBniPnQ05TgA6STZIql5oJWe6YdCH67MTP3tSHAg5SjwdGeA1UBO18bif7VOrPxzJ6E8ihVwMhnkx8xUoTlOxexRAUSxkSaYCKr/apIBFpgonV1Rh2BPrzxLmscVu1qp3pyWaxd5HAW0i/bRIbLRGaqhK1RHDUTQI3pGr+jNeDJejHfjY9I6Z+SeHfQHxucP1ziafw==</latexit>
+> NS ω1e→3
+> <latexit  sha1_base64="Mg8Ya+FRVAxk44TPuSZj9pIFg8Q=">AAACCHicbVC7TsMwFHV4lvIqMDIQUSGxUCUICmMFCxMqgj6kNooc96a16jiR7SCqKCMLv8LCAEKsfAIbf4ObZoCWI1k+PvceXd/jRYxKZVnfxtz8wuLScmGluLq2vrFZ2tpuyjAWBBokZKFoe1gCoxwaiioG7UgADjwGLW94Oa637kFIGvI7NYrACXCfU58SrLTklva6Ch60L8nu5Po2Td2ky2M3seHoVD9KZatiZTBniZ2TMspRd0tf3V5I4gC4IgxL2bGtSDkJFooSBmmxG0uIMBniPnQ05TgA6STZIql5oJWe6YdCH67MTP3tSHAg5SjwdGeA1UBO18bif7VOrPxzJ6E8ihVwMhnkx8xUoTlOxexRAUSxkSaYCKr/apIBFpgonV1Rh2BPrzxLmscVu1qp3pyUaxd5HAW0i/bRIbLRGaqhK1RHDUTQI3pGr+jNeDJejHfjY9I6Z+SeHfQHxucP2kSagQ==</latexit>
+> NS ω1e→5
+> <latexit  sha1_base64="BngHCL7XtmI5lHFt/9t3Zph3ws8=">AAAB/3icbVDLSgMxFM3UV62vUcGNm8EiuLHMiFQ3QsGNy4r2Ae1QMumdNjSTDElGLWMX/oobF4q49Tfc+Tem7Sy09UDgcM493JsTxIwq7brfVm5hcWl5Jb9aWFvf2Nyyt3fqSiSSQI0IJmQzwAoY5VDTVDNoxhJwFDBoBIPLsd+4A6mo4Ld6GIMf4R6nISVYG6lj77U1PJhcetPHjIn74wbWIEcdu+iW3AmceeJlpIgyVDv2V7srSBIB14RhpVqeG2s/xVJTwmBUaCcKYkwGuActQzmOQPnp5P6Rc2iUrhMKaR7XzkT9nUhxpNQwCsxkhHVfzXpj8T+vlejw3E8pjxMNnEwXhQlztHDGZThdKoFoNjQEE0nNrQ7pY4mJ6UAVTAne7JfnSf2k5JVL5evTYuUiqyOP9tEBOkIeOkMVdIWqqIYIekTP6BW9WU/Wi/VufUxHc1aW2UV/YH3+ALeAlo0=</latexit>
+> Shallow-Water
+> Error  Error  Error
+
+Figure 5. Qualitative showcases of active sensing. We evaluate different placement strategies under extreme sparsity ( N = 64 ). 
+
+Table 5. MSE results on the SST dataset under varying sensing budgets. We report both (i) field prediction from initial sparse observations and (ii) online reconstruction with active sensing. Setting Model # Obs. 100 50 Rollout AROMA (2024) 6.3734 6.8064 LASER ( ϕ) 2.6792 2.7310 
+
+Active Sensing AROMA (2024) 1.0586 1.1281 LASER ( ϕ) 0.7277 0.7402 DiffusionPDE (2024) 3.4626 5.7087 PhySense (2025) 0.7059 0.7287 LASER 0.6932 0.7184 
+
+AROMA across all datasets and sensing budgets, with more pronounced gains under more sparsity. Figure 4 presents rollout predictions based solely on the initial sparse obser-vations on 64 sensing locations. LASER( ϕ) yields lower prediction errors. We provide more results in Appendix F.3. 
+
+Active sensing results. We use a pretrained continuum world model with 256 sparse observations and train separate policies or optimization-based models on top of it. We fix the sensor configuration sampled at t = 0 and collect sparse observations for t > 0 for AROMA, DiffusionPDE, and LASER( ϕ). For PhySense, following its original setup, we use an offline-optimized and instance-invariant sensor place-ment for t > 0. Table 4 reports field reconstruction error with different sensing strategies. We observe that: First, ac-tive sensing approaches consistently outperform those with fixed sensor layouts, with the performance gap widening as the number of observations decreases, highlighting the importance of adaptive sensing under sparse measurements. Second, LASER achieves the lowest reconstruction error by using a latent world model to anticipate future dynamics and actively adapt sensing trajectories at inference, ensuring robust generalization under sparse and shifting observations. 
+
+Figure 5 presents qualitative results with 64 sensing loca-tions. More visualizations are shown in Appendix F.4. 7LASER: Learning Active Sensing for Continuum Field Reconstruction                                                                               
+
+> Table 6. Ablation study on temporal history for the latent dynamics predictor. We evaluate rollout MSE across varying GRU history lengths ( ht) within pdyn
+> ϕusing 256 sensors. Dataset →NS ν1e−3NS ν1e−5Shallow-Water
+> (×10 −2)(×10 −1)(×10 −3)
+> History len. In-t Out-t In-t Out-t In-t Out-t
+> 00.088 0.822 0.078 5.38 0.074 1.104 30.087 0.904 0.073 5.23 0.064 0.774
+> 40.063 0.904 0.079 6.80 0.078 0.889 50.069 1.012 0.097 7.88 0.069 0.893
+> Table 7. Ablation study on dynamic quality filtering. LASER †
+> denotes a baseline model without dynamic quality filtering. Results are reported in MSE ( ×10 −3) on NS ν1e−3.# Obs. Model In-t Out-t Avg
+> 256 LASER ( ϕ)0.1907 0.5274 0.3591 LASER †0.0973 0.6854 0.3913 LASER 0.0958 0.4834 0.3024
+> 128 LASER ( ϕ)0.5617 1.0743 0.8180 LASER †0.1361 0.8734 0.5048 LASER 0.1490 0.4932 0.3211
+> 64 LASER ( ϕ)0.2285 0.8206 0.5245 LASER †0.1499 0.7543 0.4521 LASER 0.1693 0.7259 0.4339
+
+5.3. Experiments on Real-World SST Dataset 
+
+The SST dataset contains temperature records sampled at random months and days across multiple years. Both the month and day are provided as additional input features. We perform full-sequence forecasting, predicting the entire temperature trajectory using 100 sampled sensor locations and evaluate performance under varying sensing budgets (N ∈ 100 , 50 ). Table 5 provides both (i) field prediction results from initial sparse observations and (ii) online recon-struction results with active sensing. LASER consistently outperforms compared methods on both tasks. Appendix Figure 16 shows the qualitative results. 
+
+5.4. Model Analyses Ablation study on length of historical inputs. We study the effect of the input history length used by the GRU-based latent dynamics predictor with 256 sensors. As shown in 
+
+Table 6 , incorporating historical latent features consistently improves rollout prediction compared to using no history, especially for out-of-distribution timesteps, highlighting the importance of history-aware latent dynamics modeling. We observe that the optimal history length depends on the tur-bulence level of the scene. For more turbulent regimes (see Figure 4), such as NS ν1e−5 and Shallow-water , shorter history lengths achieve lower errors. This suggests that ex-cessive historical context may introduce outdated or noisy information in highly chaotic systems, making shorter tem-poral contexts more effective for accurate rollout prediction.                   
+
+> Table 8. Ablation study on the predictive reward. We evaluate different forward-looking horizons for the reward function, and re-port the online reconstruction MSE on NS ν1e−3with 256 sensors. Horizon In-t Out-t Avg
+> 10.1104 0.6136 0.3620 30.0958 0.4834 0.3024 50.0938 0.3380 0.2813
+
+Ablation study on dynamic quality filtering. We eval-uate the effect of dynamic quality filtering to the final per-formance of LASER. We compare the full LASER model with two variants: (i) LASER †, a model without dynamic quality filtering, and (ii) LASER( ϕ), a model without sensor displacement. As shown in Table 7 , the final LASER model with dynamic quality filtering consistently improves overall performance, particularly in out-of-distribution timesteps. These results highlight the importance of dynamic quality filtering for robust active sensing, especially under sparse settings and highly non-stationary systems. 
+
+Ablation study on the predictive reward. We assess the effect of the forward-looking reward horizon H on re-construction accuracy in Table 8 . We observe consistent improvements as the horizon increases from H = 1 to 
+
+H = 5 , indicating the benefit of evaluating sensing actions beyond immediate one-step outcomes. When H=1 , the reward only reflects the reconstruction error at the next time step, leading to suboptimal sensor placements. In contrast, incorporating multi-step rollouts encourages the policy to account for the longer-term dynamics. This effect is partic-ularly pronounced for Out-t predictions, where increasing 
+
+H from 1 to 5 yields a substantial reduction in error (from 
+
+0.6136 to 0.3380 ), suggesting that forward-looking rewards are crucial for generalization to future unseen states. 
+
+Sensitivity analyses. We evaluate LASER’s sensitivity to initial sensor locations in Appendices F.1–F.2. The results demonstrate that once trained, LASER generates consistent outcomes based on various initial placements. 
+
+6. Conclusions and Limitations 
+
+We introduced LASER, a framework that learns active sens-ing for sparse continuum field reconstruction. By making decisions based on a predictive world model, LASER proac-tively navigates toward high-information regions beyond current observations. Experiments show that LASER out-performs prior sparse field reconstruction methods, enabling online adaptation in dynamic environments. A potential limitation of LASER is its reliance on the la-tent world model’s fidelity, where inaccurate dynamics can degrade sensing decisions in highly complex physical envi-ronments. Moreover, the optimization of sensing trajectories introduces extra computational overhead compared to static alternatives. We plan to resolve these issues in the future. 8LASER: Learning Active Sensing for Continuum Field Reconstruction 
+
+Impact Statement 
+
+This work presents LASER, whose goal is to advance the field of machine learning by enabling more efficient active sensing for continuum field reconstruction in complex phys-ical environments. By reducing the number of required ob-servations while maintaining high reconstruction accuracy, LASER has the potential to support applications in scien-tific modeling, environmental monitoring, and autonomous systems operating under sensing constraints. As a general-purpose learning framework, LASER does not introduce new ethical risks beyond those commonly asso-ciated with machine learning systems for perception and decision-making. Potential societal impacts will depend on downstream applications, and we do not foresee spe-cific negative consequences arising directly from this work. We believe the contributions are primarily technical and methodological, with positive implications for data-efficient physical modeling. 
+
+Acknowledgements 
+
+This work was supported by the National Natural Science Foundation of China (62250062), the Smart Grid National Science and Technology Major Project (2024ZD0801200), the Shanghai Municipal Science and Technology Major Project (2021SHZDZX0102), Shanghai Jiao Tong Univer-sity AI for Engineering Initiative (WH410263001/005), and the Fundamental Research Funds for the Central Universi-ties. 
+
+References 
+
+Alkin, B., F ¨urst, A., Schmid, S., Gruber, L., Holzleitner, M., and Brandstetter, J. Universal physics transformers: A framework for efficiently scaling neural operators. Ad-vances in Neural Information Processing Systems , 37: 25152–25194, 2024. Battaglia, P., Pascanu, R., Lai, M., Jimenez Rezende, D., et al. Interaction networks for learning about objects, relations and physics. Advances in Neural Information Processing Systems , 29, 2016. Brunton, S. L. and Kutz, J. N. Data-driven science and engineering: Machine learning, dynamical systems, and control . Cambridge University Press, 2022. Chung, J., Gulcehre, C., Cho, K., and Bengio, Y. Empirical evaluation of gated recurrent neural networks on sequence modeling. arXiv preprint arXiv:1412.3555 , 2014. Constantin, P. and Foia s¸ , C. Navier-stokes equations . Uni-versity of Chicago press, 1988. Deng, H., Zhu, X., Wang, Y., and Yang, X. Evomesh: Adaptive physical simulation with hierarchical graph evo-lutions. In Forty-second International Conference on Ma-chine Learning , 2025. URL https://openreview. net/forum?id=ZZvTc92dYQ .Evans, L. C. Partial differential equations , volume 19. American mathematical society, 2022. Guan, S., Deng, H., Wang, Y., and Yang, X. Neurofluid: Fluid dynamics grounding with particle-driven neural radiance fields. In International conference on machine learning , pp. 7919–7929. PMLR, 2022. Guo, D., Yang, D., Zhang, H., Song, J., Zhang, R., Xu, R., Zhu, Q., Ma, S., Wang, P., Bi, X., et al. Deepseek-r1: In-centivizing reasoning capability in llms via reinforcement learning. arXiv preprint arXiv:2501.12948 , 2025. Ha, D. and Schmidhuber, J. Recurrent world models facil-itate policy evolution. Advances in Neural Information Processing Systems , 31, 2018. Han, X., Gao, H., Pfaff, T., Wang, J.-X., and Liu, L. Predict-ing physics in mesh-reduced space with temporal atten-tion. In International Conference on Learning Represen-tations , 2022. URL https://openreview.net/ forum?id=XctLdNfCmP .Hao, Z., Wang, Z., Su, H., Ying, C., Dong, Y., Liu, S., Cheng, Z., Song, J., and Zhu, J. Gnot: A general neu-ral operator transformer for operator learning. In Inter-national Conference on Machine Learning , pp. 12556– 12569. PMLR, 2023. Ho, J., Jain, A., and Abbeel, P. Denoising diffusion proba-bilistic models. Advances in Neural Information Process-ing Systems , 33:6840–6851, 2020. Huang, J., Yang, G., Wang, Z., and Park, J. J. Diffusion-pde: Generative pde-solving under partial observation. 
+
+Advances in Neural Information Processing Systems , 37: 130291–130323, 2024. Iakovlev, V. and L ¨ahdesm ¨aki, H. Learning spatiotemporal dynamical systems from point process observations. In 
+
+The Thirteenth International Conference on Learning Representations , 2025. URL https://openreview. net/forum?id=37EXtKCOkn .Iakovlev, V., Yildiz, C., Heinonen, M., and L ¨ahdesm ¨aki, H. Latent neural ODEs with sparse bayesian multi-ple shooting. In The Eleventh International Confer-ence on Learning Representations , 2023. URL https: //openreview.net/forum?id=moIlFZfj_1b .Janny, S., Beneteau, A., Nadri, M., Digne, J., Thome, N., and Wolf, C. Eagle: Large-scale learning of turbulent 9LASER: Learning Active Sensing for Continuum Field Reconstruction 
+
+fluid dynamics with mesh transformers. arXiv preprint arXiv:2302.10803 , 2023. Jean-Michel, L., Eric, G., Romain, B.-B., Gilles, G., Ang ´elique, M., Marie, D., Cl ´ement, B., Mathieu, H., Olivier, L. G., Charly, R., et al. The copernicus global 1/12 oceanic and sea ice glorys12 reanalysis. Frontiers in Earth Science , 9:698876, 2021. Karras, T., Aittala, M., Aila, T., and Laine, S. Elucidating the design space of diffusion-based generative models. 
+
+Advances in Neural Information Processing Systems , 35: 26565–26577, 2022. Kochkov, D., Smith, J. A., Alieva, A., Wang, Q., Brenner, M. P., and Hoyer, S. Machine learning– accelerated computational fluid dynamics. Pro-ceedings of the National Academy of Sciences ,118(21):e2101784118, 2021. doi: 10.1073/pnas. 2101784118. URL https://www.pnas.org/doi/ abs/10.1073/pnas.2101784118 .Koupa ¨ı, A. K., Boudec, L. L., Serrano, L., and Galli-nari, P. ENMA: Tokenwise autoregression for contin-uous neural PDE operators. In The Thirty-ninth Annual Conference on Neural Information Processing Systems ,2025. URL https://openreview.net/forum? id=3CYXSMFv55 .Li, Z., Kovachki, N., Azizzadenesheli, K., Liu, B., Bhat-tacharya, K., Stuart, A., and Anandkumar, A. Fourier neural operator for parametric partial differential equa-tions. arXiv preprint arXiv:2010.08895 , 2020. Li, Z., Kovachki, N. B., Azizzadenesheli, K., liu, B., Bhat-tacharya, K., Stuart, A., and Anandkumar, A. Fourier neu-ral operator for parametric partial differential equations. In International Conference on Learning Representations ,2021. URL https://openreview.net/forum? id=c8P9NQVtmnO .Lippe, P., Veeling, B., Perdikaris, P., Turner, R., and Brand-stetter, J. Pde-refiner: Achieving accurate long rollouts with neural pde solvers. Advances in Neural Information Processing Systems , 36:67398–67433, 2023. Liu, S.-Y., Dong, X., Lu, X., Diao, S., Belcak, P., Liu, M., Chen, M.-H., Yin, H., Wang, Y.-C. F., Cheng, K.-T., et al. Gdpo: Group reward-decoupled normalization pol-icy optimization for multi-reward rl optimization. arXiv preprint arXiv:2601.05242 , 2026. Long, Z., Lu, Y., Ma, X., and Dong, B. PDE-net: Learning PDEs from data. In Dy, J. and Krause, A. (eds.), Proceed-ings of the 35th International Conference on Machine Learning , volume 80 of Proceedings of Machine Learn-ing Research , pp. 3208–3216. PMLR, 10–15 Jul 2018. URL https://proceedings.mlr.press/v80/ long18a.html .Luo, X., Xu, W., Ren, Y., Yoo, S., and Nadiga, B. Continu-ous field reconstruction from sparse observations with im-plicit neural networks. arXiv preprint arXiv:2401.11611 ,2024. Ma, Y., Wu, H., Zhou, H., Weng, H., Wang, J., and Long, M. Physense: Sensor placement optimization for ac-curate physics sensing. In The Thirty-ninth Annual Conference on Neural Information Processing Systems ,2025. URL https://openreview.net/forum? id=zIzZxDsNNP .Nichol, A. Q. and Dhariwal, P. Improved denoising diffu-sion probabilistic models. In International conference on machine learning , pp. 8162–8171. PMLR, 2021. Peebles, W. and Xie, S. Scalable diffusion models with transformers. In Proceedings of the IEEE/CVF interna-tional conference on computer vision , pp. 4195–4205, 2023. Pfaff, T., Fortunato, M., Sanchez-Gonzalez, A., and Battaglia, P. Learning mesh-based simulation with graph networks. In International Conference on Learning Rep-resentations , 2021. URL https://openreview. net/forum?id=roNqYL0_XP .Poli, M., Massaroli, S., Berto, F., Park, J., Dao, T., Re, C., and Ermon, S. Transform once: Efficient operator learn-ing in frequency domain. In ICML 2022 2nd AI for Sci-ence Workshop , 2022. URL https://openreview. net/forum?id=x1fNT5yj41N .Schulman, J., Wolski, F., Dhariwal, P., Radford, A., and Klimov, O. Proximal policy optimization algorithms. 
+
+arXiv preprint arXiv:1707.06347 , 2017. Serrano, L., Le Boudec, L., Kassa ¨ı Koupa ¨ı, A., Wang, T. X., Yin, Y., Vittaut, J.-N., and Gallinari, P. Operator learning with neural fields: Tackling pdes on general geometries. 
+
+Advances in Neural Information Processing Systems , 36: 70581–70611, 2023. Serrano, L., Wang, T. X., Le Naour, E., Vittaut, J.-N., and Gallinari, P. Aroma: Preserving spatial structure for latent pde modeling with local neural fields. Advances in Neural Information Processing Systems , 37:13489–13521, 2024. Song, Y., Sohl-Dickstein, J., Kingma, D. P., Kumar, A., Ermon, S., and Poole, B. Score-based generative mod-eling through stochastic differential equations. In In-ternational Conference on Learning Representations ,2021. URL https://openreview.net/forum? id=PxTIG12RRHS .10 LASER: Learning Active Sensing for Continuum Field Reconstruction 
+
+Stachenfeld, K., Fielding, D. B., Kochkov, D., Cranmer, M., Pfaff, T., Godwin, J., Cui, C., Ho, S., Battaglia, P., and Sanchez-Gonzalez, A. Learned simulators for turbulence. In International conference on learning representations ,2022. Steeven, J., Madiha, N., Julie, D., and Christian, W. Space and time continuous physics simulation from partial ob-servations. arXiv preprint arXiv:2401.09198 , 2024. Takamoto, M., Praditia, T., Leiteritz, R., MacKinlay, D., Alesiani, F., Pfl ¨uger, D., and Niepert, M. Pdebench: An extensive benchmark for scientific machine learning. 
+
+Advances in Neural Information Processing Systems , 35: 1596–1611, 2022. Ummenhofer, B., Prantl, L., Thuerey, N., and Koltun, V. Lagrangian fluid simulation with continuous convolutions. In International Conference on Learning Representations ,2020. Wu, H., Luo, H., Wang, H., Wang, J., and Long, M. Tran-solver: A fast transformer solver for pdes on general geometries. In International Conference on Machine Learning , 2024. Wu, T., Maruyama, T., and Leskovec, J. Learning to accel-erate partial differential equations via latent global evolu-tion. In Oh, A. H., Agarwal, A., Belgrave, D., and Cho, K. (eds.), Advances in Neural Information Processing Systems , 2022. URL https://openreview.net/ forum?id=xvZtgp5wyYT .Yin, Y., Kirchmeyer, M., Franceschi, J.-Y., Rakotomamonjy, A., and patrick gallinari. Continuous PDE dynamics forecasting with implicit neural representations. In The Eleventh International Conference on Learning Represen-tations , 2023. URL https://openreview.net/ forum?id=B73niNjbPs .Yu, Q., Zhang, Z., Zhu, R., Yuan, Y., Zuo, X., Yue, Y., Dai, W., Fan, T., Liu, G., Liu, L., et al. Dapo: An open-source llm reinforcement learning system at scale. arXiv preprint arXiv:2503.14476 , 2025. Zheng, C., Liu, S., Li, M., Chen, X.-H., Yu, B., Gao, C., Dang, K., Liu, Y., Men, R., Yang, A., et al. Group sequence policy optimization. arXiv preprint arXiv:2507.18071 , 2025. Zhu, J., Su, Y., and Liu, X. Can textual reasoning improve the performance of mllms on fine-grained visual classifi-cation? arXiv preprint arXiv:2601.06993 , 2026. Zhu, X., Deng, H., Yuan, H., Wang, Y., and Yang, X. Latent intuitive physics: Learning to transfer hidden physics from a 3d video. In The Twelfth International Conference on Learning Representations , 2024. URL https:// openreview.net/forum?id=WZu4gUGN13 .11 LASER: Learning Active Sensing for Continuum Field Reconstruction 
+
+A. Algorithm 
+
+We present the full algorithm of LASER in Alg. 2. 
+
+Algorithm 2 The training algorithm of LASER. Initialize policy parameters θ, old policy θold ← θ.Initialize dynamic filtering threshold τ ← − inf .
+
+while not converged do 
+
+// Rollout collection with quality filtering 
+
+Initialize D ← ∅ .
+
+for episode e = 1 ..E do 
+
+Sample initial field ut0 , sensor locations xt0 , initialize history ht0 .
+
+for time step t = t0 → t0 + T − 1 do 
+
+Encode observation zt ← penc  
+
+> ϕ
+
+(ot); predict next latent ˆzt+1 ← pdyn  
+
+> ϕ
+
+(zt, ht).
+
+// Dynamic group sampling with quality filtering 
+
+for group g = 1 ..G do 
+
+Sample action agt ∼ πθ (· | ˆzt+1 , ot).
+
+// Forward-looking reward 
+
+Execute agt , observe ogt+1 
+
+Forward rollout { ˆzt+h}Hh=1 ; decode predictions and rewards {rgt+h}.Compute lookahead rlookahead ,g t with Eq. 12. Compute group rewards {rlookahead ,g t }Gg=1 and minima Rmin .
+
+if ∀g, r lookahead ,g t < τ and iteration > 1 then continue 
+
+Store ( ˆ zt+1 , ot, {agt , r gt }Gg=1 ) in Dnew .Update history ht+1 ← GRU( ht, zt).Update threshold τ ← mean ({Rmin }).
+
+// Policy optimization 
+
+for epoch e = 1 ..N epoch do 
+
+Sample mini-batch B ∼ D .Compute group-relative advantages via normalization within each group Ag,t with Eq. 9. Normalize advantages across batch ˆAg,t with Eq. 10. Compute GRPO objective JGRPO (θ) with Eq. 11. Update policy parameters θ ← θ − η∇θ JGRPO (θ).Update old policy θold ← θ.
+
+B. Continuum Field Latent World Model 
+
+This section provides architectural and implementation details of the continuum field latent world model introduced in Sec. 4.2. Encoder: zt ∼ penc  
+
+> ϕ
+
+(zt | ot)
+
+Latnet Dynamics: zt+1 ∼ pdyn  
+
+> ϕ
+
+(zt | zt, h<t ),
+
+Decoder: ut ∼ pdec  
+
+> ϕ
+
+(zt).
+
+(13) 
+
+B.1. Sparse Observation Encoder 
+
+The encoder maps irregularly sampled observations of the physical field to a fixed-size latent token representation zt ∈
+
+RM ×dz as zt ∼ penc  
+
+> ϕ
+
+(· | ot) = N  μϕ(ot), σ2
+
+> ϕ
+
+(ot), where M is a fixed number of latent tokens. This mapping is implemented using a sequence of cross-attention operations that aggregate information from the observed locations and 12 LASER: Learning Active Sensing for Continuum Field Reconstruction 
+
+values, followed by a variational bottleneck. A set of learnable latent query tokens Q = ( q1, · · · , qM ) ∈ RM ×dq is introduced and shared across all training data. These tokens are initialized as trainable parameters and serve as queries in the cross-attention layers, enabling the encoder to compress a variable number of observations into a fixed-size latent representation. 
+
+Encoding sparse obsevations Each observation location xit is embedded using a fourier feature embedding γ(·), and each observed value ut(xit) is embedded using a learnable value embedding, yielding sequences of position embeddings 
+
+γ(xit) and value embeddings Embed u(ut(xit)) . γ(xit) are defined as γpos (xit) = 
+
+h
+
+xit,  sin( xit ωl), cos( xit ωl) Ll=1 
+
+i
+
+with 
+
+ωl = π · b ℓl , ℓ l ∈ [0 , L ].
+
+Geometry encoding. The geometry-aware representations zgeo  
+
+> t
+
+∈ RM ×dz capture the spatial arrangement of the obser-vation points at time t. They are obtained by applying a cross-attention mechanism between the set of learnable latent query tokens Q = ( q1, · · · , qM ) to the positional embeddings of the observation coordinates via a cross-attention mecha-nism. The queries depend solely on the observation locations. This attention-based operation produces latent tokens that encode the geometric structure of the sampled points, such that similar spatial configurations yield similar geometry-aware representations, independent of the corresponding field values. 
+
+q′ = Linear q (q), k, v = Linear k,v 
+
+ γ(xit), zgeo  
+
+> t
+
+= q + FFN 
+
+
+
+softmax 
+
+ q′k⊤
+
+√c
+
+
+
+v
+
+
+
+. (14) 
+
+Observation encoding. The observation-aware representations zobs  
+
+> t
+
+∈ RM ×dz integrate information from the observed field values, conditioned on the spatial geometry encoded in zgeo  
+
+> t
+
+through a second cross-attention mechanism: 
+
+q′ = Linear q (zgeo  
+
+> t
+
+), k, v = Linear k,v 
+
+ γ(xit), Embed u(ut(xit)) , zobs  
+
+> t
+
+= zgeo  
+
+> t
+
++ FFN 
+
+
+
+softmax 
+
+ q′k⊤
+
+√c
+
+
+
+v
+
+
+
+, (15) where the keys encode the observation locations and the values encode the corresponding field measurements. This operation injects the physical field information into the latent tokens while preserving their geometry-aware structure. 
+
+Variational bottleneck. To obtain a compact and regularized latent representation, we introduce a variational bottleneck on the latent tokens. Concretely, the observation-aware representations zobs  
+
+> t
+
+are mapped to the parameters of a Gaussian distribution: 
+
+μt = Linear μ(zobs  
+
+> t
+
+), log σt = Linear σ (zobs  
+
+> t
+
+), (16) from which the final latent tokens are sampled using the reparameterization trick zt = μt + σt ⊙ ϵ, ϵ ∼ N (0, I). This stochastic bottleneck regularizes the latent space and encourages smooth latent representations, which is beneficial for learning stable long-term dynamics and improves robustness to sparse and noisy observations. 
+
+B.2. Latent Dynamics Predictor 
+
+Our latent dynamics predictormodels the transition between consecutive latent states as a conditional diffusion process in the latent token space. The predictor takes the form: zt+1 ∼ pdyn  
+
+> ϕ
+
+(· | zt, ht), where zt ∈ RM ×d denotes the latent tokens at time t, and ht is a recurrent hidden state summarizing historical information. We employ a GRU (Chung et al., 2014) to maintain a temporally coherent representation of past states: ht = GRU ϕ(ht−1, zt), where ht ∈ RM ×dh is zero-initialized at t = 0 . Our GRU processes each latent token independently while sharing parameters across tokens. This design allows each spatial token to maintain its own temporal context, capturing location-specific evolution patterns while enabling information flow across tokens through the shared GRU parameters. This hidden state captures temporal dependencies beyond the immediate observation, providing context for the diffusion process. 
+
+Conditional diffusion. We adopt a standard Gaussian diffusion formulation (Ho et al., 2020). The forward noising process gradually corrupts clean data z0 
+
+> t+1
+
+over K steps: q(zkt+1 | z0
+
+> t+1
+
+) = N (zkt+1 ; , √¯αk, z0
+
+> t+1
+
+, , (1 − ¯αk)I), where {¯αk}Kk=1 
+
+follows a predefined noise schedule (Ho et al., 2020; Lippe et al., 2023; Peebles & Xie, 2023; Nichol & Dhariwal, 2021). We use an exponentially decreasing schedule as in Lippe et al. (2023). At diffusion step k, the model processes a concatenated latent sequence xk = zt; ˜ zkt+1 
+
+ ∈ R2M ×dz . The forward diffusion process is defined exclusively on the target latents ˜zkt+1 
+
+, while the context latents zt remain noise-free. 13 LASER: Learning Active Sensing for Continuum Field Reconstruction 
+
+Conditioning mechanism. The diffusion transformer is conditioned on both the diffusion step k and the GRU hidden state ht. The diffusion step embedding ek = Embed( k) ∈ Rdk is concatenated with ht to form a unified conditioning vector: ck = ek; ht
+
+ ∈ Rdk +dh .This vector is projected through an MLP to produce the adaLN-Zero modulation parameters (γk, β k, g k) that modulate all transformer blocks (Peebles & Xie, 2023). 
+
+Noise prediction and training. Given xk and ck, the diffusion transformer predicts the added Gaussian noise ϵθ =
+
+ϵθ (xk, ck) ∈ R2M ×dz . We denote by ϵkθ the prediction corresponding to the target tokens (the second half of the sequence). The model is trained using the simplified objective (Ho et al., 2020) Ldiff = Ek, ϵ
+
+∥ϵkθ (xk, ck) − ϵ∥22
+
+, where ϵ ∼ N (0 , I)
+
+and k is uniformly sampled from 1, . . . , K .
+
+Reverse diffusion process. During inference, we generate ˆzt+1 by iteratively denoising from pure noise ˜zKt+1 ∼ N (0 , I).For k = K, . . . , 1: ˜zk−1 
+
+> t+1
+
+= 1√αk
+
+  ˜zkt+1 − √1 − αk, ϵkθ
+
+ + σkξ, where ξ ∼ N (0 , I). The final prediction is ˆzt+1 =˜z0
+
+> t+1
+
+. This latent dynamics predictor enables the agent to reason about future field states while accounting for temporal dependencies, forming the basis for proactive sensing decisions. 
+
+B.3. Continuum Field Decoder 
+
+The decoder implements an implicit neural representation that reconstructs the physical field continuously over the domain 
+
+Ω from latent tokens and spatial coordinates. It takes the form: ˆut(x) = pdec  
+
+> ϕ
+
+(· | zt, x), ∀x ∈ Ω. This formulation enables querying the field value at any spatial location, providing a continuous reconstruction that serves both for field estimation and as the reward model in the RL framework. The decoder consists of three main components: • Latent token processing. Given latent representation zt ∈ RM ×dz , we first apply a linear projection to increase the channel dimension, followed by self-attention blocks: z′ 
+
+> t
+
+= SelfAttn-Block(Linear( zt)) . This allows tokens to interact and exchange spatial information, producing enhanced representations z′
+
+> t
+
+.• Multi-scale cross-attention. For a query coordinate x ∈ Ω, we compute a multi-scale Fourier feature encoding 
+
+γpos (x) as defined in Eq. 6. Then, we compute a local feature vector ft(x) at the query location through multi-head cross-attention between the positional encoding and processed tokens with Eq. 8. The features from all scales are combined via concatenation and projection. This multi-scale design enables the decoder to capture both local details and global structures in the field. • Implicit mapping. A lightweight multilayer perceptron maps the aggregated feature to the reconstructed field value 
+
+ˆut(x) = MLP( ft(x)) . The MLP consists of three linear layers with a SiLU activation in between, producing predicted field measurement. This decoder architecture follows the design principles of AROMA (Serrano et al., 2024) and ENMA (Koupa ¨ı et al., 2025), providing a continuous, coordinate-based representation that aligns the agent’s objective with reconstruction fidelity across the entire spatial domain. 
+
+C. Benchmarks 
+
+As presented in Table 2, our experiments encompass both datasets in the 2D and 3D domains. The benchmarks include: • 2D Navier-Stokes Equation (Li et al., 2021; Constantin & Foia s¸ , 1988): for a viscous and incompressible fluid. The equation is expressed with the vorticity form on the unit torus: ∂w ∂t + u · ∇ w = ν∆w + f , ∇u = 0 for x ∈ Ω, t > 0,where ν is the viscosity coefficient. We consider two different versions ν = 10 −3 (NS ν1e−3) and ν = 10 −5 (NS ν1e−5). We have 256 trajectories of horizon 40 for training and 32 for testing for NS ν1e−3 and 1000 trajectories of horizon 20 and 
+
+200 for testing for NS ν1e−5.• 3D Shallow-Water Equation (Serrano et al., 2023; Yin et al., 2023): This equation approximates fluid flow on the Earth’s surface. The data includes the vorticity w and height h of the fluid. The training set comprises 64 trajectories of size 40 ,and the test set comprises 8 trajectories with 40 timestamps. • Sea Temperature (Jean-Michel et al., 2021): daily sea surface temperature at 1◦ resolution with intricate land constraints from the GLORYS12 reanalysis datasetincorporating intricate land–sea constraints. The training set consists of 216 
+
+trajectories, while the test set contains 49 trajectories with varying lengths of recorded observations, which are irregularly sampled in time. 14 LASER: Learning Active Sensing for Continuum Field Reconstruction 
+
+D. Compared Methods 
+
+We compare LASER with following methods: • AROMA (Serrano et al., 2024) An encode-process-decode framework leveraging attention mechanisms, a latent diffusion transformer for spatio-temporal dynamics and neural fields for decoding, which can only place fixed sensors simultaneously. • DiffusionPDE (Huang et al., 2024) A diffusion-based PDE solver that fill in missing information using generative priors to solve PDEs from partial observations, which requires full field input during modol training. During inference, the sparse observations are predefined by random placement. • PhySense (Ma et al., 2025) A synergistic two-stage framework integrating a flow-based generative reconstruction model with a sensor placement optimization strategy through projected gradient descent throughout the training distribution. PhySense lacks the ability of forward prediction and adapt sensing locations according to the input field. • PPO (Schulman et al., 2017) A family of policy optimization methods in RL that use multiple epochs of stochastic gradient ascent to perform each policy update, proposing a novel objective with clipped probability ratios. 
+
+E. Implementation Details 
+
+We conduct all experiments on a single RTX 3090 GPU. We introduce the implementation details of the continuum latent world model, policy optimization in Section E.1 and Section E.2. Furthermore, we detail the implementation of baselined in Section E.3. 
+
+E.1. Training Details of Continuum Field Latent World Model 
+
+Table 9. Hyperparameters of the continuum latent world model for different datasets. 
+
+Parameter Notation Dataset 
+
+NS ν1e−3 NS ν1e−5 Shallow-Water Sea Surface Temperature 
+
+Sparse Observation Encoder 
+
+Number of latent queries M 32 256 32 32 
+
+Query embedding dimension dq 128 128 128 128 
+
+Latent feature dimension dz 16 16 16 16 
+
+Include geometry encoding - True True True True Include time encoding - - - - True Number of latent heads Hl 4 4 4 4
+
+Latent head dimension dl 32 32 32 32 
+
+KL-divergence loss weight β 1e − 5 1e − 5 1e − 5 1e − 5
+
+Latent Dynamics Predictor 
+
+Feature dimension df 128 128 128 128 
+
+Number of attention heads - 4 4 4 4
+
+Number of attention blocks - 4 4 4 4
+
+Modulation MLP dimension - 512 512 512 512 
+
+History length Th 4 3 4 4
+
+Number of GRU layers - 2 2 2 2
+
+Diffusion loss weight λ 1 1 1 1
+
+Diffusion steps K 3 3 3 3
+
+Continuum Field Decoder 
+
+MLP depth - 3 3 3 3
+
+MLP width - 128 128 64 128 
+
+Number of self-attention blocks - 2 3 2 2
+
+Number of latent heads Hl 4 4 4 4
+
+Latent head dimension dl 32 32 32 32 
+
+Multi-scale frequency bands S [2 , 3] [3 , 4, 5] [2 , 3] [3 , 4, 5] 
+
+Frequencies per scale Nf 12 12 12 12 
+
+Cross-attention feature dimension df 16 16 16 16 
+
+15 LASER: Learning Active Sensing for Continuum Field Reconstruction 
+
+We list the hyperparameters of the continuum field latent world model in Table 9. We perform a two-stage training: we first train the sparse observation encoder and continuum field decoder, then train the latent dynamics predictor, following AROMA’s training strategies (Serrano et al., 2024). In the first stage, the encoder-decoder is trained to reconstruct the field at each time step. The network learning rate is set to 
+
+1 × 10 −3, while the learnable latent queries Q ∈ RM ×dq are optimized with a learning rate of 1 × 10 −2. Training uses a cosine annealing learning rate scheduler over 5000 epochs. In the second stage, the encoder and decoder parameters are frozen, and the latent dynamics predictor is trained on the encoded latent z. The learning rate is set to 1 × 10 −3, and training proceeds with a cosine annealing scheduler for 2000 epochs. During both stages, 256 observation points are randomly sampled at each iteration to obtain sparse observations. At test time, we evaluate rollout performance under different numbers of observations ( 256 , 128 , and 64 ) to assess the model’s generalization capabilities across varying observation sparsity. 
+
+E.2. Training Details of Active Sensing Policy 
+
+We list the hyperparameters for training the active sensing policy in Table 10. The policy outputs continuous actions. For the sensing spatial domain Ω ∈ (−1, 1) 2, the maximum action magnitude is set to amax = 0 .05 . At each step, we manually clip out of bound sensor locations back to the spatial domain. At environment initialization, sparse observation locations are uniformly sampled over the spatial domain from a predefined set. During policy training, we adopt a linear-then-constant learning rate scheduler. The learning rate is linearly annealed from 1 × 10 −4 to 1 × 10 −5 over the first half of training and then kept constant for the remaining iterations. To prevent premature policy collapse and loss of exploration, the dynamic filtering mechanism is reset to −∞ with probability 0.1, such that all groups are retained in the subsequent rollout collection. We additionally consider a PPO-based baseline (Schulman et al., 2017), in which the proposed sensing strategy is replaced by a standard PPO policy, referred to as LASER ppo . For this baseline, the outputs of the final self-attention block are concatenated and fed into an additional value MLP to predict the state value V (st). The learning rate of this value network is set to be ten times larger than that of the other policy modules. The PPO is updated by maximizing: 
+
+JPPO (θ) = Et
+
+h
+
+min  st(θ) ˆAt, clip (st(θ), 1 − ϵ, 1 + ϵ) ˆAt
+
+ − vf
+
+ Vθ (st) − ˆVt
+
+2i
+
+, (17) where st(θ) denotes the probability ratio between the current and old policies, and ˆAt is the estimated advantage. The vf is set to 5 in all experiments. On-policy algorithms are optimized with 1 × 10 6 environment steps.                                
+
+> Table 10. Hyperparameters of active sensing policy architecture and training parameters.
+> Name Notation Value
+> Policy Architecture
+> Number of self-attention blocks Nattn 2
+> Number of latent heads -4
+> Latent head dimension -128
+> Multi-scale frequency bands S[2 ,3]
+> Frequencies per scale Nf7
+> RL training parameters
+> Training steps -1×10 6
+> Discount factor γ0.99
+> Predictive rewards horizon H3
+> Clip range ϵ0.2
+> Value loss weight (PPO) vf5
+> Maximum action amax 0.05
+
+E.3. Baseline Details AROMA. AROMA is trained using the same model hyperparameters as LASER ( ϕ). Following its original setup, the sensor locations are fixed for each trajectory throughout training. We randomly sample initial sensor placement during inference. 16 LASER: Learning Active Sensing for Continuum Field Reconstruction 
+
+DiffusionPDE. We borrow the original model architectures of DiffusionPDE, a SongUNet architecture (Song et al., 2021) with the EDMPrecond diffusion wrapper (Karras et al., 2022), as the network backbone for diffusion training without PDE constraints. DiffusionPDE incurs a substantial computational cost during inference, requiring tens to hundreds of seconds per frame, whereas our policy completes the process from location selection to frame reconstruction in approximately 0.5
+
+seconds. We reduce the number of diffusion steps to 500 with negligible impact on performance. 
+
+PhySense. We adopt the same model architecture as LASER ( ϕ). PhySense is evaluated based on its reconstruction performance of the continuum field, where sensor placements are optimized over the training distribution. We optimize the sensor locations using projected gradient descent for 50 epochs with a learning rate of 1, since PhySense directly learns the sampling coordinates in the spatial domain. During inference, we use the optimized sensor placement for all test trajectories. 
+
+F. Additional Results 
+
+F.1. Sensitivity to Initial Sampled Locations 
+
+We analyze the sensitivity of LASER to the initialization of sampled sensor locations at the beginning of each test trajectory. After training the active sensing policy, we evaluate its robustness by varying the initial sensor placements at the first timestep while keeping the learned policy and continuum field reconstruction model fixed. Specifically, for each test sequence, we randomly initialize the sensor locations using different random seeds and then roll out the sensing policy to sequentially select future sensing locations and perform field reconstruction. We report the mean and standard deviation of the prediction errors across different initializations in Table 11 over three random seeds. As shown in the table, LASER exhibits relatively low variance across different initial sensor placements under all sensing budgets and datasets, indicating that its performance is largely insensitive to the choice of initial sampled locations. While the reconstruction error increases as the number of observations decreases, the corresponding standard deviations remain small, suggesting that the learned sensing policy consistently guides sensors toward informative regions regardless of the initial configuration.                                             
+
+> Table 11. Sensitivity of LASER to initial sampled sensor locations. We report the mean and standard deviation of prediction errors across three random initializations. # Obs. ↓NS ν1e−3(×10 −3)NS ν1e−5(×10 −1)Shallow-Water (×10 −3)
+> In-t Out-t Avg In-t Out-t Avg In-t Out-t Avg
+> #256 0.096 ±3.79e-3 0.483 ±5.59e-2 0.302 ±7.05e-2 0.017 ±2.42e-3 1.188 ±1.16e-1 0.603 ±1.08e-1 0.042 ±4.08e-3 0.465 ±3.40e-2 0.257 ±2.58e-2
+> #128 0.149 ±2.92e-3 0.493 ±3.23e-2 0.321 ±6.71e-2 0.031 ±1.54e-3 1.343 ±1.01e-1 0.688 ±1.22e-1 0.052 ±3.94e-3 0.492 ±4.01e-2 0.299 ±3.26e-2
+> # 64 0.169 ±4.23e-3 0.726 ±4.18e-2 0.434 ±8.13e-2 0.055 ±1.82e-3 1.559 ±1.38e-1 0.801 ±1.62e-1 0.133 ±5.26e-3 0.587 ±3.99e-2 0.386 ±3.76e-2
+
+F.2. Sensitivity to Initial Placement Pattern 
+
+In our experiments, the sensor positions at time t = 0 are randomly initialized by uniformly sampling within the spatial domain and adding Gaussian noise N (0 , 0.1) . During evaluation, we investigate the impact of different initial sensor distributions on the final reconstruction performance. Specifically, we consider two settings: (i) an initialization scheme identical to that used during training, and (ii) a fully random initialization. Figure 6 visualizes the active sensing trajectories under these two different initialization conditions on NS ν1e−3 with 256 sparse observations. From a quantitative perspective, the choice of initial sensor distribution has a limited effect on the final reconstruction error. With random initialization, the average MSE is 3.4449 × 10 −4, compared to 3.042 × 10 −4 under the training-consistent initialization. The slight performance degradation can be attributed to the fact that random sampling is more likely to produce duplicate or clustered sensor locations in the early stages, which reduces the effective spatial coverage of observations. Furthermore, we zoom in on the sensor distributions at the final time step t = 39 (see Figure 7). We observe that, regardless of the initial sensor configuration, the policy gradually adjusts the sensing locations over time and converges to a similar spatial distribution in the final frame. This behavior indicates that the learned active sensing policy is robust to variations in initial conditions and can adaptively optimize sensor placement under different initial configurations, leading to stable reconstruction performance. 17 LASER: Learning Active Sensing for Continuum Field Reconstruction Low Error 
+
+> High Error
+> Low Error
+> High Error
+> Random Sampling
+> Uniform Sampling
+
+Figure 6. Showcases of different inital placement pattern on NS ν1e−3 with 256 sparse observations. Low Error 
+
+High Error 
+
+Random Sampling Uniform Sampling 
+
+Figure 7. Comparison of final sensor distributions ( t = 39 ) under different initial conditions 
+
+18 LASER: Learning Active Sensing for Continuum Field Reconstruction 
+
+F.3. Rollout Visualizations 
+
+We visualize the rollout performance comparing AROMA and LASER ( ϕ) in Figure 8-10. As shown in Table 3 and Figure 8-10, LASER ( ϕ) consistently outperforms AROMA across all benchmarks and under all levels of sparse observations. This is attributed to the various sensor location situations learned during training and the memory of the field’s evolution maintained in LASER ( ϕ). Based solely on the initial sparse observations, LASER ( ϕ) yields low prediction errors throughout the sequence, both on In-t segments and Out-t segments, especially achieving significantly lower errors than AROMA in regions of the physical fields where values change rapidly. Although LASER ( ϕ) is only trained with a budget of 256 
+
+sensing locations, it still performs well under rollouts with 128 and 64 observations, demonstrating strong robustness and generalization capability. AROMA 
+
+> LASER
+> AROMA
+> LASER
+> AROMA
+> LASER
+> Low Error
+> High Error
+> Low Error
+> High Error
+> Low Error
+> High Error
+
+Figure 8. Showcases of rollout performance on NS ν1e−3 across different sparse observations. Rows 1–3: 64 observations, Rows 4–6: 128 
+
+observations, Rows 7–9: 256 observations. The ground truth is presented in rows 1, 4 and 7, with the corresponding error maps shown directly below. 
+
+19 LASER: Learning Active Sensing for Continuum Field Reconstruction AROMA 
+
+LASER 
+
+AROMA 
+
+LASER 
+
+AROMA 
+
+LASER 
+
+> Low Error
+> High Error
+> Low Error
+> High Error
+> Low Error
+> High Error
+
+Figure 9. Showcases of rollout performance on NS ν1e−5 across different sparse observations. Rows 1–3: 64 observations, Rows 4–6: 128 
+
+observations, Rows 7–9: 256 observations. The ground truth is presented in rows 1, 4 and 7, with the corresponding error maps shown directly below. 
+
+20 LASER: Learning Active Sensing for Continuum Field Reconstruction AROMA 
+
+LASER 
+
+AROMA 
+
+LASER 
+
+AROMA 
+
+LASER 
+
+> Low Error
+> High Error
+> Low Error
+> High Error
+> Low Error
+> High Error
+
+Figure 10. Showcases of rollout performance on Shallow-Water across different sparse observations. Rows 1–3: 64 observations, Rows 4–6: 128 observations, Rows 7–9: 256 observations. The ground truth is presented in rows 1, 4 and 7, with the corresponding error maps shown directly below. 
+
+21 LASER: Learning Active Sensing for Continuum Field Reconstruction 
+
+F.4. Active Sensing Visualizations 
+
+We present qualitative results with 64 sensing locations with different sensing strategies in Figure 11 on NS ν1e−3, NS ν1e−5
+
+and Shallow-Water benchmarks. As shown in Table 4 and Figure 11, methods with fixed sensor layouts consistently underperform active sensing approaches, with the performance gap widening as the number of observations decreases, highlighting the importance of adaptive sensing under sparse measurements. DiffusionPDE relies on posterior sampling from sparse observations, and without PDE-based regularization, its reconstruction suffers especially at low observation budgets. PhySense optimizes sensors for the training distribution and fix them at inference, limiting adaptation and degrading performance. LASER achieves the lowest reconstruction error by using a latent world model to anticipate future dynamics and actively adapt sensing trajectories at inference, ensuring robust generalization under sparse and shifting observations. The qualitative results with 100 sensing locations with different sensing strategies in Figure 12 on Sea Surface Temperature 
+
+benchmarks. DiffusionPDE’s prediction largely differs from ground truth. Figure 13–16 shows more qualitative continuum field reconstruction results with different number of sensing locations (N ∈ { 256 , 128 , 64 }) on NS ν1e−3, NS ν1e−5, Shallow-Water and Sea Surface Temperature benchmark. DiffusionPDE PhySense LASER 
+
+> <latexit  sha1_base64="HXOXE11HK+T6p8yNpWQz89FS0hw=">AAACCHicbVC7TsMwFHV4lvIqMDIQUSGxUCWACmMFCxMqgj6kNooc96a16jiR7SCqKCMLv8LCAEKsfAIbf4ObZoCWI1k+PvceXd/jRYxKZVnfxtz8wuLScmGluLq2vrFZ2tpuyjAWBBokZKFoe1gCoxwaiioG7UgADjwGLW94Oa637kFIGvI7NYrACXCfU58SrLTklva6Ch60L8nu5Po2Td2ky2M3seHoRD9KZatiZTBniZ2TMspRd0tf3V5I4gC4IgxL2bGtSDkJFooSBmmxG0uIMBniPnQ05TgA6STZIql5oJWe6YdCH67MTP3tSHAg5SjwdGeA1UBO18bif7VOrPxzJ6E8ihVwMhnkx8xUoTlOxexRAUSxkSaYCKr/apIBFpgonV1Rh2BPrzxLmscVu1qp3pyWaxd5HAW0i/bRIbLRGaqhK1RHDUTQI3pGr+jNeDJejHfjY9I6Z+SeHfQHxucP1ziafw==</latexit>
+> NS ω1e→3
+> <latexit  sha1_base64="Mg8Ya+FRVAxk44TPuSZj9pIFg8Q=">AAACCHicbVC7TsMwFHV4lvIqMDIQUSGxUCUICmMFCxMqgj6kNooc96a16jiR7SCqKCMLv8LCAEKsfAIbf4ObZoCWI1k+PvceXd/jRYxKZVnfxtz8wuLScmGluLq2vrFZ2tpuyjAWBBokZKFoe1gCoxwaiioG7UgADjwGLW94Oa637kFIGvI7NYrACXCfU58SrLTklva6Ch60L8nu5Po2Td2ky2M3seHoVD9KZatiZTBniZ2TMspRd0tf3V5I4gC4IgxL2bGtSDkJFooSBmmxG0uIMBniPnQ05TgA6STZIql5oJWe6YdCH67MTP3tSHAg5SjwdGeA1UBO18bif7VOrPxzJ6E8ihVwMhnkx8xUoTlOxexRAUSxkSaYCKr/apIBFpgonV1Rh2BPrzxLmscVu1qp3pyUaxd5HAW0i/bRIbLRGaqhK1RHDUTQI3pGr+jNeDJejHfjY9I6Z+SeHfQHxucP2kSagQ==</latexit>
+> NS ω1e→5
+> <latexit  sha1_base64="BngHCL7XtmI5lHFt/9t3Zph3ws8=">AAAB/3icbVDLSgMxFM3UV62vUcGNm8EiuLHMiFQ3QsGNy4r2Ae1QMumdNjSTDElGLWMX/oobF4q49Tfc+Tem7Sy09UDgcM493JsTxIwq7brfVm5hcWl5Jb9aWFvf2Nyyt3fqSiSSQI0IJmQzwAoY5VDTVDNoxhJwFDBoBIPLsd+4A6mo4Ld6GIMf4R6nISVYG6lj77U1PJhcetPHjIn74wbWIEcdu+iW3AmceeJlpIgyVDv2V7srSBIB14RhpVqeG2s/xVJTwmBUaCcKYkwGuActQzmOQPnp5P6Rc2iUrhMKaR7XzkT9nUhxpNQwCsxkhHVfzXpj8T+vlejw3E8pjxMNnEwXhQlztHDGZThdKoFoNjQEE0nNrQ7pY4mJ6UAVTAne7JfnSf2k5JVL5evTYuUiqyOP9tEBOkIeOkMVdIWqqIYIekTP6BW9WU/Wi/VufUxHc1aW2UV/YH3+ALeAlo0=</latexit>
+> Shallow-Water
+
+DiffusionPDE PhySense LASER 
+
+> Error  Error  Error
+
+Figure 11. Qualitative showcases of active sensing methods on NS ν1e−3, NS ν1e−5 and Shallow-Water . We evaluate different placement strategies under extreme sparsity ( N = 64 ). DiffusionPDE PhySense LASER 
+
+> Error
+
+Ground Truth 
+
+Figure 12. Qualitative showcases of active sensing methods on Sea Surface Temperature . We evaluate different placement strategies under extreme sparsity ( N = 100 ). 
+
+22 LASER: Learning Active Sensing for Continuum Field Reconstruction Low Error 
+
+> High Error
+> Low Error
+> High Error
+> Low Error
+> High Error
+> 64
+> 128
+> 256
+
+Figure 13. Showcasses of continuum field reconstruction on NS ν1e−3 across different sparse observations by LASER. Low Error 
+
+> High Error
+> Low Error
+> High Error
+> Low Error
+> High Error
+> 64
+> 128
+> 256
+
+Figure 14. Showcasses of continuum field reconstruction on NS ν1e−5 across different sparse observations by LASER. 
+
+23 LASER: Learning Active Sensing for Continuum Field Reconstruction Low Error 
+
+> High Error
+> Low Error
+> High Error
+> Low Error
+> High Error
+> 64
+> 128
+> 256
+
+Figure 15. Showcasses of continuum field reconstruction on Shallow-Water across different sparse observations by LASER. Low Error 
+
+> High Error
+> 50
+> 100
+> Low Error
+> High Error
+
+Figure 16. Showcasses of continuum field reconstruction on Sea Surface Temperature across different sparse observations by LASER. 
+
+24

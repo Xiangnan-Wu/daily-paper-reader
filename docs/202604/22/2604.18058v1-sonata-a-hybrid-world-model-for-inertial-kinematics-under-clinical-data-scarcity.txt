@@ -1,0 +1,634 @@
+Title: Sonata: A Hybrid World Model for Inertial Kinematics under Clinical Data Scarcity
+
+URL Source: https://arxiv.org/pdf/2604.18058v1
+
+Published Time: Tue, 21 Apr 2026 02:39:37 GMT
+
+Number of Pages: 18
+
+Markdown Content:
+Sonata — Technical Report 1
+
+# Sonata: A Hybrid World Model for Inertial Kinematics under Clinical Data Scarcity 
+
+Blaise Delaney 1, Salil Patel 1, Yuji Xing 1, Dominic Dootson 1, and Karin Sevegnani 2
+
+> 1
+
+TimeTrace Labs 
+
+> 2
+
+NVIDIA 
+
+## April 21, 2026 
+
+Correspondence: blaise@timetracelabs.com 
+
+Abstract 
+
+We introduce Sonata , a compact latent world model for six-axis trunk IMU representation learning under clinical data scarcity. Clinical cohorts typically comprise tens to hundreds of patients, making web-scale masked-reconstruction objectives poorly matched to the problem. Sonata is a 3.77 M-parameter hybrid model, pretrained on a harmonised corpus of nine public datasets ( ∼739 subjects, ∼190k windows) with a latent world-model objective that predicts future state rather than reconstructing raw sensor traces. In a controlled comparison against a matched autoregressive forecasting baseline (MAE) on the same backbone, Sonata yields consistently stronger frozen-probe clinical discrimination, prospective fall-risk prediction, and cross-cohort transfer across a 14-arm evaluation suite, while producing higher-rank, more structured latent representations. At 3.77 M parameters the model is compatible with on-device wearable inference, offering a step toward general kinematic world models for neurological assessment. 
+
+## 1 Introduction 
+
+In many clinical domains, the early signatures of disease are encoded in continuous physiological time series long before they surface in a clinic: the cardiac trace that first reveals an arrhythmia, the EEG that anticipates a seizure, the respiratory waveform that marks the onset of decline. In neurology, where dysfunction manifests in the mechanics of movement, this signal is kinematic—and it is accessible, non-invasively, through the body in motion, raising a concrete representation learning problem. The gait patterns that reveal early Parkinson’s disease, or distinguish progressive multiple sclerosis from stable remission, are legible in the raw sensor signal. They are encoded in the amplitude and timing of each footfall, in the rotational dynamics of the trunk through a turn, in the subtle asymmetries that accumulate over a walk. Wearable inertial sensors can capture these patterns continuously, outside the clinic, and without interrupting daily life [ 1, 2 ]. The biological signal is rich and the measurement problem is tractable. The constraint is elsewhere. Clinical instruments in neurology are deployed in stud-ies that span tens to hundreds of patients. This reflects the realities of patient recruitment timescales, regulatory oversight, and the demands of longitudinal monitoring in complex disease populations. Even the most coordi-nated multicentre efforts operate within these bounds: the Mobilise-D consortium, spanning six disease cohorts and sixteen clinical sites, enrolled on the order of 750 participants over several years. The motivating question is therefore not how to mimic the scale of general-purpose wearables research, but how to learn robust, interpretable Clinical     
+
+> Separation
+> Fall
+> Detection
+> Prospective
+> Fall Risk
+> Noise
+> Robustness
+> Latent
+> Rank
+> Raw-Signal
+> Forecasting
+> 0.25 0.50 0.75 1.00
+> Sonata IMU World Model (3.77M) IMU Time Series Forecasting (3.77M)
+
+Figure 1: Radar summary of representation quality comparing 
+
+Sonata against a same-backbone IMU forecasting baseline across six evaluation domains. Values are normalized per axis; higher is better. Sonata is stronger on the clinically oriented mix of discrimination, robustness, and representation-quality probes, while forecasting is stronger on raw-signal reconstruc-tion. Both variants share the same encoder backbone; legend parameter counts refer to total model size including the re-spective pretraining heads. 
+
+representations under strict clinical constraints. While re-cent large-scale time-series foundation models (TSFMs) [ 3 –7] achieve massive scale through out-of-domain consumer  
+
+> arXiv:2604.18058v1 [cs.LG] 20 Apr 2026 Sonata — Technical Report 2
+
+corpora or synthetic data mixtures, transferring these models to healthcare endpoints often compromises reli-ability. Representations learned from domain-agnostic pretraining—whether on consumer activity corpora or synthetic simulations—need not encode the clinical struc-ture on which interpretable, actionable inference depends; that structure must be built in from the outset through exposure to authentic patient variation. In contrast, pre-training directly on in-domain clinical data—even when limited to hundreds of patients—forces the latent space to organize strictly around authentic physiological variation. When the corpus is small, scale cannot rescue the model, but the resulting representations gain a critical property for clinical deployment: reliability and interpretability grounded in real patient biomechanics. In clinical movement analysis, this translates into a concrete architectural discipline. Every parameter must be allocated to learning the biomechanics underlying neurodegeneration—such as the shuffling hypokinesia of Parkinson’s disease or the axial instability of cerebellar ataxia—rather than memorizing the MEMS noise floor, thermal bias drift, or the arbitrary yaw convention of a clip-on attachment. Capacity in excess of the kinematic de-grees of freedom of pathological gait is not merely wasted; it creates degrees of freedom in which sensor artefacts can stabilise as if they were clinically meaningful features. A lightweight architecture is therefore a statistical require-ment in this regime, not a deployment convenience. One way to enforce it is to require the model to predict the fu-ture kinematic state of the body in a learned latent space, so that the representation is grounded in the dynamics of locomotion rather than the idiosyncrasies of the sensor. This constraint also shapes the choice of sensing modal-ity. Clinical gait assessment with a single wearable requires a sensor that resolves the full kinematic state of trunk motion—both translational and rotational components. A tri-axial accelerometer captures linear acceleration asso-ciated with foot-strike impact and gravitational loading, but is insensitive to the angular velocity that governs swing-phase progression, turning mechanics, and postural stabilisation. These are not redundant signals: gait phase identification from accelerometry alone is often insufficient outside controlled laboratory settings [ 8], and many of the signatures most relevant to neurological assessment are rotational in nature. Freezing of gait in Parkinson’s disease is identified from a pathological power surge in the 3–8 Hz band of lumbar acceleration [ 9 , 10 ], and the loss of rhythmic lower-limb rotation that marks the episode is difficult to distinguish from a voluntary stop without an-gular velocity data. Longitudinal kinematic features from combined inertial signals predict future fall risk in Parkin-son’s disease with AUC exceeding 0.90 at 24 months [ 11 ], and stride-to-stride variability in gait dynamics is among the strongest predictors of functional decline in ageing populations [ 12 ]. More broadly, the spastic gait of mul-tiple sclerosis, the hypometric shuffling of Parkinson’s disease, and the wide-based veering of cerebellar ataxia each produce distinct rotational trunk signatures that are difficult to differentiate without the gyroscope channel. Six-axis measurement—tri-axial accelerometer fused with tri-axial gyroscope—follows from the biomechanics. Sensor placement deserves the same deliberate treat-ment. Most clinical protocols and field deployments are constrained to a single unit, so the question of where to place it carries real diagnostic weight. The lower back, at or near the fifth lumbar vertebra, is the placement that re-turns the most clinical information from one sensor: it lies close to the body’s centre of mass, and trunk acceleration during locomotion provides an accurate proxy for whole-body CoM displacement that is not recoverable from any other single site [ 13 , 14 ]. Chest-mounted sensors introduce respiratory contamination at approximately 0.3 Hz with odd harmonics extending into 1.5–2.5 Hz—precisely the bands that carry gait-cycle information—whereas lum-bar signals reflect stride-driven CoM displacement with minimal respiratory confound [ 15 , 16 ]. The difference is clinically material: chest placement degrades the 3–8 Hz freezing band on which closed-loop cueing systems de-pend, and cerebellar ataxia—fundamentally a disorder of axial coordination—propagates most cleanly through the lumbar sensor, where it is not obscured by upper-body compensatory motion. Mobilise-D’s adoption of lumbar placement across all six disease cohorts and sixteen clin-ical sites [ 2 ] reflects this field-wide consensus; Sonata ’s pretraining corpus follows the same standard. Together, six-axis measurement and lumbar placement define three physics gates for corpus inclusion. The first two are direct: the sensor must provide six-axis kinematics and must be trunk-mounted at the waist or lumbar spine. The third is subtler: the data must preserve total rather than linear acceleration, because the gravitational com-ponent provides a fixed directional reference that reveals how the sensor is oriented relative to vertical—without it, translational acceleration and sensor tilt become indistin-guishable. These gates exclude the majority of available data: the largest open accelerometry benchmarks strip gravity by default; the richest wrist-mounted cohorts are off-body; prominent chest-IMU collections conflate respiratory and kinematic signals; gated institutional datasets remain in-accessible at time of writing. What survives is nine open datasets spanning approximately 739 subjects and 190,000 windows [ 2 , 17 ]: Parkinson’s disease patients and age-matched controls, multiple sclerosis, stroke, and cerebellar and peripheral neuropathy cohorts, community-dwelling elderly fallers assessed prospectively, activities of daily living across healthy adult populations, and—critically— three sources with directional fall labels that capture the rare transient kinematics most consequential for fall-risk stratification. The model makes no claim beyond this domain; what it has not been trained to learn, it should not be expected to represent. 
+
+Sonata is the pretraining framework that results from applying these constraints consistently. It is a physics-informed world model for six-axis trunk kinematics, tar-geting the small-cohort clinical regime directly. Where prior self-supervised methods rely on masked reconstruc-tion or contrastive objectives over IMU sequences [ 18 – 20 ], 
+
+Sonata instead learns by predicting the future kinematic state of the body in a shared embedding space—following the latent-predictive paradigm recently established in biosignal and physical domains [ 21 , 22 ], and applying Sonata — Technical Report 3
+
+it here under the constraints of clinical data scale. Amodel that can anticipate how a patient’s trunk will move over the next half-second has, in some meaningful sense, internalised the coupled rotational-translational dynamics of human locomotion—gravity, stride cadence, turning dy-namics, and the characteristic asymmetries that mark gait disorder—rather than the spectral fingerprint of any par-ticular MEMS device—to the extent that sensor-specific noise is not predictive of future kinematic state. This choice of objective aligns with a deeper property of the clinical problem itself. Neurological disease progression is fundamentally dynamical: the relevant question is not whether a patient’s gait is abnormal at a given instant, but whether their kinematic trajectory is diverging from their own baseline in a meaningful direction. A world model is a natural fit for this problem in a way that purely reconstructive objectives may not be—a point we return to in the discussion. The model comprises 3.77 million parameters in total, with hybrid backbone capacity matched to the kinematic degrees of freedom of pathological gait rather than to dataset volume. This paper presents the Sonata pre-training corpus and methodology; downstream clinical transfer evaluation is the subject of a companion report. 
+
+Contributions. 
+
+1. Architecture. A 3.77 M-parameter hybrid model interleaving global spectral filters with gated linear-recurrent state updates and cross-unit state mixing, purpose-built for six-axis trunk IMU kinematics under clinical data scarcity. 2. First application of latent world models to IMU kinematics. Prior self-supervised IMU methods [ 18 –20 , 23 ] rely on masked reconstruction or contrastive objectives that reward waveform fidelity rather than dynamical understanding. We adapt the Latent World Model objective [ 21 ] to inertial gait data and show, via controlled same-encoder ablations, that latent-state prediction with a linear head outperforms raw-signal forecasting on clinical discrimination and low-label transfer. 3. Evaluation protocol. A 14-arm suite spanning clin-ical discriminability, noise robustness, cross-cohort transfer, and latent-structure diagnostics—designed to stress-test IMU representations beyond single-task accuracy. 4. Clinically motivated corpus curation. Explicit inclusion criteria (six-axis, trunk-mounted, gravity-retained) defining a reproducible filtering methodology for clinical IMU pretraining across nine public sources (∼739 subjects, 190,000 windows). 
+
+## 2 Related Work 
+
+Three strands of recent work frame the design space for 
+
+Sonata : wearable foundation models that demonstrate large-scale self-supervised transfer across health endpoints; sub-quadratic hybrid architectures that collapse the pa-rameter cost of long-context modelling; and nascent world models of the body that recast physiological forecasting as a generative prior over kinematic and autonomic state. 
+
+Wearable foundation models. RelCon [ 23 ] trains on one billion accelerometry segments from 87,376 par-ticipants using relative contrastive learning. The Large Sensor Model [ 24 ] scales this to 40 million hours across six modalities and derives scaling laws for wearable sensing. NormWear [ 25 ] handles arbitrary physiological signal configurations through wavelet tokenisation and channel-aware attention across 18 downstream tasks. Sen-sorLM [ 26 ] bridges sensor data and natural language, while AccelFM [ 27 ] distils PPG representations into an accelerometer encoder predictive of 46 health targets. Raw-IMU encoders represent a more proximate baseline: PRiMuS [ 28 ] leverages EgoExo4D with multimodal self-supervision; UniMTS [ 29 ] aligns heterogeneous motion series with natural language; and HiMAE [ 30 ] applies hierarchical masked autoencoding—a reconstruction ob-jective that JEPA-style latent prediction directly super-sedes. Three structural limitations persist across all these works: (i) all rely on single-axis accelerometry, never the full 6-axis IMU signal that captures rotational kinematics; 
+
+(ii) pretraining corpora are predominantly proprietary, ob-structing reproducibility and clinical adaptation; (iii) pop-ulations with movement disorders—the primary clinical beneficiaries of precise kinematic modelling—are absent from every large-scale pretraining corpus. Sonata does not compete with these models—it targets a regime they are not designed for: six-axis trunk IMU in movement-disorder cohorts, where the relevant clinical signal is rota-tional, data is limited to hundreds of patients, and repre-sentations must be interpretable under strict regulatory and deployment constraints. 
+
+World models for health signals. A recent capability survey [ 31 ] introduces a four-level ladder for health world models (L1 temporal prediction to L4 closed-loop plan-ning) and identifies waveforms and multimodal sensor inte-gration as open gaps at every level. The Joint Embedding Predictive Architecture [ 21 ] addresses this by predicting future latent embeddings rather than reconstructing the raw signal, discarding unpredictable noise while preserving semantic structure. This advantage has been validated across biosignals: Laya [ 22 ] applies LeJEPA to 29 109 hours of EEG, gaining +10.8% seizure-detection accuracy and retaining 91% clean performance at 10 dB SNR versus 68% for reconstruction baselines; EchoJEPA [ 32 ] reduces LVEF estimation error by 26.7% over pixel-reconstruction for echocardiography; medDreamer [ 33 ] adapts Dream-erV3 to irregular EHRs, reducing estimated sepsis mor-tality by 11%; and CLARITY [ 34 ] shows latent-space dy-namics outperform diffusion-based generation by 9.2% F1 for oncology treatment planning. JETS [ 35 ] applies JEPA to wearables but targets daily-resolution aggregated met-rics, not raw kinematic-rate inertial signals. PULSE [ 36 ]frames physiological time series via dynamical system rep-resentations but operates on non-IMU signals without action semantics or JEPA-style latent prediction. Sonata 
+
+occupies the remaining vacancy: the first JEPA-based world model for raw kinematic IMU. Sonata — Technical Report 4
+
+Sub-quadratic sequence models and hybrid archi-tectures. The delta rule, originally formulated as fast weight programming for linear attention [ 37 ], provides a mechanism for targeted memory erasure. DeltaNet [ 38 ]scales this principle via chunkwise parallelization, yielding a Householder-structured state transition that selectively erases stale memory at O(Ld 2) cost. Gated DeltaNet [ 39 ]adds a Mamba-2-style [ 40 ] scalar decay gate, inheriting DeltaNet’s targeted updates alongside Mamba-2’s efficient filtering on complementary synthetic tasks. A systematic study of 72 hybrid models [ 41 ] establishes that generation-3 delta-rule layers are the critical ingredient for effective hybrids and that a 3:1 linear-to-full ratio maximises recall at minimum compute cost—a finding validated at 48B pa-rameters by Kimi Linear [ 42 ], where the 3:1 ratio reduces KV cache by 75%, and grounded theoretically by OLMo Hybrid [ 43 ], which proves that such interleaved topologies achieve strict expressivity advantages (e.g., state-tracking in NC 1) over homogeneous stacks. Efficient distillation techniques (e.g., HALO [ 44 ]) further streamline the con-struction of these massive hybrids, enabling extreme long-context scaling. Recent extensions deepen expressivity: DeltaProduct [ 45 ] composes Householder reflections to access the full orthogonal group, and EFLA [ 46 ] replaces Euler discretisation with an exact ODE solution, reducing perplexity on standard language modelling benchmarks and improving robustness to input noise. On the time-series side, Reverso [ 47 ] interleaves long convolution with DeltaNet blocks to produce 0.2M–2.6M-parameter TSFMs that match Transformer-based models in zero-shot uni-variate forecasting. 
+
+The gap. No prior work applies hybrid delta-rule archi-tectures to raw multivariate inertial time series , and no existing model adopts a JEPA-style latent prediction ob-jective for raw kinematic-rate IMU signals. Reverso is the closest architectural analogue—same delta-rule backbone, comparable scale—yet targets stationary univariate fore-casting without clinical populations. Our first controlled baseline therefore keeps this hybrid backbone family fixed and asks a narrower question: in the low-data clinical regime, is it better to pretrain for latent-state predic-tion or for direct raw future-signal forecasting? Laya is the nearest world-model predecessor for biosignals, but EEG carries no action semantics; kinematic IMU admits gravity-referenced coordinate frames and counterfactual intervention via altered motion parameters that EEG structurally cannot support. Sonata closes both gaps: a 3.77M-parameter hybrid model of spectral long convolu-tion and Gated DeltaNet, pretrained on a reproducible 6-axis corpus spanning fall and neurodegenerative gait populations, with a JEPA pretraining objective that en-ables action-conditioned kinematic rollouts for the first time. 
+
+## 3 Pretraining Corpus 
+
+Pretraining a general-purpose IMU foundation model re-quires a corpus sufficiently diverse to prevent spurious correlations arising from any single sensor configuration, population, or activity distribution. We curate a corpus of nine publicly available 6-axis IMU datasets spanning clin-ical and laboratory settings across multiple countries (Ta-ble 1). Three design constraints govern inclusion: (i) full 6-axis sensing (tri-axial accelerometer and tri-axial gyro-scope), since the coupled translational–rotational signal is necessary for learning the gravity–motion decomposi-tion; (ii) waist or lower-back sensor placement, ensuring a consistent biomechanical reference at the body’s centre of mass; and (iii) total acceleration with gravity retained: beyond its role as an orientation reference, the gravita-tional component encodes postural information—trunk inclination and weight-bearing asymmetry—that is di-rectly predictive of fall risk and cannot be recovered once subtracted. Gates (ii) and (iii) are complementary: grav-ity constrains pitch and roll but leaves yaw undefined; the lumbar placement resolves this remaining ambiguity through spinal anatomy, together fully constraining the sensor’s orientation in three dimensions. Together, these constraints yield a corpus of ∼739 subjects and 190,495 five-second windows spanning activities of daily living, scripted falls, and clinical gait assessments. 
+
+Preprocessing. All sources are harmonised to a shared canonical form before training. Each signal is first ro-tated into a common biomechanical reference frame (ISB convention [ 55 ]: vertical, anterior, medial axes), then resampled to 100 Hz using polyphase anti-aliased filter-ing [ 56 ]. The resampled signal is segmented into windows of 512 samples (5.12 s), each represented as a tensor of shape (512 , 6) , using a 50 % stride by default. Channels are scaled to [−1, 1] using fixed constants matched to the physical full-scale limits of common MEMS IMU hard-ware ( ±16 g, ±2000 ◦/s) rather than per-window statistics, preserving the relative magnitude of the gravity vector as an always-available postural cue. 
+
+Fall coverage. Scripted fall events, which are rare rel-ative to activities of daily living, are oversampled us-ing a dense windowing pass with 90 % overlap over fall-annotated regions—windows from this pass are labelled positive if they intersect the annotated fall interval, mak-ing this an upsampling heuristic rather than a guarantee that the impact event falls within each window. Falls are annotated with a four-class directional taxonomy (forward, backward, lateral, near-fall) and a binary fall_mask field that aggregates all four classes for use by class-balanced samplers in fine-tuning. LTMM does not contain scripted fall events; its windows are labelled by prospective faller-subject status and contribute supervision signal for fall-risk stratification rather than fall-event detection. 
+
+Data augmentation. The nominal production configu-ration applies four on-the-fly transformations [ 57 , 58 ] cho-sen to reflect the physical variability of real-world sensor deployments: sagittal parity reflection, SO(3) placement tilt ( σ = 8 ◦, simulating clip-on re-placement error), gyro bias drift (Brownian motion, modelling MEMS gyroscope instability), and percentile censoring. Sonata — Technical Report 5
+
+Table 1: Pretraining corpus. Fall % denotes the fraction of windows carrying a positive fall label for that source. For LTMM, fall-positive labels reflect retrospective faller-subject status rather than within-window impact events (see text).                                                      
+
+> Dataset Subjects Windows Fall % Source Hz Placement Voisard [48] 260 15,467 0.0% 100 Lower back WearGait-PD [17] 184 16,739 0.0% 100 Lower back Mobilise-D TVS [2] 105 14,416 0.0% 100 Lower back LTMM [49] 73 1,351 54.5% 100 Lower back SisFall [50] 38 84,634 75.9% 200 Waist UCI HAR [51] 30 5,125 0.0% 50 Waist UMAFall [52] 19 9,161 73.2% 20 Waist FallAllD [53] 15 32,641 68.2% 238 Waist USC-HAD [54] 14 10,961 0.0% 100 Waist
+> Total ∼739 190,495 49.3%
+
+## 4 Architecture and Objective Function 
+
+4.1 A parameter-efficient world model for human motion 
+
+Sonata is a hybrid time-series foundation model de-signed for six-axis waist and lower-back IMU kinemat-ics at 100 Hz, interleaving long convolutions with Gated DeltaNet blocks. Building upon the hybrid architecture of Fu et al. [47] , this formulation achieves Pareto-optimal rep-resentation quality, matching the performance of substan-tially larger architectures at a fraction of the parameter cost. The efficacy of this hybrid paradigm is corroborated by recent large-scale evaluations in language modeling [42 ], demonstrating that selective recurrence combined with convolutional context aggregation efficiently captures both local associations and global dependencies. Following the conceptual framework of Maes et al. [21] ,
+
+Sonata is cast as an actionable world model that com-presses the underlying physics of human locomotion into a compact, predictable latent space. The architectural ca-pacity is strictly allocated toward learning biomechanical structures indicative of neurodegeneration—such as the shuffling hypokinesia of Parkinson’s disease or the wide-based axial instability of cerebellar ataxia—rather than re-constructing high-variance sensor artefacts. This objective motivates three primary design choices: (i) the retention of six-axis inertial inputs including gravity (section 3) to enable the disentanglement of postural tilt from dynamic acceleration; (ii) a latent-predictive self-supervised train-ing objective; and (iii) a highly parameter-efficient total parameter budget ( ≈3.77 M) detailed in table 6. Specifi-cally, sensor data are normalized and embedded into RL×d
+
+before passing through a 12-layer [C,C,C,G ] × 3 hybrid backbone—where C denotes a Long-convolution block and G denotes a Gated DeltaNet block—terminating in a latent read-out that feeds into lightweight pretraining heads and a frozen linear probe for downstream evalua-tion (fig. 2). The primary mathematical notation utilized throughout this architecture is summarized in table 7. 
+
+4.2 Hybrid backbone: long convolutions for spec-tra, gated delta for state Long-convolution block (C). Each C block imple-ments a gated long convolution following Reverso [47]: a lightweight data-dependent gate (comprising depthwise convolution, SiLU activation, pointwise convolution, and sigmoid) selectively suppresses frequency bands before filtering, modulating the input to ignore high-frequency noise or electromyography (EMG) artefacts on a per-input basis. The modulated signal is then convolved via rFFT circular convolution with a per-channel learnable kernel 
+
+w ∈ Rd×L, followed by a residual LayerNorm. Complexity is O(dL log L) per block. In the context of IMU gait, a stride cycle at 1–2 Hz constitutes a global periodic pattern spanning the full 5.12 s window. A full-length learnable filter naturally represents the stride fundamental and its harmonics as a single spectral template—an operation impossible for local convolutions with restrictive receptive fields. The three stacked C blocks per sequence unit build a deep filter bank. Each layer applies a distinct spectral filter, enabling the network to jointly represent multi-scale temporal patterns (e.g., stride cycle, within-stride phase, step asymmetry) without compressing or discarding posi-tional information. Essentially, the convolutional layers collectively answer: "What frequencies and patterns exist within this window?" 
+
+Gated DeltaNet block (G). The recurrent blocks use multi-head Gated DeltaNet [ 39 ]. Formally, given an input token xt ∈ Rd, the block first computes linear projections for the query, normalized key, value, and update rate: 
+
+qt = Wq xt, kt = Wkxt
+
+∥Wkxt∥2
+
+, vt = Wv xt, βt = σ(Wβ xt).
+
+(1) The associative state St ∈ Rdv /H ×dk then evolves via the gated delta rule [38]: 
+
+St = gt ·St−1
+
+(I − 2βtktk⊤
+
+> t
+
+) + βtvtk⊤ 
+
+> t
+
+. (2) The Householder factor I − 2βtktk⊤ 
+
+> t
+
+erases the component of St−1 aligned with the incoming key before writing the new association, enabling targeted forgetting unavailable in additive linear attention. A Mamba-2-style [ 40 ] content-dependent decay gate gt = σ(Wg xt) ∈ (0 , 1) provides a complementary global reset: at gait-phase boundaries, freezing-of-gait episodes, and session transitions—the con-texts where stale kinematic state is most misleading—the gate is positioned to drive memory clearance, enabling the model to adapt to clinical non-stationarity without per-subject finetuning [39]. Sonata — Technical Report 6                
+
+> X
+> B×L×6
+> Unit backbone: 12x (SeqBlock + MLP)
+> Norm & Embed
+> L×d
+> CCCG
+> H(4)
+> CCCG
+> H(8)
+> CCCG
+> St
+> Projector πϕPredictor WˆSt+1
+> Pre-training
+> Linear probe
+> ˆy
+> task pred.
+> state weave state weave
+> Unit 1 Unit 2 Unit 3
+
+LongConvBlock       
+
+> x
+> Gate g
+> ⊙w∗(·)ReLU +LN out
+> rFFT conv
+
+GatedDeltaNetBlock        
+
+> xtq,k,v, β
+> Decay gt
+> St=gt·St−1
+
+(  
+
+> I−2βtktk⊤
+> t
+
+)    
+
+> +βtvtk⊤
+> t
+> RMSNorm
+> (Stqt)⊙
+> SiLU (Wz xt)
+> +LN out
+
+Figure 2: Sonata architecture, pretraining objective, and downstream probe. Top: The input sequence is embedded into H(0) and processed by a hybrid backbone interleaving LongConvBlocks ( C) and GatedDeltaNetBlocks (G). Intermediate recurrent states weave across units via state injection (eq. (3)). During self-supervised pretraining, the terminal latent state St is routed through an expand–compress projector πϕ and linear predictor Wp to minimize the Latent World Model (LWM) objective (algorithm 1). For downstream tasks, the LWM heads are discarded, the encoder is frozen, and the final MLP-block embeddings are mean-pooled over time before a lightweight logistic-regression probe is applied. Bottom: Detailed schematics of the LongConvBlock [ 47 ] and GatedDeltaNetBlock [ 39 ] comprising the hybrid sequence mixer. Full operational details and mathematical formulations are provided in section 4.2. A more subtle design choice concerns the eigenspec-trum of the state-transition operator. Classical DeltaNet confines it to [0 , 1] , which is adequate for monotone dy-namics but cannot represent sign-alternating behaviour. Grazzi et al. [59] show that lifting the eigenspectrum to 
+
+[−1, 1] turns the linear recurrence into an expressive state-tracker ; for IMU kinematics this is not cosmetic—gait is a multi-scale periodic process, from bilateral stride alter-nation to tremor and turning dynamics, whose faithful latent representation requires sign-alternating recurrent modes [ 59 ]; restricting the eigenspectrum to non-negative values measurably degrades clinical discrimination, as we confirm empirically in section 6.3. Sonata enables this extended eigenspectrum in all G blocks. The block reads out via a SiLU-gated FusedRMSNorm projection before a residual LayerNorm. While the convolutional layers comprehensively process the full sequence, they treat each window independently. In contrast, the GDN accumulates a compressed kinematic summary over the 512 positions. At each intermediate G layer (positions 3 and 7 in the stack), the terminal hidden state is injected into position 0 of the following layer: 
+
+H(j+1)  
+
+> ·,0,·
+
+← H(j+1)  
+
+> ·,0,·
+
++ H(j+1) 
+
+> ·,L −1,·
+
+, j ∈ { 3, 7}, (3) providing lightweight recurrent coupling across backbone units without explicit state caching. This explicitly sup-plies the subsequent convolutional unit with a compressed history of the preceding one. Building upon the con-volutional layers’ spectral analysis, the GDN essentially answers: "Given everything that happened in this win-dow, what is the current overarching kinematic state of the body?" 
+
+Hybrid sequence modelling. The layer sequence 
+
+[C,C,C,G ] × 3 adapts the architecture of Fu et al. [47] ,aggregating three global long-convolution layers upstream of each recurrent block. This conv-heavy configuration en-sures that the Gated DeltaNet modules process spectrally organised representations rather than raw embeddings, so that recurrent capacity is directed toward temporal compression and state management rather than spectral feature extraction. Additionally, each sequence block is coupled with a residual gated-MLP channel mixer. As the convolutional and recurrent blocks operate exclusively on a per-channel or per-head basis, the MLP serves as the sole mechanism for cross-channel feature combina-tion (e.g., fusing vertical acceleration with pitch velocity). Finally, input channels are normalised to [−1, 1] using fixed physical-range constants (section 3), preserving the relative magnitude of the gravity vector as an always-available postural reference for resolving orientation in clinical populations. 
+
+4.3 Latent read-out and heads Latent read-out. During JEPA pretraining, the pri-mary latent state is the terminal sequence position of the final recurrent block: 
+
+ST = H(12)   
+
+> ·, L −1,·
+
+∈ RB×d, (4) which serves as the projected prediction target for the la-tent world-model objective. For the frozen-encoder down-stream evaluation, however, embeddings are extracted one sublayer deeper from the final MLP block and mean-Sonata — Technical Report 7
+
+Algorithm 1 Latent World Model (LWM) Pretraining Step 
+
+Require: Context window Xt, Target window Xt+1 
+
+Require: Encoder fθ , Projector πϕ, Predictor Wp 
+
+> 1:
+
+Forward Pass:  
+
+> 2:
+
+Ht ← fθ (Xt) ▷ Encode context window  
+
+> 3:
+
+Ht+1 ← fθ (Xt+1 ) ▷ Encode target window (shared weights)  
+
+> 4:
+
+St ← (Ht)·,L −1,· ▷ Context latent readout  
+
+> 5:
+
+St+1 ← (Ht+1 )·,L −1,· ▷ Target latent readout  
+
+> 6:
+
+Zt ← πϕ(St) ▷ Project context  
+
+> 7:
+
+Zt+1 ← πϕ(St+1 ) ▷ Project target  
+
+> 8:
+
+ˆSt+1 ← Wp Zt ▷ Predict target latent state  
+
+> 9: 10:
+
+Objective Computation:  
+
+> 11:
+
+Lpred ← ∥ ˆSt+1 − Zt+1 ∥22 ▷ Prediction MSE loss  
+
+> 12:
+
+LSIGReg ← Epps–Pulley ([Zt; Zt+1 ], N (0 , I )) ▷
+
+Isotropic Gaussian penalty  
+
+> 13:
+
+LLWM ← (1 − λ)Lpred + λLSIGReg ▷ Total objective  
+
+> 14: 15:
+
+Gradient Flow ( ←):  
+
+> 16:
+
+∇θ, ∇ϕ, ∇Wp ← Backprop (LLWM ) ▷ End-to-end backpropagation  
+
+> 17:
+
+▷ Note: No stop-gradients or EMA updates are used.  
+
+> 18:
+
+θ ← θ − η∇θ ▷ Update Encoder  
+
+> 19:
+
+ϕ ← ϕ − η∇ϕ ▷ Update Projector  
+
+> 20:
+
+Wp ← Wp − η∇Wp ▷ Update Predictor pooled over time: 
+
+e = 1
+
+L
+
+> L
+
+∑
+
+> t=1
+
+H(mlp ,12)   
+
+> ·, t, ·
+
+∈ RB×d, (5) yielding the (B, 128) representation used by all down-stream linear probes for every arm. 
+
+Latent World Model (LWM) objective. We op-timize Sonata via a Latent World Model (LWM) loss, following the self-supervised frameworks established by Balestriero and LeCun [60] and Maes et al. [21] . In do-mains characterised by high-variance physiological and sensor artefacts, signal-space objectives that reward di-rect waveform fidelity can force the encoder to memorize noise rather than extracting the underlying clinical state [22 ]. More fundamentally, the choice of supervisory target creates an implicit information bottleneck: an encoder optimized to predict the next raw waveform is rewarded for high-frequency fidelity—reproducing transient sensor jitter, EMG crosstalk, and MEMS artefacts—whereas an encoder optimized to predict the next latent state is rewarded for cross-window predictability rather than intra-window fidelity—a pressure that favours structure persisting across consecutive windows, such as stride tim-ing, postural asymmetry, and disease-specific gait signa-tures, over transient artefacts that do not. The empirical consequence is that forecasting accuracy and clinical dis-crimination are not merely different metrics but competing demands on encoder capacity (table 2). To circumvent this, the LWM objective eschews signal-level reconstruc-tion in favor of predicting the latent state of a future context window directly from the current latent state. Historically, Joint-Embedding Predictive Architectures (JEPAs) prevented representation collapse through an un-principled patchwork of architectural heuristics, notably asymmetric exponential moving average (EMA) target encoders and stop-gradients; omitting these typically in-duced immediate collapse. However, Balestriero and LeCun [60] recently proved that the isotropic Gaussian is the uniquely optimal em-bedding distribution to minimise downstream prediction risk—specifically, bias and variance for linear probes. Con-sequently, Sonata adopts their bespoke, heuristic-free formulation: it operates entirely end-to-end without stop-gradients or EMA targets. Given consecutive context and target windows (Xt, Xt+1 ), the shared encoder fθ
+
+produces latent states St and St+1 . The overarching ob-jective collapses to a single two-term loss: 
+
+LLWM = (1 − λ) Lpred + λ LSIGReg . (6) Here, the prediction loss is the mean squared error in the projected space: 
+
+Lpred = ∥ˆSt+1 − πϕ(St+1 )∥22, (7) where ˆSt+1 = Wp πϕ(St) is the predictor’s output. 
+
+LSIGReg is the Epps–Pulley-based isotropic Gaussian reg-ulariser of Balestriero and LeCun [60] ; we refer the reader to their formulation and provide empirical sensitivity anal-ysis in section 6.2. Representation collapse is provably averted through the Sketched Isotropic Gaussian Reg-ularization penalty ( LSIGReg ). Relying on the Cramér– Wold theorem—which states that a multidimensional dis-tribution is uniquely determined by its one-dimensional marginals—SIGReg evaluates the empirical characteris-tic function of the projected batch embeddings along 
+
+M random one-dimensional projections. By minimizing the Epps–Pulley normality test statistic between these projections and a standard Gaussian, SIGReg explicitly and stably guides the embedding space toward the opti-mal isotropic Gaussian distribution. Crucially, the Epps– Pulley statistic is utilized because it possesses uniformly bounded gradients and curvature, preventing the instabil-ities inherent to moment-based or CDF-based normality tests. The gradient flow throughout this architecture dur-ing pretraining is entirely symmetric and summarized in algorithm 1. 
+
+Controlled objective comparison. To isolate the role of the pretraining objective rather than the encoder fam-ily, we compare the production TTL-TSFM LIN variant against a causal raw-signal forecasting baseline denoted 
+
+MAE , where the acronym refers to the mean-absolute-error training loss rather than to masked autoencoding. The shared component is the same hybrid LongConv + Gated DeltaNet encoder backbone, with the same frozen linear-probe downstream protocol; the only architectural divergence is in the pretraining head and supervisory signal. In LIN , two consecutive 512-step windows are encoded into terminal latent states, passed through the Sonata — Technical Report 8
+
+shared projector πϕ, and coupled by a single linear predic-tor Wp under the two-term latent loss LLWM . In MAE ,the first 464 samples of a window are presented as context, zero-padded to length 512 for the FFT-based backbone, and the held-out final 48 samples are predicted directly in raw signal space by the standard DecoderHead : 48 learned query positions cross-attend over the encoder se-quence states and are optimized with an L1 loss on the future 6-axis waveform. For downstream evaluation, all five arms are instead compared using the shared mean-pooled final-MLP embedding in eq. (5), rather than the terminal recurrent readout ST from eq. (4). The point of the comparison is therefore not to introduce a second architectural story, but to test whether latent world-model pretraining yields more useful frozen representations in the low-data clinical regime than direct raw-signal fore-casting of the broader time-series family exemplified by Reverso [ 47 ]. Our working hypothesis is that, under data scarcity, efficient pretraining should spend capacity on the biomechanics of disease progression rather than on the raw sensor noise floor or transient jitter. 
+
+Pretraining heads. To compute the prediction loss and apply the SIGReg regularizer, the latent state St
+
+is routed through an expand–compress MLP projector 
+
+πϕ. Introduced theoretically by Balestriero and LeCun [60] as a critical component for stabilizing self-supervised embeddings, this projector expands the latent state into a higher-width hidden layer before returning it to the original latent dimensionality, providing a structured space in which collapse is explicitly penalized without imposing a bottleneck compression. Operating in this projected latent space, a lightweight linear predictor Wp learns to map the current state to the subsequent window: ˆSt+1 =
+
+Wp πϕ(St). The predictor is intended as a deliberately restrictive linear transition head that pressures the encoder to place short-horizon dynamics into a state that remains easily predictable under a simple map. Both the projector and predictor are strictly discarded following pretraining. In the MAE baseline, these latent-space heads are replaced by the standard forecasting DecoderHead ; the encoder and downstream frozen-probe protocol remain unchanged. Concretely, the MAE arm observes a 464-sample prefix, zero-pads it to length 512 for the backbone, and uses 48 learned query positions in a cross-attention decoder to predict the withheld 48-sample future under an L1 loss. This keeps the baseline architecturally close to the production encoder while making the supervisory signal fundamentally different from LIN : direct future-signal prediction rather than latent-state prediction. 
+
+Downstream probe. For nominal downstream evalua-tion, the pretrained encoder is frozen and only the mean-pooled final-MLP embedding e is exposed to a lightweight logistic-regression probe. For a task with K output classes, the probe is 
+
+ˆy = softmax( Wcls e + b), Wcls ∈ RK×d. (8) This setup keeps the evaluation protocol faithful to the representation-learning objective: all task-specific adap-tation is restricted to the linear head, while the encoder parameters remain fixed. In the nominal TTL-TSFM lin variant, this probe is the sole downstream interface used for pathology discrimination, fall detection, and label-efficient HAR. 
+
+## 5 Experiments and Results 
+
+5.1 Objective Comparison: Latent-State Predic-tion vs. Raw-Signal Forecasting 
+
+We evaluate Sonata through a deliberately broad but clinically grounded suite designed to test not only pathol-ogy discrimination, but also data efficiency, robustness, transfer, and latent structure. The main text keeps this coverage compact: it first states the evaluation logic, then reports two controlled comparisons—one isolating the pretraining objective and one isolating the predictor head. Full task definitions, datasets, protocols, and metric choices are deferred to Appendix A. 
+
+5.2 Evaluation Suite 
+
+The suite is organized into four axes. Clinical discrim-inability probes whether the representation separates dis-ease state, disease subtype, and prospective fall risk under frozen-encoder evaluation (E1–E5). Data-efficiency and ro-bustness examine adaptation under sparse labels, injected sensor noise, and a partially supervised upper bound (E6– E8). Generalisation and transfer test cross-age fall detec-tion, fall-direction sensitivity, and cross-dataset activity-transfer behaviour (E9–E11). Representation quality and structure then ask whether the learned state retains physi-cally decodable information, avoids collapse, and supports short-horizon forecasting behaviour (E12–E14). Table 2 isolates the effect of the pretraining objective by holding the hybrid encoder and frozen-probe proto-col fixed, while changing only the pretraining head and loss. LIN predicts the latent state of the next 512-step window via the projector–predictor stack and SIGReg; 
+
+MAE predicts the final 48 raw IMU samples from a 464-sample observed prefix via the standard cross-attention forecasting decoder and an L1 loss. The resulting pattern is mixed rather than one-sided. LIN leads on the clinically central and robustness-oriented family of probes: both WearGait PD-versus-control endpoints, the harder five-cohort WearGait task, the Mobilise-D PD-versus-healthy comparison, LTMM fall-risk discrimination, cross-age fall detection, both noise rows, and the low-label PAMAP2 adaptation curve. MAE , by contrast, is strongest on the rows most closely coupled to waveform fidelity or local motion templates: the post-hoc decoder probe, the single-horizon forecast MAE, SisFall fall-subtype recognition (0.565 vs. 0.536), and UCI-to-PAMAP2 transfer (0.568 vs. 0.513). The most plausible interpretation is therefore not that one objective is universally superior, but that they preserve different aspects of the signal: MAE stays closer to the sensor waveform, whereas LIN more aggressively organizes latent factors that survive frozen probing under cohort heterogeneity and sensor corruption. This distinction matters because several of the hardest rows in the table have intentionally modest absolute scores. We do not read those values as evidence of clinical readi-Sonata — Technical Report 9
+
+Table 2: Controlled comparison between the production latent world-model objective ( LIN ) and a causal raw-signal forecasting baseline ( MAE , named for its mean-absolute-error loss) on the same hybrid encoder backbone. The comparison keeps the encoder, latent read-out, and downstream probe fixed, changing only the pretraining head and supervisory target: LIN predicts the latent state of the next window with projector + linear predictor + SIGReg, whereas MAE predicts the final 48 raw IMU samples from a 464-sample context via a cross-attention decoder. Bold indicates the better value in each row; OOD marks PAMAP2-based probes withheld from pretraining. Arrows indicate the preferred direction of each metric. 
+
+Axis Eval. Dataset Primary metric LIN MAE 
+
+Clinical discriminability E1 WearGait-PD (PD vs HC) AUC-ROC ( ↑) 0.756 0.631 E1 WearGait-PD (PD vs HC) Macro-F1 ( ↑) 0.717 0.542 E2 WearGait-PD (5-cohort) Macro-F1 ( ↑) 0.428 0.251 E3 Mobilise-D TVS (PD vs HA) AUC-ROC ( ↑) 0.613 0.461 E3 Mobilise-D TVS (PD vs HA) Binary F1 ( ↑) 0.634 0.526 E5 Voisard (7-condition) Macro-F1 ( ↑) 0.280 0.162 Data-efficiency and robustness E4 LTMM (fall risk) AUC-ROC ( ↑) 0.670 0.621 E7 Mobilise-D TVS + AWGN Macro-F1 clean ( ↑) 0.319 0.204 E7 Mobilise-D TVS + AWGN Macro-F1 @ 10 dB ( ↑) 0.284 0.213 Generalisation and transfer E9 SisFall SA →SE AUC-ROC ( ↑) 0.963 0.874 E9 SisFall SA →SE Binary F1 ( ↑) 0.846 0.682 E10 SisFall direction labels Macro-F1 ( ↑) 0.536 0.565 
+
+E11 UCI HAR →PAMAP2 (target OOD) Macro-F1 ( ↑) 0.513 0.568 
+
+Representation quality and structure E12 WearGait-PD decoder probe Val MAE ( ↓) 0.00260 0.00224 
+
+E13 WearGait-PD activations Effective rank ( ↑) 59.1 33.0 E13 Mobilise-D TVS dynamical latents Dynamics H-stat ( ↑) 15.26 12.08 E13 WearGait-PD trajectories Latent straightness ( ↑) -0.2973 -0.3798 E14 UCI HAR forecast Forecast MAE @ h=48 (↓) 0.02131 0.01869 t-SNE-1   
+
+> t-SNE-2
+> Lin (Koopman)
+> sil=0.090
+> t-SNE-1
+> MLP predictor
+> sil=0.086
+> t-SNE-1
+> Xfm predictor
+> sil=-0.024
+> t-SNE-1
+> GDN predictor
+> sil=-0.037
+> t-SNE-1
+> MAE baseline
+> sil=-0.042
+> Latent geometry SisFall activities + fall directions (9,909 windows, 1500/class)
+> walking
+> running
+> standing
+> lying
+> fall_fwd
+> fall_bwd
+> fall_lat
+
+Figure 3: Latent geometry on SisFall activities and fall directions, shown as two-dimensional t-SNE projections of the terminal latent state for the production LIN model, three alternative predictor heads, and the raw-signal forecasting 
+
+MAE baseline. The visualization is designed to be read comparatively: while no model achieves clean class separation, the token-level world-model variants ( LIN and MLP) preserve more coherent local clustering than the sequence-level predictors or the MAE baseline, mirroring the quantitative performance gaps in Table 2 and Table 3. The residual overlap across all panels is itself informative, suggesting that SisFall imposes a meaningful separability ceiling under this windowing and labeling setup. ness, nor as grounds to dismiss the comparison; instead, they should be interpreted as comparative evidence under a difficult protocol. On heterogeneous subject-level prob-lems such as PD-vs-HA, multicohort gait discrimination, or cross-dataset transfer, absolute performance is com-pressed by label noise, cohort overlap, and domain shift. In that setting, the relevant signal is the recurrence of the same ordering across related stress tests. LIN ’s gains are therefore meaningful less because any single number is large in isolation, and more because the same objective advantage reappears across pathology discrimination, fall-risk ranking, robustness to injected noise, and low-label adaptation. By the same logic, the MAE-favorable rows are informative rather than inconvenient: they identify the settings in which literal signal reconstruction remains a strong proxy for downstream usefulness. The structural diagnostics reinforce this split. LIN 
+
+produces nearly twice the effective rank of MAE (59.1 vs. 33.0) 1, a stronger latent-dynamics separation signal (H = 15.26 vs. 12.08), and straighter latent trajectories ( −0.297 
+
+vs. −0.380 ), all consistent with the world-model hypoth-esis developed in Section 4. Figure 3 renders the same ordering geometrically. The t-SNE projections show that token-level latent prediction ( LIN and MLP) yields more coherent local islands than either sequence-level prediction (Transformer and GDN) or raw-signal forecasting ( MAE ), which appear progressively more entangled. Crucially, we do not interpret this figure as evidence of clean, absolute class clustering—all five panels retain substantial overlap— 
+
+> 1
+
+Effective rank is the exponential of the Shannon entropy of the normalised singular value distribution of the activation matrix; it measures how many representation dimensions are meaningfully used [61]. Sonata — Technical Report 10 
+
+but that is precisely the point. For a heterogeneous, noisy fall dataset such as SisFall, the residual mixing points to a nontrivial data ceiling. This split follows directly from the objective-level distinction developed in section 4: MAE re-wards intra-window waveform fidelity, allocating encoder capacity to high-frequency temporal structure that need not persist across windows; LIN rewards cross-window latent predictability, allocating that capacity instead to structure that does. The empirical pattern is exactly what this distinction predicts. The practical bottom line is therefore task-aligned rather than universal: if the goal is short-horizon waveform fidelity or signal-faithful decod-ing, MAE remains a sensible objective; if the goal is stable clinical state separation under heterogeneity, limited la-bels, and sensor corruption, LIN is the better-matched choice. 
+
+5.3 Predictor Ablation: Why a Linear Head Suf-fices 
+
+Having established the value of the latent world-model objective in Section 5.1, we now ask a complementary question: given that objective, does the capacity of the predictor head matter? Table 3 holds the encoder, pro-jector, data pipeline, and training schedule fixed, varying only the predictor among four architectures that span two orthogonal axes of expressivity: nonlinearity and temporal scope. 
+
+Linear (Wp ∈ R128 ×128 , no bias, no nonlinearity) op-erates on the projected terminal token π(ST ) alone and is the production predictor described in Section 4. MLP 
+
+(128 → 512 → 128 with LayerNorm and GELU) also oper-ates on π(ST ), adding a single hidden nonlinearity while remaining token-level. Transformer (two-layer bidirec-tional TransformerEncoder , d=128 , h=4, dff = 512 , with learned positional embedding) and GDN (single-block Gated DeltaNet, d=128 , h=4, expand _v= 2) both pro-mote the predictor to a sequence-level module: the pro-jector is applied position-wise to the full encoder output 
+
+(B, 512 , 128) , and the MSE loss is computed over all posi-tions rather than only the terminal token. All four arms share the same projector, training loss, and downstream frozen-probe protocol; the only degree of freedom is the predictor itself. The clearest signal comes from the withheld PAMAP2 label-efficiency rows, where each entry reports mean accu-racy ± standard deviation over five random subsampling seeds on a fixed held-out test set of two subjects (956 win-dows). The linear predictor is best at every label fraction from 1% to 50%, and the advantage is largest in the most data-scarce regime (67.1% vs. 63.1% at 1%; +25.8 pp over the Transformer). The same ordering holds on the harder multicohort clinical probes: the linear head leads on both WearGait 5-cohort (+0.041 over MLP, +0.270 over Trans-former) and Voisard 7-cohort classification. Under clean noise conditions the linear head is again strongest; the MLP is marginally better at 10 dB, suggesting that mild predictor flexibility is not inherently harmful but does not translate into a systematic advantage. The result is not uniformly one-sided. GDN achieves the highest UCI →PAMAP2 transfer score (0.562 vs. 0.513 for linear), but training diverged at epoch 4 and this entry re-flects an early checkpoint rather than a converged model; the high effective rank (72.5) paired with poor latent straightness ( −0.400 , second only to the Transformer’s 
+
+−0.444 ) suggests an unstable, high-entropy representation rather than a structured one. The Transformer head is the most informative negative result: despite substantially greater capacity, it produces the worst multicohort clinical scores (0.158 WearGait, 0.173 Voisard) and roughly halves PAMAP2 accuracy relative to the linear head at every label fraction (41.3% vs. 67.1% at 1%), consistent with the predictor absorbing temporal dynamics that the en-coder should internalize for frozen-probe evaluation. The more precise discriminant is temporal scope rather than capacity alone: both token-level predictors (Linear and MLP, operating on the terminal token π(ST )) lead clinical probes, while the Transformer promotes the predictor to a sequence-level module over the full 512-step encoder output and produces the worst clinical scores. The MLP is the critical partial control: it adds nonlinearity without temporal scope and incurs only a modest clinical penalty (WearGait 5-cohort 0.387 vs. 0.428 for linear)—a result inconsistent with a pure optimisation-difficulty account, which predicts smooth degradation with capacity rather than a categorical drop at the token-to-sequence bound-ary. The practical conclusion is that a deliberately simple linear transition head is the most reliable choice across sparse-label transfer, heterogeneous clinical separation, and training stability—not because expressive heads can-not learn, but because they remove the inductive pressure that makes the encoder’s frozen representation clinically useful. 
+
+## 6 Ablation Studies 
+
+6.1 Setup and Common Protocol 
+
+All ablations share a fixed encoder backbone ( ≈3.60 M en-coder parameters, 12 blocks, dmodel = 128 ), the same nine-dataset lower-back IMU corpus, and the same 30-epoch warmup–steady–decay schedule with lr= 10 −3. Only the named hyperparameter varies; all others are held at their production values. Predictor-head results are reported separately in section 5.3 and are not re-tabulated here. All rows are sourced from the same tier1_extended_v3 
+
+evaluation suite as table 2, using the four headline probes: WearGait PD/HC AUC, WearGait five-cohort macro-F1, LTMM faller AUC, and SisFall SA →SE fall-detection AUC. 
+
+6.2 SIGReg Anti-Collapse Regularisation 
+
+Without additional regularisation, JEPA objectives with symmetric gradient flow are susceptible to representa-tional collapse: the encoder maps all inputs to a con-stant vector that trivially minimises the prediction term in eq. (6). Sonata uses the Sketched Isotropic Gaus-sian Regulariser (SIGReg) of Balestriero and LeCun [60] , which approximates a maximum-entropy penalty via M = 1024 random Gaussian projections and K=17 
+
+quadrature knots, enforcing embedding isotropy without stop-gradients or asymmetric target encoders. We sweep 
+
+λ ∈ { 0, 0.05 , 0.1, 0.2, 0.5}; full results are in table 4. Sonata — Technical Report 11 
+
+Table 3: Predictor ablation under a fixed JEPA encoder. Only the predictor head varies; the encoder, projector, data pipeline, and training schedule are shared. Bold marks the best value per row. PAMAP2 is fully withheld from pretraining (OOD). GDN training diverged at epoch 4; results reflect this early checkpoint. Arrows indicate the preferred direction of each metric.                                                                                                                
+
+> Axis Eval. Primary metric Linear MLP Transformer GDN †
+> Clinical WearGait 5-cohort Macro-F1 ( ↑)0.428 0.387 0.158 0.209 Voisard 7-cohort Macro-F1 ( ↑)0.280 0.247 0.173 0.175 OOD / robustness PAMAP2 Acc. @ 1% Acc. ( ↑)67.1 ±5.3 63.1 ±6.1 41.3 ±4.0 47.4 ±4.9 PAMAP2 Acc. @ 5% Acc. ( ↑)78.7 ±2.1 76.2 ±2.7 54.3 ±3.0 62.4 ±4.3 PAMAP2 Acc. @ 10% Acc. ( ↑)80.1 ±2.2 78.3 ±1.8 59.5 ±2.2 66.8 ±2.6 PAMAP2 Acc. @ 20% Acc. ( ↑)81.9 ±1.7 80.4 ±1.5 62.8 ±1.8 69.6 ±2.0 PAMAP2 Acc. @ 50% Acc. ( ↑)83.0 ±1.0 82.4 ±1.2 66.3 ±1.0 72.0 ±0.8 TVS noise clean Macro-F1 ( ↑)0.319 0.311 0.096 0.181 TVS noise @ 10 dB Macro-F1 ( ↑)0.284 0.309 0.061 0.041 Transfer UCI →PAMAP2 Macro-F1 ( ↑)0.513 0.423 0.420 0.562
+> Structure Effective rank Rank ( ↑)59.1 57.8 65.0 72.5
+> Latent straightness Mean cosine ( ↑)−0.297 −0.267 −0.444 −0.400
+> †GDN training diverged at epoch 4/30; all GDN entries reflect this early checkpoint.
+
+Table 4: Consolidated ablation summary. Each row changes one design decision relative to production; all other hyperparameters are held fixed. Predictor-head variants are omitted (see table 3). Bold : production value, or a strict improvement over it on that column. 
+
+Variant Change PD/HC WG 5-coh. Faller Fall det. 
+
+AUC ↑ F1 ↑ AUC ↑ AUC ↑
+
+LIN-0.2 (prod) — 0.757 0.428 0.670 0.963 
+
+SIGReg weight 
+
+λ=0 SIGReg off 0.581 0.114 0.568 0.750 
+
+λ=0 .05 Lighter reg. 0.746 0.388 0.732 0.983 
+
+λ=0 .1 Intermediate 0.785 0.423 0.611 0.969 
+
+λ=0 .5 Over-reg. 0.686 0.306 0.659 0.854 
+
+Eigenvalue range 
+
+Restricted eigsp. β ∈ (0 , 1) 0.743 0.396 0.665 0.966 
+
+MAE (baseline) Signal forecast 0.631 0.251 0.621 0.874 
+
+SIGReg is load-bearing. Disabling SIGReg ( λ= 0)causes catastrophic collapse: WG 5-cohort F1 falls to 0.114, below the MAE baseline (0.251), and PD/HC AUC drops to 0.58—near-random for a two-class 2:1 split. The validation loss of 0.073 confirms trivial minimisation via constant representations, yet this failure is not detectable from training loss alone; it surfaces only in downstream probe evaluation. 
+
+λ admits a flat optimum across [0 .1, 0.2] . λ= 0.2
+
+is the nominal WG 5-cohort optimum, with λ=0.1 sta-tistically tied ( ∆=0.005 ) and leading on PD/HC AUC (+2.9 pts). λ=0.05 is Pareto-optimal on fall tasks—LTMM 
+
++6.2 pts, SisFall +2.0 pts—at the cost of −4.0 pts on WG 5-cohort, offering a principled alternative for deployments focused exclusively on fall risk. Beyond λ≈0.2, the SI-GReg penalty swamps the prediction objective: λ= 0.5
+
+loses −12.1 pts on WG 5-coh and −7.1 pts on PD/HC. 
+
+6.3 GatedDeltaNet Eigenvalue Range 
+
+The GatedDeltaNet recurrence (eq. (2)) includes a gating scalar βt = σ(Wβ xt). The production configuration per-mits βt ∈ (0 , 2) , so the effective eigenvalue 1−βt ∈ (−1, 1) ,admitting oscillatory modes. Constraining βt ∈ (0 , 1) re-stricts eigenvalues to (0 , 1) , limiting dynamics to pure exponential decay. Grazzi et al. [59] prove that this re-striction prevents linear recurrences from solving state-tracking tasks that require periodic or sign-alternating dynamics. 
+
+Train–probe divergence. Restricting the eigenspec-trum improves pretraining validation loss (0.030 vs. 0.034) while degrading clinical probes: WG 5-cohort −3.2 pts, PD/HC −1.4 pts. Monotone-decay dynamics are more predictable under the JEPA prediction loss but produce a shallower encoder. 
+
+Gait requires oscillatory modes. Gait is a multi-scale periodic process—stride cycles at ≈1 Hz, rotational dynamics at 2–4 Hz, and stride-to-stride variability at 0.1–0.25 Hz—whose latent representation requires sign-alternating recurrent components that exponential decay cannot express. The production model actively exploits the extended eigenspectrum: gate statistics at the final recurrent layer place the mean eigenvalue at ≈ 0 with substantial probability mass below zero, yielding an effec-tive memory horizon of ≈4.1 s—spanning 3–4 complete stride cycles—an emergent timescale shaped by training on gait data rather than imposed as a prior. Restricting to positive eigenvalues removes this capacity and, as a fur-Sonata — Technical Report 12 
+
+ther geometric consequence, produces more curved latent trajectories ( −0.327 vs. −0.297 for production under a mean-pool temporal straightening probe), consistent with Maes et al. [21] ’s finding that JEPA with SIGReg induces latent straightening as a world-model property. Fall de-tection is insensitive to the constraint (0.966 vs. 0.963): acute fall events are dominated by impulsive transients that exponential-decay modes capture adequately. 
+
+6.4 Production Configuration Rationale 
+
+The production model is selected on WG 5-cohort macro-F1 while remaining Pareto-undominated on the other three probes. The linear predictor (table 3) is the primary struc-tural driver; λ= 0.2 is the nominal WG 5-cohort optimum, with λ= 0.1 statistically tied and marginally stronger on PD/HC, giving a flat operating region across [0 .1, 0.2] ;and the full eigenspectrum contributes +3.2 pts on WG 5-cohort at the cost of marginally higher pretraining loss, consistent with the theoretical necessity of oscillatory modes for periodic gait dynamics. Predictor-head variants are reported in table 3. 
+
+## 7 Discussion 
+
+The results bear out the consequences of this design dis-cipline. A representation learned under a latent predic-tive objective produces, in this evaluation, richer latent structure and stronger clinical discriminability than the same architecture trained under a more permissive signal-reconstruction objective on the same data. The impli-cations extend from immediate deployment properties to a longer-horizon clinical monitoring use case that the architecture is particularly well placed to support. Matching capacity to the kinematic degrees of free-dom of pathological gait rather than to dataset volume produces a model that is both fitted to the signal and feasible to deploy—not because these goals are in tension and a compromise was struck, but because in the clin-ical data regime they point to the same scale. At 3.77 million parameters, Sonata is compatible with inference on embedded processors within wearable IMU systems, removing the need to stream raw kinematics to external endpoints. This matters beyond engineering convenience. Gait signatures recorded at clinical-grade sampling rates are sensitive data: they carry identifying biometric infor-mation and, in continuous form, can expose behavioural patterns well beyond locomotion. On-device inference removes the transmission pathway; only compressed, task-specific semantic outputs—a fall probability estimate, a daily gait health aggregate—leave the device, reducing the data-governance overhead associated with continuous off-device transmission and simplifying the data-handling requirements of multi-site studies. The compressed latent state can further be computed at stride-scale latency, en-abling closed-loop applications—freezing-of-gait cueing, prospective fall alerting—that are sensitive to network delay in ambulatory settings. Capacity discipline also has consequences for model auditability. A short computational graph with a struc-tured, physics-motivated latent space is more amenable to the systematic sensitivity analysis that regulated de-ployment pathways demand. The failure mode space is more tractable: when the model’s latent representation is organised around biomechanical dynamics rather than sensor statistics, unexpected predictions are more read-ily traced to clinically interpretable causes. For medical device qualification, this property is not peripheral: it bounds the space of expected behaviour and simplifies the validation evidence required to establish trust. The structural diagnostics—higher effective rank, straighter la-tent trajectories, and stronger dynamical separation—are consistent with the hypothesis that the encoder has in-ternalised a compact model of kinematic dynamics rather than memorising dataset-specific sensor statistics. Taken together, the results suggest that pretraining objective choice is task-aligned rather than universal: latent predic-tion is better matched to clinical state separation under heterogeneity, whereas raw forecasting remains advanta-geous for waveform-faithful reconstruction tasks. 
+
+7.1 Limitations 
+
+The present results establish representation quality under controlled frozen-probe evaluation; they are not claims of clinical deployment readiness, and prospective validation on longitudinal endpoints remains the subject of ongoing work. The principal limitation of the present study is the nar-row admissible sensing regime. Pretraining is restricted to clinically meaningful six-axis inertial measurements with preserved accelerometer and gyroscope channels, from trunk-centred placements where translational and rota-tional kinematics remain directly interpretable. This im-poses a real data ceiling and excludes many otherwise attractive wearable datasets, so the present results should be interpreted as evidence for representation quality in a high-fidelity clinical regime rather than as a demonstration of broad coverage across arbitrary wearable setups. The most consequential implication, however, concerns how the representation can be used once deployed lon-gitudinally. The prevailing approach to tracking disease progression in neurology relies on episodic clinical rating scales that are infrequent, subject to rater variability, and insensitive to the day-to-day fluctuations that affect pa-tient quality of life. Wearable digital biomarkers address the frequency problem, but population-level thresholds remain a blunt instrument for individual monitoring: inter-subject variability in healthy gait is large enough that a patient who has deteriorated meaningfully from their own baseline may still fall within the normal range for their demographic group. The world-model framing offers a principled route through this. Because SIGReg pressure encourages the latent space to organise around slowly varying physiological dynamics rather than sensor-level idiosyncrasies, a patient’s trajectory through that space over time encodes a personal kinematic fingerprint. Devi-ation from that personal trajectory—rather than from a population norm—becomes the monitoring signal, factor-ing out inter-subject variability as baseline structure. A patient whose latent trajectory consistently diverges from the model’s learned expectations may be exhibiting kine-matics the model has not encountered before, making such divergence a potentially sensitive early indicator of disease Sonata — Technical Report 13 
+
+progression without requiring explicit re-training or fine-tuning. If confirmed prospectively, this shifts the basis of longitudinal assessment from population rank to indi-vidual dynamical change, a property that is increasingly necessary for detecting subtle treatment effects in early-stage disease cohorts. The present paper demonstrates the representational properties—structured latent geome-try, clinical discriminability across cohorts, robustness to noise—that would support this use case; its prospective validation remains an explicit target of future work. 
+
+## 8 Conclusion 
+
+Clinical-grade IMU data are small in scale and hard to acquire, and Sonata is designed from that reality upward. Its sensor constraints, lightweight backbone, latent world-model objective, and physics-motivated regularisation are all answers to the same question: how do you learn repre-sentations that remain clinically reliable when data are limited but measurement quality is high? To the best of our knowledge, this is also the first application of world-model pretraining to IMU kinematics—a contribution that is not only architectural but conceptual, reframing the learning problem from reconstructing raw sensor traces to predicting biomechanical state. As the results suggest, that distinction carries through to representation quality: the latent space is better organised, clinical discriminabil-ity is stronger, and robustness to noise degradation is improved relative to a forecasting objective trained on the same corpus. 
+
+Outlook. The immediate next step is to relax the cur-rent single-lumbar assumption and support variable sensor configurations, including multi-IMU setups when clini-cally available, while retaining both accelerometer and gyroscope channels as the minimal clinically informative sensing pair. Doing so is not simply a matter of adding more files: the model must learn to handle differences in sensor geometry, body-site semantics, and inter-sensor coordination without discarding the coupled translational– rotational structure that carries much of the clinically relevant variability. If that extension is successful, it should enlarge the admissible pretraining corpus and al-low the model to learn coordinated whole-body dynam-ics across placements—an important step toward richer kinematic representations for more complex movement disorders. At sufficient data scale, we expect the same world-model objective to support more foundation-model-like behaviour: broader cross-cohort transfer, stronger zero-shot task generalisation, and greater sensitivity to personalised longitudinal endpoints. A general-purpose kinematic world model that transfers robustly across neu-rological conditions, sensor configurations, and acquisition protocols would represent a meaningful advance for clinical trial design in neurology, where the bottleneck is increas-ingly statistical power rather than technology. Reaching that regime is a central aim of the programme. 
+
+## References 
+
+[1] Yifei Li, Pei Liu, Yan Fang, Xiangyuan Wu, Yewei Xie, Zhongzhi Xu, Hao Ren, and Fengshi Jing. Adecade of progress in wearable sensors for fall de-tection (2015–2024): A network-based visualization review. Sensors , 25(7):2205, 2025. doi: 10.3390/ s25072205. [2] Luca Palmerini, Luca Reggi, Tecla Bonci, Silvia Del Din, M. Encarna Micó-Amigo, Francesca Salis, Stefano Bertuletti, Marco Caruso, Andrea Cereatti, Eran Gazit, Anisoara Paraschiv-Ionescu, Abolfazl Soltani, Felix Kluge, Arne Küderle, Martin Ull-rich, Cameron Kirk, Hugo Hiden, Ilaria D’Ascanio, Clint Hansen, Lynn Rochester, Claudia Mazzà, and Lorenzo Chiari. Mobility recorded by wearable de-vices and gold standards: the Mobilise-D procedure for data standardization. Scientific Data , 10:38, 2023. doi: 10.1038/s41597-023-01930-9. [3] Abhimanyu Das, Weihao Kong, Rajat Sen, and Yichen Zhou. A decoder-only foundation model for time-series forecasting. In Proceedings of the 41st In-ternational Conference on Machine Learning (ICML) ,2024. arXiv:2310.10688. [4] Abdul Fatir Ansari, Lorenzo Stella, Caner Turkmen, et al. Chronos: Learning the language of time series. 
+
+Transactions on Machine Learning Research , 2024. arXiv:2403.07815. [5] Yong Liu, Guo Qin, Xiangdong Huang, Jianmin Wang, and Mingsheng Long. Timer-XL: Long-context transformers for unified time series forecast-ing. In Proceedings of the 13th International Con-ference on Learning Representations (ICLR) , 2025. arXiv:2410.04803. [6] Xu Liu, Juncheng Liu, Gerald Woo, Taha Aksu, Yux-uan Liang, Roger Zimmermann, Chenghao Liu, Silvio Savarese, Caiming Xiong, and Doyen Sahoo. Moirai-MoE: Empowering time series foundation models with sparse mixture of experts. arXiv preprint , 2024. arXiv:2410.10469. [7] Ben Cohen, Emaad Khwaja, Youssef Doubli, Stephan Xie, Ameet Talwalkar, et al. This time is different: An observability perspective on time series foundation models. arXiv preprint , 2025. arXiv:2505.14766. [8] Sheng Lin, Kerrie Evans, Dean Hartley, Scott Morri-son, Stuart McDonald, Martin Veidt, and Gui Wang. A review of gait analysis using gyroscopes and inertial measurement units. Sensors , 25(11):3481, 2025. doi: 10.3390/s25113481. [9] Steven T. Moore, Hamish G. MacDougall, and William G. Ondo. Ambulatory monitoring of freez-ing of gait in Parkinson’s disease. Journal of Neuroscience Methods , 167(2):340–348, 2008. doi: 10.1016/j.jneumeth.2007.08.023. [10] Marc Bächlin, Meir Plotnik, Daniel Roggen, In-bal Maidan, Jeffrey M. Hausdorff, Nir Giladi, and Gerhard Tröster. Wearable assistant for Parkin-son’s disease patients with the freezing of gait symp-tom. IEEE Transactions on Information Tech-Sonata — Technical Report 14 
+
+nology in Biomedicine , 14(2):436–442, 2010. doi: 10.1109/TITB.2009.2036165. [11] Charalampos Sotirakis, Maksymilian A. Brzezicki, Salil Patel, Niall Conway, James J. FitzGerald, and Chrystalina A. Antoniades. Predicting future fallers in Parkinson’s disease using kinematic data over a period of 5 years. npj Digital Medicine , 7:345, 2024. doi: 10.1038/s41746-024-01311-5. [12] Jeffrey M. Hausdorff. Gait dynamics, fractals and falls: finding meaning in the stride-to-stride fluctua-tions of human walking. Human Movement Science ,26(4):555–589, 2007. doi: 10.1016/j.humov.2007.05. 003. [13] Wiebren Zijlstra and At L. Hof. Assessment of spatio-temporal gait parameters from trunk accelerations during human walking. Gait & Posture , 18(2):1–10, 2003. doi: 10.1016/S0966-6362(02)00190-X. [14] Rolf Moe-Nilssen and Jorunn Lægdheim Helbostad. Estimation of gait cycle characteristics by trunk ac-celerometry. Journal of Biomechanics , 37(1):121–126, 2004. doi: 10.1016/S0021-9290(03)00233-1. [15] Rolf Moe-Nilssen. A new method for evaluating motor control in gait under real-life environmental condi-tions. Part 1: The instrument. Clinical Biomechanics ,13(4):320–327, 1998. doi: 10.1016/S0268-0033(98) 00089-8. [16] Mubarak Patel, Aleksandar Pavic, and Victoria A. Goodwin. Wearable inertial sensors to measure gait and posture characteristic differences in older adult fallers and non-fallers: a scoping review. Gait & Posture , 76:110–121, 2020. doi: 10.1016/j.gaitpost. 2019.10.039. [17] Anthony J. Anderson, David Eguren, Michael A. Gon-zalez, Michael Caiola, Naima Khan, Sophia Watkin-son, Isabella Zuccaroli, Siegfried S. Hirczy, Cyrus P. Zabetian, Kelly Mills, Emile Moukheiber, Laure-ano Moro-Velazquez, Najim Dehak, Chelsie Mot-ley, Brittney C. Muir, Ankur Butala, and Kim-berly Kontson. WearGait-PD: An open-access wear-ables dataset for gait in Parkinson’s disease and age-matched controls. Scientific Data , 13:440, 2026. doi: 10.1038/s41597-026-06806-2. [18] Huatao Xu, Pengfei Zhou, Rui Tan, Mo Li, and Guobin Shen. LIMU-BERT: Unleashing the poten-tial of unlabeled data for IMU sensing applications. In Proceedings of the 19th ACM Conference on Em-bedded Networked Sensor Systems (SenSys) , pages 208–221, 2021. doi: 10.1145/3485730.3485937. [19] Harish Haresamudram, Irfan Essa, and Thomas Plötz. Contrastive predictive coding for human activity recognition. Proceedings of the ACM on Interac-tive, Mobile, Wearable and Ubiquitous Technologies ,5(2):1–26, 2021. doi: 10.1145/3463506. [20] Huatao Xu, Pengfei Zhou, Rui Tan, and Mo Li. Prac-tically adopting human activity recognition. In Pro-ceedings of the 29th Annual International Conference on Mobile Computing and Networking (MobiCom) ,2023. doi: 10.1145/3570361.3613299. [21] Lucas Maes, Quentin Le Lidec, Damien Scieur, Yann LeCun, and Randall Balestriero. LeWorldModel: Sta-ble end-to-end joint-embedding predictive architec-ture from pixels. arXiv preprint arXiv:2603.19312 ,2026. [22] Saarang Panchavati, Uddhav Panchavati, Corey Arnold, and William Speier. Laya: A LeJEPA ap-proach to EEG via latent prediction over reconstruc-tion. arXiv preprint arXiv:2603.16281 , 2026. [23] Maxwell A. Xu, Jaya Narain, Gregory Darnell, Har-aldur Hallgrimsson, Hyewon Jeong, Darren Forde, Richard Fineman, Karthik J. Raghuram, James M. Rehg, and Shirley Ren. RelCon: Relative contrastive learning for a motion foundation model for wearable data. In International Conference on Learning Rep-resentations (ICLR) , 2025. [24] Girish Narayanswamy, Xin Liu, Kumar Ayush, Yuzhe Yang, Xuhai Xu, Shun Liao, Jake Garrison, Shyam Tailor, Jake Sunshine, Yun Liu, Tim Althoff, Shrikanth Narayanan, Pushmeet Kohli, Jiening Zhan, Mark Malhotra, Shwetak Patel, Samy Abdel-Ghaffar, and Daniel McDuff. Scaling wearable foundation models. In International Conference on Learning Representations (ICLR) , 2025. [25] Yunfei Luo, Yuliang Chen, Asif Salekin, and Tauhidur Rahman. Toward foundation model for multivari-ate wearable sensing of physiological signals. arXiv preprint arXiv:2412.09758 , 2025. [26] Yuwei Zhang, Kumar Ayush, Siyuan Qiao, A. Ali Heydari, Girish Narayanswamy, Maxwell A. Xu, Ahmed A. Metwally, Shawn Xu, Jake Garrison, Tim Althoff, Xuhai Xu, Yun Liu, Pushmeet Kohli, Jien-ing Zhan, Mark Malhotra, Shwetak Patel, Cecilia Mascolo, Xin Liu, Daniel McDuff, and Yuzhe Yang. SensorLM: Learning the language of wearable sensors. 
+
+arXiv preprint arXiv:2506.09108 , 2025. [27] Salar Abbaspourazad, Anshuman Mishra, Joseph Fu-toma, Andrew C Miller, and Ian Shapiro. Wearable accelerometer foundation models for health via knowl-edge distillation. arXiv preprint arXiv:2412.11276 ,2025. [28] Arnav M. Das, Chi Ian Tang, Fahim Kawsar, and Mohammad Malekzadeh. PRimuS: Pretraining IMU encoders with multimodal self-supervision. In Pro-ceedings of the 2025 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP) ,2025. doi: 10.1109/ICASSP49660.2025.10888874. arXiv:2411.15127. [29] Xiyuan Zhang, Diyan Teng, Ranak Roy Chowd-hury, Shuheng Li, Dezhi Hong, Rajesh K. Gupta, Sonata — Technical Report 15 
+
+and Jingbo Shang. UniMTS: Unified pre-training for motion time series. In Advances in Neural Information Processing Systems (NeurIPS) , 2024. arXiv:2410.19818. [30] Simon A. Lee, Cyrus Tanade, Hao Zhou, Juhyeon Lee, Megha Thukral, Minji Han, Rachel Choi, Md Saz-zad Hissain Khan, Baiying Lu, Migyeong Gwak, Mehrab Bin Morshed, Viswam Nathan, Md Mah-bubur Rahman, Li Zhu, Subramaniam Venkatra-man, and Sharanya Arcot Desai. HiMAE: Hierarchi-cal masked autoencoders discover resolution-specific structure in wearable time series. arXiv preprint arXiv:2510.25785 , 2025. [31] Mohammad Areeb Qazi, Maryam Nadeem, and Mo-hammad Yaqub. Beyond generative AI: World models for clinical prediction, counterfactuals, and planning. In NeurIPS 2025 Workshop on Bridging Language, Agent, and World Models for Reasoning and Planning ,2025. arXiv:2511.16333. [32] Alif Munim, Adibvafa Fallahpour, River Jiang, Barry Rubin, Jeremy Slivnick, Heather Whitney, Teodora Szasz, Wendy Tsang, and Bo Wang. EchoJEPA: A latent predictive foundation model for echocardiogra-phy. arXiv preprint arXiv:2602.02603 , 2026. [33] Qianyi Xu, Gousia Habib, Feng Wu, Dilruk Per-era, and Mengling Feng. medDreamer: Model-based reinforcement learning with latent imagination on complex EHRs for clinical decision support. arXiv preprint arXiv:2505.19785 , 2025. [34] Tianxingjian Ding, Yuanhao Zou, Chen Chen, Mubarak Shah, and Yu Tian. CLARITY: Medi-cal world model for guiding treatment decisions by modeling context-aware disease trajectories in latent space. arXiv preprint arXiv:2512.08029 , 2025. [35] Erik Xie, Wyatt Chang, Raquel Martinez, and Bran-don Ballinger. JETS: A self-supervised joint em-bedding time series foundation model for behavioral data in healthcare. In NeurIPS 2025 Workshop on Learning from Time-Series for Health (TS4H) , 2025. [36] Yenho Chen, Maxwell A. Xu, James M. Rehg, and Christopher J. Rozell. Self-supervised dynamical system representations for physiological time-series. 
+
+arXiv preprint arXiv:2512.00239 , 2025. Under review at ICLR 2026. [37] Imanol Schlag, Kazuki Irie, and Jürgen Schmidhuber. Linear transformers are secretly fast weight program-mers. In Proceedings of the 38th International Confer-ence on Machine Learning (ICML) , pages 9355–9366. PMLR, 2021. [38] Songlin Yang, Bailin Wang, Yu Zhang, Yikang Shen, and Yoon Kim. Parallelizing linear transformers with the delta rule over sequence length. In Advances in Neural Information Processing Systems , volume 37, 2024. [39] Songlin Yang, Jan Kautz, and Ali Hatamizadeh. Gated delta networks: Improving Mamba2 with delta rule. In International Conference on Learning Repre-sentations , 2025. [40] Tri Dao and Albert Gu. Transformers are SSMs: Generalized models and efficient algorithms through structured state space duality. In International Conference on Machine Learning (ICML) , 2024. arXiv:2405.21060. [41] Dustin Wang, Rui-Jie Zhu, Steven Abreu, Yong Shan, Taylor Kergan, Yuqi Pan, Yuhong Chou, Zheng Li, Ge Zhang, Wenhao Huang, and Jason Eshraghian. A systematic analysis of hybrid linear attention. arXiv preprint arXiv:2507.06457 , 2025. [42] Kimi Team. Kimi linear: An expressive, efficient attention architecture. Technical report, MoonshotAI, 2025. [43] William Merrill, Yanhong Li, Tyler Romero, Anej Svete, Caia Costello, Pradeep Dasigi, Dirk Groen-eveld, David Heineman, Bailey Kuehl, Nathan Lam-bert, Chuan Li, Kyle Lo, Saumya Malik, DJ Matusz, Benjamin Minixhofer, Jacob Morrison, Luca Soldaini, Finbarr Timbers, Pete Walsh, Noah A. Smith, Han-naneh Hajishirzi, and Ashish Sabharwal. OLMo hybrid: From theory to practice and back. arXiv preprint arXiv:2604.03444 , 2026. [44] Yingfa Chen, Zhen Leng Thai, Zihan Zhou, Zhu Zhang, Xingyu Shen, Shuo Wang, Chaojun Xiao, Xu Han, and Zhiyuan Liu. Hybrid linear attention done right: Efficient distillation and effective archi-tectures for extremely long contexts. arXiv preprint arXiv:2601.22156 , 2026. [45] Julien Siems, Timur Carstensen, Arber Zela, Frank Hutter, Massimiliano Pontil, and Riccardo Grazzi. DeltaProduct: Improving state-tracking in linear RNNs via householder products. In Advances in Neural Information Processing Systems , volume 38, 2025. [46] Jingdi Lei, Di Zhang, and Soujanya Poria. Error-free linear attention is a free lunch: Exact solu-tion from continuous-time dynamics. arXiv preprint arXiv:2512.12602 , 2025. [47] Xinghong Fu, Yanhong Li, Georgios Papaioannou, and Yoon Kim. Reverso: Efficient time series founda-tion models for zero-shot forecasting. arXiv preprint arXiv:2602.17634 , 2026. [48] Cyril Voisard, Rémi Barrois, Nicolas de l’Escalopier, Nicolas Vayatis, Pierre-Paul Vidal, Alain Yelnik, Damien Ricard, and Laurent Oudre. A dataset of clin-ical gait signals with wearable sensors from healthy, neurological, and orthopedic cohorts. Scientific Data ,12:1674, 2025. doi: 10.1038/s41597-025-05959-w. [49] Aner Weiss, Marina Brozgol, Moran Dorfman, Talia Herman, Shirley Shema, Nir Giladi, and Jeffrey M. Sonata — Technical Report 16 
+
+Hausdorff. Does the evaluation of gait quality dur-ing daily life provide insight into fall risk? Anovel approach using 3-day accelerometer record-ings. Neurorehabilitation and Neural Repair , 27(8): 742–752, 2013. doi: 10.1177/1545968313491004. Data available as the Long-Term Movement Monitoring (LTMM) database on PhysioNet, https://doi.org/ 10.13026/C2S59C .[50] Angela Sucerquia, José David López, and Jesús Fran-cisco Vargas-Bonilla. SisFall: A fall and movement dataset. Sensors , 17(1):198, 2017. doi: 10.3390/ s17010198. [51] Davide Anguita, Alessandro Ghio, Luca Oneto, Xavier Parra, and Jorge Luis Reyes-Ortiz. A public domain dataset for human activity recognition using smartphones. In 21st European Symposium on Artifi-cial Neural Networks, Computational Intelligence and Machine Learning (ESANN) , pages 437–442, Bruges, Belgium, 2013. [52] Eduardo Casilari, José Antonio Santoyo-Ramón, and José Manuel Cano-García. UMAFall: A multisensor dataset for the research on automatic fall detection. 
+
+Procedia Computer Science , 110:32–39, 2017. doi: 10.1016/j.procs.2017.06.110. [53] Majd Saleh, Manuel Abbas, and Régine Le Bouquin Jeannès. FallAllD: An open dataset of human falls and activities of daily living for classical and deep learning applications. IEEE Sensors Journal , 21(2): 1849–1858, 2021. doi: 10.1109/JSEN.2020.3018335. [54] Mi Zhang and Alexander A. Sawchuk. USC-HAD: A daily activity dataset for ubiquitous activity recog-nition using wearable sensors. In Proceedings of the 2012 ACM Conference on Ubiquitous Comput-ing (UbiComp), Workshop on Situation, Activity and Goal Awareness (SAGAware) , pages 1036–1043, Pitts-burgh, PA, USA, 2012. ACM. doi: 10.1145/2370216. 2370438. [55] Ge Wu and Peter R. Cavanagh. ISB recommendations for standardization in the reporting of kinematic data. 
+
+Journal of Biomechanics , 28(10):1257–1261, 1995. doi: 10.1016/0021-9290(95)00017-C. [56] Pauli Virtanen, Ralf Gommers, Travis E. Oliphant, et al. SciPy 1.0: Fundamental algorithms for scientific computing in Python. Nature Methods , 17(3):261– 272, 2020. doi: 10.1038/s41592-019-0686-2. [57] Terry T. Um, Franz M. J. Pfister, Daniel Pichler, Satoshi Endo, Muriel Lang, Sandra Hirche, Urban Fietzek, and Dana Kulić. Data augmentation of wear-able sensor data for Parkinson’s disease monitoring using convolutional neural networks. In Proceedings of the 19th ACM International Conference on Multi-modal Interaction (ICMI) , pages 216–220, 2017. doi: 10.1145/3136755.3136817. [58] Brian Kenji Iwana and Seiichi Uchida. An empirical survey of data augmentation for time series classi-fication with neural networks. PLOS One , 16(7): e0254841, 2021. doi: 10.1371/journal.pone.0254841. [59] Riccardo Grazzi, Julien Siems, Arber Zela, Jörg K. H. Franke, Frank Hutter, and Massimiliano Pontil. Un-locking state-tracking in linear RNNs through neg-ative eigenvalues. In International Conference on Learning Representations , 2025. [60] Randall Balestriero and Yann LeCun. LeJEPA: Prov-able and scalable self-supervised learning without heuristics. arXiv preprint arXiv:2511.08544 , 2025. [61] Olivier Roy and Martin Vetterli. The effective rank: A measure of effective dimensionality. In Proceedings of the 15th European Signal Processing Conference (EUSIPCO) , pages 606–610, 2007. [62] Attila Reiss and Didier Stricker. Introducing a new benchmarked dataset for activity monitoring. In 2012 16th International Symposium on Wearable Comput-ers , pages 108–109, Newcastle, UK, 2012. IEEE. doi: 10.1109/ISWC.2012.13. 
+
+## A Evaluation Protocol 
+
+All evaluations operate on a frozen encoder unless explic-itly noted. During pretraining, the objective is defined on the terminal recurrent readout ST from eq. (4). All downstream probes, however, use the mean-pooled final-MLP embedding e from eq. (5); the terminal recurrent state is not exposed directly at evaluation time. For the primary comparison, both LIN and MAE use the same encoder and the same downstream frozen-probe interface; they differ only in pretraining head and su-pervisory target. LIN predicts the latent state of the next window with a projector, linear predictor, and SI-GReg regularizer, whereas MAE predicts the final 48 raw samples from a 464-sample observed prefix through the standard cross-attention forecasting decoder under an L1 loss. Unless a dataset-prescribed split is required, subject-level probes use leave-one-subject-out or subject-stratified cross-validation; window-level probes are reserved for tasks where temporal resolution is part of the endpoint itself, such as fall detection or forecasting. Only PAMAP2 is fully withheld from pretraining, so the rows touching PAMAP2 provide the clearest OOD evidence in the first-pass com-parison. 
+
+A.1 Datasets and Shared Evaluation Setup 
+
+The battery spans six dataset families chosen to cover pathology discrimination, fall risk, activity transfer, and physical decoding. Mobilise-D TVS provides the primary multi-cohort clinical benchmark and the noise-robustness / supervised-ceiling evaluations. WearGait-PD supports both binary and fine-grained Parkinsonian discrimination, as well as post-hoc physical decoding. LTMM contributes prospective fall-risk prediction from laboratory walking trials. Voisard broadens the pathology landscape to seven clinical gait conditions. SisFall enables both cross-age fall Sonata — Technical Report 17 
+
+Table 5: Evaluation battery used to assess frozen encoder representations. LOOCV denotes leave-one-subject-out cross-validation; AWGN denotes additive white Gaussian noise. Scope indicates whether a probe is planned for all predictor arms or only for the primary shared-backbone LIN /MAE comparison, where MAE denotes the raw-signal forecasting baseline trained with mean absolute error.                                                                             
+
+> ID Probe Dataset Protocol Primary metric Scope
+> E1 PD vs. HC discrimination WearGait-PD 5-fold CV AUC-ROC / Binary F1 all E2 Five-cohort gait subtype discrimination WearGait-PD 5-fold CV Macro-F1 all E3 PD vs. HA discrimination Mobilise-D TVS LOOCV AUC-ROC all E4 Prospective fall-risk discrimination LTMM 5-fold CV AUC-ROC all E5 Seven-condition gait discrimination Voisard LOOCV Macro-F1 all E6 Label efficiency PAMAP2 (OOD) fixed split + 5 seeds Accuracy @ {1, 5, 10, 20, 50}% predictor abla-tion E7 Noise robustness Mobilise-D TVS LOOCV + AWGN Macro-F1 (clean, 10 dB) all E8 Supervised upper bound Mobilise-D TVS LOOCV finetune Macro-F1 planned E9 Cross-age fall detection SisFall SA →SE fixed split AUC-ROC / Binary F1 all E10 Fall direction classification SisFall LOOCV Macro-F1 all E11 Cross-dataset HAR transfer UCI HAR →PAMAP2 (target OOD) fixed zero-shot Macro-F1 all E12 Post-hoc physical decoder WearGait-PD 80/20 split Val MAE all E13 Structural diagnostics WearGait-PD / Mobilise-D TVS activation sweep Rank / dynamics H / straightness all E14 Horizon forecast UCI HAR 80/20 split Forecast MAE @ h=48 all
+
+detection and fall-direction classification. PAMAP2 [ 62 ]and UCI HAR support label-efficiency and cross-dataset transfer analyses. All inputs are harmonized to a common representation: 6-axis trunk or waist IMU signals, resampled or down-sampled to 100 Hz, windowed to 512 samples (5.12 s), and scaled using fixed physical sensor ranges rather than per-window normalization. This standardization keeps the evaluation focused on representational quality rather than dataset-specific preprocessing variance. 
+
+A.2 Clinical Discriminability: E1–E5 E1: WearGait-PD binary discrimination. This probe tests whether frozen embeddings separate Parkin-son’s disease from healthy controls under 5-fold subject-stratified cross-validation. The primary metric is AUC-ROC, with binary F1 and accuracy as supporting mea-sures. A paired 6-axis versus 3-axis analysis isolates the contribution of gyroscope information. 
+
+E2: WearGait-PD five-cohort discrimination. 
+
+This extends the previous task to finer-grained cohort separation, testing whether the representation captures intra-pathology structure rather than only broad disease-control differences. Macro-F1 is the primary metric be-cause class balance is uneven and per-class performance matters. 
+
+E3: Mobilise-D PD versus healthy adults. This is a cross-dataset replication of Parkinsonian discrimination under a standardized laboratory protocol. LOOCV is used because of the modest cohort size, and AUC-ROC is again the headline metric. 
+
+E4: LTMM prospective fall risk. Unlike the pathol-ogy tasks, this probe asks whether a single laboratory gait assessment contains latent evidence of future fall risk. Binary F1 and balanced accuracy are emphasized because class balance and recall of future fallers are clinically meaningful. 
+
+E5: Voisard seven-condition discrimination. This is the broadest pathology benchmark in the battery, spanning neurological, orthopaedic, and healthy cohorts. Strong macro-F1 here would support the claim that the la-tent space captures clinically general gait structure rather than a single disease signature. 
+
+A.3 Data-Efficiency and Robustness: E6–E8 E6: Label efficiency on PAMAP2. The frozen en-coder is paired with logistic-regression probes trained on progressively smaller fractions of labeled data. At each fraction, x% of training windows per class are subsam-pled, the probe is fit, and accuracy is evaluated on a fixed held-out test set of two subjects (956 windows). This procedure is repeated five times with different random seeds; the reported ± values are standard deviations over those five runs. We report accuracy at 1%, 5%, 10%, 20%, and 50% label fractions directly, rather than collapsing these points into a single AUC-LEC summary, because these are the exact completed outputs available for the first sweep. 
+
+E7: Noise robustness on Mobilise-D TVS. Addi-tive white Gaussian noise is injected at test time while probes remain trained on clean data. The present com-parison reports macro-F1 in the clean condition and at 10 dB directly, rather than a derived degradation statistic, so that the appendix matches the completed table entries. 
+
+E8: Supervised upper bound. The final backbone block and a lightweight head are partially fine-tuned under LOOCV to estimate the remaining headroom above the frozen representation. The gap between this ceiling and the frozen-probe result serves as a compact measure of how much task-relevant structure pretraining has already captured. 
+
+A.4 Generalisation and Transfer: E9–E11 E9: Cross-age fall detection. Probes are trained on young-adult fall windows and evaluated on elderly subjects, measuring whether fall kinematics transfer across age groups. This is a strict train/test split rather than cross-validation. 
+
+E10: Fall direction classification. This probe tests whether the latent space preserves directional geometry of Sonata — Technical Report 18 
+
+falls, distinguishing forward, backward, and lateral events. Macro-F1 is the primary summary because all directions are clinically meaningful. 
+
+E11: Cross-dataset HAR transfer. A probe fit on UCI HAR is applied without retraining to PAMAP2 after harmonizing the shared activity label set. This evaluates whether activity-class structure persists across datasets, devices, and recording conditions. 
+
+A.5 Representation Quality and Structure: E12– E14 E12: Post-hoc physical decoder. A shallow decoder attempts to recover coarse physical observables from frozen embeddings, including mean acceleration and RMS an-gular velocity. In the current table we report validation MAE directly, reserving any normalization by a persis-tence baseline for a later summary pass. 
+
+E13: Layer-wise effective rank. Activation matrices extracted from intermediate layers are analyzed for effec-tive rank and complemented by latent-dynamics separa-tion and latent-trajectory straightness diagnostics. Taken together, these probes are intended to detect collapse, bottlenecking, or overcompression across the depth and dynamics of the encoder. 
+
+E14: Horizon forecast. Frozen representations are used as features for supervised forecasting at h=48 . Fore-cast MAE indicates how much short-term dynamical infor-mation survives in the learned state; broader multi-horizon summaries can be restored once the full sweep is complete. 
+
+A.6 How the Main Text Uses the Battery 
+
+The main text does not need to report every probe at equal depth. Section 5 foregrounds two controlled comparisons: the principal shared-backbone LIN versus MAE objective comparison (Section 5.1), and a predictor-head ablation across four predictor classes of increasing expressivity (Section 5.3). The appendix then serves as the exhaustive reference for what each probe means, why it matters, and how to interpret wins, losses, or mixed results. 
+
+## B Mathematical Notation 
+
+Table 6: Production configuration of Sonata .
+
+Parameter Symbol Value Context / signal length L / L data 512 / 464 
+
+Forecast horizon p 48 Input channels C 6Embedding dim d 128 FFN hidden dim dffn 768 GDN heads H 4Head / value dim dk / d v 32 / 256 
+
+Layer stack — [C,C,C,G] x3 
+
+Parameters — ≈3.77 M
+
+Table 7: Primary mathematical notation used in the 
+
+Sonata architecture and objective formulation. 
+
+Symbol Description 
+
+Dimensions & Indices 
+
+B, L, d Batch size, sequence length ( 512 ), embedding dimension 
+
+p Forecast horizon ( 48 steps) 
+
+C Input/output signal channels (e.g., 6 for IMU) 
+
+Data & Representations 
+
+Xt Raw sensor context window at time t
+
+H(j) Hidden representation at the j-th backbone layer 
+
+St Recurrent associative state / latent state 
+
+ˆSt+1 Predicted target latent state for the next win-dow 
+
+ˆY Kinematic forecast output 
+
+Architectural Components 
+
+qt, kt, vt Queries, normalized keys, and values (GDN) 
+
+gt, β t Content-dependent decay gate and update rate (GDN) 
+
+πϕ Expand–compress MLP projector 
+
+Wp Lightweight linear predictor 
+
+Objective Function 
+
+LLWM Total Latent World Model objective 
+
+Lpred Mean squared error prediction loss 
+
+LSIGReg Sketched Isotropic Gaussian Regularization penalty 
+
+λ Regularization weight trade-off

@@ -1,0 +1,2935 @@
+Title: Safety-Critical Contextual Control via Online Riemannian Optimization with World Models
+
+URL Source: https://arxiv.org/pdf/2604.19639v1
+
+Published Time: Wed, 22 Apr 2026 01:30:40 GMT
+
+Number of Pages: 20
+
+Markdown Content:
+> 1
+
+# Safety-Critical Contextual Control via Online Riemannian Optimization with World Models 
+
+Tongxin Li, Member, IEEE 
+
+Abstract —Modern world models are becoming too complex to admit explicit dynamical descriptions. We study safety-critical contextual control , where a Planner must optimize a task objective using only feasibility samples from a black-box Simulator, conditioned on a context signal ξt . We develop a sample-based Penalized Predictive Control (PPC) framework grounded in online Riemannian optimization, in which the Simulator compresses the feasibility manifold into a score-based density ˆp(u | ξt ) that endows the action space with a Riemannian geometry guiding the Planner’s gradient descent. The barrier curvature κ(ξt ), the minimum curvature of the conditional log-density − ln ˆ p(· | ξt ),governs both convergence rate and safety margin, replacing the Lipschitz constant of the unknown dynamics. Our main result (Theorem 4) is a contextual safety bound showing that the distance from the true feasibility manifold is controlled by the score estimation error and a ratio that depends on κ(ξt ), both of which improve with richer context. Simulations on a dynamic navigation task confirm that contextual PPC substantially outperforms marginal and frozen density models, with the advantage growing after environment shifts. 
+
+I. I NTRODUCTION 
+
+# THE increasing complexity of modern world models is fundamentally changing the interface between planning and control. Neural physics simulators [1], video-generation models [2], and foundation-model-based world models [3], [4] can predict the consequences of actions with remarkable fidelity, yet their internal representations (multi-modal embeddings, high-dimensional latent states, or raw image sequences) are far too complex to admit explicit and known dynamical descriptions of the form xt+1 = ft (xt , ut ). These black-box world models offer a compelling advantage over classical model-based control because they capture richer dynamics than any tractable closed-form approximation, generalize across environments without manual re-derivation, and directly leverage the rapid advances in foundation models and learned simulators. However, a controller that must guarantee safety while interacting with such a black-box world model faces a fundamental challenge. It cannot write down the dynamics, cannot form the constraint Jacobians that classical Model Predictive Control (MPC) requires, and cannot construct the explicit barrier functions used in safety-critical control (Figure 1). We address this challenge by developing a framework for safe control through black-box world-model samples. The controller optimizes an objective over a feasibility set whose geometry is accessible only through feasibility samples drawn from the world model, rather than through an explicit dynamics model. The world model encapsulates all complexity of the physical environment, and the controller’s access to safety-relevant information is mediated entirely by a learned density signal that compresses the simulator’s knowledge of the feasibility manifold. This architecture separates what is feasible 
+
+(determined by the black-box world model) from what is desirable (the controller’s objective), and the score function of the learned density provides a differentiable interface between the two. This separation is not merely an engineering convenience; it is an inevitability as world models become richer and more expressive. The architecture arises naturally in robotics with visual world models [3], [5], where a planner cannot extract closed-form obstacle constraints from a neural simulator’s latent state. It appears equally in multi-agent energy dispatch [6], [7], where an aggregator coordinates distributed resources whose local feasibility sets are private and time-varying, so the aggregator must plan using only sampled feasibility signals rather than explicit local models, and in autonomous driving [8], where a predictive model simulates traffic scenarios but its internal state is not available to the planner in closed form. In each scenario, the feasibility manifold Mt is a time-varying, non-convex subset of the decision space whose geometry is determined by the world model’s internal state. The controller must optimize over Mt without an explicit dynamics model, learning the manifold structure from online samples while guaranteeing safety at every step. This paper addresses the following question. Can a controller guarantee safety when its only access to the constraint geometry is through black-box world-model samples? 
+
+We answer affirmatively. Our approach treats the world model as a Simulator that compresses the geometry of the time-varying feasibility manifold into a score-based density signal, which a Planner then uses for safe gradient-based optimization. When the Planner’s observation is a context ξt , a fixed-dimensional embedding of rich sensory data rather than the Simulator’s full state, we estimate a conditional feasibility density ˆp(u | ξt ) so that the learned manifold tracks changes in the environment that are reflected in ξt . This perspective builds on classical connections between control and probabilistic inference [9], [10] and extends recent score-based manifold optimization [11] to the online, safety-critical setting. 
+
+1) Model-Free and Simulator-Based Control: Classical MPC [12] and its robust variants [13], [14] require an explicit dynamics model to construct constraints and compute Jacobians. Data-driven MPC [15]–[17] learns surrogate models but still assumes the learned model is amenable to explicit constraint formulation. Recent work on predictive safety filters [18] and robust adaptive NMPC [19] further improves constraint handling, yet remains tied to an explicit or partially identified                    
+
+> arXiv:2604.19639v1 [eess.SY] 21 Apr 2026 2
+> Environment
+> xt+1=ft(xt,ut)
+> Explicit Model ft
+> Jacobians
+> ∇uft
+> Controller min c(u)
+> CBF-QP Filter
+> xt∇h
+> ut
+> (a)
+> Environment Black-Box Simulator
+> KDE ˆpt,ˆst
+> Planner min F(u)
+> Safety Filter
+> xtsamples ˆst,βtuppc
+> ut
+> context ξt
+> (b)
+
+Fig. 1: Two closed-loop control paradigms. (a) Classical model-based control requires an explicit dynamics model ft to form constraint Jacobians and a CBF-QP safety filter that projects the controller’s action onto the safe set. (b) The contextual control framework replaces the explicit model with a black-box Simulator that produces feasibility samples; a KDE compresses them into a score signal ˆst , which the Planner uses for gradient-based optimization. A safety filter (score-ascent retraction) projects the candidate uppc onto ˆMα 
+
+> t
+
+if needed. The Planner also receives a context signal ξt from the environment (dashed arrow), enabling conditional density estimation ˆ p(u | ξt ). See Figure 3 for the detailed per-step information flow. plant model. The Cross-Entropy Method (CEM) [20] is a popular sampling-based alternative that draws candidate actions from a parametric proposal, evaluates them against a model, and refits the proposal to an elite subset. CEM-MPC variants [21], [22] combine CEM with learned dynamics models, but provide no safety certificates and scale poorly with action dimension. The control-as-inference viewpoint [9], [10] and rate-distortion theory [23] provide a principled way to trade off performance and information cost, but existing instantiations assume known dynamics. Our framework makes no such assumption. The world model is accessed purely through feasibility samples, and the information-theoretic penalty emerges as the Lagrange multiplier of the sampling capacity, providing a mechanism for adaptive trust calibration unavailable in model-based or sampling-based approaches. 
+
+2) Riemannian Optimization and Density Models: Score matching [24], [25] estimates the gradient of the log-density without computing the normalizing constant. Classical Rie-mannian optimization [26], [27] requires explicit manifold descriptions, but recent work [11] shows that score functions of smoothed densities can recover the manifold projection and tangent-space operations needed for optimization in a static, offline regime. Normalizing Flows [28], [29] have been applied to trajectory forecasting [8] and policy parameteriza-tion [30], while the information-aggregation framework of [6], [7] encodes distributed constraint geometry into a feasibility density. None of these works addresses online score estimation with provable safety guarantees. Our framework fills this gap by extending density-based manifold operations to the online setting where the manifold is unknown and time-varying, and provides the first safety certificates for score-based feasibility learned from black-box samples. 
+
+3) Data-Driven Safety Certificates: Control Barrier Func-tions (CBFs) [31]–[33] parameterize safe sets as superlevel sets 
+
+{x : h(x) ≥ 0} of learned functions. Recent extensions address parametric uncertainty [34] and enable purely data-driven CBF synthesis from input-output measurements [35], [36]. These methods suffer from structural bias : maintaining tractability requires restricting h to specific function classes (polynomials, GPs [37]), which under-approximate complex, non-convex geometries. GP-based approaches additionally scale poorly with state dimension due to cubic kernel-matrix inversion. Our score-based approach can represent arbitrary manifold topologies without structural assumptions on h, scales favorably in the control dimension, and refines its safety certificate online as samples accumulate. 
+
+Our contributions are three-fold. 
+
+First , we formalize contextual control with black-box world models as a new problem class (Section II) in which the controller has no access to the dynamics ft and receives only feasibility samples from a black-box Simulator, yet must certify safety at every step. To our knowledge, this is the first framework that unifies black-box simulator access, online density estimation, and provable safety guarantees under a single formulation. 
+
+Second , we develop a sample-based instantiation of Penalized Predictive Control (PPC) [6] for the contextual black-box setting. We derive a rate-distortion formulation (Proposition 1) that yields the penalty weight β as the Lagrange multiplier of the sampling capacity, together with an online score-estimation pipeline that replaces the oracle density with a learned estimate. The resulting controller uses the score of the learned density as its sole interface to the constraint geometry, replacing the explicit Jacobians and barrier functions of classical MPC. A central novelty is that the barrier curvature κ, the minimum eigenvalue of the Fisher information I ˆp, plays the role that the dynamics Lipschitz constant plays in standard safety-critical control. Because κ is a property of the learned density rather than the unknown dynamics, it can be estimated from data and used to set β adaptively, which is impossible in classical barrier-function methods. 
+
+Third , we establish a sequence of convergence and safety guarantees, each building on the preceding one. Theorem 1 shows that PPC iterates contract geometrically at a rate set by the barrier curvature κ, and Proposition 2 identifies the critical stiffness above which the equilibrium is guaranteed to lie inside the learned manifold. When the manifold drifts, Theorem 2 bounds the dynamic regret in terms of the score 3
+
+variation VT , revealing a dual role of κ, namely it speeds contraction and simultaneously dampens sensitivity to manifold drift. Theorem 3 then bounds the score estimation error at rate 
+
+O(N−2/(m+4)), which feeds into Theorem 4 to yield a safety bound whose residual Gc/(β κ ) depends on the learned den-sity’s curvature rather than a Lipschitz constant of the unknown dynamics. Finally, Proposition 3 derives, via a variational-inference argument, a mixture-Hessian identity showing that marginalizing out ξt subtracts a posterior-score covariance from the learned curvature, and Theorem 5 uses this to give a formal safety-guarantee gap of at least Gc σ 2 
+
+> t
+
+/(βt κ(ξt ) κmarg ) between the Theorem 4 residuals of the context-aware and context-blind Planners whenever the current context is identifiable from the action, with σ 2 
+
+> t
+
+the minimum eigenvalue of the posterior conditional-score covariance. To our knowledge, this is the first formal characterization of when and by how much context improves safety in a black-box control setting. II. P ROBLEM FORMULATION 
+
+We consider an architecture composed of a Planner responsi-ble for optimizing a global objective and a black-box Simulator 
+
+(world model) that encapsulates the physical environment. The system evolves according to time-varying nonlinear dynamics: 
+
+xt+1 = ft (xt , ut ), t = 0, . . . , T, (1) where xt ∈ X ⊆ Rn is the system state and ut ∈ U ⊆ Rm is the control input. The dynamics ft are embedded inside the Simulator and are not available to the Planner in closed form. The time-dependence of ft captures exogenous factors (moving obstacles, changing network topology, or shifting workload patterns) that the Simulator can observe and simulate but that remain hidden from the Planner. 
+
+Notation. Throughout, ∥ · ∥ denotes the Euclidean norm and A ⪯ B the Löwner order on symmetric matrices. We write dist (u, S) = inf v∈S ∥u − v∥ for point-to-set distance and 
+
+dH for Hausdorff distance. The following symbols recur across sections and are collected here for reference: T is the planning horizon; K is the number of inner gradient steps per PPC update; Nt is the cumulative number of feasibility samples available at time t; ˆpt is the learned feasibility density and ˆst = ∇u ln ˆ pt its score function; ˆMα 
+
+> t
+
+= {u : ˆ pt (u | ξt ) ≥ α} is the learned α-superlevel set at time t; I ˆp(u) = −∇2 ln ˆ p(u)
+
+is the local Fisher information of the learned density, with eigenvalue bounds κ (lower, the barrier curvature ) and Λ
+
+(upper) formalized in Definition 3 and Assumption 3. 
+
+A. The Unknown Feasibility Manifold 
+
+Let Xsafe ⊂ X be a closed set of safe states. We define the 
+
+feasibility manifold Mt (xt ) as the set of all inputs that maintain safety: 
+
+Mt (xt ) := {u ∈ U | ft (xt , u) ∈ X safe }. (2) Under smoothness of ft , the set Mt constitutes a time-varying, potentially non-convex submanifold embedded in the control space U, whose topology is governed by the nonlinear dynamics inside the Simulator. The manifold Mt is unknown to the Planner , time-varying , and accessible only through feasibility samples from the Simulator. 
+
+Assumption 1 (Compactness and Regularity) . Xsafe is compact and ft is C2-smooth for all t , so that Mt (xt ) is a compact embedded submanifold of U.
+
+Compactness of Xsafe is standard in safety-critical con-trol [33]. The C2-smoothness of ft ensures that the feasibility manifold Mt inherits a well-defined boundary, which is necessary for the score function to be well-defined in the interior. 
+
+B. The Simulator–Planner Interface 
+
+The Simulator and Planner interact through a sample-based interface (Figure 2). We formalize the black-box world model and the information flow between the two components. 
+
+Definition 1 (Black-Box World Model) . A black-box world model is a feasibility oracle Wt : X × U → { 0, 1} defined by 
+
+Wt (x, u) = 111[ ft (x, u) ∈ X safe ]. The dynamics ft are embedded inside the oracle and are not accessible in closed form. Given the current state xt and a proposal distribution q(u), the oracle returns i.i.d. feasibility samples 1 {ui}Ni=1 drawn from the conditional q(u | W t (xt , u) = 1).The Simulator has access to the full state xt , the oracle Wt ,and the feasibility manifold Mt . It produces feasibility samples and transmits a learned density estimate ˆpt (together with its score ˆst = ∇u ln ˆ pt ) to the Planner. The Planner optimizes a stage cost c(u) but has no access to ft , xt , or the raw state; it receives only the score signal ˆst and the cost function c.Formally, the information sets are 
+
+ISim  
+
+> t
+
+= {xt , Wt (·), Mt }, (3) 
+
+IPl  
+
+> t
+
+= { ˆst (·), c(·)}. (4) This information asymmetry ( ft /∈ I Pl  
+
+> t
+
+) means the Planner cannot form constraint Jacobians or build explicit barrier functions; it must rely entirely on the Simulator’s score signal. 
+
+C. Score-Based Feasibility Signal 
+
+Rather than transmitting the explicit manifold geometry to the Planner, the Simulator compresses Mt into a differentiable density whose score function encodes the manifold geometry. The ideal feasibility distribution and its score are from the existing information-aggregation literature [6], [7]. 
+
+Definition 2 (Feasibility Distribution) . The oracle feasibility distribution p∗ 
+
+> t
+
+(· | xt ) is a C2 density supported on the closure of the single-step feasibility manifold Mt (xt ), with p∗ 
+
+> t
+
+> 0on int Mt , vanishing continuously on ∂ Mt , and having a nondegenerate gradient on ∂ Mt .2 The associated oracle score 
+
+is s∗ 
+
+> t
+
+(u) := ∇u ln p∗ 
+
+> t
+
+(u | xt ).                                     
+
+> 1In practice, these samples can be obtained by any method that produces i.i.d. draws from the feasibility-conditioned distribution, e.g., rejection sampling from q(used in our experiments; see Section V-C ), MCMC, or direct forward simulation of the world model.
+> 2A canonical construction is a Gaussian-smoothed uniform density truncated to Mt, i.e., p∗
+> t∝(N(0,σ2I)∗111[· ∈ Mt]) ·111[· ∈ Mt]/Z, which recovers the manifold projection and tangent-space operations needed for Riemannian optimization [11], [24]. The smoothing scale σplays the role of the KDE bandwidth hin Section IV-A. 4
+> Simulator
+> Environment
+> xt+1=ft(xt,ut)
+> World Model
+> Wt(xt,u)
+> KDE / Score Model Planner
+> uppc ≈arg min F
+> xt {ui}ˆst
+> uppc
+
+Fig. 2: The Simulator–Planner architecture. The Simulator contains the environment dynamics and the feasibility oracle 
+
+Wt ; it draws feasibility samples {ui} and fits a density model whose score ˆst is transmitted to the Planner. The Planner minimizes the penalized objective c(u) − β ln ˆ pt (u) via gradient descent on ˆ st , without access to ft .We note that the maximum-entropy feasibility (MEF) density in [6], [7] assigns higher probability to actions that maximize 
+
+future flexibility by weighting with the volume of reachable feasible sets over a prediction horizon. Our single-step density is the special case in which no look-ahead is used. Extending the theory to multi-step MEF densities is an interesting direction but beyond the scope of this work. The oracle score s∗ 
+
+> t
+
+encodes the geometry of Mt in a form the Planner can use for gradient-based optimization, without ever accessing ft . The critical challenge is that this score must be learned online from streaming feasibility samples, rather than from a pretrained model. 
+
+Assumption 2 (Bounded Information Loss) . The Simulator employs a learning algorithm (e.g., KDE or score matching) to produce an estimate ˆpt of the feasibility density. The KL divergence between the oracle and the learned estimate is finite such that D KL (p∗ 
+
+> t
+
+∥ ˆpt ) < ∞.
+
+This assumption is satisfied by any consistent estimator [38]. We instantiate the estimator as a Gaussian KDE in Section IV-A ,with convergence rates established in Section IV-D. The Planner’s goal is to minimize a stage cost c(ut ) subject to the unknown manifold constraint ut ∈ M t , using the online 
+
+score estimate ˆ st = ∇u ln ˆ pt transmitted by the Simulator. The Planner does not observe the full state xt but instead receives a context signal ξt ∈ Rd , a fixed-dimensional summary of the environment. For example, in the robot navigation task of Section V, xt includes all obstacle positions and velocities, while ξt is a low-dimensional embedding of a top-down image produced by the Planner’s sensor. The feasibility manifold Mt
+
+depends on xt through the obstacle geometry, but ξt correlates with xt and allows the Planner to condition its density estimate as ˆp(u | ξt ), so that the learned manifold adapts when the environment changes. Without ξt , the Planner must rely on the marginal density ˆp(u), which averages over all states and cannot track manifold shifts. State-dependent objectives can be absorbed by conditioning the cost on ξt (e.g., c(u; ξt ) = ∥u−ugoal (ξt )∥2 for some context-dependent target ugoal ); we suppress the ξt -dependence of c
+
+for notational clarity. We formalize the fundamental problem as follows. 
+
+Problem P (Contextual Control): Given a black-box world model Wt (Definition 1), a stage cost c : U → R, and a context signal ξt ∈ Rd , find a sequence of policies {πt }Tt=1 that solves min  
+
+> {πt}
+> T
+
+# ∑
+
+> t=1
+
+Eut ∼πt
+
+c(ut ) s.t. ut ∈ M t , ∀t, (5) using only feasibility samples from Wt and the context ξt ,without access to the dynamics ft .Because the Planner observes ξt rather than xt , the oracle density from Definition 2 induces two related distributions over actions. The conditional oracle density p∗(u | ξt ) := Ext |ξt [p∗ 
+
+> t
+
+(u |
+
+xt )] averages over the states consistent with the current context, while the marginal oracle density p∗(u) := R p∗(u | ξ ) p(ξ ) dξ
+
+averages over all contexts under the context-generating distri-bution p(ξ ). Proposition 3 and Theorem 5 quantify the benefit of working with the former rather than the latter, via the mixture-Hessian identity (48) and the resulting safety-guarantee gap (52). Problem P cannot be solved directly because the Planner cannot evaluate the hard constraint u ∈ M t , and the system dynamics couple the time steps through the state. Follow-ing [6], [7], we decouple the problem by optimizing each πt
+
+independently, treating the current manifold Mt as given. At each step t, the Simulator compresses the constraint into the learned density ˆpt (· | ξt ), and safety is enforced by requiring the policy to remain close to this density. This yields the per-step relaxation: 
+
+Problem PRD (Per-Step Rate-Distortion Relaxation): 
+
+min 
+
+> πt
+
+Eu∼πt
+
+c(u) s.t. DKL (πt ∥ ˆpt (· | ξt )) ≤ Ic. (6) Solving PRD at each t and summing the costs recovers the structure of P. When ˆpt → p∗ 
+
+> t
+
+and Ic → 0 , the KL constraint forces πt to concentrate on Mt , so per-step feasibility is recovered. The cumulative cost suboptimality of this online policy relative to the offline optimum of P is bounded by Theorem 2. For notational brevity, we often write ˆpt (u) for ˆpt (u | ξt ) when the context is clear; the full conditional notation is used whenever the distinction matters. III. C ONTROL SYNTHESIS VIA FREE ENERGY 
+
+MINIMIZATION 
+
+We now solve Problem PRD . Since PRD is strictly convex in π, the KKT conditions yield the penalty weight β as the Lagrange multiplier of the capacity constraint Ic (not an arbitrary tuning parameter). The critical stiffness condition 
+
+β > β ∗ 
+
+> curv
+
+derived in Section IV ensures that the Planner adheres to the Simulator’s learned manifold geometry with strictness proportional to the barrier curvature κ.
+
+Proposition 1 (Thermodynamic Reformulation) . The optimal policy π∗ 
+
+> t
+
+(u) solving PRD is the unique minimizer of the Free Energy functional: 
+
+G(π) = Eu∼π [c(u)] + βt DKL (π∥ ˆpt ). (7) 
+
+The solution is given by the Gibbs-Boltzmann distribution: 
+
+π∗ 
+
+> t
+
+(u) = 1
+
+Zt
+
+ˆpt (u) exp 
+
+
+
+− c(u)
+
+βt
+
+
+
+,5
+
+where βt > 0 is the Lagrange multiplier associated with the capacity constraint I c, and Zt =
+
+> Z
+> U
+
+ˆpt (v) exp 
+
+
+
+− c(v)
+
+βt
+
+
+
+dv is the normalizing constant (partition function). 
+
+Proposition 1 shows that the optimal policy balances economic performance against manifold adherence through a Gibbs-Boltzmann distribution. Here G(π) is a functional over policies; the PPC objective in the next subsection is the pointwise free-energy function F(u) = c(u) − βt ln ˆ pt (u)
+
+obtained by taking the MAP of π∗ 
+
+> t
+
+. The stiffness βt controls how strongly the Planner trusts the Simulator’s feasibility signal. 
+
+Proof. We form the Lagrangian functional L(π, β , λ ):
+
+L =
+
+> Z
+
+π(u)c(u)du + β
+
+Z
+
+π(u) ln π(u)
+
+ˆp(u) du − Ic
+
+
+
++ λ
+
+Z
+
+π(u)du − 1
+
+
+
+. (8) Taking the Fréchet derivative with respect to π(u) and setting to zero, 
+
+δ L
+
+δ π = c(u) + β (ln π(u) − ln ˆ p(u) + 1) + λ = 0.
+
+Rearranging the terms we obtain ln π(u) = ln ˆ p(u) − c(u)/β −
+
+(λ /β + 1). Exponentiating yields π∗(u) ∝ ˆp(u)e−c(u)/β , match-ing the optimal controllers in Linearly Solvable MDPs [9] and path integral control [10]. 
+
+A. Deterministic Control Law 
+
+The Planner implements a single action ut by taking the maximum a posteriori (MAP) estimate of π∗ 
+
+> t
+
+, yielding the Penalized Predictive Control (PPC) objective [6]. While PPC was originally derived for settings where the oracle density p∗
+
+> t
+
+is available in closed form, our contribution is to instantiate it in the black-box regime where p∗ 
+
+> t
+
+is replaced by the online estimate ˆpt learned from simulator samples, and to provide convergence and safety guarantees for this sample-based variant. 
+
+Corollary 1 (The PPC Objective) . The MAP estimate uMAP  
+
+> t
+
+=
+
+arg max u π∗ 
+
+> t
+
+(u) is equivalent to: uMAP  
+
+> t
+
+= arg min  
+
+> u∈U
+
+(c(u) − βt ln ˆ pt (u)) . (9) 
+
+Proof. By definition, 
+
+uMAP  
+
+> t
+
+= arg max 
+
+> u
+
+1
+
+Zt
+
+ˆpt (u) e−c(u)/βt
+
+= arg min 
+
+> u
+
+ c(u)/βt − ln ˆ pt (u).
+
+Multiplying by βt yields the objective. Note that uMAP  
+
+> t
+
+is a conceptual unconstrained minimizer over U; we reserve the notation u∗ 
+
+> t
+
+for the restricted minimizer over ˆMα 
+
+> t
+
+introduced in Lemma 1(c), which is the object that PPC gradient descent from a warm start in ˆMα 
+
+> t
+
+converges to (Theorem 1). Proposition 2 further shows that u∗ 
+
+> t
+
+is itself an unconstrained critical point of F (i.e., ∇F(u∗ 
+
+> t
+
+) = 0 ) whenever βt > β ∗
+
+> curv
+
+, although F may admit additional critical points outside ˆMα 
+
+> t
+
+.The gradient of the PPC objective is 
+
+∇u (c(u) − βt ln ˆ pt (u)) = ∇uc(u) − βt ˆst (u), (10) where ˆst (u) = ∇u ln ˆ pt (u) is the Simulator’s learned score. Each gradient step thus combines the cost gradient ∇c (what is desirable) with the score ˆst (what is feasible), and the stiffness 
+
+βt mediates between minimizing c and adhering to Mt . The Planner never accesses ft ; all constraint information enters through ˆ st .The remainder of the paper answers Problem P by analyzing the per-step free energy Ft (u) = c(u) − βt ln ˆ pt (u). When the time index is clear from context, we write F(u), ˆp(u), and β
+
+for brevity. IV. R IEMANNIAN SCORE DESCENT 
+
+In this section we fix a single time step t and context ξt ,analyzing the PPC free energy F(u) = c(u)−β ln ˆ p(u | ξt ) with ˆp ≡ ˆpt (· | ξt ) and β ≡ βt held constant. Similarly, we simplify the learned α-superlevel set ˆMα 
+
+> t
+
+= {u : ˆ pt (u | ξt ) ≥ α} as ˆMα .The subscript k indexes the inner gradient iterations within this step; the extension to time-varying densities is in Section IV-C .
+
+A. Density Estimator 
+
+We instantiate the Simulator’s estimator ˆpt (Assumption 2) as a Gaussian kernel density estimator (KDE) [38], which admits a closed-form score and supports the convergence analysis of Section IV-D . At time t, the Simulator has collected 
+
+Nt cumulative feasibility samples {U1, . . . , UNt } ⊂ Rm, and estimates the marginal feasibility density by ˆpN (u) = 1
+
+N
+
+> N
+
+# ∑
+
+> i=1
+
+Kh(u −Ui), Kh(z) = e−∥ z∥2/(2h2)
+
+(2πh2)m/2 , (11) with bandwidth h = Θ(N−1/(m+4)). Setting ˆpt = ˆpNt gives the score ˆst (u) = ∇u ln ˆ pt (u) in closed form. When the Planner observes context ξt ∈ Rd , the Simulator stores joint pairs 
+
+(Ui, ξi) ∈ Rm × Rd and fits a product-kernel KDE, ˆp(u, ξ ) = 1
+
+N
+
+> N
+
+# ∑
+
+> i=1
+
+Khu (u −Ui) Khξ (ξ − ξi),
+
+where Khu and Khξ are Gaussian kernels with bandwidths hu
+
+and hξ for the action and context dimensions respectively. The conditional density ˆp(u | ξt ) = ˆp(u, ξt )/ R ˆp(v, ξt ) dv and its score ∇u ln ˆ p(u | ξt ) are used in place of ˆpt (u) and ˆst (u)
+
+throughout. For the KDE (11) , the KL divergence in Assump-tion 2 decreases with Nt and is bounded by the integrated squared score error (Theorem 3). 
+
+B. The Riemannian Structure of PPC 
+
+This subsection establishes the geometric structure that drives PPC convergence and safety. In particular, it links local density curvature to optimization curvature through the PPC Hessian. Recall from Corollary 1 that PPC minimizes the free energy 
+
+F(u) = c(u) − β ln ˆ p(u). The PPC gradient iterates are defined by 
+
+uk+1 = uk − η ∇F(uk), k = 0, 1, . . . , K−1, (12) 6
+
+with step size η > 0 , inner step count K, and warm start 
+
+u0 = ut−1. The gradient is ∇F = ∇c − β ˆs, and the Hessian is 
+
+HF (u) = ∇2c(u) + β I ˆp(u), (13) where I ˆp(u) := −∇2 ln ˆ p(u) is the local Fisher information of the learned density. Thus each PPC gradient step implicitly uses a Riemannian metric shaped by the curvature of the log-density barrier. The action space U, equipped with the positive-definite matrix field I ˆp(u), forms a Riemannian manifold whose metric is the Fisher-Rao metric of the learned density ˆp(· | 
+
+ξ ). Gradient descent on F is then equivalent to Euclidean gradient descent with a geometry-aware preconditioner. Near the manifold boundary, I ˆp is large and the effective step size shrinks, preventing the iterate from leaving the feasible region; in the interior, I ˆp is small and the step expands. This geometry-awareness is a structural advantage over CBF-QP [33], which uses a flat Euclidean metric in its safety projection. Given the learned density ˆp and a threshold α > 0, let ˆMα
+
+denote the learned α-superlevel set. The threshold α controls the conservatism of the learned safe set and is chosen by the Simulator (e.g., as a percentile of the KDE density values; see Algorithm 2). We now formalize the central geometric quantity of the paper. 
+
+Definition 3 (Barrier Curvature) . Let ˆp be a learned feasibility density and ˆMα = {u : ˆ p(u) ≥ α} its α-superlevel set. The 
+
+barrier curvature κ and the curvature upper bound Λ are the tightest constants satisfying 
+
+κ I ⪯ I ˆp(u) ⪯ Λ I ∀ u ∈ ˆMα , (14) where I ˆp(u) = −∇2 ln ˆ p(u) is the local Fisher information defined in (13) . When the density is conditioned on context 
+
+ξt , the curvature bounds depend on ξt and we write 
+
+κ(ξt ) := min  
+
+> u∈ˆMα
+> t
+
+λmin 
+
+ I ˆp(·| ξt )(u).
+
+When the context is suppressed (as in the single-step analysis of this section), κ refers to the barrier curvature of whichever density is in use. The barrier curvature κ quantifies how sharply the log-density increases toward the interior of ˆMα ; it is the analogue, in our score-based setting, of the barrier self-concordance parameter in interior-point methods. Its upper counterpart Λ
+
+controls the smoothness of the free energy F.
+
+Assumption 3 (Local Log-Concavity) . κ > 0 (equivalently, 
+
+− ln ˆ p is strictly convex on ˆMα ), Λ < ∞, and ˆMα is a single connected component of the superlevel set {u : ˆ p(u) ≥ α} that is convex (equivalently, α exceeds the density value at every saddle point of ˆp so that the component lies in a single basin). The cost c is convex, Lc-smooth, and has bounded gradient 
+
+∥∇c∥∞ ≤ Gc.
+
+The condition κ > 0 requires − ln ˆ p to be strictly convex on ˆMα . For the Gaussian KDE (11) used throughout this paper, ˆp(u) = 1 
+
+> N
+
+∑Ni=1 Kh(u − Ui) is a mixture of Gaussians, and − ln ˆ p is smooth everywhere. The single-basin/convexity clause is not automatic for mixtures: a Gaussian mixture can have several modes, and if α is taken below the density at an inter-mode saddle, { ˆp ≥ α} becomes a disjoint union of convex components with the Hessian indefinite between them. Choosing α above every saddle value (equivalently, setting 
+
+α as a high percentile of observed density values) isolates one basin; within that basin ˆp is log-concave, − ln ˆ p is strictly convex, and the superlevel set is convex. The Hessian I ˆp(u)
+
+is then positive definite throughout, and κ > 0 holds with κ
+
+determined by the narrowest bottleneck of the set. For the Gaussian KDE, Λ = 1/h2 where h is the bandwidth, so Λ <
+
+∞ holds automatically. Both κ and Λ are computable from the KDE in closed form, and the single-basin condition can be checked online by locating the critical points of ˆp, so Assumption 3 is verifiable online by the Simulator at each step. The following lemma establishes the landscape properties of F that underpin the convergence theory. 
+
+Lemma 1 (Free Energy Landscape) . Under Assumption 3, let μ := β κ and L := Lc + β Λ. The PPC free energy F(u) = 
+
+c(u) − β ln ˆ p(u) satisfies: 
+
+(a) μ-strong convexity: H F (u) ⪰ μ I for all u ∈ ˆMα ;
+
+(b) L-smoothness: H F (u) ⪯ L I for all u ∈ ˆMα ;
+
+(c) local uniqueness: F has a unique minimizer on the com-pact convex set ˆMα , denoted u∗ := arg min u∈ ˆMα F(u),and at most one unconstrained critical point of F lies in 
+
+ˆMα ; when such a point exists it equals u∗ (equivalently, u∗ ∈ int ( ˆMα ) and ∇F(u∗) = 0); 
+
+(d) Polyak–Łojasiewicz inequality: ∥∇F(u)∥2 ≥ 2μ F(u) −F(u∗) for all u ∈ ˆMα .The condition number χ := L/μ = ( Lc + β Λ)/(β κ ) governs the convergence rate of gradient-based iterates on F. Note that (c) asserts uniqueness only within ˆMα ; since ˆp is a Gaussian mixture, F need not be convex outside ˆMα and may admit additional critical points there. Proof. For every u ∈ ˆMα , the Hessian decomposes as HF (u) = 
+
+∇2c(u) + β I ˆp(u) by (13). 
+
+Part (a). Since c is convex, ∇2c(u) ⪰ 0 . By Assumption 3, 
+
+I ˆp(u) ⪰ κ I. Hence 
+
+HF (u) ⪰ 0 + β κ I = μ I. (15) 
+
+Part (b). By Lc-smoothness of c, ∇2c(u) ⪯ Lc I. By Assump-tion 3, I ˆp(u) ⪯ Λ I. Hence HF (u) ⪯ Lc I + β Λ I = L I .
+
+Part (c). ˆMα is closed (as a superlevel set of the continuous function ˆp) and bounded (since − ln ˆ p is coercive for the Gaussian KDE, the superlevel set { ˆp ≥ α} is contained in a ball of finite radius), hence compact, and convex by Assumption 3. 
+
+F is μ-strongly convex on this set by part (a); a continuous strongly convex function on a compact convex set attains its minimum at exactly one point, which we denote u∗. Strong convexity further implies that any u′ ∈ ˆMα with ∇F(u′) = 0satisfies F(u) ≥ F (u′) + μ 
+
+> 2
+
+∥u − u′∥2 for all u ∈ ˆMα , forcing 
+
+u′ = u∗.
+
+Part (d). Fix u ∈ ˆMα . By Taylor expansion and (15) , for any 
+
+v ∈ ˆMα : F(v) ≥ F (u) + ⟨∇F(u), v−u⟩ + μ 
+
+> 2
+
+∥v−u∥2. Minimiz-ing the right-hand side over v (unconstrained quadratic) yields the lower bound F(u∗) ≥ F (u) − 12μ ∥∇F(u)∥2. Rearranging gives the Polyak–Łojasiewicz inequality. 7
+
+The landscape established by Lemma 1 directly yields a geometric convergence guarantee. The strong convexity provided by the barrier curvature κ forces PPC iterates toward the unique minimizer at a rate controlled by the condition number χ.
+
+Theorem 1 (Score-Descent Contraction) . Set μ := β κ , L :=
+
+Lc + β Λ, χ := L/μ. Let u∗ := arg min u∈ ˆMα F(u) be the restricted minimizer of Lemma 1(c). Suppose Assumption 3 holds, u ∗ ∈ int ( ˆMα ), and the warm start satisfies u0 ∈ ˆMα , ∥u0 − u∗∥ ≤ dist (u∗, ∂ ˆMα ).
+
+Then the PPC iterates {uk} of (12) with step size η ≤ 1/L sat-isfy uk ∈ ˆMα for all k , together with the following contractions for every K ≥ 0:
+
+(i) Function-value contraction. 
+
+F(uK ) − F (u∗) ≤ (1 − η μ )K F(u0) − F (u∗). (16) (ii) Iterate contraction. 
+
+∥uK − u∗∥ ≤ √χ (1 − η μ )K/2 ∥u0 − u∗∥. (17) 
+
+Proof. Iterates remain in ˆMα . We first show that uk ∈ ˆMα for every k so that Lemma 1 applies at each iterate. By μ-strong convexity and L-smoothness of F on ˆMα , for η ≤ 1/L the standard non-expansive bound ∥uk+1 − u∗∥2 ≤ (1 − η μ )2∥uk −
+
+u∗∥2 holds whenever uk ∈ ˆMα [26] (by the contractivity of 
+
+I − η∇2F whose eigenvalues lie in [1 − ηL, 1 − η μ ] ⊂ [0, 1 −
+
+η μ ]), i.e., iterate distance to u∗ is monotonically non-increasing. Since u0 ∈ ˆMα and ∥u0 − u∗∥ ≤ dist (u∗, ∂ ˆMα ), every uk lies in the closed Euclidean ball B(u∗, ∥u0 − u∗∥) ⊆ ˆMα , using that ˆMα is convex (Assumption 3) and contains this ball by construction. A simple induction then confirms uk ∈ ˆMα for all k ≥ 0. By the L-smoothness of F (Lemma 1(b)), 
+
+F(uk+1) ≤ F (uk) + ⟨∇F(uk), uk+1−uk⟩ + L
+
+2 ∥uk+1−uk∥2.
+
+Substituting the gradient step uk+1 = uk − η ∇F(uk),
+
+F(uk+1) ≤ F (uk) − η∥∇F(uk)∥2 + η2L
+
+2 ∥∇F(uk)∥2
+
+= F(uk) − η
+
+
+
+1 − ηL
+
+2
+
+
+
+∥∇F(uk)∥2. (18) For η ≤ 1/L, the factor 1 − ηL/2 ≥ 1/2 > 0, so every gradient step strictly decreases F.The Polyak–Łojasiewicz inequality from Lemma 1(d) gives 
+
+∥∇F(uk)∥2 ≥ 2μ F(uk) − F (u∗). (19) Combining these, substituting (19) into (18) with 1−ηL/2 ≥
+
+1/2, 
+
+F(uk+1) − F (u∗) ≤  F(uk) − F (u∗) − η μ  F(uk) − F (u∗)
+
+= ( 1 − η μ ) F(uk) − F (u∗). (20) Iterating (20) over K steps yields part (i). For the iterate distance, by μ-strong convexity and L-smoothness,  
+
+> μ
+> 2
+
+∥u − u∗∥2 ≤ F (u) − F (u∗) ≤ L 
+
+> 2
+
+∥u − u∗∥2. (21) Combining (21) with part (i) gives  
+
+> μ
+> 2
+
+∥uK − u∗∥2 ≤ (1 − η μ )K · L 
+
+> 2
+
+∥u0 − u∗∥2.
+
+Dividing by μ/2 and taking square roots yields part (ii) with 
+
+χ = L/μ.Theorem 1 ensures fast convergence of PPC iterates (warm-started within ˆMα ) to the restricted minimizer u∗ of Lemma 1(c), but takes the interior condition u∗ ∈ int ( ˆMα ) as a hypothesis. Whether this condition actually holds is a separate question, since u∗ may sit safely interior to ˆMα or merely on its boundary. Because the KDE ˆp is a sum of Gaussians, F
+
+is finite on all of U and may possess additional critical points outside ˆMα ; when β is small, the cost gradient dominates the score barrier at the boundary, so the minimum of F over ˆMα is pinned to ∂ ˆMα , and unconstrained gradient descent on F drifts out of the high-density region. Proposition 2 below supplies a sufficient condition on the stiffness, β > β ∗
+
+> curv
+
+, under which 
+
+u∗ is strictly interior to ˆMα , or equivalently an unconstrained critical point of F, and hence by Lemma 1(c) the unique such point within ˆMα . This closes the interior hypothesis of Theorem 1. Proposition 2 relies only on Lemma 1 and Assumption 3, not on Theorem 1, so there is no circularity. Under Assumption 3, the negative log-density g(u) = 
+
+− ln ˆ p(u) is κ-strongly convex on ˆMα , so it has a unique minimizer ¯u := arg max u∈ ˆMα ˆp(u), the point of highest learned density. Define the level-set radius rα = inf u∈∂ ˆMα ∥u − ¯u∥ > 0 .
+
+Proposition 2 (Critical Stiffness from Manifold Curvature) .
+
+Under Assumption 3, let u∗ := arg min u∈ ˆMα F(u) denote the restricted minimizer from Lemma 1(c). Whenever the stiffness satisfies 
+
+β > β ∗ 
+
+> curv
+
+:= Gc
+
+κ · rα
+
+, (22) 
+
+the following hold (the threshold β = β ∗ 
+
+> curv
+
+is a limiting case in which the interior margin degenerates to zero): 
+
+(i) Interior placement. u∗ ∈ int ( ˆMα ), with displacement and margin bounds 
+
+∥u∗ − ¯u∥ ≤ Gc
+
+β κ , dist (u∗, ∂ ˆMα ) ≥ rα − Gc
+
+β κ > 0.
+
+(ii) Unconstrained stationarity. ∇F(u∗) = 0, so u∗ is also an unconstrained critical point of F, and it is the unique critical point of F inside ˆMα .Proof. Let g(u) := − ln ˆ p(u). By Assumption 3, g is κ-strongly convex on ˆMα with ¯u its unique minimizer on the set. Since 
+
+rα > 0 by its definition, ¯u ∈ int ( ˆMα ), so the unconstrained stationarity ∇g( ¯u) = 0 holds. Strong convexity gives the monotonicity inequality ⟨∇g(u) − ∇g( ¯u), u − ¯u⟩ ≥ κ∥u − ¯u∥2;combining with ∇g( ¯u) = 0 and applying Cauchy–Schwarz to the left-hand side yields 
+
+∥∇g(u)∥ ≥ κ∥u − ¯u∥ ∀ u ∈ ˆMα , (23) and hence ∥ ˆs(u)∥ = ∥∇g(u)∥ ≥ κ∥u − ¯u∥ on ˆMα .
+
+Part (i): interior placement. By Lemma 1(c), u∗ =
+
+arg min u∈ ˆMα F(u) exists and is unique. We rule out the boundary case by contradiction. 8
+
+Suppose u∗ ∈ ∂ ˆMα , so ∥u∗ − ¯u∥ ≥ rα . Since ˆMα = {u :
+
+g(u) ≤ − ln α} and g is smooth and convex, the outward unit normal to ˆMα at u∗ is n = ∇g(u∗)/∥∇g(u∗)∥. First-order optimality of the constrained minimizer u∗ requires that no feasible direction improves F; equivalently, ⟨∇F(u∗), n⟩ ≤ 0.Expanding ∇F = ∇c + β ∇g,
+
+⟨∇c(u∗), n⟩ + β ∥∇g(u∗)∥ ≤ 0.
+
+Using ⟨∇c(u∗), n⟩ ≥ −∥ ∇c(u∗)∥ ≥ − Gc and ∥∇g(u∗)∥ ≥ 
+
+κ∥u∗ − ¯u∥ ≥ κrα from (23) , this forces β κ rα ≤ Gc, i.e., 
+
+β ≤ β ∗
+
+> curv
+
+, contradicting the hypothesis β > β ∗
+
+> curv
+
+.Therefore u∗ ∈ int ( ˆMα ) for β > β ∗
+
+> curv
+
+, and unconstrained stationarity ∇F(u∗) = 0 gives ∇c(u∗) = β ˆs(u∗). Taking norms and using (23), 
+
+∥u∗ − ¯u∥ ≤ ∥ ˆs(u∗)∥
+
+κ = ∥∇c(u∗)∥
+
+β κ ≤ Gc
+
+β κ . (24) Because ¯u ∈ int ( ˆMα ) with nearest boundary point at dis-tance rα , the triangle inequality gives dist (u∗, ∂ ˆMα ) ≥ rα −
+
+Gc/(β κ ) > 0 for β > β ∗
+
+> curv
+
+.
+
+Part (ii): unconstrained stationarity and uniqueness inside 
+
+ˆMα . Interior placement of u∗ makes the constraint inactive, so ∇F(u∗) = 0 holds in the unconstrained sense. Any other point v ∈ ˆMα with ∇F(v) = 0 would, by Lemma 1(c), satisfy 
+
+v = u∗. Thus u∗ is the unique critical point of F within ˆMα ,although F may possess additional critical points in U \ ˆMα
+
+where log-concavity need not hold. The key mechanism is that strong convexity anchors u∗ near ¯u, which is known to be interior to ˆMα with margin rα . Above the threshold β ∗
+
+> curv
+
+, the cost-driven displacement Gc/(β κ ) stays below rα , so u∗ cannot reach ∂ ˆMα ; equivalently, the inward pull of the score barrier dominates the outward pull of the cost gradient everywhere on ∂ ˆMα , ruling out boundary optima. The critical stiffness β ∗ 
+
+> curv
+
+depends on the barrier curvature κ
+
+and the level-set radius rα , both of which are properties of the learned density, rather than on a Lipschitz bound on the unknown dynamics. Both κ and rα can be estimated online from the KDE (see Section V-C). 
+
+C. Dynamic Regret under Manifold Drift 
+
+When the manifold is time-varying, Ft changes at every step. We use the dynamic regret as our performance metric, which is defined as the cumulative suboptimality relative to the moving restricted minimizer u∗ 
+
+> t
+
+:= arg min u∈ ˆMα 
+
+> t
+
+Ft (u). Under β > β ∗
+
+> curv
+
+,Proposition 2 further identifies u∗ 
+
+> t
+
+with the unique unconstrained critical point of Ft in ˆMα 
+
+> t
+
+, so stationarity ∇Ft (u∗ 
+
+> t
+
+) = 0 is available for the analysis. We first bound the sensitivity of u∗
+
+> t
+
+to score changes, then derive the regret bound. 
+
+Lemma 2 (Comparator Sensitivity) . Under the conditions of Lemma 1 and β > β ∗ 
+
+> curv
+
+(so each u∗ 
+
+> t
+
+∈ int ( ˆMα 
+
+> t
+
+) by Proposi-tion 2), suppose u∗ 
+
+> t−1
+
+∈ ˆMα 
+
+> t
+
+for every t . Then the comparator path length CT := ∑Tt=1 ∥u∗ 
+
+> t
+
+− u∗
+
+> t−1
+
+∥ satisfies 
+
+CT ≤ 1
+
+κ
+
+> T
+
+# ∑
+
+> t=1
+
+sup 
+
+> u
+
+∥ ˆst (u) − ˆst−1(u)∥. (25) 
+
+Proof. Interior stationarity ∇Ft (u∗ 
+
+> t
+
+) = 0 holds at each step by Proposition 2. From ∇Ft−1(u∗
+
+> t−1
+
+) = 0, i.e., ∇c(u∗
+
+> t−1
+
+) = 
+
+β ˆst−1(u∗
+
+> t−1
+
+), evaluate the gradient of Ft at the old minimizer: 
+
+∥∇Ft (u∗
+
+> t−1
+
+)∥ = ∥∇c(u∗
+
+> t−1
+
+) − β ˆst (u∗
+
+> t−1
+
+)∥
+
+= β ∥ ˆst−1(u∗
+
+> t−1
+
+) − ˆst (u∗
+
+> t−1
+
+)∥≤ β sup 
+
+> u
+
+∥ ˆst (u) − ˆst−1(u)∥. (26) By μ-strong convexity of Ft (Lemma 1(a)) together with 
+
+∇Ft (u∗ 
+
+> t
+
+) = 0 (interior stationarity at step t), 
+
+∥∇Ft (u∗
+
+> t−1
+
+)∥ = ∥∇Ft (u∗
+
+> t−1
+
+) − ∇Ft (u∗ 
+
+> t
+
+)∥≥ μ ∥u∗ 
+
+> t−1
+
+− u∗ 
+
+> t
+
+∥ = β κ ∥u∗ 
+
+> t−1
+
+− u∗ 
+
+> t
+
+∥. (27) Combining (26) and (27) yields ∥u∗ 
+
+> t
+
+− u∗
+
+> t−1
+
+∥ ≤ sup u ∥ ˆst −
+
+ˆst−1∥/κ. Summing over t gives (25). The hypothesis u∗ 
+
+> t−1
+
+∈ ˆMα 
+
+> t
+
+is mild. By Proposition 2, u∗
+
+> t−1
+
+sits interior to ˆMα 
+
+> t−1
+
+with margin rα − Gc/(β κ ) > 0 , so it remains in ˆMα 
+
+> t
+
+whenever the feasible set drifts by less than that margin, the natural regime in which dynamic regret is informative. Theorem 1 treats a fixed manifold. In practice, the feasibility set drifts over time. The following result quantifies how the cumulative suboptimality depends on both the contraction rate and the speed of manifold drift, measured through the score variation VT := ∑Tt=1 sup u ∥ ˆst (u) − ˆst−1(u)∥2.
+
+Theorem 2 (Dynamic Regret under Manifold Drift) . Let {ut }
+
+be the output of PPC with K inner gradient steps (step size η =
+
+1/L ) warm-started from ut−1, and let u∗ 
+
+> t
+
+:= arg min u∈ ˆMα 
+
+> t
+
+Ft (u)
+
+be the restricted minimizer of Ft (u) := c(u) − β ln ˆ pt (u). As-sume, for every t: 
+
+(i) Assumptions 1–3 hold for ˆpt ;
+
+(ii) β > β ∗
+
+> curv
+
+;
+
+(iii) (Warm-start margin) Let R∗ := rα − Gc/(β κ ) > 0 denote the interior margin from Proposition 2. The initial distance and consecutive comparator drift are bounded by half this margin, i.e., ∥u0 − u∗
+
+> 0
+
+∥ ≤ R∗/2 and ∥u∗ 
+
+> t
+
+−
+
+u∗
+
+> t−1
+
+∥ ≤ R∗/2 for every t; 
+
+(iv) K is large enough that ρK := √χ(1 − 1/χ)K/2 ≤ 1/2
+
+(suffices to take K ≥ χ ln (4χ), where χ := L/μ). Then the dynamic regret DReg T := ∑Tt=1[Ft (ut ) − F t (u∗ 
+
+> t
+
+)] 
+
+satisfies 
+
+DReg T ≤ Lρ2 
+
+> K
+
+D20
+
+1 − ρ2
+
+> K
+
++ Lρ2 
+
+> K
+
+VT
+
+(1 − ρK )2 κ2 , (28) 
+
+where D0 := ∥u0 − u∗
+
+> 0
+
+∥ and VT := ∑Tt=1 sup u ∥ ˆst (u) − ˆst−1(u)∥2.
+
+Assumptions (i), (ii), and (iv) are standard, namely (i) and (ii) are the per-step regularity and strict-stiffness conditions of Theorem 1 and Proposition 2, while (iv) is the usual choice of K
+
+making each inner PPC pass at least a factor-of-two contraction. The warm-start margin (iii) is the natural slow-drift condition needed to keep the warm start inside the current attraction ball. Splitting the interior margin R∗ into a half-budget for the initial tracking error and a half-budget for the consecutive comparator shift is exactly what the induction at the start of the proof requires to conclude ∥ut−1 − u∗ 
+
+> t
+
+∥ ≤ R∗ ≤ Rt at every step, so that Theorem 1(ii) applies; by Lemma 2, the drift bound 9
+
+translates to sup u ∥ ˆst − ˆst−1∥ ≤ κR∗/2 , which is the regime in which dynamic regret is informative. The bound in (28) consists of two terms. The first, 
+
+Lρ2 
+
+> K
+
+D20/(1 − ρ2 
+
+> K
+
+), is a transient that captures the cost of starting away from the equilibrium and vanishes geometrically with the number of inner steps K through ρK . The second, 
+
+Lρ2 
+
+> K
+
+VT /[( 1 − ρK )2κ2], is the steady-state cost of tracking a moving manifold, proportional to the cumulative score variation 
+
+VT and inversely proportional to κ2. In classical online control, the analogous drift sensitivity depends on a Lipschitz constant of the known dynamics; here κ plays that role despite ft being unknown, because all manifold information is mediated through the learned density. 
+
+Proof. Define the tracking error et := ∥ut −u∗ 
+
+> t
+
+∥ and comparator shift dt := ∥u∗ 
+
+> t
+
+− u∗
+
+> t−1
+
+∥. By induction on t, hypotheses (iii)–(iv) keep ∥ut−1 − u∗ 
+
+> t
+
+∥ ≤ et−1 + dt ≤ R∗/2 + R∗/2 = R∗ ≤ Rt (using 
+
+Rt := dist (u∗ 
+
+> t
+
+, ∂ ˆMα 
+
+> t
+
+) ≥ R∗ from Proposition 2), so ut−1 lies in the attraction ball of Theorem 1 around u∗ 
+
+> t
+
+at every step. Applying Theorem 1(ii) with K gradient steps on Ft starting from ut−1 gives 
+
+et ≤ ρK ∥ut−1 − u∗ 
+
+> t
+
+∥ ≤ ρK (et−1 + dt ), (29) where the second inequality is the triangle inequality. Iterating (29) leads to (using summation index σ , with τ
+
+reserved for the manifold reach of Theorem 3) 
+
+et ≤ ρtK D0 +
+
+> t
+
+# ∑ 
+
+> σ=1
+
+ρt−σ +1 
+
+> K
+
+dσ . (30) By the Cauchy–Schwarz inequality applied to the weighted sum (with weights ρt−σ +1 
+
+> K
+
+and ∑t  
+
+> σ=1
+
+ρt−σ +1 
+
+> K
+
+≤ ρK /(1 − ρK )), 
+
+ t
+
+# ∑ 
+
+> σ=1
+
+ρt−σ +1 
+
+> K
+
+dσ
+
+2
+
+≤ ρK
+
+1 − ρKt
+
+# ∑ 
+
+> σ=1
+
+ρt−σ +1 
+
+> K
+
+d2 
+
+> σ
+
+. (31) Summing over t and exchanging the order of summation, 
+
+> T
+
+# ∑
+
+> t=1
+
+e2 
+
+> t
+
+≤ 2ρ2 
+
+> K
+
+D20
+
+1 − ρ2
+
+> K
+
++ 2ρ2
+
+> K
+
+(1 − ρK )2
+
+> T
+
+# ∑
+
+> t=1
+
+d2 
+
+> t
+
+. (32) Finally, by L-smoothness of Ft , Ft (ut ) − F t (u∗ 
+
+> t
+
+) ≤ L 
+
+> 2
+
+e2 
+
+> t
+
+.Substituting Lemma 2 ( dt ≤ sup u ∥ ˆst − ˆst−1∥/κ) into (32) yields DReg T ≤ L
+
+2
+
+> T
+
+# ∑
+
+> t=1
+
+e2 
+
+> t
+
+≤ Lρ2 
+
+> K
+
+D20
+
+1 − ρ2
+
+> K
+
++ Lρ2 
+
+> K
+
+VT
+
+(1 − ρK )2 κ2 . (33) The regret is stated in terms of the free energy Ft because PPC descends on Ft , not on c directly. A cost regret bound follows since for any ut , u∗ 
+
+> t
+
+∈ ˆMα 
+
+> t
+
+the log-density difference is bounded, and hence ∑t [c(ut ) − c(u∗ 
+
+> t
+
+)] differs from DReg T by at most an additive term proportional to β . Safety is treated separately in Theorem 4. The barrier curvature κ plays a dual role in (28) . It enters the contraction factor ρK through μ = β κ , so larger κ accelerates convergence, and it appears in the drift sensitivity through 1/κ2, so larger κ also reduces the impact of manifold motion. Both effects favor a density with sharp boundaries. In practice, 
+
+κ is a property of the learned density and cannot be tuned directly. The controllable quantity is βt , which the adaptive schedule (58) sets to β ∗
+
+> curv
+
+(1 +C/√Nt ). When Nt is small the schedule inflates βt above the critical threshold, favoring safety over cost optimality. As Nt grows and the density estimate improves, βt decreases toward β ∗
+
+> curv
+
+, gradually releasing the Planner to exploit more of the feasible space. 
+
+D. Online Score Convergence 
+
+This subsection provides the statistical bridge from the fixed-density analysis in Sections IV-A and IV-B to the online setting where the KDE estimate ˆpt from (11) evolves with new simulator samples. Algorithms 1–2 present the controller using the marginal KDE (no context); the convergence guarantees below are stated for this case, and the contextual case follows analogously with m replaced by m + d. Lemma 3 controls pointwise density and gradient errors, and Theorem 3 converts those controls into the integrated squared score error εt .
+
+Lemma 3 (KDE Uniform Convergence) . Let p∗ be a C2
+
+density on a compact domain Ω ⊂ Rm satisfying inf Ω p∗ > 0
+
+and ∥p∗∥C2 < ∞. Let ˆpN be the Gaussian KDE with bandwidth h = Θ(N−1/(m+4)) built from N i.i.d. samples from p∗. Then with probability at least 1 − δ :
+
+∥ ˆpN − p∗∥∞ ≤ C1 N−2/(m+4)pln (N/δ ), (34) 
+
+∥∇ ˆpN − ∇p∗∥∞ ≤ C2 N−1/(m+4)pln (N/δ ), (35) 
+
+where C 1,C2 depend on ∥p∗∥C2 , m, and vol (Ω).Proof. The KDE is ˆpN (u) = 1 
+
+> N
+
+∑Ni=1 Kh(u −Ui) with Kh(z) = 
+
+h−mK(z/h) and K the standard Gaussian kernel. By Tay-lor expansion of p∗ under convolution, the bias satisfies 
+
+∥E[ ˆpN ] − p∗∥∞ = O(h2), and differentiating under the integral gives ∥∇E[ ˆpN ] − ∇p∗∥∞ = O(h2). The pointwise variance of ˆpN (u) is Var [ ˆpN (u)] ≤ C/(Nh m), and for the gradient Var [∇ ˆpN (u)] ≤ C/(Nh m+2), since ∇Kh introduces an extra 1/h
+
+factor. A bounded-difference inequality over an ε-net of Ω
+
+(cardinality O(( diam (Ω)/ε)m)) with a union bound yields, for any δ ∈ (0, 1) and with probability at least 1 − δ ,sup 
+
+> u∈Ω
+
+| ˆpN (u) − E[ ˆpN (u)] | ≤ O
+
+q ln (N/δ )
+
+> Nh m
+
+
+
+,
+
+and the analogous bound for ∇ ˆpN with hm replaced by hm+2.Setting h = Θ(N−1/(m+4)) balances the density bias 
+
+O(N−2/(m+4)) with its standard deviation O(√ln N ·N−2/(m+4)),yielding (34) (the logarithmic factor is absorbed into C1). For the gradient, the bias is still O(N−2/(m+4)) but the standard deviation is O(√ln N · N−1/(m+4)), which dominates [38], giving (35). 
+
+Theorem 3 (Score Tracking Bound) . Let ˆpt be a Gaussian KDE with bandwidth h = Θ(N−1/(m+4) 
+
+> t
+
+) built from Nt cumulative feasibility samples on a manifold with reach τ > 0. Then the integrated squared score error satisfies 
+
+E
+
+Z
+
+> ˆMα
+> t
+
+∥ ˆst (u) − s∗ 
+
+> t
+
+(u)∥2 ˆpt (u) du 
+
+
+
+≤ C(m, τ, α)
+
+N2/(m+4)
+
+> t
+
+, (36) 
+
+where C(m, τ, α) depends polynomially on m , 1/τ, and 1/α;the 1/α dependence enters through the denominator ˆpt ≥ α
+
+on ˆMα 
+
+> t
+
+via p min := α/2.10 
+
+Proof. By the chain rule, ˆs(u) = ∇u ln ˆ p(u) = ∇ ˆp(u)/ ˆp(u) and similarly s∗(u) = ∇p∗(u)/p∗(u). Subtracting, we obtain ˆs(u) − s∗(u) = ∇( ˆp − p∗)( u)
+
+ˆp(u)
+
+| {z } 
+
+> =:A(u)
+
+− ˆp(u) − p∗(u)
+
+ˆp(u) s∗(u)
+
+| {z } 
+
+> =:B(u)
+
+, (37) where the identity follows from a direct computation: 
+
+A(u) − B(u) = ∇ ˆp − ∇p∗
+
+ˆp − ( ˆp − p∗) s∗
+
+ˆp
+
+= ∇ ˆp · p∗ − ∇p∗ · ˆp
+
+ˆp · p∗ = ˆs − s∗.
+
+On ˆMα 
+
+> t
+
+we have ˆpt ≥ α, and ∥ ˆpt − p∗ 
+
+> t
+
+∥∞ = O(N−2/(m+4)) by Lemma 3; therefore, for N large enough that ∥ ˆpt − p∗ 
+
+> t
+
+∥∞ ≤ α/2 ,we obtain p∗ 
+
+> t
+
+≥ α/2 on ˆMα 
+
+> t
+
+. Set pmin := α/2 > 0 ; then ˆpt ≥
+
+pmin on ˆMα 
+
+> t
+
+as well (in fact ˆpt ≥ α = 2pmin ). Note that this is not an appeal to the oracle inf Mt p∗ 
+
+> t
+
+bound of Definition 2, which fails near ∂ Mt ; the threshold α > 0 itself guarantees the bound on the learned set. The score s∗ is bounded on the compact set ˆMα 
+
+> t
+
+: ∥s∗∥∞ ≤ Smax < ∞. Therefore: 
+
+∥A(u)∥ ≤ 2
+
+pmin 
+
+∥∇( ˆp − p∗)∥∞ ≤ 2C2
+
+pmin 
+
+N−1/(m+4), (38) 
+
+∥B(u)∥ ≤ 2Smax 
+
+pmin 
+
+∥ ˆp − p∗∥∞ ≤ 2C1Smax 
+
+pmin 
+
+N−2/(m+4). (39) By (37) and ∥A − B∥2 ≤ 2∥A∥2 + 2∥B∥2:
+
+> Z
+> ˆMα
+> t
+
+∥ ˆs − s∗∥2 ˆp du ≤ 2
+
+> Z
+> ˆMα
+> t
+
+ ∥A∥2 + ∥B∥2 ˆp du 
+
+≤ 2 ∥A∥2 
+
+> ∞
+
++ ∥B∥2
+
+> ∞
+
+ ≤ C(m, τ, α)
+
+N2/(m+4) , (40) where C(m, τ, α) absorbs the constants from (38) – (39) and depends on pmin = α/2 , Smax , ∥p∗∥C2 , and vol ( ˆMα 
+
+> t
+
+). These quantities depend polynomially on m, 1/τ (through the mani-fold geometry), and 1/α (through the 1/p2min prefactors of (38) –(39) ). The bound (40) holds on the event of Lemma 3, which has probability at least 1 − δ . The expectation in (36) follows by choosing δ = N−2/(m+4) and noting that the complementary event contributes at most O(δ · S2max ) = O(N−2/(m+4)), which is absorbed into C(m, τ, α).The rate N−2/(m+4) is the minimax-optimal rate for nonpara-metric gradient estimation in m dimensions [38]. The plug-in score estimator inherits this rate because ˆs = ∇ ˆp/ ˆp and the gradient error in the numerator dominates the density error in the denominator. For comparison, the density mean integrated squared error (MISE), E[R ( ˆpN − p∗)2 du ], converges at the faster rate N−4/(m+4), reflecting the additional difficulty of derivative estimation. 
+
+Remark 1. For m = 2 (our experiments), the integrated squared score error decays as N−1/3, which is slower than the density MISE rate N−2/3 but still sufficient for the safety bound of Theorem 4 to shrink monotonically as N grows (Figure 9). 
+
+E. Safety Bound via Score Descent 
+
+We now compose the contraction guarantee (Theorem 1) with the statistical bound (Theorem 3) to obtain the main safety result. The bound is analogous to Input-to-State Safety (ISSf) [32] in that the distance to the safe set is bounded by a function of the estimation error εt , but the sensitivity is governed by κ rather than a Lipschitz constant of the dynamics. A supporting lemma first controls the set approximation error. 
+
+Lemma 4 (Level-Set Stability) . Fix a time step t . Let ˆMα 
+
+> t
+
+:=
+
+{u : ˆ pt (u | ξt ) ≥ α} and let εt be the score error of Theorem 3. Assume the oracle density p∗ 
+
+> t
+
+(Definition 2) has nondegenerate inward-normal derivative in a boundary tube. Specifically, there exist c ∂ , r∂ > 0 with r ∂ ≤ τ such that 
+
+⟨∇u p∗ 
+
+> t
+
+(u | ξt ), ˆn(u)⟩ ≥ c∂ (41) 
+
+for all u satisfying dist (u, ∂ Mt ) ≤ r∂ , where ˆn(u) is the inward unit normal at the nearest boundary point. If α and √εt are small enough that 
+
+√εt < α and (α + √εt )/c∂ ≤ r∂ , (42) 
+
+then dH ( ˆMα 
+
+> t
+
+, Mt ) ≤ α + √εt
+
+c∂
+
+. (43) The inward-normal nondegeneracy (41) is a standard transversality condition that rules out flat-approach boundaries where ∇p∗ 
+
+> t
+
+vanishes; it is what lets density perturbations translate linearly into boundary displacements, and it holds generically for smooth densities whose support has a C2
+
+boundary. The smallness condition (42) simply requires the level-set threshold α and the sup-norm error √εt to stay inside the boundary tube of width r∂ , which is automatic for N large enough since εt → 0. 
+
+Proof. Lemma 3 gives ∥ ˆpt − p∗ 
+
+> t
+
+∥2 
+
+> ∞
+
+= O(N−4/(m+4) ln N), which is eventually dominated by εt = O(N−2/(m+4)); we use the resulting sup-norm bound ∥ ˆpt − p∗ 
+
+> t
+
+∥∞ ≤ √εt . Write sα := ( α +
+
+√εt )/c∂ ; by (42), sα ≤ r∂ .
+
+Step 1: ˆMα 
+
+> t
+
+⊆ M t . If u ∈ ˆMα 
+
+> t
+
+, then p∗ 
+
+> t
+
+(u) ≥ ˆpt (u) − √εt ≥
+
+α − √εt > 0 by (42) , so u ∈ M t (the oracle density vanishes outside Mt ). Hence sup u∈ ˆMα 
+
+> t
+
+dist (u, Mt ) = 0. 
+
+Step 2: every v ∈ M t is within sα of ˆMα 
+
+> t
+
+. Let v ∈ M t . If dist (v, ∂ Mt ) ≥ sα , let ub = π∂ Mt (v) (well-defined since sα ≤
+
+r∂ ≤ τ) and parametrize the inward normal ray γ(s) = ub +s ˆn(v)
+
+for s ∈ [0, sα ], which stays in the r∂ -tube. The fundamental theorem of calculus and (41) give 
+
+p∗ 
+
+> t
+
+(γ(sα )) =  
+
+> Zsα
+> 0
+
+⟨∇p∗ 
+
+> t
+
+(γ(s)) , ˆn(v)⟩ ds ≥ c∂ sα = α + √εt .
+
+(44) Because p∗ 
+
+> t
+
+is increasing along the inward ray in the tube, monotonicity gives p∗ 
+
+> t
+
+(v) ≥ p∗ 
+
+> t
+
+(γ(sα )) ≥ α + √εt whenever dist (v, ∂ Mt ) ≥ sα , hence ˆpt (v) ≥ p∗ 
+
+> t
+
+(v)−√εt ≥ α and v ∈ ˆMα 
+
+> t
+
+,i.e., dist (v, ˆMα 
+
+> t
+
+) = 0. If instead dist (v, ∂ Mt ) < sα , let ub = π∂ Mt (v) and set v′ :=
+
+ub + sα ˆn(v). By the same FTC argument, v′ ∈ ˆMα 
+
+> t
+
+, and ∥v −
+
+v′∥ ≤ sα , so dist (v, ˆMα 
+
+> t
+
+) ≤ sα .Combining Steps 1 and 2, dH ( ˆMα 
+
+> t
+
+, Mt ) ≤ sα = ( α +
+
+√εt )/c∂ .Composing the contraction guarantee (Theorem 1) with the statistical bound (Theorem 3) yields the main safety result, a safety guarantee whose ultimate bound depends on manifold 11 
+
+geometry rather than a Lipschitz constant of unknown dynamics. Let Nt denote the cumulative number of feasibility samples available at time t, and let εt := C(m, τ, α)/N2/(m+4) 
+
+> t
+
+denote the integrated score-error rate from Theorem 3. 
+
+Theorem 4 (Contextual Safety Bound) . Let {ut } be the output of contextual PPC with stiffness βt and K inner gradient steps warm-started from ut−1, and let κ(ξt ) denote the barrier curvature of ˆpt (· | ξt ) (Definition 3). Assume, for every t: 
+
+(i) Assumptions 1–3 hold for ˆpt (· | ξt );
+
+(ii) βt > β ∗
+
+> curv
+
+;
+
+(iii) the inward-normal nondegeneracy (41) and smallness conditions (42) of Lemma 4 hold; 
+
+(iv) the warm-start margin of Theorem 2(iii) holds, so that ut−1 lies in the attraction ball of Theorem 1 around u∗ 
+
+> t
+
+;
+
+(v) K is large enough that ρK diam ( ˆMα 
+
+> t
+
+) is negligible relative to the other terms of (45) (quantified in the proof), where ρK := √χ (1 − 1/χ)K/2 is the iterate contraction factor of Theorem 1(ii) with condition number χ := L/μ,
+
+μ = βt κ(ξt ), and L = Lc + βt Λ.Then 
+
+dist (ut , Mt ) ≤√εt + α
+
+c∂
+
+| {z }
+
+> set approx.
+
++ Gc
+
+βt κ(ξt )
+
+| {z }
+
+> cost–safety
+
+, (45) 
+
+where εt := C(m, τ, α)/N2/(m+4) 
+
+> t
+
+is the integrated squared score error from Theorem 3. 
+
+Remark 2 (Dependencies and asymptotic tightening) . The bound (45) separates a statistical set-approximation term from a deterministic cost–safety term. The score error εt depends on the cumulative sample count Nt and the ambient dimension 
+
+m (or m + d for the conditional KDE), not on ξt directly; the context enters the bound through κ(ξt ), which reflects the local geometry of the conditional density. As Nt → ∞, εt → 0 and the bound tightens to α/c∂ + Gc/(βt κ(ξt )) .
+
+Proof. Let ¯ut := arg max u∈ ˆMα 
+
+> t
+
+ˆpt (u | ξt ) denote the maximum-density point of the learned conditional density, which is interior to ˆMα 
+
+> t
+
+with dist ( ¯ut , ∂ ˆMα 
+
+> t
+
+) ≥ rα (Proposition 2, applied to ˆpt (· | ξt )). Decompose the distance via ¯ut using the triangle inequality: dist (ut , Mt ) ≤ ∥ ut − u∗ 
+
+> t
+
+∥ + ∥u∗ 
+
+> t
+
+− ¯ut ∥ + dist ( ¯ut , Mt )= ∥ut − u∗ 
+
+> t
+
+∥
+
+| {z }
+
+> planner residual
+
++ ∥u∗ 
+
+> t
+
+− ¯ut ∥
+
+| {z }
+
+> cost–safety offset
+
++ dist ( ¯ut , Mt )
+
+| {z }
+
+> set approximation
+
+. (46) 
+
+Cost–safety offset. Applying Proposition 2 to the conditional density ˆpt (· | ξt ), whose barrier curvature is κ(ξt ) by Defini-tion 3, yields 
+
+∥u∗ 
+
+> t
+
+− ¯ut ∥ ≤ Gc
+
+βt κ(ξt ) , (47) and ensures u∗ 
+
+> t
+
+∈ int ( ˆMα 
+
+> t
+
+) with dist (u∗ 
+
+> t
+
+, ∂ ˆMα 
+
+> t
+
+) ≥ rα −
+
+Gc/(βt κ(ξt )) > 0 whenever βt > β ∗
+
+> curv
+
+. This is where the contextual curvature enters the bound, since the Gc/(β κ ) term of Proposition 2 measures the offset of the cost-penalized minimizer from the density peak , not a residual of the gradient iterates. 
+
+Set approximation. Since ¯ ut ∈ ˆMα 
+
+> t
+
+, Lemma 4 gives dist ( ¯ut , Mt ) ≤ dH ( ˆMα 
+
+> t
+
+, Mt ) ≤√εt + α
+
+c∂
+
+.
+
+Planner residual. By Theorem 1(ii), K inner gradient steps warm-started from ut−1 yield 
+
+∥ut − u∗ 
+
+> t
+
+∥ ≤ ρK ∥ut−1 − u∗ 
+
+> t
+
+∥, ρK = √χ (1 − 1/χ)K/2.
+
+Since ρK decays geometrically and ∥ut−1 − u∗ 
+
+> t
+
+∥ ≤ DM,t :=
+
+diam ( ˆMα 
+
+> t
+
+) < ∞ (the learned superlevel set is compact as the closed α-superlevel set of a Gaussian KDE, which vanishes at infinity; DM,t is a diameter , distinct from the initial-distance symbol D0 = ∥u0 − u∗
+
+> 0
+
+∥ of Theorem 2), any tolerance δK > 0is reached with K ≥ 2χ ln (√χ DM,t /δK ). Taking δK smaller than the interior margin rα − Gc/(βt κ(ξt )) also guarantees 
+
+ut ∈ ˆMα 
+
+> t
+
+, so the score-ascent safety filter of Algorithm 2 is inactive in steady state. Summing the three terms of (46) and taking K large enough that the planner residual is negligible relative to the other two terms yields (45) . For finite K, an additive remainder 
+
+ρK diam ( ˆMα 
+
+> t
+
+) is added to the right-hand side. The bound is PPC-specific in that the residual Gc/(β κ )
+
+depends on the barrier curvature κ rather than a Lipschitz constant of the unknown dynamics ft . As Nt grows, εt → 0 at rate N−2/(m+4) 
+
+> t
+
+(Theorem 3), so the bound tightens to Gc/(β κ ).The adaptive schedule (58) can then reduce β toward β ∗
+
+> curv
+
+,allowing the Planner to exploit more of the feasible space as estimation improves. 
+
+The value of context. The safety bound (45) depends on the context ξt through εt , c∂ , and κ(ξt ). The first two are properties of the oracle density p∗ 
+
+> t
+
+(· | ξt ) (complexity for the score-estimation rate and inward-normal nondegeneracy for the set-approximation constant) that any Planner inherits from the underlying geometry. The only ξt -dependent quantity the Planner itself controls is the barrier curvature of the density it uses in its free energy, namely κ(ξt ) for a context-aware Planner and κmarg := inf u∈ ˆMα 
+
+> t
+
+λmin 
+
+ −∇2 
+
+> u
+
+ln ˆ pt (u) (i.e., Definition 3 applied to the marginal density) for a context-blind Planner that replaces ˆpt (· | ξt ) with the marginal ˆpt (u) :=R ˆpt (u | ξ ) π(ξ ) dξ , where π(ξ ) denotes the context prior —the 
+
+ξ -marginal of the joint product-kernel KDE of Section IV-A ,i.e., π(ξ ) = 1 
+
+> Nt
+
+∑Nt 
+
+> i=1
+
+Khξ (ξ − ξi)—and the distribution under-lying every expectation Eπ [ · ] over contexts below (to be distinguished from the Planner’s policy πt , which is indexed by time). Since κ enters the cost–safety residual Gc/(βt κ)
+
+inversely, the value of context reduces to comparing these two curvatures. Proposition 3 records the variational-inference decomposition that underlies the comparison, and Theorem 5 turns it into a quantitative lower bound on the gap between the safety guarantees. 
+
+Proposition 3 (Contextual Curvature Gain) . With π(ξ ) the context prior defined above, let w(ξ | u) ∝ ˆpt (u | ξ ) π(ξ ) be the posterior over contexts given action u, and ˆst (u | ξ ) :=
+
+∇u ln ˆ pt (u | ξ ) the conditional score. The marginal log-density Hessian ∇2 
+
+> u
+
+ln ˆ pt (u) equals 
+
+Ew(ξ |u)
+
+∇2 
+
+> u
+
+ln ˆ pt (u | ξ ) + Cov w(ξ |u)
+
+  ˆst (u | ξ ). (48) 12 
+
+Proof. Write q(ξ ) := ˆpt (u | ξ ), so that ˆpt (u) = Eπ [q(ξ )] and 
+
+w(ξ | u) = q(ξ )π(ξ )/ ˆpt (u). Using ∇uq(ξ ) = q(ξ ) ˆst (u | ξ ) and differentiating ln ˆ pt (u) = ln Eπ [q(ξ )] once gives the marginal-score identity 
+
+∇u ln ˆ pt (u) = Eπ [∇uq(ξ )] 
+
+ˆpt (u) = Ew(ξ |u)
+
+ ˆst (u | ξ ). (49) Differentiating ln w(ξ | u) = ln q(ξ ) + ln π(ξ ) − ln ˆ pt (u) in u
+
+and substituting (49) yields the standard variational-inference identity 
+
+∇u ln w(ξ | u) = ˆst (u | ξ ) − Ew(ξ |u)
+
+ ˆst (u | ξ ), (50) i.e., the centered conditional score. Differentiating (49) once more and writing the expectation explicitly as ∇u ln ˆ pt (u) = R w(ξ | u) ˆst (u | ξ ) dξ , the product rule under the integral sign gives 
+
+∇2 
+
+> u
+
+ln ˆ pt (u) = 
+
+> Z
+
+[∇uw(ξ | u)] ˆst (u | ξ )⊤ dξ
+
+| {z } 
+
+> =:T1
+
++
+
+> Z
+
+w(ξ | u) ∇u ˆst (u | ξ ) dξ
+
+| {z } 
+
+> =:T2
+
+.
+
+For T1, the chain-rule identity ∇uw(ξ | u) = w(ξ | u) ∇u ln w(ξ |
+
+u) combined with the posterior log-derivative (50) yields 
+
+∇uw(ξ | u) = w(ξ | u)  ˆst (u | ξ ) − Ew[ ˆst (u | ξ )] , so 
+
+T1 = Ew
+
+  ˆst (u | ξ ) − Ew[ ˆst (u | ξ )]  ˆst (u | ξ )⊤
+
+= Ew
+
+ ˆst (u | ξ ) ˆst (u | ξ )⊤ − Ew[ ˆst (u | ξ )] Ew[ ˆst (u | ξ )] ⊤
+
+= Cov w
+
+  ˆst (u | ξ ),
+
+where the second line pulls the ξ -independent factor Ew[ ˆst (u |
+
+ξ )] out of the expectation. For T2, the conditional score satisfies ∇u ˆst (u | ξ ) = ∇2 
+
+> u
+
+ln ˆ pt (u | ξ ) by definition, so T2 =
+
+Ew
+
+∇2 
+
+> u
+
+ln ˆ pt (u | ξ ). Adding T1 and T2 yields (48). Proposition 3 is the classical “total-Hessian” decomposition: the marginal log-density Hessian equals the posterior-averaged conditional Hessian plus the posterior score covariance. Flip-ping signs to the positive-semidefinite curvature −∇2 
+
+> u
+
+ln ˆ pt ⪰ 0used elsewhere in the paper, this says that marginalizing 
+
+subtracts Cov w ⪰ 0 from the expected conditional curvature, flattening the barrier pointwise in the Löwner order; the gap is exactly the posterior variance of the conditional score, which vanishes when the posterior concentrates on a single context and grows as different contexts push the conditional score in substantially different directions. Theorem 5 converts this PSD decomposition into a scalar safety-guarantee gap via Weyl’s inequality. 
+
+Theorem 5 (Contextual Safety Gap) . Let Bctx and Bmarg denote the Theorem 4 steady-state safety bounds for the context-aware and context-blind Planners, both sharing the statistical error εt ,boundary constant c∂ , and feasible set ˆMα 
+
+> t
+
+, so that κmarg :=
+
+inf u∈ ˆMα 
+
+> t
+
+λmin (−∇2 
+
+> u
+
+ln ˆ pt (u)) . Suppose the uniform identifiable-regime condition 
+
+Ew(ξ |u)
+
+∇2 
+
+> u
+
+ln ˆ pt (u | ξ ) = ∇2 
+
+> u
+
+ln ˆ pt (u | ξt ) ∀ u ∈ ˆMα 
+
+> t
+
+(51) 
+
+holds, and let σ 2 
+
+> t
+
+:= inf u∈ ˆMα 
+
+> t
+
+λmin 
+
+ Cov w(ξ |u)( ˆst (u | ξ ))  ≥ 0.Then Bmarg − Bctx ≥ Gc σ 2
+
+> t
+
+βt κ(ξt ) κmarg 
+
+≥ 0, (52) 
+
+with strict inequality whenever σ 2 
+
+> t
+
+> 0.Proof. Theorem 4 applied separately to the two Planners gives 
+
+Bctx =  
+
+> √εt+α
+> c∂
+
++ Gc   
+
+> βtκ(ξt)
+
+, Bmarg =  
+
+> √εt+α
+> c∂
+
++ Gc  
+
+> βtκmarg
+
+,
+
+and the common pre-residual cancels on subtraction: 
+
+Bmarg − Bctx = Gc
+
+ κ(ξt ) − κmarg 
+
+
+
+βt κmarg κ(ξt ) . (53) It thus suffices to show κ(ξt ) − κmarg ≥ σ 2 
+
+> t
+
+. Fix u ∈ ˆMα
+
+> t
+
+and write H(u) := −∇2 
+
+> u
+
+ln ˆ pt (u), Σ(u) := Cov w(ξ |u)( ˆst (u | ξ )) ⪰
+
+0, and κ(ξt )( u) := λmin (−∇2 
+
+> u
+
+ln ˆ pt (u | ξt )) for the pointwise context-aware curvature. Proposition 3 combined with the identifiable-regime condition (51) yields 
+
+H(u) = −∇2 
+
+> u
+
+ln ˆ pt (u | ξt ) − Σ(u).
+
+Weyl’s inequality for Hermitian matrices states λmin (A + B) ≤
+
+λmin (A) + λmax (B). Applying it with A = −∇2 
+
+> u
+
+ln ˆ pt (u | ξt ) and 
+
+B = −Σ(u), and using λmax (−Σ(u)) = −λmin (Σ(u)) together with λmin (Σ(u)) ≥ σ 2 
+
+> t
+
+,
+
+λmin (H(u)) ≤ κ(ξt )( u) − λmin (Σ(u)) ≤ κ(ξt )( u) − σ 2 
+
+> t
+
+. (54) Taking the infimum over u ∈ ˆMα 
+
+> t
+
+of both sides of (54) , and using κmarg = inf u λmin (H(u)) and κ(ξt ) = inf u κ(ξt )( u),
+
+κmarg ≤ κ(ξt ) − σ 2 
+
+> t
+
+,
+
+i.e., κ(ξt ) − κmarg ≥ σ 2 
+
+> t
+
+. Substituting into (53) yields (52) ;strictness is immediate from σ 2 
+
+> t
+
+> 0. Theorem 5 turns the informal intuition behind Problem P
+
+into a quantitative lower bound on the safety-guarantee gap: the context-aware Planner’s Theorem 4 bound improves over the context-blind one by at least Gc σ 2 
+
+> t
+
+/(βt κ(ξt )κmarg ), where σ 2
+
+> t
+
+is the uniform infimum (over the feasible set) of the smallest posterior score-covariance eigenvalue. This gap vanishes when the posterior w collapses to a single context, and is largest when different contexts place the Planner at substantially different conditional scores, which is exactly the regime in which the contextual advantage is most visible in Figure 12. 
+
+F. Algorithms 
+
+The control law is realized through two interacting com-ponents whose information flow is depicted in Figure 3. The information sets ISim  
+
+> t
+
+and IPl  
+
+> t
+
+defined in (3) – (4) make the asymmetry concrete. The Simulator’s algorithm may read xt ,
+
+Wt , and Mt , whereas the Planner’s algorithm may use only ˆst
+
+and c. At each time step t, the Simulator (Algorithm 2) draws 
+
+N feasibility samples from the oracle Wt , updates the density model ˆpt , and transmits the score function ˆst and the stiffness parameter βt to the Planner. The Planner (Algorithm 1) then performs K gradient descent steps on the PPC free energy using ˆst , and returns the candidate action uppc to the Simulator for safety projection. If the candidate lies outside ˆMα 
+
+> t
+
+, the Simulator retracts it onto the learned manifold via score ascent before applying it to the plant. 13                   
+
+> Environment
+> xt+1=ft(xt,ut)World Model
+> Wt
+> KDE ˆpt,ˆst
+> PPC
+> Kgrad steps Safety Filter xt{ui}ˆst,βtuppc
+> ut
+> Simulator (Alg. 2) Planner (Alg. 1)
+
+Fig. 3: Per-step information flow (Algorithms 1–2). The Simulator draws N feasibility samples, fits a KDE to produce ( ˆst , βt ),and after receiving the Planner’s candidate uppc , applies a safety filter (score-ascent retraction if ˆpt (uppc )<α) before returning 
+
+ut to the environment. 
+
+Algorithm 1 Planner: Score-Based PPC 
+
+Require: Score function ˆst (·) from Simulator, cost c(·), stiff-ness βt , step size η, inner steps K, previous action ut−1.
+
+Ensure: Candidate action uppc . 
+
+> 1:
+
+u ← ut−1 // Warm start  
+
+> 2:
+
+for k = 1, . . . , K do  
+
+> 3:
+
+u ← u − η ∇uc(u) − βt ˆst (u) 
+
+> 4:
+
+end for  
+
+> 5:
+
+return uppc ← u
+
+Algorithm 2 Simulator: Score Oracle and Safety Filter 
+
+Require: State xt , feasibility oracle Wt , density model ˆpt−1,candidate uppc from Planner, threshold α, retraction steps 
+
+J, retraction rate ηr, stiffness-schedule constant C > 0(Equation (58)). 
+
+Ensure: Safe action ut ∈ ˆMα 
+
+> t
+
+, updated score ˆst (·), stiffness 
+
+βt . 
+
+> 1:
+
+Draw N feasibility samples {ui} ∼ W t (xt , ·) 
+
+> 2:
+
+Update density model: ˆ pt ← KDE ({ui} ∪ buffer ) 
+
+> 3:
+
+Compute score ˆ st (u) = ∇u ln ˆ pt (u) 
+
+> 4:
+
+Set βt = β ∗
+
+> curv
+
+ 1 +C/√Nt
+
+ 
+
+> 5:
+
+Transmit ˆst (·) and βt to Planner  
+
+> 6:
+
+Receive uppc from Planner  
+
+> 7:
+
+if ˆpt (uppc ) ≥ α then  
+
+> 8:
+
+ut ← uppc  
+
+> 9:
+
+else  
+
+> 10:
+
+ut ← uppc  
+
+> 11:
+
+for j = 1, . . . , J do  
+
+> 12:
+
+ut ← ut + ηr ˆst (ut ) // Score ascent  
+
+> 13:
+
+if ˆpt (ut ) ≥ α then  
+
+> 14:
+
+break  
+
+> 15:
+
+end if  
+
+> 16:
+
+end for  
+
+> 17:
+
+end if  
+
+> 18:
+
+Apply ut to plant 
+
+G. Computational Properties 1) Compositionality: For composite manifolds M = T 
+
+> i
+
+Mi,the total barrier decomposes additively and ˆstotal = ∑i ˆsi,enabling modular fusion of heterogeneous constraints. 
+
+2) Scalability: Each PPC gradient step requires evaluating the KDE score ˆst (u) at a single point, which costs O(Nm )
+
+where N is the sample count and m is the control dimension, plus an O(m) gradient update. In contrast, CBF-QP meth-ods [33] must form and solve a quadratic program whose per-step cost is O(m3) (dominated by the dense linear system solve), with additional overhead when many constraints are active. The first-order structure of PPC avoids this cubic dependence on 
+
+m, and the score evaluation is embarrassingly parallel across samples. 
+
+3) Online Refinement: Theorem 3 gives the integrated score error rate εt = O(N−2/(m+4) 
+
+> t
+
+), so the set-approximation term of the safety bound in Theorem 4 shrinks as the cumulative sample count Nt grows. The decreasing statistical error then allows the Planner to drive the stiffness βt toward its critical value β ∗
+
+> curv
+
+,approached from above so that the strict inequality required by Proposition 2 continues to hold. Lowering βt relaxes the score penalty and lets the Planner exploit a larger portion of the manifold interior, trading conservative safety margins for improved task performance once the data have certified the tighter bound. V. E XPERIMENTS 
+
+We validate the online score-based framework on a 2D robot navigation task with dynamic obstacles, designed to exercise the core challenges addressed by this paper, namely a non-convex , time-varying feasibility manifold that is unknown to the central planner and must be learned online from black-box interactions. 
+
+A. Problem Setup 
+
+A robot navigates a bounded workspace [0, 10 ]2 to reach a goal position while avoiding 5 moving circular obstacles. The implementation uses single-integrator dynamics qt+1 = qt + ut
+
+with ∥ut ∥ ≤ umax = 1.0 , which yields a non-convex feasible action set at each step while keeping the planning problem two-dimensional; the same interface extends to higher-order dynamics by letting ut denote the first control block passed to the Simulator. Obstacle k has radius rk ∈ [0.4, 0.8] and its center ok(t) ∈ R2 follows a Lissajous curve: 
+
+ok(t) = ck +
+
+Ak sin (ωkt + φk)
+
+Bk cos (νkt + ψk)
+
+
+
+, (55) where ck is a base position and (Ak, Bk, ωk, νk, φk, ψk) are drawn randomly per seed. In the Simulator–Planner architecture of Section II-B , the Simulator (physics engine) has access to the obstacle states and dynamics, while the Planner’s task cost uses the robot position and goal. For the main experiments, the Planner’s density model is trained from the same black-box feasibility 14 0 2 4 6 8 10                              
+
+> 0
+> 2
+> 4
+> 6
+> 8
+> 10
+> PPC-Context (Ours)
+> safety: 99% 99% (post-reshuffle)
+> Before reshuffle
+> After reshuffle
+> Reshuffle point
+> Violations (8)
+> 0246810
+> 0
+> 2
+> 4
+> 6
+> 8
+> 10
+> Offline DRGD
+> safety: 84% 76% (post-reshuffle)
+> Before reshuffle
+> After reshuffle
+> Reshuffle point
+> Violations (203)
+> 0246810
+> 0
+> 2
+> 4
+> 6
+> 8
+> 10
+> CBF-QP (oracle)
+> safety: 97% 98% (post-reshuffle)
+> Before reshuffle
+> After reshuffle
+> Reshuffle point
+> Violations (25)
+> 0200 400 600 800
+> Time step t
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> 0.9
+> 1.0
+> Rolling safety
+> (window=50)
+> (d) Rolling Safety Rate
+> PPC-Context (Ours)
+> Offline DRGD
+> CBF-QP (oracle)
+> 95% target
+> Reshuffle
+> 0200 400 600 800 1000
+> Time step t
+> 0
+> 50
+> 100
+> 150
+> 200
+> Cumulative violations  (e) Cumulative Violations
+> PPC-Context (Ours)
+> Offline DRGD
+> CBF-QP (oracle)
+> Reshuffle
+> 0200 400 600 800
+> Time step t
+> 5
+> 10
+> 15
+> Rolling cost
+> (window=50)
+> (f) Rolling Tracking Cost
+> PPC-Context (Ours)
+> Offline DRGD
+> CBF-QP (oracle)
+> Reshuffle
+
+Fig. 4: Contextual adaptation under obstacle reshuffle ( T =1000 , N=300 samples/step, reshuffle at t=T /2 ). Top row: Trajectories colored by phase (lighter before reshuffle, darker after); red × markers indicate safety violations. Left: PPC-Context (Ours) leverages the context signal ξt to rapidly adapt its density model after the manifold shift, achieving safety competitive with the oracle baseline using only black-box samples. Center: Offline DRGD uses a frozen score pretrained on 500 samples at t=0 ;after the reshuffle its stale model fails to track the new manifold, producing frequent violations. Right: CBF-QP (oracle) has direct access to exact obstacle positions and radii at every step, which is an information advantage unavailable in the black-box setting. Bottom row: (d) Rolling safety rate with reshuffle marked (magenta line); (e) cumulative violations; (f) rolling tracking cost. PPC-Context approaches oracle-level safety using only simulator samples, while offline pretraining without online updates collapses after the shift. oracle as our method (no explicit obstacle parameters in the optimization). The Planner minimizes the tracking cost 
+
+c(qt , u) = qt + u − gt 2, (56) where gt is the current goal position (updated upon arrival). The feasibility manifold is 
+
+Mt (qt ) = u ∈ U : ∥qt + u − ok(t+1)∥ ≥ rk + dsafe , ∀k , (57) with safety margin dsafe = 0.3 . This set is non-convex in u and its topology changes as obstacles move. 
+
+B. Baselines 
+
+We compare our online PPC controller (Algorithm 1) against five baselines spanning offline generative models, data-driven safety methods, sampling-based control, and conservative approximation. 
+
+1) Offline DRGD [11]: A KDE score model is fit to 500 feasibility samples from the initial obstacle configuration ( t=0 )only. At deployment, the density is fixed and used for manifold-constrained optimization without online updates. This baseline isolates the cost of not adapting the manifold model online. 
+
+2) CBF-QP [32]: A Control Barrier Function hk(x) = ∥q −
+
+ok(t)∥2 − (rk + dsafe )2 with oracle access to obstacle positions projects the nominal input onto the safe set via a QP (class-
+
+K coefficient γ=0.5 ). This represents the strongest structural prior. 
+
+3) GP-CBF [37]: A Gaussian Process models the constraint function h(x, u) = min k(∥qt+1(u) − ok(t+1)∥ − rk − dsafe ) on-line; its posterior mean serves as a learned CBF within a QP filter (RBF kernel, hyperparameters refitted every 50 steps). 
+
+4) Sampling-Based MPC (CEM): The Cross-Entropy Method [20] draws 300 candidate actions from a Gaussian proposal and selects the lowest-cost feasible candidate (KDE log-probability above α), mirroring CEM-MPC with a learned model [21], [22]. Like PPC, CEM collects N=300 oracle feasibility samples per step (via rejection sampling) to update its KDE density model; feasibility of CEM’s own candidate actions is then assessed against this KDE rather than by re-querying the oracle. The proposal is updated via the elite set (top 10%, 5 iterations). 
+
+5) Static Conservative: The reachable set is conservatively inner-approximated using the maximum swept obstacle radii 
+
+rmax 
+
+k = rk + dsafe + max t ∥ok(t) − ok(0)∥ computed from worst-case displacement. The robot treats these inflated obstacles as static and solves a QP at each step. Because the inflation depends on the randomly drawn Lissajous amplitudes, the feasible set size varies across seeds, leading to higher cost variance than the other baselines. 15 0 5 10                                  
+
+> x1
+> 0
+> 5
+> 10
+> x2
+> t= 163
+> SW cluster
+> Context raster st
+> 101
+> t,i
+> 1
+> 3
+> 5
+> 7
+> 9
+> 11
+> dim  i
+> Embedding t
+> 101
+> u1
+> 1
+> 0
+> 1
+> u2
+> Pr( ut) = 90.7%
+> Conditional p(ut)
+> 101
+> u1
+> 1
+> 0
+> 1
+> u2
+> safe = +26.5 pp
+> cond: 90.7% marg: 64.2%
+> Context signal p(ut)p(u)
+> 0510
+> x1
+> 0
+> 5
+> 10
+> x2
+> t= 470
+> NE cluster
+> 101
+> t,i
+> 1
+> 3
+> 5
+> 7
+> 9
+> 11
+> dim  i
+> 101
+> u1
+> 1
+> 0
+> 1
+> u2
+> Pr( ut) = 64.9%
+> 101
+> u1
+> 1
+> 0
+> 1
+> u2
+> safe = +3.1 pp
+> cond: 64.9% marg: 61.8%
+> 0.00
+> 0.16
+> 0.32
+> 0.48
+> 0.64
+> 0.80
+> 0.96
+> p(u t) (norm.)
+> 0.00015
+> 0.00010
+> 0.00005
+> 0.00000
+> 0.00005
+> 0.00010
+> 0.00015
+> 0.00020
+> p(u t) p(u)
+
+Fig. 5: Contextual observation pipeline at the most constraining warmed-up step of two structurally opposite obstacle modes (top: SW cluster; bottom: NE cluster), out of the four quadrant-clustered modes the experiment cycles through every 40 steps. Column 1: 
+
+three-channel raster st (red = obstacles, green = robot, blue = goal). Column 2: embedding ξt = tanh (R vec (st )) ; the two rows carry visibly distinct patterns, so the context kernel can separate the modes. Column 3: conditional density ˆp(u | ξt ) over the admissible action disk, with feasibility boundary ∂ Mt overlaid in red dashed; annotations give the conditional feasibility-mass. Column 4: 
+
+context signal ˆp(u | ξt )− ˆp(u)—red adds mass, blue suppresses it. The key quantity ∆safe = Pr (u∈M t | ˆp(· | ξt )) −Pr (u∈M t | ˆp(·)) 
+
+reported above each Column 4 panel measures the directional value of context—the excess feasibility-mass the conditional concentrates inside Mt relative to the pooled marginal—and is the empirical counterpart of the strictly positive σ 2 
+
+> t
+
+that drives the safety gap in Theorem 5. 
+
+C. Our Method: Online PPC 
+
+The Simulator maintains a kernel density estimate over feasibility samples. At each time step, it draws N=300 feasible actions via rejection sampling against the black-box oracle for (57) . The score ∇u ln ˆ p(u) is evaluated in closed form from the KDE. The critical stiffness β ∗ 
+
+> curv
+
+= Gc/(κ rα ) is estimated online from the KDE’s barrier curvature at the α-level-set boundary, and the stiffness schedule follows 
+
+βt = β ∗ 
+
+> curv
+
+·  1 +C/√Nt
+
+, (58) where Nt is the cumulative number of feasibility samples and 
+
+C > 0 is a tunable constant. The gradient step size is set to η = min (η0, 1/(Lc + βt Λ)) following Theorem 1, where 
+
+η0 = 0.02 is a base learning rate, Λ = 1/h2, and h is the KDE bandwidth. 
+
+Contextual observation model. For the contextual exper-iment (Figure 12), the Planner receives ξt ∈ R12 obtained by flattening three top-down raster channels at resolution 16 ×16 (obstacle occupancy, robot, goal) and applying a fixed random linear projection with tanh squashing. The Simulator fits ˆp(u | ξt ) with a product-kernel KDE over pairs (u, ξ )
+
+from online samples. Figure 5 illustrates the pipeline on two structurally opposite obstacle modes (SW and NE clusters) and quantifies the safety advantage of conditioning: at the most constraining warmed-up step in each mode, the conditional concentrates 90 .7% (SW) and 64 .9% (NE) of its mass inside the feasibility manifold Mt , against only 64 .2% and 61 .8% for the context-blind marginal; the resulting ∆safe values of 
+
++26 .5 pp and +3.1 pp are the empirical counterpart of the strictly positive σ 2 
+
+> t
+
+that drives the safety gap in Theorem 5. 
+
+D. Evaluation Metrics 
+
+1) Safety Rate : Fraction of time steps where ut ∈ M t . By Theorem 4, dist (ut , Mt ) is bounded; when that bound is zero (i.e., sufficient samples and βt > β ∗
+
+> curv
+
+), the action lies inside Mt and the safety rate approaches 1. 2) Normalized Cost : Total tracking cost divided by the Or-acle cost. The Oracle minimizes the single-step tracking cost c(u) subject to u ∈ M t with full knowledge of the obstacle geometry at each t (no look-ahead). Values near 1.0 indicate near-optimal per-step performance. 3) Adaptation Speed : Number of steps to recover a safety rate ≥ 95% after a sudden obstacle configuration change at t = 500 (all Lissajous parameters are re-randomized). 4) Learning Convergence : Empirical integrated squared score error ∥ ˆs − s∗∥2 vs. cumulative samples Nt , validat-ing the O(N−2/(m+4)) rate of Theorem 3 ( = O(N−1/3)
+
+for m = 2). 
+
+E. Experimental Protocol 1) Experiment 1: Main Comparison: All six methods including PPC and five baselines are run for T =1000 steps with 
+
+N=300 black-box feasibility samples per step (Offline DRGD pretrains on 500 samples at t=0 only), across five random seeds (random obstacle trajectories and initial positions). Table I lists mean ± standard deviation of safety rate and normalized 16 PPC (Ours) 
+
+> Offline DRGD
+> CBF-QP
+> GP-CBF
+> CEM
+> Static Conserv.
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Safety Rate
+> (a) Safety Rate
+> 95% target
+> PPC (Ours)
+> Offline DRGD
+> CBF-QP
+> GP-CBF
+> CEM
+> Static Conserv.
+> 0.0
+> 0.5
+> 1.0
+> 1.5
+> 2.0
+> 2.5
+> Normalized Cost (lower = better)
+> (b) Normalized Cost
+> Oracle = 1.0
+> PPC (Ours)
+> Offline DRGD
+> CBF-QP
+> GP-CBF
+> CEM
+> Static Conserv.
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> 120
+> Wall-clock Time per Step (ms)
+> (c) Computational Cost
+
+Fig. 6: Main comparison across all methods ( T =1000 , N=300 feasibility samples per step, five seeds, mean ± std); see Table I. The trajectory figure (Figure 4) uses the same per-step sample budget. (a) Safety rate. (b) Normalized cost (Oracle = 1.0). 
+
+(c) Wall-clock time per step. TABLE I: Main comparison ( T =1000 , N=300 samples/step, five seeds, mean ± std). PPC achieves the best safety among black-box methods while maintaining the lowest cost. †The high cost variance of Static Conserv. reflects the sensitivity of episode-wide worst-case inflation to random obstacle motion amplitudes; Offline DRGD’s variance is similarly driven by the mismatch between its frozen model and the current manifold. 
+
+Method Safety Norm. cost PPC (Ours) .964 ± .009 0.65 ± .18 Offline DRGD .676 ± .271 0.70 ± .53 CBF-QP .905 ± .043 1.34 ± .30 GP-CBF .762 ± .025 1.12 ± .14 CEM .810 ± .027 1.13 ± .19 Static Conserv. .993 ± .014 1.57 ± .86 †10 1 10 0 10 1   
+
+> /*curv
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> 0.9
+> 1.0
+> Safety Rate
+> =*curv
+> Safety Rate 2000
+> 3000
+> 4000
+> 5000
+> 6000
+> 7000
+> 8000
+> 9000
+> Total Tracking Cost
+> Tracking Cost
+
+Fig. 7: Stiffness ablation validating Proposition 2. The critical stiffness β ∗ 
+
+> curv
+
+= Gc/(κ rα ) is computed from the formula (me-dian over seeds). Safety rate (blue, left axis) rises from ∼76% to ∼ 96% and crosses the 95% threshold near β = β ∗ 
+
+> curv
+
+(red dashed), confirming the predicted phase transition. Tracking cost (orange, right axis) is low for small β but rises sharply beyond β ∗
+
+> curv
+
+, illustrating the cost-safety trade-off governed by barrier curvature. tracking cost; Figure 6 shows the same statistics as bar plots. Representative trajectories appear in Figure 4. 
+
+2) Experiment 2: Stiffness Ablation: The environment is fixed and β is varied from 0.1β ∗ 
+
+> curv
+
+to 10 β ∗
+
+> curv
+
+. We plot safety TABLE II: Sample budget ablation ( T =500 , five seeds). Safety rate rises monotonically with N; the empirical score error ∥ ˆs −
+
+s∗∥2 (computed against a reference KDE) decays consistently with the O(N−2/(m+4)) rate of Theorem 3 for m = 2. 
+
+N Safety rate ∥ ˆs − s∗∥2
+
+10 0.762 ± 0.036 10 .51 ± 5.11 50 0.874 ± 0.026 2.59 ± 0.85 100 0.945 ± 0.010 1.10 ± 0.16 500 0.976 ± 0.009 0.29 ± 0.06 1000 0.999 ± 0.001 0.13 ± 0.05 
+
+rate and normalized cost as functions of β /β ∗
+
+> curv
+
+, validating the critical stiffness condition of Proposition 2: safety should emerge at β ≈ β ∗
+
+> curv
+
+. Results are shown in Figure 7. 
+
+3) Free Energy Landscape: Figure 8 complements the stiffness sweep with a spatial analysis of the PPC free energy at a representative time step ( t=200 , N=200 samples/step). Panel (a) shows the tracking cost c(u) with the true feasibility boundary (blue solid) and the learned level set ˆMα 
+
+> t
+
+(cyan dashed). Panel (b) overlays the free-energy contours with two key points: the PPC equilibrium u∗ (red triangle) and the density maximizer ¯u = arg max ˆ p (cyan square). The equilibrium 
+
+u∗ is pulled toward the cost minimum but anchored near ¯u by the barrier penalty, exactly as Proposition 2 predicts. Panel (c) reports the geometric gaps: ∥u∗− ¯u∥ is well within the theoretical bound Gc/(β κ ), and dist (u∗, ∂ Mt ) > 0 confirms that u∗ lies safely inside the true manifold. 
+
+4) Experiment 3: Sample Budget: The number of manifold samples per step is varied as N ∈ { 10 , 50 , 100 , 500 , 1000 }. To validate the O(N−2/(m+4)) rate of Theorem 3, we measure the empirical integrated squared score error by building a test KDE from an increasing number of feasibility samples and comparing its score against a high-fidelity reference KDE (10 ,000 samples, same bandwidth). We plot safety rate and the empirical ∥ ˆs − s∗∥2 vs. N; Table II lists the numerical results and Figure 9 shows the data with a log-linear power-law fit. The fitted exponent ( ˆb ≈ − 0.96 ) is steeper than the worst-case 
+
+O(N−1/3) rate of Theorem 3 for m = 2, consistent with the bound being conservative for this smooth problem instance. 
+
+5) Experiment 4: Scalability: The number of obstacles is varied as Ko ∈ { 3, 5, 10 , 15 , 20 }. We report safety rate, total 17 1.0 0.5 0.0 0.5 1.0                          
+
+> u1
+> 1.00
+> 0.75
+> 0.50
+> 0.25
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+> u2
+> (a) Cost c(u) and manifolds
+> u*(PPC eq.)
+> u(density max.)
+> 1.0 0.5 0.0 0.5 1.0
+> u1
+> 1.00
+> 0.75
+> 0.50
+> 0.25
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+> u2
+> (b) Free energy (u) = cln p
+> u*(PPC eq.)
+> u(density max.)
+> 01234
+> Distance
+> u*u
+> Gc/( )
+> dist( u*,t)
+> (c) Geometric gaps (Cor. IV.1)
+> 0.5
+> 2.0
+> 3.5
+> 5.0
+> 6.5
+> 8.0
+> 9.5
+> c(u)
+> 90
+> 135
+> 180
+> 225
+> 270
+> 315
+> 360
+> 405
+> (u)
+
+Fig. 8: Free-energy landscape at t=200 . (a) Cost c(u) with true manifold boundary (blue) and learned ˆMα 
+
+> t
+
+(cyan dashed). 
+
+(b) Free energy F(u) with the PPC equilibrium u∗ (red) and density maximizer ¯u (cyan). (c) Geometric gaps: the empirical 
+
+∥u∗− ¯u∥ is well within the theoretical bound Gc/(β κ ) from Proposition 2, and dist (u∗, ∂ Mt ) > 0 confirms the equilibrium is safely interior. 10 1 10 2 10 3         
+
+> Manifold Samples per Step ( N)
+> 0.65
+> 0.70
+> 0.75
+> 0.80
+> 0.85
+> 0.90
+> 0.95
+> 1.00
+> Safety Rate
+> Safety Rate
+> 10 1
+> 10 0
+> 10 1
+> Score error  s s * 2
+> Fit: b=0.96 (theory 0.33)
+> Empirical ss*2
+
+Fig. 9: Effect of sample budget on safety and score estimation quality. Safety rate (blue, left) crosses 95% between N=100 and N=500 . The empirical squared score error (red, right, log scale) is measured against a reference KDE built from 10 ,000 samples. The black dashed line is a least-squares fit of aN ˆb
+
+in log-log space; the estimated exponent ˆb ≈ − 0.96 is steeper than the worst-case −1/3 from Theorem 3. See Table II. TABLE III: Scalability: safety rate (mean ± std, three seeds, 
+
+T =300 ) as the number of obstacles Ko grows. PPC degrades gracefully; CBF-QP drops sharply because the QP safety filter becomes increasingly infeasible; CEM degrades as the feasible volume shrinks and its sampling proposal becomes less efficient. 
+
+Ko PPC (Ours) CBF-QP CEM 3 0.92 ± 0.03 0.99 ± 0.01 0.88 ± 0.01 5 0.92 ± 0.03 0.89 ± 0.07 0.84 ± 0.04 10 0.89 ± 0.02 0.66 ± 0.04 0.71 ± 0.01 15 0.87 ± 0.07 0.63 ± 0.09 0.63 ± 0.04 20 0.85 ± 0.06 0.40 ± 0.20 0.62 ± 0.05 
+
+cost, and wall-clock time per step for PPC, CBF-QP, and CEM (three seeds, T =300 ). Table III lists the safety rates; Figure 10 plots all three metrics. 
+
+6) Experiment 5: Dynamic Regret under Manifold Drift: We validate the qualitative prediction of Theorem 2 by varying the obstacle speed multiplier ωmult ∈ { 0.25 , 0.5, 1.0, 2.0, 4.0, 8.0},which controls the manifold drift rate. For each speed, PPC is run for T =500 steps over five seeds. We use the normalized tracking cost as an empirical proxy for the dynamic regret. Figure 11 shows the results. (a) Normalized cost vs. the speed multiplier ωmult . (b) Cost plotted against the manifold path length PT = ∑t ∑k ∥ok(t+1) − ok(t)∥, a physical proxy for VT in (28) ; a positive trend is visible, consistent with the predicted O(VT ) scaling. (c) Safety remains above 90% across all speeds. 
+
+7) Experiment 6: Contextual Feasibility Density: We design the benchmark so that the posterior conditional-score covariance 
+
+σ 2 
+
+> t
+
+in Theorem 5 is demonstrably positive and the value of context becomes empirically observable. Four obstacles are relocated to one of nmodes =4 pre-generated cluster layouts (obstacles concentrated in the SW, SE, NW, or NE quadrant of the workspace), with the active mode switched to a fresh random layout every 40 steps throughout an episode of length 
+
+T =1000 . Because each mode layout recurs several times per episode, the KDE buffer contains feasibility samples from 
+
+multiple modes simultaneously: this is precisely the regime in which the context kernel can disambiguate past data for the currently active mode, and in which the marginal KDE must average across modes. We compare three Planners under the identical schedule, with N=25 samples per step and 5random seeds. PPC-Context updates the conditional KDE ˆp(u | ξt ) online; PPC-Marginal uses the same samples but ignores ξt ; Offline Contextual collects 200 samples in each of the four layouts at t=0 and then freezes the conditional KDE. Table IV reports aggregate statistics and Figure 12 plots the runs. Aggregate safety is 98 .8% for PPC-Context versus 93 .2% for PPC-Marginal, a 5.6% gap that concentrates at mode boundaries: in the first ten steps after each switch PPC-Context attains 99 .0% safety, while PPC-Marginal drops to 94 .2% . Frozen Offline Contextual achieves only 90 .3% because it cannot track within-mode geometry drift once deployed. Because raw trajectory cost would reward unsafe actions that cheat through obstacles, we report the mean per-step tracking cost restricted to safe steps, normalized by the oracle’s mean per-step cost; on this fair metric all three methods lie in a narrow 18 2.5 5.0 7.5 10.0 12.5 15.0 17.5 20.0               
+
+> Number of Obstacles ( K)
+> 0.2
+> 0.3
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> 0.9
+> 1.0
+> Safety Rate
+> (a) Safety Rate
+> PPC (Ours)
+> CBF-QP
+> CEM
+> 2.5 5.0 7.5 10.0 12.5 15.0 17.5 20.0
+> Number of Obstacles ( K)
+> 2000
+> 4000
+> 6000
+> 8000
+> 10000
+> 12000
+> Total Tracking Cost
+> (b) Total Cost
+> PPC (Ours)
+> CBF-QP
+> CEM
+> 2.5 5.0 7.5 10.0 12.5 15.0 17.5 20.0
+> Number of Obstacles ( K)
+> 0
+> 50
+> 100
+> 150
+> 200
+> 250
+> 300
+> Time per Step (ms)
+> (c) Wall-clock Time
+> PPC (Ours)
+> CBF-QP
+> CEM
+> Scalability with Number of Obstacles
+
+Fig. 10: Scalability with number of obstacles ( Ko ∈ { 3, 5, 10 , 15 , 20 }, three seeds, T =300 ); see Table III. (a) PPC degrades gracefully ( 0.92 → 0.85 ) while CBF-QP drops to 0.40 and CEM drops to 0.62 . (b) Total tracking cost. (c) Wall-clock time per step. 10 0             
+
+> Speed Multiplier mult
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> 0.9
+> 1.0
+> Normalized Cost (Oracle = 1)  (a) Cost vs. Speed
+> PPC Norm. Cost
+> 0200 400 600 800 1000 1200
+> Manifold Path Length T
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> 0.9
+> Normalized Cost
+> (b) Cost vs. T(Thm. 2)
+> Linear fit ( r=0.52)
+> Empirical
+> 10 0
+> Speed Multiplier mult
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> 0.9
+> 1.0
+> Safety Rate
+> (c) Safety vs. Speed
+> Safety Rate
+> Dynamic Regret under Manifold Drift
+
+Fig. 11: Dynamic regret experiment validating Theorem 2 ( T =500 , five seeds). (a) Normalized tracking cost vs. obstacle speed multiplier. (b) Cost vs. manifold path length PT (proxy for VT ) with a linear fit and Pearson correlation r; the positive trend is consistent with the O(VT ) scaling in (28). (c) Safety rate remains above 90% across all speeds. TABLE IV: Contextual ablation ( T =1000 , five seeds, recurring mode switches every 40 steps across nmodes =4 obstacle layouts, 
+
+N=25 samples/step). “Post-switch” = mean safety in the first 10 steps after each mode change; “Steady” = mean safety in the remaining within-mode steps. “Cost” is the mean per-step tracking cost restricted to safe time steps, normalized by the oracle’s mean per-step cost, so that constraint violations cannot artificially lower the metric by letting the robot cut through obstacles. 
+
+Method Safety Post-switch Steady Cost PPC-Context .988 ± .004 .990 ± .003 .987 ± .005 .77 ± .09 PPC-Marginal .932 ± .014 .942 ± .011 .929 ± .016 .72 ± .09 Offline Contextual .903 ± .021 .864 ± .035 .915 ± .026 .84 ± .12 
+
+band ( 0.72 –0.84 ) while their safety rates differ by up to 8.5% ,confirming that the online context kernel delivers its advantage as safety rather than as an inflated tracking error. These numbers quantitatively instantiate the Gc σ 2
+
+t /(βt κ(ξt ) κmarg ) term in Theorem 5: the mode-switching structure makes the per-mode conditional scores substantially different, yielding a strictly positive σ 2
+
+t and a safety advantage for context-aware estimation. VI. C ONCLUSION 
+
+We have developed Penalized Predictive Control for safe online control when the Planner’s access to constraint geometry is mediated by a black-box Simulator. All guarantees flow from the PPC free energy F(u) = c(u) − β ln ˆ p(u): Theorem 1 reveals that its Hessian contains the Fisher information of ˆp,yielding a contraction rate governed by the barrier curvature κ;Theorem 2 bounds dynamic regret in terms of score variation; Theorem 3 bounds score convergence; Theorem 4 composes the preceding results into a safety bound; Proposition 3 derives, via a variational-inference argument, a mixture-Hessian identity that subtracts a posterior-score covariance from the learned cur-vature under marginalization, and Theorem 5 promotes this into a formal safety-guarantee gap of at least Gc σ 2
+
+t /(βt κ(ξt ) κmarg )
+
+between the Theorem 4 residuals of the context-aware and context-blind Planners whenever ξt is identifiable from the action, with σ 2
+
+t the minimum eigenvalue of the posterior conditional-score covariance. Experiments validate each theoretical link. The stiffness ablation (Figure 7) confirms the phase transition at β ∗
+
+curv ;the sample-budget sweep (Figure 9) confirms empirical score convergence consistent with Theorem 3; with N=300 samples per step, the main comparison (Table I) reports 96 .4% mean safety for PPC with normalized cost 0.65 , compared with CEM at 81 .0% / 1.13 and GP-CBF at 76 .2% / 1.12 under the same black-box interface; and the contextual experiment (Figure 12) empirically confirms Theorem 5: under a benchmark with recurring mode switches across four structurally distinct obstacle layouts, PPC-Context attains 98 .8% safety while PPC-19 PPC-Context (Ours)                    
+
+> PPC-Marginal
+> Offline Contextual
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> 120
+> Avg. Total Violations
+> 12.4
+> 67.8
+> 97.4
+> (a) Total Violation Count (lower is better)
+> 0.80 0.85 0.90 0.95 1.00
+> Steady-state safety (within mode)
+> 0.80
+> 0.85
+> 0.90
+> 0.95
+> 1.00
+> Post-switch safety (first 10 steps)  (b) Steady vs. Post-Switch Safety
+> PPC-Context (Ours)
+> PPC-Marginal
+> Offline Contextual
+> 0200 400 600 800 1000
+> Time Step
+> 0
+> 20
+> 40
+> 60
+> 80
+> 100
+> 120
+> Cumulative Violations
+> (c) Cumulative Violations
+> PPC-Context (Ours)
+> PPC-Marginal
+> Offline Contextual
+> Mode switch (every 40)
+> 0200 400 600 800 1000
+> Time Step
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Rolling Safety (window=40)  (d) Adaptation Dynamics
+> PPC-Context (Ours)
+> PPC-Marginal
+> Offline Contextual
+> Contextual control: p(ut) vs marginal p(u) (recurring mode switches, period = 40, nmodes = 4)
+
+Fig. 12: Contextual control ablation (five seeds; T =1000 , recurring mode switches every 40 steps across nmodes =4 structurally distinct obstacle layouts). (a) Average total safety-violation counts: PPC-Context incurs only ≈12 violations per episode versus 
+
+≈69 for PPC-Marginal and ≈94 for Offline Contextual, a roughly 5× reduction attributable to the context kernel. (b) Per-seed scatter of steady-state (within-mode) versus post-switch (first 10 steps after each mode change) safety: PPC-Context clusters near the (1, 1) corner, PPC-Marginal is shifted toward lower safety on both axes, and Offline Contextual is dispersed further down. (c) Cumulative violations over time: PPC-Context stays near zero, while PPC-Marginal and Offline Contextual accrue violations continuously as modes cycle. (d) Rolling safety (window = 40 ): PPC-Context tracks each mode switch rapidly via the context kernel, whereas PPC-Marginal dips at every switch because its buffer now mixes feasibility samples from all 
+
+past modes. The visible context–marginal gap ( ≈ 5.6% on aggregate safety, ≈ 4.8% on post-switch safety) is precisely the 
+
+Gc σ 2
+
+t /(βt κ(ξt ) κmarg ) residual predicted by Theorem 5: multiple mode layouts drive the posterior score-covariance σ 2
+
+t strictly positive, and this directly translates into a safety advantage for PPC-Context. Marginal drops to 93 .2% and a frozen Offline Contextual baseline degrades to 90 .3% , with the 5.6% context–marginal gap concentrating at mode boundaries where the posterior score-covariance σ 2
+
+t is largest. 
+
+Contextual control. This work instantiates contextual con-trol in a concrete Simulator–Planner split where the Planner never consumes raw obstacle parameters, yet online conditional density estimation preserves safety when the environment shifts. Natural extensions include replacing the hand-crafted raster with learned encoders for image or video observations, scaling certificates to high-dimensional actions, and analyzing non-stationarity when the Simulator’s internal state evolves faster than the Planner’s sample budget. REFERENCES [1] A. Sanchez-Gonzalez, J. Godwin, T. Pfaff, R. Ying, J. Leskovec, and P. Battaglia, “Learning to simulate complex physics with graph networks,” in International Conference on Machine Learning , pp. 8459–8468, PMLR, 2020. [2] A. Escontrela, A. Adeniji, W. Tong, B. Mazoure, and P. Abbeel, “Video prediction models as rewards for reinforcement learning,” in Advances in Neural Information Processing Systems , vol. 36, 2024. [3] D. Ha and J. Schmidhuber, “Recurrent world models facilitate policy evolution,” in Advances in Neural Information Processing Systems ,vol. 31, 2018. [4] J. Bruce, M. Dennis, A. Edwards, J. Parker-Holder, Y. Shi, E. Hughes, M. Lai, A. Mavalankar, R. Steiber, C. Rae, et al. , “Genie: Generative interactive environments,” in Proceedings of the 41st International Conference on Machine Learning , pp. 4583–4612, PMLR, 2024. [5] Y. Guo, L. Shi, J. Chen, and C. Finn, “Ctrl-world: A controllable gener-ative world model for robot manipulation,” in International Conference on Learning Representations (ICLR) , 2026. [6] T. Li, Y. Chen, B. Sun, A. Wierman, and S. Low, “Information aggrega-tion for constrained online control,” ACM SIGMETRICS Performance Evaluation Review , vol. 49, no. 1, pp. 7–8, 2021. [7] T. Li, B. Sun, Y. Chen, Z. Ye, S. H. Low, and A. Wierman, “Learning-based predictive control via real-time aggregate flexibility,” IEEE Transactions on Smart Grid , vol. 12, no. 6, pp. 4897–4913, 2021. [8] N. Rhinehart, R. McAllister, K. Kitani, and S. Levine, “Precog: Prediction conditioned on goals in visual multi-agent settings,” in Proceedings of the IEEE/CVF International Conference on Computer Vision , pp. 2821–2830, 2019. [9] E. Todorov, “Linearly-solvable Markov decision problems,” in Advances in Neural Information Processing Systems , vol. 19, 2006. [10] H. J. Kappen, “Linear theory for control of nonlinear stochastic systems,” 
+
+Physical Review Letters , vol. 95, no. 20, p. 200201, 2005. [11] A. Kharitenko, Z. Shen, R. De Santi, N. He, and F. Doerfler, “Land-ing with the score: Riemannian optimization through denoising,” in 
+
+International Conference on Learning Representations (ICLR) , 2025. [12] C. E. Garcia, D. M. Prett, and M. Morari, “Model predictive control: Theory and practice—a survey,” Automatica , vol. 25, no. 3, pp. 335–348, 1989. [13] A. Bemporad and M. Morari, “Robust model predictive control: A survey,” in Robustness in identification and control , pp. 207–226, Springer, 1999. [14] D. Q. Mayne, M. M. Seron, and S. Rakovi´ c, “Robust model predictive 20 
+
+control of constrained linear systems with bounded disturbances,” 
+
+Automatica , vol. 41, no. 2, pp. 219–224, 2005. [15] J. Berberich, J. Köhler, M. A. Müller, and F. Allgöwer, “Data-driven model predictive control with stability and robustness guarantees,” IEEE Transactions on Automatic Control , vol. 66, no. 4, pp. 1702–1717, 2020. [16] L. Bold, L. Grüne, M. Schaller, and K. Worthmann, “Data-driven mpc with stability guarantees using extended dynamic mode decomposition,” 
+
+IEEE Transactions on Automatic Control , 2024. [17] U. Rosolia, X. Zhang, and F. Borrelli, “Data-driven predictive control for autonomous systems,” Annual Review of Control, Robotics, and Autonomous Systems , vol. 1, no. 1, pp. 259–286, 2018. [18] K. P. Wabersich and M. N. Zeilinger, “A predictive safety filter for learning-based control of constrained nonlinear dynamical systems,” 
+
+Automatica , vol. 129, p. 109597, 2021. [19] J. Buerger and M. Cannon, “Robust adaptive NMPC using ellipsoidal tubes,” Automatica , 2026. Submitted. [20] R. Y. Rubinstein, “The cross-entropy method for combinatorial and continuous optimization,” Methodology and Computing in Applied Probability , vol. 1, no. 2, pp. 127–190, 1999. [21] K. Chua, R. Calandra, R. McAllister, and S. Levine, “Deep reinforcement learning in a handful of trials using probabilistic dynamics models,” in 
+
+Advances in Neural Information Processing Systems , vol. 31, 2018. [22] C. Pinneri, S. Sawant, S. Blaes, J. Achterhold, J. Stueckler, M. Rolinek, and G. Martius, “Sample-efficient cross-entropy method for real-time planning,” in Conference on Robot Learning , pp. 1049–1065, PMLR, 2021. [23] N. Tishby, F. C. Pereira, and W. Bialek, “The information bottleneck method,” Proceedings of the 37-th Annual Allerton Conference on Communication , 2000. [24] A. Hyvärinen, “Estimation of non-normalized statistical models by score matching,” Journal of Machine Learning Research , vol. 6, pp. 695–709, 2005. [25] P. Vincent, “A connection between score matching and denoising autoencoders,” Neural Computation , vol. 23, no. 7, pp. 1661–1674, 2011. [26] N. Boumal, An Introduction to Optimization on Smooth Manifolds .Cambridge University Press, 2023. [27] P.-A. Absil, R. Mahony, and R. Sepulchre, Optimization Algorithms on Matrix Manifolds . Princeton University Press, 2008. [28] D. Rezende and S. Mohamed, “Variational inference with normalizing flows,” in International Conference on Machine Learning , pp. 1530–1538, PMLR, 2015. [29] I. Kobyzev, S. J. Prince, and M. A. Brubaker, “Normalizing flows: An introduction and review of current methods,” IEEE Transactions on Pattern Analysis and Machine Intelligence , vol. 43, no. 11, pp. 3964– 3979, 2020. [30] C.-H. Chao, C. Feng, W.-F. Sun, C.-K. Lee, S. See, and C.-Y. Lee, “Maximum entropy reinforcement learning via energy-based normalizing flow,” Advances in Neural Information Processing Systems , vol. 37, pp. 56136–56165, 2024. [31] A. Taylor, A. Singletary, Y. Yue, and A. Ames, “Learning for safety-critical control with control barrier functions,” in Learning for dynamics and control , pp. 708–717, PMLR, 2020. [32] A. D. Ames, S. Coogan, M. Egerstedt, G. Notomista, K. Sreenath, and P. Tabuada, “Control barrier functions: Theory and applications,” in 2019 18th European control conference (ECC) , pp. 3420–3431, IEEE, 2019. [33] A. D. Ames, X. Xu, J. W. Grizzle, and P. Tabuada, “Control barrier function based quadratic programs for safety critical systems,” IEEE Transactions on Automatic Control , vol. 62, no. 8, pp. 3861–3876, 2016. [34] T. Pati and S. Z. Yong, “Robust control barrier functions for uncertain parameter-varying control affine systems with set-membership parameter estimation,” IEEE Transactions on Automatic Control , 2025. [35] K. He, S. Shi, T. van den Boom, and B. De Schutter, “From learning to safety: A direct data-driven framework for constrained control,” IEEE Transactions on Automatic Control , 2026. Early access. [36] M. Bajelani and K. van Heusden, “Data-driven input-output control barrier functions,” IEEE Transactions on Automatic Control , 2026. Early access. [37] R. Cheng, G. Orosz, R. M. Murray, and J. W. Burdick, “End-to-end safe reinforcement learning through barrier functions for safety-critical continuous control tasks,” in Proceedings of the AAAI conference on artificial intelligence , vol. 33, pp. 3387–3395, 2019. [38] A. B. Tsybakov, Introduction to Nonparametric Estimation . Springer Series in Statistics, Springer, 2009.

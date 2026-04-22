@@ -1,0 +1,725 @@
+Title: Motif-Video 2B: Technical Report
+
+URL Source: https://arxiv.org/pdf/2604.16503v1
+
+Published Time: Tue, 21 Apr 2026 00:11:21 GMT
+
+Number of Pages: 35
+
+Markdown Content:
+2026-04-21 
+
+# Motif-Video 2B: Technical Report 
+
+Motif Technologies ∗
+
+# Abstract 
+
+Training strong video generation models usually requires massive datasets, large param-eter counts, and substantial compute. In this work, we ask whether strong text-to-video quality is possible at a much smaller budget: fewer than 10M clips and less than 100,000 H200 GPU hours. Our core claim is that part of the answer lies in how model capacity is organized, not only in how much of it is used. In video generation, prompt alignment, temporal consistency, and fine-detail recovery can interfere with one another when they are handled through the same pathway. Motif-Video 2B addresses this by separating these roles architecturally, rather than relying on scale alone. The model combines two key ideas. First, Shared Cross-Attention strengthens text control when video token sequences become long. Second, a three-part backbone separates early fusion, joint rep-resentation learning, and detail refinement. To make this design effective under a limited compute budget, we pair it with an efficient training recipe based on dynamic token rout-ing and early-phase feature alignment to a frozen pretrained video encoder. Our analysis shows that later blocks develop clearer cross-frame attention structure than standard single-stream baselines. On VBench, Motif-Video 2B reaches 83.76%, surpassing Wan2.1 14B while using 7 × fewer parameters and substantially less training data. These results suggest that careful architectural specialization, combined with an efficiency-oriented training recipe, can narrow or exceed the quality gap typically associated with much larger video models. 
+
+# 1 Introduction 
+
+Video generation has entered a scaling regime. The most capable open models, Wan2.1 [ 36 ], Hunyuan-Video [ 18 ], and Seedance [ 11 ], are trained on hundreds of millions of curated clips, with parameter counts ranging from 5B to 14B. This concentration of resources has produced impressive results, but it has also narrowed participation: in practice, training a competitive video generation model is accessible to very few groups. The image generation domain has begun to challenge this assumption. Earlier PixArt-α [4 ] efforts and the later PRX-3 project [ 28 ], together with related ImageNet speedrun efforts [ 2], show that careful engineering can partially substitute for brute-force scale. In particular, representation alignment, token routing, and principled architectural choices can produce competitive image generation models within a single day of training on modest hardware. The natural question is whether this philosophy transfers to video. Video is harder than image generation because the model must satisfy three goals at once: (1) follow the text prompt, (2) keep motion and content consistent across frames, and (3) recover fine visual details. We refer to the resulting competition for shared model capacity as objective interference . In practice, improvements along one dimension can come at the expense of another. As sequence length increases, text tokens become sparse relative to video tokens, which weakens text control in standard cross-attention. At the same time, learning long-range temporal structure can conflict with per-frame detail synthesis. A frozen visual encoder can help in early training, but later it can limit adaptation to the target distribution. As a result, scaling model size and data often delays these tensions rather than resolving them directly. Our central hypothesis is that objective interference is better addressed by explicit role separation than by scaling alone. We test this as an exploratory design hypothesis, not a strict causal claim, and use per-component attention analysis as supporting evidence. Following this hypothesis, we build Motif-Video 2B , a text-to-video diffusion transformer. More broadly, the paper asks whether architectural specialization, combined with an efficient training recipe, can substitute in part for brute-force scale in video generation. The overall architecture follows a three-stage layout: dual-stream blocks for initial text-video fusion, single-stream blocks for joint representation learning, and DDT [ 39 ] blocks for decoupled semantic encoding and detail decoding. This extends the functional role-separation philosophy of FLUX [20] into the spatiotemporal domain. 
+
+> ∗
+
+This work was conducted independently on Microsoft Azure, using compute resources separate from those sup-ported by the Korea Sovereign AI Foundation Model (K-AI) project. Infrastructure was managed with SkyPilot [ 47 ]on a Kubernetes cluster running on Azure nodes. 
+
+1
+
+> arXiv:2604.16503v1 [cs.CV] 14 Apr 2026
+
+Figure 1: Representative generations from Motif-Video 2B. Frames are captured from videos generated by our 2B-parameter text-to-video model across a diverse set of prompts, illustrating the combination of prompt fidelity, temporal coherence, and visual detail that we target throughout this work. The banner is intended as a qualitative teaser; later sections analyze the architectural and training choices that make these generations possible under a micro-budget training regime. Within the single-stream stage, we observe that standard self-attention insufficiently preserves text alignment as sequence length grows: text tokens become relatively sparse in the joint attention matrix, and their influence degrades. We address this with Shared Cross-Attention , which constructs cross-attention keys and values by reusing weights already learned by the self-attention pathway, constraining text-video attention to operate within the model’s existing representation manifold. On the training side, we compose a micro-budget recipe that combines TREAD token routing [ 19 ] and early-phase REPA with a V-JEPA teacher [ 1 , 48 ]. To our knowledge, this combination has not previously been applied to text-to-video training. Data quality is controlled through a learned preference model over our 2.8M-clip proprietary collection. Per-component attention pattern analysis supports our design intent: DDT blocks exhibit clear inter-frame attention structure that is absent in single-stream layers, and Shared Cross-Attention shows measurably more stable text-region activation across long sequences. Trained on fewer than 10M clips within 100,000 GPU hours, Motif-Video 2B achieves 83.76% on the VBench leaderboard [15], surpassing Wan2.1-14B at 7× fewer parameters and an order of magnitude less training data. 2We summarize our contributions as follows: • We present Shared Cross-Attention, a residual cross-attention mechanism that shares self-attention K–V weights to stabilize text–video alignment under long-context token sparsity, and show that it measurably corrects the alignment degradation observed in standard cross-attention at extended sequence lengths. • We introduce DDT and TREAD to video generation, and show through attention pattern analysis that the condition encoder develops inter-frame attention structure in the video setting, an inductive bias for temporal coherence that motivates the three-stage architectural layout. • We demonstrate that a micro-budget training recipe, combining TREAD token routing and early-phase REPA with a V-JEPA teacher, is sufficient to train a 2B model on fewer than 10M clips that reaches 83.76% on VBench, surpassing Wan2.1-14B. 
+
+# 2 Related Work 
+
+Production-scale video generation. The current landscape of text-to-video generation is defined by models trained at substantial scale. Open models such as CogVideoX [ 46 ], Wan2.1 [ 36 ], Wan2.2, Hun-yuanVideo [ 18 ], HunyuanVideo 1.5 [ 43 ], Waver [ 52 ], and Seedance [ 11 , 33 ] are trained on data pools of hundreds of millions of video clips, with parameter counts ranging from 5B to 14B. Proprietary systems including Sora, Veo 3, Kling, Runway Gen-4, and Grok Aurora appear to operate at comparable or larger scale, although their training details are largely undisclosed. Despite substantial architectural diversity across these systems, their reported performance has largely been achieved in a regime of very large data and model scale. This work asks whether competitive quality can also be reached under a much smaller training budget. 
+
+Video and image diffusion transformer architectures. The MMDiT design of SD3 and FLUX established the dual-stream / single-stream split as a principled approach to modality-aware processing: early layers maintain separate text and image streams to avoid premature feature entanglement, while later layers merge them for joint generation [ 10 , 20 ]. CogVideoX extends this idea to video through joint 3D attention over text and video tokens, while Seedance revisits stream separation from a different perspective. DDT, originally proposed for image generation, addresses the tension between low-frequency semantic encoding and high-frequency detail decoding by decoupling these roles into an explicit encoder-decoder design. These works suggest that architectural role separation can be a useful inductive bias, but they do not directly address the long-context text-alignment problem that becomes pronounced in text-to-video generation as frame count increases. 
+
+Efficient training for diffusion models. Significant progress has been made on reducing the cost of diffusion model training in the image domain. REPA aligns early DiT hidden states with a frozen visual encoder and substantially accelerates convergence on ImageNet; follow-up work shows that this benefit is concentrated in early training and advocates disabling the alignment objective later to avoid a capacity bottleneck [ 48 ]. TREAD routes a subset of tokens from shallow to deep layers during training, reducing FLOPs while providing early layers with deeper supervision [ 19 ]. The PRX-3 project and related ImageNet speedrun efforts combine such ideas into micro-budget training recipes that achieve competitive image generation under modest hardware constraints [ 2, 28 ]. In video, efficiency work has more often focused on reducing per-step complexity directly, for example through linear-attention variants as in SANA-Video or aggressive latent compression as in LTX-Video [ 5 , 13 , 14 ]. These approaches demonstrate that video efficiency is possible, but they leave open whether image-domain efficiency techniques such as representation alignment and token routing can be composed effectively in text-to-video training. 
+
+# 3 Model Architecture 
+
+# 3.1 Overview 
+
+The architecture of Motif-Video 2B is organized around a single principle: each component is assigned a well-defined responsibility, and components with conflicting objectives are not asked to share capacity. Concretely, we separate early modality fusion, joint text-video representation learning, and final detail reconstruction rather than forcing a single block type to optimize all three at once. Text conditioning is handled by T5Gemma2, a multimodal encoder-decoder language model adapted from Gemma 3 via the UL2 objective [ 50 ]. We use an encoder-decoder text encoder deliberately: prior work shows that encoder-decoder architectures retain an advantage in bidirectional contextual representation 3Text token           
+
+> Attention
+> RoPE
+> 𝒙 𝒗 𝒙 𝒕𝒙𝒕 𝒙 𝒕𝒙𝒕
+> Self -attn
+> Single -stream Block  Decoder Block
+> Attention
+> Mapping
+> Network
+> RoPE
+> 𝒉 𝒗 𝒙 𝒕𝒙𝒕 𝒙 𝒕𝒙𝒕
+> Projection
+> Shared
+> Cross -attn
+> Video token
+> Dual -stream Block
+> Joint -Attention
+> Token Routing
+> Self -Attention
+> 𝒉 𝒗 ,𝒉 𝒕𝒙𝒕
+> RoPE
+> Norm Norm
+> Norm
+> Proj Proj Proj
+> Shared layers
+> Shared Cross Attention
+> Self Attention
+> Norm
+> Proj Proj
+
+Figure 2: Overview of Motif-Video 2B. Text is encoded by T5Gemma2, while video frames are com-pressed by the Wan2.1 VAE into spatiotemporal latents and patchified into tokens. The transformer backbone follows a three-stage design that separates early modality fusion, joint text-video representation learning, and final detail reconstruction: 12 dual-stream layers preserve modality-specific processing during early fusion, 16 single-stream layers build a joint text-video representation, and 8 DDT decoder layers serve as a dedicated decoder for high-frequency detail reconstruction. Shared Cross-Attention is attached to the single-stream stage to reinforce text conditioning under long-context token imbalance by using learned query/output projections while reusing the enclosing block’s self-attention key and value projections. The denoised latent is then unpatchified and decoded by the VAE to produce the final video. for visual generation, and that even older T5-family encoders can outperform stronger decoder-only LLMs when used as frozen text encoders [ 37 ]. In our setting, T5Gemma2 provides the text representation backbone for all stages of generation. On the video side, input frames are compressed by the Wan2.1 VAE with 8×8 spatial and 4× temporal compression, then patchified with a 2×2×1 kernel to produce the token sequence entering the transformer. The backbone itself follows a three-stage DDT-style encoder-decoder layout that instantiates the role-separation principle explicitly: 12 dual-stream layers preserve modality-specific processing during early fusion, 16 single-stream layers build a joint text-video representation, and 8 decoder layers separate low-frequency semantic encoding from high-frequency detail reconstruction. Shared Cross-Attention is attached to the single-stream stage to reinforce text conditioning once the token sequence becomes dominated by video patches. For completeness, the full backbone uses 28 encoder layers and 8 decoder layers with QK-normalization throughout, 12 attention heads of dimension 128, and a hidden dimension of 1536. The denoised latent is then unpatchified and decoded by the VAE to reconstruct the output video. Figure 2 illustrates the full pipeline. 
+
+# 3.2 Functional Decomposition of the Backbone: Modality Fusion, Joint Representation, and Decoding 
+
+The three-stage layout of Motif-Video 2B reflects a deliberate progression of responsibilities: early layers establish modality-aware representations before fusion, middle layers build joint text-video representations, and final layers decouple semantic structure from detail reconstruction. Each transition 4Figure 3: Attention structure in dual-stream vs. single-stream vs. DDT decoder layers. Compared with dual and single-stream layers, DDT decoder layers show stronger inter-frame attention structure, where each frame attends more to temporally adjacent frames. The blue box denotes the encoder hidden state: text tokens in the dual-stream and single-stream cases, and the video output tokens from the encoder layers in the decoder case. is motivated by a distinct objective interference that arises when these responsibilities are conflated. The first 12 layers operate as dual-stream blocks, processing text and video tokens through separate self-attention pathways before exchanging information via cross-attention. This separation, introduced in FLUX for image generation, prevents premature entanglement between modalities whose statistical properties differ substantially early in the network. We adopt this design unchanged for video, as the same motivation applies: forcing text and video tokens to share attention capacity before either stream has formed coherent representations degrades both. In this stage, the backbone’s role is to establish stable modality-specific features before any fully joint representation is formed. The subsequent 16 layers operate as single-stream blocks, processing the merged joint sequence. At this stage, text and video tokens attend freely to one another, enabling the model to build the shared representations necessary for text-conditioned generation. This stage therefore carries the main burden of cross-modal integration, but, as we discuss in Section 3.3, it also introduces a text alignment failure mode under long-context generation that requires explicit correction. 
+
+Decoupled decoder layers. The final 8 layers follow the DDT design, functioning as a velocity decoder atop the preceding 28-layer encoder. The DDT encoder-decoder split resolves an optimization conflict inherent to standard diffusion transformers: low-frequency semantic encoding and high-frequency detail decoding impose competing gradient signals when handled by the same modules [ 39 ]. By dele-gating detail reconstruction to a dedicated decoder, the encoder is free to build semantically coherent representations without being pulled toward high-frequency objectives [39]. In the video setting, this decoupling is associated with an additional effect that we did not anticipate from the image-domain formulation. Attention heatmaps within the DDT decoder blocks reveal a clear inter-frame attention structure, with each frame attending preferentially to temporally adjacent frames rather than distributing attention uniformly across the sequence (Figure 3). This pattern is present but substantially weaker in the single-stream layers, consistent with the global-attention observations reported by Enhance-A-Video [ 23 ] for other video diffusion transformers, suggesting that the decoupled optimization of the DDT decoder may amplify inter-frame attention as a consequence of its dedicated role. We view this pattern as consistent with an inductive bias toward temporal coherence: once relieved of semantic encoding, the decoder can concentrate more of its attention on resolving fine-grained temporal consistency. Whether this effect is a consequence of the DDT design specifically or of depth alone is a question we leave for future work. 
+
+# 3.3 Shared Cross-Attention 
+
+Motivation. How much does a single-stream video transformer actually attend to text? The answer, it turns out, depends critically on something as mundane as token count, and the answer is not encouraging. In single-stream transformer blocks, video and text tokens are concatenated and processed through shared self-attention parameters. This is elegant: a single pass suffices for cross-modal interaction, and the shared parameterization promotes early alignment. But elegance conceals a structural problem. The softmax normalization in attention sums over the entire joint sequence. For a video query token i
+
+5Figure 4: Intermediate-layer text-attention drop in single-stream blocks. We compare attention maps from a representative intermediate layer in dual-stream and single-stream stages. Relative to dual-stream, the single-stream intermediate layer allocates substantially less attention mass to text tokens, indicating weaker text conditioning under joint-token competition. attending to text token j:
+
+αij = exp 
+
+
+
+q⊤ 
+
+> i
+
+kj/√d
+
+
+
+# ∑
+
+> v∈V
+
+exp 
+
+
+
+q⊤ 
+
+> i
+
+kv/√d
+
+
+
++ ∑
+
+> t∈T
+
+exp 
+
+
+
+q⊤ 
+
+> i
+
+kt/√d
+
+ . (1) Since |V | ≫ |T | , text tokens occupy only a small fraction of the joint sequence, so their aggregate influence on joint-self-attention tends to be relatively diluted as video token count grows. This is a structural consequence of joint-token competition under a shared attention budget, not merely an optimization artifact. We confirm this empirically by examining the attention maps of our single-stream transformer blocks (Figure 4). In intermediate single-stream layers, the aggregate attention allocated to text tokens is consistently smaller than the attention allocated to video tokens, indicating weaker text influence under joint-token competition. The structural argument also makes a concrete prediction: as resolution increases, |V | grows quadratically while |T | remains fixed, so the dilution should compound with scale. Indeed, we observe a measurable degradation in prompt following and semantic alignment when scaling training to 720p. Generated videos exhibit reduced correspondence to fine-grained textual descriptions, a failure mode largely absent at lower resolutions where the |V | /|T | imbalance is smaller. The scaling behavior is precisely what the structural argument predicts. Together, these two observations, one at the level of attention weights and one at the level of generation quality, point to the same root cause: joint self-attention, by itself, cannot reliably serve as the sole mechanism for text conditioning in high-resolution single-stream video transformers. This motivates a dedicated pathway through which text can influence video without competing for a shared attention budget. 
+
+Dilution correction is not enough. A natural first reaction to the analysis above is to fix the symptom directly: renormalize the attention softmax over text keys alone, removing video tokens from the denomi-nator. This requires no new parameters and is mathematically equivalent to running a second softmax restricted to T . We considered this option and rejected it, because it addresses only the normalization artifact and leaves a more fundamental opportunity unused. 6The video hidden state hv emerging from self-attention is not the same object as the pre-attention input xpre : it has already aggregated information from neighboring video tokens and formed local spatiotemporal structure that xpre did not contain. We would like to ask, conditioned on this newly formed local structure, which text concepts are now relevant . A pure renormalization cannot ask this question; it can only re-weight the answers to the question xpre already asked. What we want is not a correction to self-attention’s output, but a second, sequential query into text, posed from the vantage point of what self-attention has just produced. We refer to this as sequential refinement . It is a strict generalization of dilution correction: any renormalization-only fix is recoverable as a special case in which the refinement query degenerates to the original self-attention query. 
+
+Method. We append a lightweight cross-attention module to each single-stream transformer block, immediately after self-attention. Let hv denote the self-attention output for video tokens, xtxt the text hidden states entering the enclosing self-attention layer (i.e., the pre-attention input on the text side), and 
+
+WK, WV the key and value projection weights of that same self-attention layer. Shared Cross-Attention is defined as: 
+
+Q = Wcross  
+
+> Q
+
+hv (2) 
+
+K = WK xtxt , V = WV xtxt (3) 
+
+hv ← hv + Wcross  
+
+> O
+
+· Attn (Q, K, V), (4) where Wcross  
+
+> Q
+
+and Wcross  
+
+> O
+
+are the only newly introduced parameters, WK and WV are shared with the enclosing self-attention layer, and Wcross  
+
+> O
+
+is zero-initialized. Because xtxt is precisely the input the enclosing self-attention layer consumes for its own text-side projections, the keys and values produced above are bitwise identical to those already computed inside self-attention. Our implementation reuses the same tensors rather than recomputing them, so the cross-attention adds zero key/value projection FLOPs. 
+
+Why K, V are shared but Q is not. The design is asymmetric, and the asymmetry is the central point. 
+
+WK and WV are content projections : they map text tokens into a representational subspace that is, by construction, additively compatible with the video residual stream. Self-attention has spent its training signal arranging exactly this compatibility, since text values already contribute to hv as a summand in the joint softmax of Eq. (1) . Discarding WK, WV in favor of freshly initialized cross-attention projections would require relearning this geometric alignment from scratch, and would do so under a much weaker training signal than the joint self-attention provided. Sharing them is not a parameter-saving trick; it is a commitment to perform the refinement within the representational manifold the model has already established .
+
+WQ, in contrast, is a query projection : it encodes what the layer is asking about. Self-attention’s WQ
+
+was trained to operate on xpre , the pre-attention input, and to formulate queries appropriate to that representation. The refinement target hv is a different object: it lives downstream of self-attention and contains aggregated local context that xpre did not. Reusing WQ on hv would amount to asking a question designed for one input distribution from a different one, a quiet but real distribution shift. More importantly, it would force the refinement query to be the same question self-attention already asked, foreclosing the entire purpose of sequential refinement. We therefore introduce Wcross  
+
+> Q
+
+as a freshly learned projection whose role is to map hv into the query space established by the shared WK.Although Wcross  
+
+> Q
+
+is parametrically free, it is not geometrically free in the way that matters. What we require is not that the learned weight Wcross  
+
+> Q
+
+resemble WSA  
+
+> Q
+
+. Indeed, if it did, the refinement would collapse into the same question self-attention already asked. What we require instead is that the resulting queries 
+
+qcross  
+
+> i
+
+= Wcross  
+
+> Q
+
+hv,i form well-conditioned inner products with the shared keys K = WK xtxt . Since K is fixed by sharing, the flow-matching loss can only be reduced by producing queries that yield meaningful attention distributions over this fixed key set; queries that drift off the key manifold yield near-uniform softmax outputs and contribute no useful gradient. Manifold compatibility is therefore enforced as an 
+
+outcome-level training constraint: the parameters are free, but the only direction in parameter space that reduces loss is the one that keeps queries in conversation with the shared keys. 
+
+On the output projection. Wcross  
+
+> O
+
+is not shared with the enclosing self-attention’s output projection. By the same logic as above, manifold consistency would in principle argue for sharing it as well. We prioritize a different consideration: zero-initialization of Wcross  
+
+> O
+
+guarantees that the augmented block is functionally identical to the base block at initialization, so training begins from a well-defined fixed point 7Figure 5: Zero-init alone does not save a cross-attention whose K, V geometry is ungrounded. Both variants are inserted into the same pretrained 360p checkpoint with Wcross  
+
+> O
+
+= 0, making both forward passes identical to the base model at step 0. After 1,000 steps of continued training under matched optimizer settings, data, and learning rate, the SkyReels-V4–style cross-attention ( top , raw xt as K, V)collapses: outputs degenerate to near-black frames with fragmented, incoherent structure, while Shared Cross-Attention ( bottom , WK, WV reused from self-attention) continues training without disruption and produces coherent scenes. Each column shows samples from the same prompt under the same seed. The contrast directly supports the manifold argument of Section 3.3: grounding K, V in self-attention’s existing projections is what makes a new module stable to insert mid-training. and the cross-attention contribution grows gradually as the model learns to use it. A shared, non-zero 
+
+WO would forfeit this stability guarantee. We treat this as a deliberate trade of geometric purity for optimization stability, and leave an experiment isolating the two choices to future work. 
+
+Relation to Prior Work. SkyReels-V4 [ 3] augments single-stream blocks with a cross-attention layer following self-attention and identifies the same dilution problem we describe. Their formulation, x′′  
+
+> v
+
+=
+
+x′ 
+
+> v
+
++ Attention (Q=x′
+
+> v
+
+, K=xt, V=xt), takes the post-self-attention video state and the raw text input and uses them directly as Q, K, V, with no projection on either side. This eliminates the dilution by restricting the softmax to text keys, but it makes no commitment about how the cross-attention should relate to the geometry self-attention has already established. Shared Cross-Attention takes a different position, and the answer is deliberately asymmetric. On the key/value side, rather than attending against the raw xt, we attend against WK xtxt and WV xtxt , the very keys and values self-attention computes for text, reused as identical tensors. The cross-attention therefore operates on top of the text geometry self-attention already uses, rather than on a parallel raw-embedding surface. On the query side, the substrate is the same as in SkyReels-V4 ( hv = x′
+
+> v
+
+), but we apply a learnable projection Wcross  
+
+> Q
+
+with QK normalization on top of it, for the sequential refinement reasons argued earlier. The two designs therefore differ on Q and on K, V for distinct reasons: we add learned structure on Q for refinement, and reuse self-attention’s existing structure on K and V for stability. 
+
+An empirical check. The manifold argument makes a falsifiable prediction: if a cross-attention module’s 
+
+K, V have no grounding in self-attention’s existing projections, it should fail to integrate stably with an already-trained self-attention pathway, regardless of how carefully it is initialized. We test this directly. Starting from the same pretrained checkpoint, we add either the SkyReels-V4–style block or Shared Cross-Attention. Both variants zero-initialize their output projection , so at step 0 each is functionally identical to the base model. We then continue training for 1,000 steps under identical optimizer settings, data, and learning rate. Figure 5 shows the result: the SkyReels-V4–style variant collapses outright, generation degenerates, and the model fails to produce coherent video, while Shared Cross-Attention continues training without disruption. The mechanism is the one the manifold argument predicts. Zero-initializing Wcross  
+
+> O
+
+guarantees that the cross-attention contributes nothing at the first forward pass, but it does not freeze the module: gradients 8still flow through Wcross  
+
+> O
+
+, and those gradients depend on Attn (Q, K, V). For the SkyReels-V4–style variant, K and V come from raw text embeddings the rest of the network has never been calibrated against, so Attn (Q, K, V) is essentially noise; the moment Wcross  
+
+> O
+
+becomes nonzero, that noise is injected into the residual stream and propagates through the already-trained self-attention pathway, corrupting downstream representations within a few hundred steps. For Shared Cross-Attention, K and V are the keys and values self-attention itself uses for text, so the signal Wcross  
+
+> O
+
+learns to inject is small but coherent with the manifold self-attention already operates on. This is not a claim about the eventual ceiling of either design; a SkyReels-V4–style cross-attention trained from scratch may well learn to recover. The claim is narrower: when a new module must interface with an already-trained self-attention pathway, grounding its K, V in self-attention’s existing projections is what makes that interface stable from the first gradient step. 
+
+# 4 Training Strategy 
+
+The architectural choices described in Section 3 define what the model can learn; the training recipe determines whether it actually learns it within a fixed compute budget. For Motif-Video 2B, that budget is tight, roughly an order of magnitude less data and compute than comparably performing open models. Under this constraint, each training iteration must maximize learning efficiency and contribute directly to measurable progress. Our recipe is built around two ideas. First, we front-load learning by aligning early-stage representations to a frozen visual encoder (REPA with V-JEPA), then remove the alignment objective before it becomes a capacity bottleneck. Second, we treat training as a diagnostic loop rather than a single forward pass through a predefined schedule. When scaling to 720p revealed a regression in semantic alignment, we introduced Shared Cross-Attention mid-training and re-trained at lower resolution before resuming high-resolution adaptation. The remainder of this section describes the full curriculum (Section 4.1), the two efficiency techniques that compose it, representation alignment (Section 4.2) and token routing (Section 4.3), and the iterative refinement process that shaped the final model (Section 4.5). 
+
+# 4.1 Pre-training and Post-training 
+
+Training objective. We train with rectified flow matching [ 10 , 22 ]. Given a data sample x0 and noise 
+
+ϵ ∼ N (0, I), the forward interpolation is xt = ( 1 − t)x0 + tϵ for t ∈ [0, 1 ]. The model predicts the velocity field vθ (xt, t) ≈ ϵ − x0, and is trained with the standard loss: 
+
+LFM = Et,x0,ϵ
+
+h
+
+∥vθ (xt, t) − (ϵ − x0)∥22
+
+i
+
+. (5) We apply classifier-free guidance training with a prompt dropout probability of p = 0.1. No modifications are made to the noise schedule or loss weighting; we use the conventional setup throughout. 
+
+Image pre-training. Training begins with a text-to-image stage at 144p resolution using a sentence-level text embedding model as the conditioning encoder. This stage serves two purposes: it initializes the spatial generation pathway before introducing the complexity of temporal modeling, and it provides a stable starting point for representation alignment with a frozen DINOv2 encoder (Section 4.2). By decou-pling spatial and temporal learning, the model acquires basic compositional and aesthetic capabilities at minimal compute cost before any video data is introduced. 
+
+Image–video joint training. All subsequent stages train jointly on images and video clips. Image samples stabilize per-frame visual quality and reinforce semantic grounding, while video samples drive temporal modeling. When transitioning from 360p to 480p, we first train on 360p video jointly with 480p images before introducing 480p video. This resolution bridge allows the model to acquire higher-resolution spatial features from images, which are cheaper to process than video, before adapting its temporal pathway to the increased token count. 
+
+Progressive training. We increase resolution and frame count in stages, summarized in Table 1. Each transition is made only after the current stage shows diminishing returns on training loss and qualitative evaluation. Inspired by the class-conditioned to text-conditioned curriculum of PixArt-α [4], we begin training with a sentence-level embedding model and switch to T5Gemma2 at the 360p stage, under the hypothesis that a lower-dimensional conditioning space accelerates early convergence before fine-grained compositional control becomes necessary. As a rough sanity check on early-stage efficiency, we compared our FID during image pre-training against the compute–performance scaling law of [ 21 ]. At 6.5 × 10 20 FLOPs, their fitted curve predicts FID ≈ 30 for 9a vanilla DiT, whereas our model reaches FID 15.5 under the same budget. The comparison is confounded with concurrent REPA and architectural differences, so we treat it as a consistency check rather than an isolated validation of the early-stage curriculum design. Table 1: Simplified training curriculum for Motif-Video 2B. Joint image–video training is used at all video stages. REPA is disabled from Stage 4 onward following evidence that alignment becomes counterproductive after early convergence [ 40 ]. Shared Cross-Attention is introduced at Stage 9 to address semantic degradation observed at 720p                                                                
+
+> Stage Task Resolution Frames Text Encoder REPA Notes 1T2I 144p 1Sent. Emb. DINOv2 Spatial bootstrap 2T2IV 144p 33 Sent. Emb. V-JEPA 3T2IV 144p 65 Sent. Emb. V-JEPA 4T2IV 360p 65 T5Gemma2 –REPA disabled 5T2IV 480p 65 T5Gemma2 –Res. bridge first 6T2IV 480p 121 T5Gemma2 –7T2IV 480p 121 T5Gemma2 –SFT 8T2IV 720p 121 T5Gemma2 –From SFT ckpt 9T2IV 360p 121 T5Gemma2 –+Motif-cross-attn 10 T2IV 720p 121 T5Gemma2 –Final pretrain + SFT
+
+On supervised fine-tuning. We perform supervised fine-tuning (SFT) twice during training, at 480p (Stage 7) and 720p (Stage 10), each time on a curated high-quality subset described in Section 5. The purpose of SFT is straightforward: it shifts the model’s output distribution toward the high-quality tail of the training data, improving aesthetic quality, motion smoothness, and prompt adherence in a way that broad pretraining on loosely filtered data cannot. This follows the now-standard practice in video generation, where HunyuanVideo 1.5 [ 43 ], Wan2.1 [ 36 ], SANA-Video [ 5], Seedance 1.5 [ 33 ], and SkyReels-V2 [ 35 ] each report a dedicated SFT stage on manually or model-filtered high-quality data after large-scale pretraining. What is less standard is our choice to initialize the 720p pretraining stage (Stage 8) from the 480p SFT checkpoint rather than from the 480p pretrain checkpoint. The conventional pipeline reserves SFT as a terminal refinement step, applied only after all resolution and frame-count scaling is complete. We hypothesize that starting from an SFT checkpoint may be preferable when transitioning to a sub-stantially higher resolution: because SFT concentrates the model’s learned density on the high-quality manifold, the 720p stage inherits a cleaner starting distribution and can allocate its capacity toward resolution-specific adaptation rather than simultaneously recovering quality lost during broad pretrain-ing. This is analogous to the observation in the LLM post-training literature that each round of alignment produces a better initialization for subsequent training [ 9 ], and to the practice in SkyReels-V2 [ 35 ], where a 480p SFT checkpoint is used as the starting point for subsequent training stages. We did not ablate this choice against the alternative of initializing from the pretrain checkpoint. The decision was made early in our training schedule based on the reasoning above, and we observed no instability or regression during the 720p stage. We therefore report it as a pragmatic recipe decision rather than a validated finding, and note it here for reproducibility. The SFT dataset composition and filtering criteria are described in Section 5. 
+
+# 4.2 Representation Alignment (REPA) 
+
+Background. Training diffusion transformers from scratch is expensive partly because the early layers must first discover structured visual representations before the model can make substantial progress on the generation objective. REPA [ 48 ] addresses this by adding an auxiliary loss that aligns intermediate DiT hidden states to features from a frozen, pretrained visual encoder. Concretely, let hl denote the hidden state at layer l of the DiT, and z the corresponding feature from the frozen encoder. REPA minimizes: 
+
+LREPA = − hl · z
+
+∥hl ∥ ∥ z∥ , (6) alongside the primary flow-matching loss LFM . The alignment target provides a structured learning signal that bypasses the slow self-supervised discovery of spatial structure, accelerating early convergence by over an order of magnitude on ImageNet benchmarks [48]. 
+
+Application to video. We apply REPA during Stages 1–3 of our training curriculum (Table 1), covering image pre-training and low-resolution video training. We use V-JEPA [ 1] as the teacher encoder to 10 match the modality. Because V-JEPA learns temporal structure in its latent representations, it is a natural alignment target during the model’s initial motion-learning phase. 
+
+Phase-constrained alignment. We disable REPA from Stage 4 (360p) onward. The rationale follows recent findings on the dynamics of representation alignment during diffusion training: REPA helps in the early phase, when the model’s internal representations are still unstructured, but becomes counter-productive once the model’s representational capacity exceeds what the frozen teacher can provide [ 40 ]. Beyond that point, continued alignment constrains the model to a representational subspace that may not be optimal for the target generation distribution. In our setting, the 360p stage marks the transition from learning global semantics to fine-grained spatial and temporal synthesis, precisely the regime where a frozen teacher is least informative. 
+
+On the choice of REPA teacher for video. Effective representation alignment depends not only on when to align, but also on what to align to. Recent work by [ 34 ] shows that the spatial structure of the teacher’s dense features, rather than its global semantic accuracy, is the primary driver of REPA’s effectiveness for image generation. That observation matters even more for video, where the teacher must additionally provide temporally coherent spatial structure. We initially experimented with VideoREPA [ 51 ], which extends REPA to video through Token Relation Distillation (TRD), a second-order objective that aligns pairwise token similarity structure rather than per-token features directly. In our setting, this approach did not yield meaningful improvements on VBench relative to standard per-frame alignment. We suspect two factors contributed. First, TRD transfers relational structure between tokens, but not the dense spatial features themselves, which [ 34 ] identifies as the main driver of alignment effectiveness. Second, the underlying teacher, V-JEPA 2.0 [ 1 ], provides strong global motion understanding but produces spatially fragmented dense features. That limitation is explicitly identified and addressed by the concurrent V-JEPA 2.1 [ 25 ], which introduces a dense predictive loss and deep self-supervision to produce spatially structured, temporally consistent representations. We include a qualitative comparison of V-JEPA 2.0 dense features in Figure 6, which illustrates the spatial incoherence that limits its utility as a REPA target. Taken together, these observations suggest a clear future direction: combine direct dense alignment, as in standard REPA, with a teacher that provides spatially coherent video features, such as V-JEPA 2.1. For the present model, we adopt a pragmatic compromise: we use V-JEPA 2.0 during the early training phases, when global structure dominates, and disable alignment before dense spatial quality becomes the binding constraint. 
+
+Figure 6: Dense features from V-JEPA 2.0. 
+
+The visualization highlights that, while V-JEPA 2.0 captures global motion structure well, its dense features are less spatially coherent than would be ideal for dense REPA supervision in video generation. In practice, we align hidden states from a single interme-diate encoder layer (layer 8) to the frozen teacher features. Following iREPA [ 34 ], we use a convolutional projection (a 3×3 Conv2D with spatial normalization) rather than an MLP, because it better preserves spatial structure during projec-tion. The teacher and student feature maps are reshaped into their spatio-temporal layouts and aligned via trilinear inter-polation to a common resolution, after which we compute a global cosine similarity loss: 
+
+LREPA = 1 − ˆh · z
+
+∥ ˆh∥ ∥ z∥ , (7) where ˆh and z are the flattened spatio-temporal feature vol-umes from the student projection and frozen teacher, respec-tively. We set the REPA loss weight λ between 0.1 and 0.5 across the early training stages based on training-loss dynam-ics and qualitative evaluation. 
+
+# 4.3 Token Routing (TREAD) 
+
+Background. In a standard diffusion transformer, every token passes through every layer, so compute cost scales linearly with depth. TREAD [ 19 ] starts from the observation that not all tokens require full-depth processing at every training step. During training, a random subset of tokens is routed from an early layer directly to a deeper layer, skipping the intermediate computation. The resulting FLOP reduction is roughly proportional to the fraction of skipped tokens. Crucially, the routed tokens still receive gradient signals from the deep layers they reach, giving the early layers a form of deep supervision that further accelerates convergence. On ImageNet, TREAD achieves up to a 25 × convergence speedup with minimal quality degradation [19]. 11 Application to video. We apply TREAD routing from layer 4 to layer 25 with a token drop ratio of 0.5, so half of the tokens at each participating layer bypass the intermediate computation. We keep this configuration fixed throughout the T2IV stages once token routing is enabled, rather than tuning it separately for each resolution. We choose a drop ratio of 0.5 as a conservative operating point: it is large enough to produce meaningful speedups, but not so aggressive that routed tokens dominate the computation or that qualitative regressions become apparent in routine training-time monitoring. • Layers 1–3 (dual-stream, excluded): These layers process text and video tokens in separate streams. Routing across this stage would bypass the modality-specific processing that prevents premature feature entanglement. • Layers 4–25 (dual-stream + single-stream, routed): Once both streams are established, token routing reduces redundant computation while still allowing gradients from the deeper single-stream layers to propagate back through the routed token paths into the earlier stack. • Layers 26–36 (DDT decoder, excluded): The decoder is responsible for high-frequency detail reconstruction. We therefore exclude this stage from routing, since dropping tokens late in the network was empirically more likely to harm fine spatial detail than to produce useful additional savings. At 720p resolution with 121 frames and 512 text tokens, the full transformer requires approximately 4,913 TFLOPs per forward pass. With TREAD routing at a 0.5 drop ratio across layers 4–25, this falls to approximately 3,563 TFLOPs, a 27.5% reduction in theoretical FLOPs that corresponds to an estimated 1.38 × speedup. In practice, measured training throughput at 720p increases by 1.31 × in videos per second, confirming that most of the theoretical savings translate into wall-clock improvement despite the modest overhead of the routing mechanism. We treat this setting as the main quality–efficiency operating point used in the full recipe; its downstream effect is therefore evaluated through the end-to-end results in Section 6, rather than through an isolated TREAD-only ablation. Following the original TREAD formulation [ 19 ], we disable token routing at inference time and use the full model depth for all tokens during generation. 
+
+# 4.4 Recipe Composition 
+
+REPA and TREAD address complementary bottlenecks in compute-constrained training: REPA improves what is learned per iteration by providing a structured alignment target during early training, while TREAD reduces the cost of each iteration by routing redundant tokens past intermediate layers. In our training pipeline, the two techniques therefore operate along different axes of efficiency rather than competing for the same role. Each component is individually motivated by prior literature, but the point of their combination in our setting is primarily practical: under a fixed compute budget, improving sample efficiency and lowering per-step cost are both necessary to make 2B-scale video training viable. We do not isolate their individual contributions in this work because our focus is the effectiveness of the full recipe rather than a component-wise ablation study. We therefore evaluate the composition through the end-to-end behavior of the final system in Section 6, where the relevant question is whether the overall recipe produces a stronger model under the same training budget. 
+
+# 4.5 Image-to-Video Extension 
+
+We train a single model that supports both text-to-video (T2V) and image-to-video (I2V) generation with shared weights. I2V is introduced as an extension of the main T2V training recipe rather than as a separate model family, so the design question is how to use the reference frame strongly enough to preserve subject identity, composition, and appearance without letting it become a shortcut that suppresses motion generation. Recent I2V systems converge on two complementary observations. First, first-frame latent conditioning is the most direct way to anchor the generated video to the input image, because it preserves exact low-level appearance cues. Second, first-frame latent conditioning alone is often too strong: if the model always sees a clean first-frame latent, it can learn to preserve the reference appearance by simply reconstructing or copying from that first frame, instead of learning how the scene should evolve over time after the first frame. 12 The first issue is addressed by dual-path conditioning, as in HunyuanVideo 1.5, which combines latent-level conditioning with image-semantic features [ 43 ]; the second is addressed by degrading the condi-tioning image at high noise levels, as in Adaptive Low-Pass Guidance, so that motion must be inferred rather than copied [ 6]. Our implementation follows the same logic, but adapts it to the Motif-Video backbone and training recipe. The key design choice is to separate exact appearance anchoring, global image semantics, and long-context text alignment into distinct pathways rather than forcing a single conditioning mechanism to solve all three problems. 
+
+4.5.1 Dual Conditioning Pathway 
+
+We condition the model through two complementary pathways: a latent pathway that anchors exact appearance from the first frame, and a semantic pathway that supplies a more global image-level summary. 
+
+Latent pathway. We inject the first frame along a latent pathway for exact appearance anchoring. Let I1
+
+denote the first frame of the conditioning video. Let E denote the Wan2.1 VAE encoder. We first encode this frame into a clean latent 
+
+z1 = E(I1) ∈ RC×H×W , (8) with C = 16 in our setting. We then construct a conditioning video latent zcond ∈ RC×F×H×W by placing z1 at the first temporal position and zero-filling the remaining frames: 
+
+zcond (t) = 
+
+z1, t = 1, 
+
+0, t = 2, . . . , F. (9) In parallel, we form a binary mask m ∈ R1×F×H×W indicating which temporal positions are conditioning frames. Let xt ∈ RC×F×H×W denote the noisy video latent at diffusion time t. The patch embedding layer receives 
+
+xin  
+
+> t
+
+= Concat 
+
+h
+
+xt, zcond , m
+
+i
+
+, (10) which has 16 + 16 + 1 = 33 input channels. This pathway gives the model direct access to spatial layout, identity, texture, and color statistics from the conditioning image. 
+
+Semantic pathway. On the semantic side, we encode the same first frame into a sequence of image conditioning tokens. Let S(·) denote the SigLIP vision encoder and let P(·) denote the lightweight MLP projection. We form 
+
+simg = P(S(I1)) ∈ RNimg ×D, D = 1536. (11) These image tokens are then concatenated with the T5Gemma2 text embeddings. Let stxt ∈ RNtxt ×D
+
+denote the text-conditioning sequence. The joint conditioning sequence is 
+
+sjoint = Concat stxt , simg 
+
+ ∈ R(Ntxt +Nimg )×D. (12) This mirrors the motivation of recent I2V systems such as HunyuanVideo 1.5 [ 43 ]: the latent pathway anchors exact appearance, while the image-embedding pathway provides a more global and semantically organized summary that remains useful even when the latent pathway is partially degraded. The Shared Cross-Attention modules of Section 3.3 operate on the pure T5Gemma2 text embeddings only; SigLIP tokens do not enter the cross-attention context. We keep that separation deliberately: Shared Cross-Attention is introduced to repair text alignment under long video-token sequences, whereas the image embeddings already enter the backbone through the main joint sequence and do not suffer from the same long-context sparsity issue. 
+
+4.5.2 Clean Conditioning Latent with Timestep-Aware Blur 
+
+A second design question is how strongly to expose the first-frame latent during diffusion training. Injecting the clean conditioning latent unchanged at all timesteps makes the task too easy in the wrong way: the model can over-rely on the first frame as a near-copy target. This improves appearance preservation, but weakens motion synthesis. Adaptive Low-Pass Guidance makes the same trade-off explicit by degrading the conditioning image more aggressively at high noise levels and relaxing that degradation as denoising proceeds [ 6 ]. We adopt the same core idea, but implement it as a lightweight timestep-aware blur directly in latent space. 13 Specifically, we replace the clean first-frame latent zcond 1 with ˜zcond 1 = GaussianBlur2D 
+
+
+
+zcond 1 ; σ(t)
+
+
+
+, σ(t) = rmax · t, (13) where t ∈ [0, 1 ] is the diffusion timestep and rmax is a fixed maximum blur radius. This linear schedule is a pragmatic choice rather than an ablated optimum: at high noise levels ( t ≈ 1), the conditioning signal is maximally blurred, forcing the model to rely more on text, image semantics, and learned motion priors than on sharp spatial copying. At low noise levels ( t ≈ 0), the blur vanishes and the first-frame appearance is recovered, restoring precise identity and texture control near the end of denoising. The goal is therefore not to weaken conditioning overall, but to change its role over the course of denoising. Early in denoising, conditioning should act as a coarse appearance anchor rather than an exact reconstruction target. Late in denoising, it should again provide fine-grained appearance fidelity. 
+
+4.5.3 Joint T2V/I2V Training 
+
+A single set of weights handles both T2V and I2V. Once I2V training is enabled, we mix it into the later T2IV stages rather than running a separate I2V-only phase. At each training step, we sample a Bernoulli variable with pi2v =0.3 at the batch level, synchronized across FSDP ranks, to decide whether the batch is T2V or I2V. We choose pi2v =0.3 as a pragmatic balance: it is large enough for the model to learn stable first-frame conditioning behavior, but small enough to preserve the broader motion prior learned from the dominant T2V batches. When the batch is I2V, the conditioning pathway described above is activated and a motion-focused caption variant ( caption i2v ) is sampled. T2V batches instead sample among the three caption variants described in Section 5.2. For classifier-free guidance training, we apply independent dropout with p=0.1 to both text prompts and SigLIP image embeddings. We do not introduce a learnable task-type embedding to distinguish T2V from I2V. In practice, the task identity is already explicit in the input: I2V batches contain a non-zero conditioning latent and mask, whereas T2V batches do not. That signal is sufficient for the patch embedding layer, and the caption distribution switch provides an additional cue at the conditioning level. We therefore treat the absence of a task embedding as a deliberate simplification of the recipe, rather than as a separately validated claim. This joint training strategy preserves the broader motion prior learned from pure T2V data, while I2V batches teach the model to anchor that prior to a specific input frame without collapsing into static reconstruction. We evaluate I2V behavior through the end-to-end results rather than through a dedicated ablation of these conditioning choices. 
+
+# 4.6 Distributed Training 
+
+We train on 8 Azure nodes, each with 8 H200 GPUs, for a total of 64 GPUs. Jobs are orchestrated with Kubernetes and launched through SkyPilot [ 47 ], which handles scheduling, fault recovery, and cloud resource provisioning. This setup lets us treat the Azure cluster as a single training pool rather than managing nodes individually. We use FSDP2 through Accelerate [ 12 ]. At the 2B parameter scale of Motif-Video, a single intra-node shard group is sufficient to fit the full model state for our 720p, 121-frame configuration, so we do not require tensor or sequence parallelism. Avoiding those additional parallelism modes simplifies the communication pattern and reduces synchronization overhead. 
+
+Sharding strategy. We adopt Hybrid Sharded Data Parallelism (HSDP): parameters are sharded across the 8 GPUs within each node and replicated across the 8 nodes ( DP-replica = 8). The forward all-gather that materializes full parameters remains within a node over NVLink, keeping the latency-sensitive path off the inter-node network. Across nodes, only the post-reduce-scatter gradient shard, rather than the full parameter tensor, is communicated. In practice, this design provides enough memory headroom for the full 720p configuration without requiring a more complex parallel decomposition. 
+
+Activation checkpointing, compilation, and FSDP wrapping order. We apply activation checkpointing, 
+
+torch.compile , and FSDP2 fully shard in that order. In our implementation, this requires a small patch to Accelerate’s default FSDP2 path. Without that change, checkpointed transformer blocks are not compiled and sharded at the intended granularity. That in turn breaks the block-level wrapping scheme used by our model. Full implementation details are provided in Appendix D. Training uses bfloat16 mixed precision for model computation and activations, while reduction-sensitive communication and optimizer states remain in float32 . This configuration preserves the throughput advantage of bfloat16 while keeping numerically sensitive reductions and optimizer updates in higher precision. 14 Figure 7: Overview of the training-data construction pipeline. The raw pool is split into Image Real, Image Synthetic, Video Real, and Video Synthetic branches. An initial sanitation stage removes broken files, abnormally small files, near-duplicates (SSCD-based), NSFW content, and watermarked content. Surviving clips are progressively filtered by resolution, clip length, motion, and aesthetic signals as they advance through the 144p, 360p, 480p, and 720p training stages, and by stricter aesthetic, domain, and dynamic-motion criteria before the cross-attention refinement and final 720p SFT stage. The Sankey diagram visualizes how flows contract from the raw pool toward the curated training and SFT corpora. 
+
+# 5 Data 
+
+# 5.1 Data processing pipeline 
+
+Our training corpus combines two sources: an internal web-scale video collection and a set of publicly available video datasets. Rather than maximizing raw scale, we prioritize curation quality to support resource-efficient training, organizing the raw pool into real and synthetic branches for both images and videos and routing each surviving clip through a progressive multi-resolution training schedule. We made extensive use of NeMo Curator [ 16 ], whose scalable data-curation toolkit and support for large-scale video-processing pipelines substantially streamlined our preprocessing workflow. 
+
+5.1.1 Data collecting and preprocessing 
+
+Our training corpus combines an internal web-scale crawl with publicly available image and video datasets. We process both sources through the same downstream pipeline so that the final corpus is governed by a single set of sanitation, filtering, deduplication, and stage-wise quality controls. 
+
+Sanitation. Before any stage-specific filtering, every raw clip passes through a sanitation block that removes broken or non-decodable files, abnormally small files that typically correspond to thumbnails or corrupted downloads, near-duplicates identified by our SSCD-based deduplication pipeline (described below), NSFW content, and watermarked content. The NSFW and watermark filters combine two signals. An initial OCR-based screen, inherited from the legacy internal crawling pipeline, flags overlaid channel logos, burned-in subtitles, and other high-confidence watermarks using on-frame text detection. Clips that survive this screen are then re-examined by a vision-language model (see Section 5.2), which produces structured per-clip tags including watermark ,
+
+nsfw , padded , multi scene , timelapse , and overall quality . Clips whose VLM tags flag any of these attributes are dropped. This second pass acts as a semantically aware safety net on top of OCR. Because this VLM pass is shared with caption generation (Section 5.2), the filter tags and training captions come from the same forward pass. 15 Black-bar detection. Web-crawled video frequently contains letterbox or pillarbox padding from mismatched aspect ratios. We detect these regions using ffmpeg ’s cropdetect filter, which estimates the maximal content rectangle via luminance statistics, and pass the resulting crop prior to the downstream encode step. 
+
+OCR detection. Burned-in text, including channel logos, persistent subtitles, and promotional overlays, cannot be caught by cropdetect alone. We run PaddleOCR-VL [ 7] (served via vLLM) on N uniformly sampled frames per clip, then cluster detections across frames by spatial IoU and retain only clusters present in ≥50% of frames. This persistent-region filter distinguishes fixed overlays from transient in-scene text. The surviving OCR regions are composed with the black-bar crop into a single final rectangle by excluding detections in the top 20% (logos) or bottom 20% (subtitles) of the content area, and the result is applied in one ffmpeg re-encode pass alongside resolution scaling and frame-rate limiting. 
+
+Scene segmentation and length control. For video branches we first detect scene boundaries using a conservative threshold that prefers over-segmentation (false positives) over missed transitions (false negatives), and then merge adjacent segments using stitch detection based on SigLIP embedding similarity, which recovers contiguous shots that were split by momentary motion or exposure changes. Clips shorter than two seconds after merging are discarded to guarantee that every training clip covers a meaningful temporal extent. 
+
+5.1.2 Vision quality filtering and deduplication 
+
+We apply a multi-stage video quality filtering pipeline that scores each sample from complementary perspectives: aesthetic quality, luminance, model-based training suitability, technical quality, and motion quality. These signals are not used as a single learned ranking. Instead, each filter removes a specific failure mode, such as poor exposure, severe compression artifacts, static clips, or temporally unstable motion, before the surviving clips are routed to later training stages. 
+
+Aesthetic Quality. We assess aesthetic quality using Aesthetic Predictor V2.5 [ 8], a SigLIP-based predictor [ 49 ] that estimates image-level aesthetic scores. For each video, we uniformly sample frames over time, compute frame-wise aesthetic scores, and aggregate them into a single video-level score by averaging across the sampled frames. This score is used as a stage-wise filter: clips in the low-aesthetic tail are removed, and the cutoff becomes stricter at higher-resolution stages. 
+
+Luminance. Following the formulation adopted in OpenHumanVid, luminance is computed as 
+
+L = 0.2126 R + 0.7152 G + 0.0722 B, (14) where R, G, and B denote the pixel intensities of the red, green, and blue channels, respectively. We compute luminance statistics over sampled frames and remove videos that fall into the extreme low- or high-luminance tails for the target stage. This procedure filters out severely underexposed or overexposed videos and improves the visibility of subjects and scene content in the retained dataset. 
+
+Model-based Suitability Score. In addition to low-level visual cues, we incorporate a model-based suitability signal inspired by Koala-36M [ 38 ]. This score summarizes multiple quality-related factors into a single estimate of whether a video is suitable for training a video generation model. In practice, we use it conservatively as a rejection filter: clips in the lowest-suitability tail are removed, while the rest remain subject to the other specialized filters below. 
+
+Technical Quality. We further evaluate the overall technical quality of each video using DOVER [ 44 ], a video quality assessment model designed to disentangle technical and aesthetic aspects of video quality. In our pipeline, we use the technical-quality-related output to filter out videos affected by compression artifacts, noise, distortion, low sharpness, or other degradations that may negatively affect model training. This step improves the low-level fidelity of the retained videos and reduces noise in the training distribution. 
+
+Motion Quality. We assess motion quality using optical flow statistics. Specifically, UniMatch [ 45 ]is employed to estimate optical flow between sampled frame pairs and compute a motion score for each video. We remove both tails of this distribution: extremely low-motion clips are typically static or nearly static, while extremely high-motion clips often contain cuts, jitter, or unstable camera motion. The retained middle band better matches the smooth temporal dynamics targeted by the main training stages. 16 Progressive stage-wise filtering. Surviving clips are routed through a progressive multi-resolution training schedule that alternates image (T2I) and video (T2V) stages at 144p, 360p, 480p, and 720p, each with tighter admission criteria (Figure 7). At every transition we re-apply resolution, clip-length, motion, and aesthetic filters, with stricter cutoffs at higher resolutions, so that later stages are trained only on clips that satisfy stronger visual and temporal quality requirements. The final 720p SFT stage adds domain-balancing and, for video, dynamic-motion criteria. Before that final stage, we also run a 360p 
+
+Shared Cross-Attention refinement stage on an already-filtered subset. Synthetic video is injected only at 720p, where its controlled quality is most compatible with the admission criteria. 
+
+SSCD-based deduplication. We deduplicate the corpus with a three-stage SSCD pipeline [29]. 
+
+Embedding. We encode each image or video with the publicly released sscd disc mixup TorchScript model, producing a 512-dimensional descriptor per frame after resizing to 320 ×320 and applying ImageNet normalization. For videos, we use the tenth frame as a representative frame. This choice avoids intro and logo bias from the earliest frames and keeps matching tractable by avoiding all-pairs frame comparison. We use SSCD because it is designed for copy detection and is robust to re-encoding, cropping, and light editing, which are common duplication modes in web-crawled video. 
+
+Grouping. We search the descriptor set with NVIDIA cuVS’s multi-GPU IVF-PQ index under cosine distance [ 26 ]. We retrieve k=64 neighbors per query with nprobe =16 and keep only pairs whose cosine similarity exceeds 0.9. We then merge the retained pairs with Union-Find to form duplicate groups. 
+
+Representative selection. Within each duplicate group we keep a single sample using the weighted score 
+
+s = 0.5 · cres + 0.3 · cfps + 0.2 · \filesize, where each term is min-max normalized inside the group. The remaining members of the group are dropped. This rule favors higher-resolution, higher-frame-rate, and less re-compressed copies. 
+
+# 5.2 Video captioning 
+
+Caption-as-metadata. Rather than treating captioning as a standalone text-generation step, we use a single vision-language forward pass that returns both natural-language captions and a structured set of downstream-usable tags. All captions and tags in Section 5.1 come from Qwen3-VL-30B-A3B [ 31 ]. For videos, we feed the model N uniformly sampled frames from the clip; for images, we feed the image directly. We require every response to follow a fixed JSON schema with both free-text and structured fields. In practice, each response contains caption fields together with tags such as subject , style , action , camera -move , quality , watermark , and nsfw . This caption-as-metadata design lets us reuse the same forward pass for (i) text-conditioning during training, (ii) sanitation ( nsfw , watermark , padded , multi scene , timelapse ,
+
+quality ), (iii) domain- and subject-balanced sampling, and (iv) dynamic-motion filtering at 720p SFT. 
+
+Prompt design. We use two prompts that share a common JSON schema but differ in their temporal fields. The video prompt treats the sampled frames as a single description target and asks for, in order, camera attributes (shot type, angle, motion), subjects, actions, environment, lighting and color, and any on-screen text. The image prompt removes the temporal fields and instead asks for composition, framing, and verbatim text transcription. In both cases, the schema includes free-text caption fields together with structured fields such as style , subject , action , camera move , and quality .Both prompts forbid claims that are not grounded in the visible frames, frame-by-frame narration, and subjective comments on quality, smoothness, or atmosphere. These constraints are intended to reduce hallucinated tags or descriptive drift. We require each response to be a single valid JSON object; malformed responses are re-sampled. 
+
+Caption variants for text-robust training. For each clip we retain three caption variants derived from the same VLM response: caption long (a detailed 150 to 250 word description), caption short (a single 15 to 25 word sentence), and caption truncated , obtained by keeping only the leading sentence of caption -long . During training we sample among the three with fixed probabilities (plong , pshort , ptruncated ) = (0.5, 0.3, 0.2 ). The intent is to reduce the train–test mismatch between long synthetic captions and the shorter prompts users typically provide at inference time. This is a pragmatic recipe choice rather than an isolated claim of optimality. Short and truncated variants also act as a mild form of caption dropout that reduces overfitting to VLM-specific phrasing. 
+
+Filter integration. The structured fields produced by the VLM are consumed directly by the sanitation and stage-wise filtering steps of Section 5.1; we do not apply a separate post-processing model to 17 Figure 8: Subject composition of the cross-attention fine-tuning corpus. The corpus was assembled iteratively by curating additional clips from underperforming categories. Left: image distribution. Right: video distribution. reinterpret them. Specifically, watermark , nsfw , and padded flags trigger hard removal; multi scene clips are dropped as a secondary check on scene segmentation; quality =low is excluded from 480p and above; 
+
+style and subject drive domain balancing for the 720p stage and SFT; and action =Dynamic is used as the dynamic-motion criterion for 720p SFT admission. Because these tags are produced in the same forward pass as the training captions, filtering and conditioning remain synchronized by construction throughout the data pipeline. 
+
+Fine-tuning corpus composition. As a downstream use of caption metadata, we assembled the fine-tuning corpus (Table 1, Stages 9–10) iteratively. We ran intermediate evaluations on the latest checkpoint, identified subject categories where generation quality was weakest, and then curated additional clips from those categories. Figure 8 shows the resulting subject distribution. For images, People dominates, reflecting character-centric use cases. For videos, the distribution shifts toward Transportation , Sports ,and Animals , categories involving dynamic motion that were identified as weak points in intermediate evaluations. 
+
+# 5.3 Offline Bucket-Balanced Sampler 
+
+Problem. A common storage format for large-scale training is WebDataset, which packs samples into tar shards and supports efficient sequential streaming [ 41 ]. In our setting, however, training Motif-Video 2B on W GPUs is bottlenecked by data heterogeneity. Samples vary along three axes, frame count, height, and width, and we must preserve sample-level filtering and bucketed batching without giving up the benefits of shard-based storage. In practice, we group samples jointly by frame bucket and resolution bucket. The frame buckets comprise single-frame images, videos with 33, 65 and 121 frames, each of which is further split across multiple spatial resolutions. Under our FSDP2/HSDP training setup (Section 4.6), progress on bucket b can proceed only when all participating ranks have accumulated a full batch for that same frame-and-resolution bucket: global steps (b) = min 
+
+> r
+
+ steps (b)
+
+> r
+
+ ∀ b ∈ active buckets. (15) As a result, progress on each active bucket could be limited by the slowest participating rank. The baseline sampler materializes a global clip index over all shards, applies random shuffling ( shuffle block -size=1 ) that destroys archive locality, and distributes indices by round-robin assignment ( index k →
+
+rank k mod W). This preserves stochasticity, but it sacrifices WebDataset’s main advantage, fast sequential shard reads, and creates substantial cross-rank imbalance in bucket composition. If a single rank receives too few samples for one frame-and-resolution bucket, updates for that bucket are delayed for the synchronized FSDP2 job, reducing effective utilization across all W GPUs. Empirically, the baseline yields N steps per epoch at roughly 20% utilization, with the remaining budget lost to synchronization overhead. Randomized I/O increases dataloader latency to 0.05 s/step. 18 Figure 9: Overview of our offline bucket-balanced sampler for WebDataset-formatted video corpora on 
+
+W GPUs. An offline planner consumes clip metadata to apply filtering and frame-resolution bucketing, assigns tar shards to ranks, and emits per-rank schedules that preserve sequential archive reads during training. 
+
+Method. Our offline bucket-balanced sampler leaves the underlying WebDataset shard layout un-changed and moves filtering, bucketing, and rank assignment into an offline planning phase . The key idea is to make all expensive selection decisions from metadata offline and then execute the resulting plan with sequential shard reads during training. 
+
+(i) Metadata-driven shard planning. Given clip-level Parquet metadata, we first apply filtering rules and assign each surviving clip to a joint frame-and-resolution bucket. We then build an initial greedy shard assignment by iteratively placing each tar shard on the rank that most reduces the current cross-rank bucket imbalance. Starting from this greedy initialization, we run a simulated annealing (SA) optimizer [ 17 ] for 30,000 iterations to refine a shard-to-rank assignment map σ that minimizes the coefficient of variation (CV) of 1f, 33f, 65f and 121f clip counts across ranks: min  
+
+> σ
+
+CV 
+
+nr,b
+
+> W−1
+> r=0
+
+
+
+∀ b, (16) where nr,b denotes the number of bucket-b clips assigned to rank r. Each SA iteration proposes a swap of two tar shards between ranks. The final assignment is serialized into per-rank shard files ( rank {r}.npz ), each containing an ordered plan over shards and samples. 
+
+(ii) Sequential WebDataset reads. At runtime, each rank reads only its assigned tar shards in shard order, so filtering and bucketing no longer require global online reshuffling. This preserves sequential WebDataset I/O and reduces dataloader latency to below 0.001 s/step. A locality-preserving rolling shuffle with a 4 096-sample window preserves within-bucket randomness without breaking read locality. 
+
+(iii) Image/video interleaving. We use a fixed image–video interleaving schedule derived from the planned per-bucket step counts. An example pattern is I-V-V , although the full schedule is determined by the planned bucket counts. This keeps the image/video mixture stable throughout training. 
+
+Results. Figure 9 summarizes how our method augments a standard WebDataset pipeline with metadata-based filtering, bucket balancing, and rank-aware shard scheduling. Table 2 summarizes relative data utilization under distributed training on W GPUs. The offline bucket-balanced sampler with greedy shard assignment increases per-epoch throughput from N to approximately 4.6 N, while utilization rises from roughly 20% to roughly 76%. Adding SA further improves throughput to approximately 5.4 N,corresponding to about 18% improvement over the greedy variant, with utilization approaching 90%. The remaining synchronization loss is modest and consistent with the discrete nature of clip-to-batch assignment. Table 2: Relative data utilization per epoch on W GPUs. Method Steps / epoch Utilization DL latency Baseline (clip shuffle) N ≈ 20% 0.05 s/step Offline sampler + greedy ≈ 4.6 N ≈ 76% <0.001 s/step Offline bucket sampler + SA (ours) ≈ 5.4 N ≈ 90% <0.001 s/step 
+
+Outcome. In our setting, the offline bucket-balanced sampler provides a practical way to retain Web-Dataset’s fast sequential reads while still supporting clip filtering and frame-resolution bucketing. It 19 Table 3: VBench T2V evaluation across all 16 fine-grained dimensions (scores in %). Bold and underline denote the best and second-best results among open-source models with full dimension scores, respectively. † Closed-source; excluded from open-source rankings. p Evaluated with prompt optimisation (Qwen-rewritten prompts for Wan2.2; SAT-enhanced for CogVideoX1.5-5B). α Updated HunyuanVideo API checkpoint (2025-05-22); open-source weights not released for this version. ⋆ SANA-Video aggregate scores from our unified evaluation protocol [ 5]; individual dimension scores not publicly reported by the authors. § Scores from the original paper [ 53 ] under a T2I2V pipeline (FLUX anchor frame); individual dimension scores not reported. Direct comparison with standard T2V models should be interpreted with caution. All other scores sourced from the VBench Leaderboard [15].                                                                                                                                                                                                                                                                                                                                                
+
+> Model Params Aggregate Quality Dimensions Semantic Dimensions
+> Total  ↑
+> Quality  ↑
+> Semantic  ↑
+> Subj. Cons.
+> Bg. Cons.
+> Temp. Flick.
+> Motion Sm.
+> Dyn. Degree
+> Aesth. Qual.
+> Img. Qual.
+> Object Class
+> Multiple Obj.
+> Human Action
+> Color
+> Spatial Rel.
+> Scene
+> App. Style
+> Temp. Style
+> Ovr. Consist.
+> Veo 3 [42] †– 85.06 85.70 82.49 97.36 96.89 99.30 99.16 72.43 63.81 68.23 93.89 82.20 99.40 82.48 84.26 57.43 23.55 25.97 27.88 Sora [27] †– 84.28 85.51 79.35 96.23 96.35 98.87 98.74 79.91 63.46 68.28 93.93 70.85 98.20 80.11 74.29 56.95 24.76 25.01 26.26 Luma †– 83.61 83.47 84.17 97.33 97.43 98.64 99.35 44.26 65.51 66.55 94.95 82.63 96.40 92.33 83.67 58.98 24.66 26.29 28.13 HunyuanVideo †α[18] – 83.43 85.07 76.88 97.22 97.60 99.39 99.05 71.94 60.28 67.24 83.48 66.71 94.40 89.79 72.13 54.46 22.21 24.52 26.95 MiniMax-Video-01 †– 83.41 84.85 77.65 97.51 97.05 99.10 99.22 64.91 63.03 67.17 87.83 76.04 92.40 90.36 75.50 50.68 20.06 25.63 27.10 Kling 1.6 †– 83.40 85.00 76.99 97.40 96.84 98.64 99.13 62.22 64.81 69.70 93.34 63.99 96.20 81.26 79.08 55.57 20.75 24.51 26.04 Wan2.2-T2V p[36] A14B 84.23 85.42 79.50 97.29 97.39 99.22 98.16 61.02 67.22 71.75 94.06 82.10 96.40 87.43 78.39 56.80 20.39 23.64 26.12 SANA-Video ⋆[5] 2B 83.71 84.35 81.35 ––––––––––––––––Wan2.1-T2V [36] 14B 83.69 85.59 76.11 97.52 98.09 99.46 98.30 65.46 66.07 69.43 86.28 69.58 95.40 88.59 75.39 45.75 22.64 23.19 25.91 OpenSora 2.0 §[53] 11B 83.60 84.40 80.30 ––––––––––––––––Wan2.1-T2V [36] 1.3B 83.31 85.23 75.65 97.56 97.93 99.55 98.52 65.19 65.46 67.01 88.81 74.83 94.00 89.20 73.04 41.96 21.81 23.13 25.50 HunyuanVideo [18] 13B 83.24 85.09 75.82 97.37 97.76 99.44 98.99 70.83 60.36 67.56 86.10 68.55 94.40 91.60 68.68 53.88 19.80 23.89 26.44 CogVideoX1.5-5B p[46] 5B 82.17 82.78 79.76 96.87 97.35 98.88 98.31 50.93 62.79 65.02 87.47 69.65 97.20 87.55 80.25 52.91 24.89 25.19 27.30 CogVideoX-5B [46] 5B 81.91 83.05 77.33 96.45 96.71 98.97 97.20 69.51 61.88 63.33 85.07 63.94 98.60 83.03 68.91 51.96 24.98 25.42 27.65
+> Step-Video-T2V [24] 30B 81.83 84.46 71.28 98.05 97.67 99.40 99.08 53.06 61.23 70.63 80.56 50.55 94.00 88.25 71.47 24.38 23.17 26.01 27.12 LTX-Video [14] 2B 80.00 82.30 70.79 96.56 97.20 99.34 98.96 54.35 59.81 60.28 83.45 45.43 92.80 81.45 65.43 51.07 21.47 22.62 25.19
+> Motif-Video 2B (Ours) 2B 83.76 84.59 80.44 95.38 95.74 98.16 98.81 65.56 65.95 70.50 92.93 77.29 95.60 87.94 83.02 52.40 23.03 25.24 26.78
+
+substantially reduces synchronization loss and improves data-loading speed. 
+
+# 6 Experiments 
+
+Our evaluation spans three levels: per-component design validation, end-to-end benchmark comparison, and qualitative analysis. The first category: attention-pattern analysis supporting the three-stage design (Section 3.2, Figure 3), the text-attention dilution evidence motivating Shared Cross-Attention (Section 3.3, Figure 4), the SkyReels-V4 stability comparison (Section 3.3, Figure 5), and the REPA teacher analysis (Section 4.2, Figure 6), is presented alongside the design decisions it informs, following the convention that evidence is most useful where the claim it supports is made. This section focuses on the remaining two: quantitative evaluation on VBench (Section 6.1) and qualitative results (Section 6.3). 
+
+# 6.1 Quantitative evaluation on VBench 
+
+Table 6.3 reports VBench scores across all 16 dimensions. Unless otherwise noted in the table caption, scores are reported from the public VBench leaderboard. Under the standard open-source text-to-video setting, Motif-Video 2B achieves a Total Score of 83.76%, surpassing larger openly released models including Wan2.1-T2V-14B (83.69%), HunyuanVideo (83.24%), and Step-Video-T2V-30B (81.83%). Wan2.2-T2V reports a higher total score (84.23%), but that entry uses prompt optimization, so we treat it separately rather than as a like-for-like comparison. The strongest gains for Motif-Video 2B are on the semantic side of the benchmark. It leads open-source models with full per-dimension results on Spatial Relationship (83.02%), and ranks near the top on Object Class (92.93%), Multiple Objects (77.29%), and overall Semantic Score (80.44%). This pattern is consistent with the paper’s central claim that the architecture prioritizes text grounding and compositional control, especially for multi-object layouts and spatially specified prompts. At the same time, the table shows clear headroom on quality-related dimensions. Subject Consistency (95.38%) and Background Consistency (95.74%) remain below the strongest Wan models, and Temporal Flickering (98.16%) trails the best scores in the Wan2.1 family (up to 99.55%). We therefore read the benchmark as showing a specific trade-off rather than a uniform win: at 2B scale, Motif-Video 2B is unusually strong on semantic alignment, while long horizon temporal stability and appearance consistency remain the main targets for further scaling and data improvement. 20 Figure 10: Shared Cross-Attention contribution across single-stream encoder blocks and denoising steps (1280 × 736, 121 frames, 50 steps, σ ∈ [1.00, 0.29 ]). Left : Frobenius norm of the cross-attention output Wcross  
+
+> O
+
+Attn (Q, K, V) per block (row) and step (column). Right : ratio of the cross-attention residual norm to the self-attention output norm ∥hv∥. No block falls below 5.2%; the global mean is 7.6% and the maximum 21.7%. Activity peaks at block 0 and in the high-noise regime, stabilising after step 22 (σ ≈ 0.96). The cross-attention residual is nearly orthogonal to the self-attention output (global cosine 
+
+≈ − 0.008), confirming that the module injects text-grounded information along directions absent from the self-attention pathway. 
+
+# 6.2 Effect of the Shared Cross-Attention 
+
+Section 3.3 argues that Shared Cross-Attention injects text-derived information that is both geometrically grounded in the backbone’s existing key–value manifold and directionally distinct from the self-attention output. We verify this claim at inference time by probing all 16 single-stream encoder blocks throughout the denoising trajectory (50 steps, σ ∈ [1.00, 0.29 ], 1280 ×736 at 121 frames, guidance scale 8). At each block and step we record (i) the Frobenius norm of the cross-attention contribution Wcross  
+
+> O
+
+Attn (Q, K, V),and (ii) its magnitude relative to the self-attention residual ∥hv∥.
+
+Contribution magnitude. Figure 10 shows the per-block, per-step Frobenius norm heatmap. The cross-attention signal is non-negligible across the full trajectory: globally it accounts for 7.6% of the self-attention residual magnitude on average, rising to a maximum of 21.7% (Figure 10). No block is dormant; the weakest contributes 5.2%, confirming that all 16 cross-attention modules remain active participants rather than residual no-ops. Block 0 is the most active (10.6%), consistent with it receiving the least-processed video hidden state and therefore drawing the most heavily on text for initial grounding; blocks 14–15 follow (9.3–9.6%), suggesting a final consolidation of text alignment just before the DDT decoder receives the joint representation. 
+
+Directional orthogonality. Beyond magnitude, we measure the cosine similarity between the cross-attention contribution and the self-attention output across all blocks and steps. The global mean is cos (Wcross  
+
+> O
+
+Attn , hv) ≈ − 0.008: the two residuals are nearly orthogonal. This rules out the hypothesis that cross-attention acts as a signal amplifier or a correction to existing self-attention features. Instead, the module injects text information along directions that are almost entirely absent from the self-attention output, a functional profile we term an information injector rather than a signal amplifier. The orthogonality is consistent with the manifold argument in Section 3.3: by grounding K and V in the backbone’s own text projections while learning a free Q projection from the post-self-attention video state, the module is positioned to ask a question the self-attention pathway was structurally unable to ask. 
+
+Denoising dynamics. The heatmaps reveal a step-wise pattern that the aggregate statistics obscure. Cross-attention activity peaks in the high-noise regime ( σ ≈ 1.0), where global semantic structure is being established, and stabilizes after step 22 ( σ ≈ 0.96), when the convergence difference drops below 10% of its peak value. This trajectory mirrors the known dynamics of the flow-matching denoising process: early steps are dominated by coarse semantic decisions to which text alignment is critical, while later steps refine spatial detail in a regime where text influence is already baked into the latent. We note that the current experiment covers σ ∈ [1.00, 0.29 ] only (shift = 20); the low-σ tail ( σ < 0.25) is not reached under this shift setting and remains an open question for follow-up experiments with lower shift values. Appendix E additionally compares generations with and without Shared Cross-Attention, and analyzes how the module changes the observed contribution patterns. Consistent with the analysis above, these contribution patterns are reflected in the generated videos themselves: removing Shared Cross-Attention leads to visibly weaker prompt alignment and less coherent scene realization. 21 Figure 11: Selected single-frame samples from Motif-Video 2B across a range of subjects and visual styles. Each tile is a frame drawn from an independently generated text-to-video clip. The grid is intended to convey the breadth of domains the model handles, including photographic scenes, stylized and fantastical content, close-up subjects, and wide landscapes, rather than to claim uniform quality across all prompts. 
+
+# 6.3 Qualitative results 
+
+We present qualitative samples from Motif-Video 2B for text-to-video generation. Figure 1 shows multi-frame strips from a set of prompts that stress temporal behavior: camera motion, subject articulation, and scene dynamics. The strips are chosen to make temporal coherence inspectable at a glance: neighboring frames should read as a continuous clip rather than as independently sampled images. Figure 11 complements this with a wider grid of single frames drawn from diverse prompts, illustrating the range of subjects, styles, and compositions that the model covers under a single set of weights. Both figures are curated. We select them to communicate what Motif-Video 2B does well, not to charac-terize its average behavior; the VBench breakdown in Table serves that purpose. Motif-Video 2B also exhibits characteristic failure modes, most visibly in fine-grained human anatomy and in long-horizon temporal stability; we discuss these directly in Sec 7.2. To complement these curated examples, Appendix Figure 16 presents additional un-curated generations involving human subjects, providing a broader view of the model’s typical video outputs on prompts that are especially sensitive to anatomical fidelity and motion consistency. We also verify that Motif-Video 2B supports image-to-video generation. Figure 12 shows that the model can animate a given input image while preserving its original appearance and scene structure. The leftmost panel is the input image, and the generated frames confirm that the image-to-video capability is learned without losing fidelity to the source image. Appendix Figure 17 presents additional image-to-video results. 22 Figure 12: Image-to-video generation results. The leftmost panel is the input image, and the model preserves its original appearance while generating temporally coherent video content from it. Table 4: Human evaluation results. Pairwise preferences are converted to ELO ratings. Total aggregates all pairwise judgments across both axes; prompt-following measures whether the generated video matches the input text; video-fidelity measures visual coherence and plausibility, independent of the prompt. Models are sorted by Total ELO.                                        
+
+> Model Params Total ↑Prompt-following ↑Video-fidelity ↑
+> Wan2.1 14B 1114.8 1054.4 1101.6 HunyuanVideo-1.5 6.5B 1083.0 1045.2 1043.8 Wan2.2 5B 1062.4 1039.1 1049.9 LTX-Video 2 14B 1041.5 1005.0 1043.7
+> Motif-Video (ours) 2B 1026.2 1015.1 1047.3
+> Wan2.1 1.3B 1015.6 1010.1 1006.5 SANA-Video 2B 915.3 943.5 948.5 CogVideoX 5B 851.5 916.5 872.3
+
+# 6.4 Human evaluation 
+
+Automatic benchmarks such as VBench aggregate many dimensions into a single score, but they correlate only loosely with what a human viewer actually perceives as a good video. To complement the automatic evaluation in Sec 6.1, we run a blind pairwise study that targets the two qualities we care about most: whether the generated video matches the prompt, and whether it looks coherent and visually plausible. We evaluate on a set of 40 prompts generated by an LLM. To avoid biasing the prompts toward any particular model’s strengths, we condition the LLM on a public prompting guide 1 rather than on examples from our own training distribution. We compare Motif-Video 2B against six contemporaneous open-source video generators spanning a wide range of parameter counts and training-data scales: SANA-Video [ 5 ], LTX-Video 2 [ 13 ], Wan2.1-14B and Wan2.1-1.3B [ 36 ], Wan2.2-5B, and CogVideoX-5B [ 46 ]. For every baseline we use the recommended default inference configuration published on its Hugging Face model card (sampler, guidance scale, step count, resolution, frame count). For each prompt, every pair of models produces one video, and an annotator is shown the two clips side by side with the prompt displayed above. Model identities and left/right order are randomized and hidden. Annotators answer two independent questions: prompt-following (“which video better matches the text description?”) and video-fidelity (“which video looks more coherent and visually plausible, ignoring the prompt?”). We deliberately separate the two axes because, as we will see, models can rank very differently on each. 
+
+Results. Table 4 reports ELO ratings on both axes. Two observations stand out. First, the picture differs sharply from the VBench ranking in Sec 6.1. Wan2.1-14B is preferred over Motif-Video 2B by a clear margin on both prompt-following and video-fidelity, despite Motif-Video 2B holding the high VBench Total Score among open-source models. Inspecting the failure cases, we find that Motif-Video 2B and other models near its scale most often lose due to semantic failures—missing or swapped subjects, 
+
+> 1https://docs.ltx.video/api-documentation/prompting-guide
+
+23 Figure 13: Example of generated results from the arena. Prompt: ”A guitarist sits on a fire escape playing at twilight, fingers moving in relaxed patterns along the neck of a scratched acoustic guitar. Shot on a 40mm lens with a slow crane-up from the street below, the brick wall beside him glows deep orange as the last sun hits it and the sky above shifts toward indigo. He wears a loose denim shirt rolled to the elbows, a leather bracelet knocking softly against the guitar body. A potted plant beside him sways in the warm updraft. The camera rises past him to reveal the skyline beginning to glitter with early window lights.” Note that even high-fidelity models sometimes fail on certain examples, but we have observed such models, for example Wan2.1 14B, consistently show better results, unlike the example shown here. ignored attributes, prompt–video mismatches—rather than to low-level visual artifacts. We discuss the implications of this gap, and what it suggests about the limitations of uniformly weighted benchmark aggregates, in Sec 7. Second, within the comparable scale regime, Motif-Video 2B is preferred over both SANA-Video (similar parameter count) and Wan2.1-1.3B (similar parameter count, substantially larger training corpus) on both axes. We read this as evidence that the architectural and training-recipe choices described in Sections 3–4 translate into perceptible quality gains at fixed scale, rather than merely improving benchmark scores. 
+
+Caveats. A 40-prompt study with the annotator pool described above is sufficient to surface the qualitative picture reported here, but it is not large enough to support fine-grained claims about small ELO differences. In particular, we do not interpret the ranking among models within overlapping confidence intervals as meaningful, and we do not claim that Motif-Video 2B is uniformly better than any baseline it outranks—only that, under matched default-inference conditions, human raters tend to prefer it. A larger, more controlled study—with a broader prompt distribution, more annotators per pair, and per-dimension breakdowns of failure modes—is left to future work. 
+
+# 7 Discussion 
+
+# 7.1 Interpretation of Results 
+
+The results in Section 6 admit more than one reading. Before turning to the boundaries of what our recipe can do, we discuss what we believe the results say, and what they do not say, about the design choices in this report. 
+
+The gap between VBench and perceptual quality. Motif-Video 2B reaches the highest Total Score among open-source models we evaluate (83.76%, Table 6.3), but in our internal side-by-side comparisons against Wan2.1-T2V-14B we observe a consistent perceptual gap in favor of the larger model, despite trailing it by only 0.07 points on the aggregate metric. We take this seriously and report it explicitly. Two factors contribute to the discrepancy. First, VBench weights its sixteen dimensions uniformly in the aggregate score, whereas human perceptual preference is disproportionately sensitive to temporal stability: a viewer forgives a missing object more readily than a flickering one, but VBench penalizes both equally. Second, VBench’s semantic dimensions can award credit for near-correct outputs, for instance, 24 Figure 14: Micro-scale semantic distortion. Three characteristic failures at the sub-object level: distorted hand anatomy on a close-up instrument subject (left), broken body structure under a high-motion skydiving prompt (middle), and attribute leakage between co-present animals in a multi-subject scene (right). The generations may remain category-correct (guitar, skydiver, cat and dog), leading VBench’s semantic dimensions award credit, but a human viewer flags the artifact on first inspection. a generated human whose anatomy is subtly distorted but who performs the prompted action in the correct spatial configuration will score well on Human Action, Spatial Relationship, and Object Class, even though a human viewer would immediately flag the anatomical artifact. Motif-Video 2B’s strength on these semantic dimensions is genuine, but the scores do not fully distinguish between “semantically correct” and “perceptually convincing”. A fairer parameter-class comparison is Wan2.1-T2V-1.3B (83.31%). Against this baseline Motif-Video 2B leads by 0.45 points on Total Score and by 4.79 points on Semantic Score (80.44% vs. 75.65%), while the two models trade wins on quality dimensions: Wan2.1-1.3B holds an edge on Subject Consistency (97.56% vs. 95.38%) and Temporal Flickering (99.55% vs. 98.16%), while Motif-Video 2B leads on Aesthetic Quality (65.95% vs. 65.46%) and Imaging Quality (70.50% vs. 67.01%). Even this comparison is not fully controlled: Wan2.1 reports training on billions of images and videos [ 36 ], roughly two orders of magnitude more data than the fewer than 10M clips used by Motif-Video 2B. In internal side-by-side evaluation at the 
+
+∼2B scale, the two models are substantially closer in perceived quality than either is to Wan2.1-14B. We therefore interpret our VBench result not as a claim that Motif-Video 2B matches Wan2.1-14B in perceived quality, but as evidence that a 2B model trained under our recipe can match a 14B model on the compositional and semantic axes of generation while remaining capacity-limited on the temporal-stability axes, and that within its own parameter class, the recipe yields a clear advantage on semantic understanding without sacrificing quality parity. 
+
+Data as the ceiling on an efficient design. The architectural and training choices in this report are designed to maximize what a fixed data budget can deliver, and the semantic results in Table 6.3 suggest they succeed at this: a 2B model trained on fewer than 10M clips matches or exceeds 14B models trained on one to two orders of magnitude more data [ 18 , 36 ] on compositional dimensions. But design efficiency does not remove the need for data; it lowers the threshold at which data becomes the binding constraint. We believe Motif-Video 2B has reached that threshold. The long-tail domain gaps and dynamic-motion degradation described below are, in our assessment, symptoms of data coverage rather than architectural limitations; unlike the image domain, where hundreds of millions of captioned pairs are publicly available, high-quality video data with diverse motion and temporal coherence remains scarce. Scaling the training corpus in quantity, motion diversity, and domain breadth is the most natural next step, and one that the current architecture is positioned to absorb. 
+
+Scaling outlook. The three-stage backbone and Shared Cross-Attention are parameter-agnostic designs: nothing in their formulation ties them to 2B. We expect the role-separation philosophy to remain useful at larger scales, but the optimal allocation across stages may shift. In particular, the DDT decoder currently uses 8 layers, roughly 22% of the total depth, and our analysis suggests that temporal coherence is concentrated there. A natural scaling experiment is to hold the encoder fixed and grow the decoder, testing whether the consistency gap closes before the semantic advantage erodes. We view this, together with the data scaling direction above, as the most immediate paths for a future iteration. 
+
+# 7.2 Limitations 
+
+We report limitations not as caveats but as the boundary conditions under which the design decisions in this report should be interpreted. Several of them point directly to follow-up work; others are properties of the 2B operating regime that scaling is the most likely remedy for. 25 Figure 15: Temporal failure modes. Top: physically implausible liquid dynamics in a wine-splash prompt: the motion is locally smooth but violates gravity and surface tension. Middle: loss of temporal coherence under high scene complexity in a cavalry-charge prompt, where subject identities blur across frames and multi-agent spatial relationships fail to persist. Bottom: unintended mid-clip scene transition, where the prompted setting drifts into an unrelated composition partway through the sequence. 
+
+Failure modes. The VBench aggregate in Table 6.3 captures compositional and semantic correctness, but it is largely insensitive to two classes of perceptual failure that a human viewer notices immediately. We document both directly in Figures 14 and 15 and discuss what each suggests for a future iteration. 
+
+Micro-scale semantic distortion (Figure 14). Motif-Video 2B occasionally produces sub-object-level artifacts that leave the category label intact but break perceptual plausibility: distorted hands on close-up human subjects, degraded body structure under high-displacement motion, and attribute leakage between co-present subjects of similar size and color. These failures are consistent with the VBench-to-perception gap discussed in Section 7: the prompted objects are present in the correct spatial configuration, so the aggregate score is largely unaffected, but the artifacts are immediately visible on direct inspection. We attribute them primarily to data coverage rather than to the backbone design. Fine-grained anatomical fidelity and robust multi-subject disambiguation scale with the quantity and diversity of training clips covering the relevant subject, and a sub-10M corpus is thin in exactly the regions where these failures concentrate: close-up human extremities, high-displacement body motion, and multi-animal scenes with visually similar subjects. 
+
+Temporal failures (Figure 15). We observe three distinct temporal failure modes that a static-frame metric cannot surface. The first is physical implausibility: generated liquids, cloth, and rigid-body collisions can evolve smoothly frame-to-frame while violating gravity, surface tension, or momentum conservation. The second is coherence loss under high scene complexity: in dense multi-agent prompts such as the cavalry charge in Figure 15 (middle), subject identities blur across frames and the spatial relationships established in the opening frames fail to persist. The third is unintended scene transitions, in which the model drifts mid-clip from the prompted setting into an unrelated composition. These failures do not share a single cause. Physical plausibility is fundamentally a data question: without sufficient exposure to physics-rich clips, no amount of temporal capacity will recover the correct dynamics from the flow-matching objective alone. Complex-scene coherence and within-clip consistency, in contrast, are more plausibly capacity-bound, and are the failures most likely to benefit from the decoder-side scaling direction noted in Section 7. 
+
+Recipe components are evaluated jointly, not in isolation. We do not present per-component ablations for Shared Cross-Attention, the DDT decoder, REPA phasing, or TREAD routing. The empirical evidence we provide is the attention-pattern analysis (Figures 3, 4) and the SkyReels-V4 vs. Shared Cross-Attention comparison (Figure 5), together with the end-to-end VBench result. A cleaner attribution of contribution-per-component would require ablation training runs at the same scale, which we did not have the compute budget to perform. Readers should interpret our results as evidence that the composed recipe works at 2B, not as a claim about the marginal contribution of any single component. 
+
+Open questions in the training recipe. Two specific questions about the recipe remain unresolved. First, we disable REPA at the 360p transition based on the phase-constrained alignment argument of [ 40 ], but we have not tested whether a holistic, early-stopped variant in the spirit of HASTE would extend the useful lifetime of the alignment signal in our setting. Second, our V-JEPA 2.0 teacher provides spatially fragmented dense features (Figure 6), and we expect that a teacher with denser spatial structure (e.g., 26 V-JEPA 2.1 [ 25 ]) would change the trade-off of when REPA should be turned off. Both questions are natural extensions rather than corrections. 
+
+# 8 Conclusion 
+
+This report asks whether competitive text-to-video generation requires massive scale, and presents evidence that it does not, provided that model design explicitly separates the objectives that scaling would otherwise leave entangled. Motif-Video 2B reaches 83.76% on VBench with 2B parameters, fewer than 10M training clips, and under 100,000 H200 GPU hours, matching or exceeding models 7 × its size on compositional and semantic dimensions. Three design choices drive this result: Shared Cross-Attention stabilizes text conditioning under the token imbalance inherent to long video sequences; the three-stage backbone assigns modality fusion, joint representation, and detail reconstruction to dedicated components; and the DDT decoder, applied to video for the first time, develops inter-frame attention structure that the encoder alone does not exhibit. On the training side, the combination of TREAD token routing and phase-constrained REPA with a V-JEPA teacher, which to our knowledge was first composed for video diffusion, delivers a micro-budget recipe in which a 27% per-step FLOP reduction coexists with structured early-phase learning, and an offline bucket-balanced sampler recovers 90% data utilization from a baseline of 20%. Temporal stability and data coverage remain the primary constraints; the former is localized in the decoder by the same role-separation design, and the latter defines the most natural scaling axis for a future iteration that the current architecture is built to absorb. 
+
+# References 
+
+[1] Adrien Bardes, Quentin Garrido, Jean Ponce, Xinlei Chen, Michael Rabbat, Yann LeCun, Mido Assran, and Nicolas Ballas. V-jepa: Latent video prediction for visual representation learning. 2023. [2] Swayam Bhanded. Speedrunning imagenet diffusion. arXiv preprint arXiv:2512.12386 , 2025. [3] Guibin Chen, Dixuan Lin, Jiangping Yang, Youqiang Zhang, Zhengcong Fei, Debang Li, Sheng Chen, Chaofeng Ao, Nuo Pang, Yiming Wang, et al. Skyreels-v4: Multi-modal video-audio generation, inpainting and editing model. arXiv preprint arXiv:2602.21818 , 2026. [4] Junsong Chen, YU Jincheng, GE Chongjian, Lewei Yao, Enze Xie, Zhongdao Wang, James Kwok, Ping Luo, Huchuan Lu, and Zhenguo Li. Pixart-α: Fast training of diffusion transformer for photorealistic text-to-image synthesis. In The Twelfth International Conference on Learning Representations .[5] Junsong Chen, Yuyang Zhao, Jincheng Yu, Ruihang Chu, Junyu Chen, Shuai Yang, Xianbang Wang, Yicheng Pan, Daquan Zhou, Huan Ling, et al. Sana-video: Efficient video generation with block linear diffusion transformer. arXiv preprint arXiv:2509.24695 , 2025. [6] Sanghyeok Choi, Yuchang Song, Taegyun Jeong, Taesung Kwon, and Kihyuk Sohn. Enhanc-ing motion dynamics of image-to-video models via adaptive low-pass guidance. arXiv preprint arXiv:2506.08456 , 2025. [7] Cheng Cui, Ting Sun, Suyin Liang, Tingquan Gao, Zelun Zhang, Jiaxuan Liu, Xueqing Wang, Changda Zhou, Hongen Liu, Manhui Lin, et al. Paddleocr-vl: Boosting multilingual document parsing via a 0.9 b ultra-compact vision-language model. arXiv preprint arXiv:2510.14528 , 2025. [8] discus0434. aesthetic-predictor-v2-5. https://github.com/discus0434/aesthetic-predictor-v2-5 ,2024. [9] Abhimanyu Dubey, Abhinav Jauhri, Abhinav Pandey, Abhishek Kadian, Ahmad Al-Dahle, Aiesha Letman, Akhil Mathur, Alan Schelten, Amy Yang, Angela Fan, et al. The Llama 3 herd of models. 
+
+arXiv preprint arXiv:2407.21783 , 2024. [10] Patrick Esser, Sumith Kulal, Andreas Blattmann, Rahim Entezari, Jonas M ¨uller, Harry Saini, Yam Levi, Dominik Lorenz, Axel Sauer, Frederic Boesel, et al. Scaling rectified flow transformers for high-resolution image synthesis. In International Conference on Machine Learning , pages 12606–12633. PMLR, 2024. [11] Yu Gao, Haoyuan Guo, Tuyen Hoang, Weilin Huang, Lu Jiang, Fangyuan Kong, Huixia Li, Jiashi Li, Liang Li, Xiaojie Li, et al. Seedance 1.0: Exploring the boundaries of video generation models. arXiv preprint arXiv:2506.09113 , 2025. 27 [12] Sylvain Gugger, Lysandre Debut, Thomas Wolf, Philipp Schmid, Zachary Mueller, Sourab Man-grulkar, Marc Sun, and Benjamin Bossan. Accelerate: Training and inference at scale made simple, efficient and adaptable. https://github.com/huggingface/accelerate , 2022. [13] Yoav HaCohen, Benny Brazowski Nisan Chiprut Yaki Bitterman, Andrew Kvochko Avishai Berkowitz Daniel Shalem, Daphna Lifschitz Dudu Moshe, Eitan Porat Eitan Richardson Guy Shi-ran, Itay Chachy Jonathan Chetboun, Michael Finkelson Michael Kupchick Nir Zabari, Nitzan Guetta Noa Kotler, Ofir Bibi Ori Gordon Poriya Panet, Roi Benita Shahar Armon, et al. Ltx-2: Efficient joint audio-visual foundation model. [14] Yoav HaCohen, Nisan Chiprut, Benny Brazowski, Daniel Shalem, Dudu Moshe, Eitan Richardson, Eran Levin, Guy Shiran, Nir Zabari, Ori Gordon, et al. Ltx-video: Realtime video latent diffusion. 
+
+arXiv preprint arXiv:2501.00103 , 2024. [15] Ziqi Huang, Yinan He, Jiashuo Yu, Fan Zhang, Chenyang Si, Yuming Jiang, Yuanhan Zhang, Tianxing Wu, Qingyang Jin, Nattapol Chanpaisit, Yaohui Wang, Xinyuan Chen, Limin Wang, Dahua Lin, Yu Qiao, and Ziwei Liu. VBench: Comprehensive benchmark suite for video generative models. In 
+
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2024. [16] Joseph Jennings, Mostofa Patwary, et al. Nemo-curator: a toolkit for data curation, 2024. URL 
+
+https://github.com/NVIDIA-NeMo/Curator .[17] S. Kirkpatrick, C. D. Gelatt, and M. P. Vecchi. Optimization by simulated annealing. Science , 220 (4598):671–680, 1983. [18] Weijie Kong, Qi Tian, Zijian Zhang, Rox Min, Zuozhuo Dai, Jin Zhou, Jiangfeng Xiong, Xin Li, Bo Wu, Jianwei Zhang, et al. Hunyuanvideo: A systematic framework for large video generative models. arXiv preprint arXiv:2412.03603 , 2024. [19] Felix Krause, Timy Phan, Ming Gui, Stefan Andreas Baumann, Vincent Tao Hu, and Bj ¨orn Ommer. Tread: Token routing for efficient architecture-agnostic diffusion training. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 15703–15713, 2025. [20] Black Forest Labs. Flux. https://github.com/black-forest-labs/flux , 2024. [21] Zhengyang Liang, Hao He, Ceyuan Yang, and Bo Dai. Scaling laws for diffusion transformers. arXiv preprint arXiv:2410.08184 , 2024. [22] Yaron Lipman, Ricky TQ Chen, Heli Ben-Hamu, Maximilian Nickel, and Matthew Le. Flow matching for generative modeling. In The Eleventh International Conference on Learning Representations .[23] Yang Luo, Xuanlei Zhao, Mengzhao Chen, Kaipeng Zhang, Wenqi Shao, Kai Wang, Zhangyang Wang, and Yang You. Enhance-a-video: Better generated video for free. arXiv preprint arXiv:2502.07508 ,2025. [24] Guoqing Ma, Haoyang Huang, Kun Yan, Liangyu Chen, Nan Duan, Shengming Yin, Changyi Wan, Ranchen Ming, Xiaoniu Song, Xing Chen, et al. Step-video-t2v technical report: The practice, challenges, and future of video foundation model. arXiv preprint arXiv:2502.10248 , 2025. [25] Lorenzo Mur-Labadia, Matthew Muckley, Amir Bar, Mido Assran, Koustuv Sinha, Mike Rabbat, Yann LeCun, Nicolas Ballas, and Adrien Bardes. V-jepa 2.1: Unlocking dense features in video self-supervised learning. arXiv preprint arXiv:2603.14482 , 2026. [26] NVIDIA RAPIDS Team. cuVS: GPU-accelerated vector search and clustering. GitHub repository, 2024. URL https://github.com/rapidsai/cuvs . Multi-GPU IVF-PQ and ANN indexes for large-scale vector search. [27] OpenAI. Video generation models as world simulators. https://openai.com/index/ video-generation-models-as-world-simulators/ , 2024. [28] Photoroom. Prx part 3 — training a text-to-image model in 24h. https://huggingface.co/blog/ Photoroom/prx-part3 , 2025. [29] Ed Pizzi, Sreya Dutta Roy, Sugosh Nagavara Ravindra, Priya Goyal, and Matthijs Douze. A self-supervised descriptor for image copy detection. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2022. [30] Adam Polyak, Amit Zohar, Andrew Brown, Andros Tjandra, Animesh Sinha, Ann Lee, Apoorv Vyas, Bowen Shi, Chih-Yao Ma, Ching-Yao Chuang, et al. Movie gen: A cast of media foundation models. arXiv preprint arXiv:2410.13720 , 2024. 28 [31] Qwen Team. Qwen3-VL technical report. arXiv preprint , 2025. Qwen3-VL-30B-A3B vision-language model. [32] Seyedmorteza Sadat, Otmar Hilliges, and Romann M Weber. Eliminating oversaturation and artifacts of high guidance scales in diffusion models. In The Thirteenth International Conference on Learning Representations , 2024. [33] Team Seedance, Heyi Chen, Siyan Chen, Xin Chen, Yanfei Chen, Ying Chen, Zhuo Chen, Feng Cheng, Tianheng Cheng, Xinqi Cheng, et al. Seedance 1.5 pro: A native audio-visual joint generation foundation model. arXiv preprint arXiv:2512.13507 , 2025. [34] Jaskirat Singh, Xingjian Leng, Zongze Wu, Liang Zheng, Richard Zhang, Eli Shechtman, and Saining Xie. What matters for representation alignment: Global information or spatial structure? arXiv preprint arXiv:2512.10794 , 2025. [35] Skywork AI SkyReels Team. SkyReels-V2: Infinite-length film generative model. arXiv preprint arXiv:2504.13074 , 2025. [36] Team Wan, Ang Wang, Baole Ai, Bin Wen, Chaojie Mao, Chen-Wei Xie, Di Chen, Feiwu Yu, Haiming Zhao, Jianxiao Yang, et al. Wan: Open and advanced large-scale video generative models. arXiv preprint arXiv:2503.20314 , 2025. [37] Andrew Z Wang, Songwei Ge, Tero Karras, Ming-Yu Liu, and Yogesh Balaji. A comprehensive study of decoder-only llms for text-to-image generation. In Proceedings of the Computer Vision and Pattern Recognition Conference , pages 28575–28585, 2025. [38] Qiuheng Wang, Yukai Shi, Jiarong Ou, Rui Chen, Ke Lin, Jiahao Wang, Boyuan Jiang, Haotian Yang, Mingwu Zheng, Xin Tao, Fei Yang, Pengfei Wan, and Di Zhang. Koala-36m: A large-scale video dataset improving consistency between fine-grained conditions and video content, 2025. URL 
+
+https://arxiv.org/abs/2410.08260 .[39] Shuai Wang, Zhi Tian, Weilin Huang, and Limin Wang. Ddt: Decoupled diffusion transformer. arXiv preprint arXiv:2504.05741 , 2025. [40] Ziqiao Wang, Wangbo Zhao, Yuhao Zhou, Zekai Li, Zhiyuan Liang, Mingjia Shi, Xuanlei Zhao, Pengfei Zhou, Kaipeng Zhang, Zhangyang Wang, et al. Repa works until it doesn’t: Early-stopped, holistic alignment supercharges diffusion training. In The Thirty-ninth Annual Conference on Neural Information Processing Systems .[41] WebDataset Authors. Webdataset. GitHub repository, 2026. URL https://github.com/webdataset/ webdataset . Tar-sharded dataset format for sequential streaming in large-scale deep learning. [42] Thadd ¨aus Wiedemer, Yuxuan Li, Paul Vicol, Shixiang Shane Gu, Nick Matarese, Kevin Swersky, Been Kim, Priyank Jaini, and Robert Geirhos. Video models are zero-shot learners and reasoners. 
+
+arXiv preprint arXiv:2509.20328 , 2025. [43] Bing Wu, Chang Zou, Changlin Li, Duojun Huang, Fang Yang, Hao Tan, Jack Peng, Jianbing Wu, Jiangfeng Xiong, Jie Jiang, et al. Hunyuanvideo 1.5 technical report. arXiv preprint arXiv:2511.18870 ,2025. [44] Haoning Wu, Erli Zhang, Liang Liao, Chaofeng Chen, Jingwen Hou, Annan Wang, Wenxiu Sun, Qiong Yan, and Weisi Lin. Exploring video quality assessment on user generated contents from aesthetic and technical perspectives, 2023. URL https://arxiv.org/abs/2211.04894 .[45] Lihe Yang, Lei Qi, Litong Feng, Wayne Zhang, and Yinghuan Shi. Revisiting weak-to-strong consistency in semi-supervised semantic segmentation, 2023. URL https://arxiv.org/abs/2208. 09910 .[46] Zhuoyi Yang, Jiayan Teng, Wendi Zheng, Ming Ding, Shiyu Huang, Jiazheng Xu, Yuanming Yang, Wenyi Hong, Xiaohan Zhang, Guanyu Feng, et al. Cogvideox: Text-to-video diffusion models with an expert transformer. In The Thirteenth International Conference on Learning Representations .[47] Zongheng Yang, Zhanghao Wu, Michael Luo, Wei-Lin Chiang, Romil Bhardwaj, Woosuk Kwon, Siyuan Zhuang, Frank Sifei Luan, Gautam Mittal, Scott Shenker, et al. {SkyPilot }: An intercloud broker for sky computing. In 20th USENIX Symposium on Networked Systems Design and Implementation (NSDI 23) , pages 437–455, 2023. 29 [48] Sihyun Yu, Sangkyung Kwak, Huiwon Jang, Jongheon Jeong, Jonathan Huang, Jinwoo Shin, and Saining Xie. Representation alignment for generation: Training diffusion transformers is easier than you think. In The Thirteenth International Conference on Learning Representations .[49] Xiaohua Zhai, Basil Mustafa, Alexander Kolesnikov, and Lucas Beyer. Sigmoid loss for language image pre-training, 2023. URL https://arxiv.org/abs/2303.15343 .[50] Biao Zhang, Paul Suganthan, Ga ¨el Liu, Ilya Philippov, Sahil Dua, Ben Hora, Kat Black, Gus Martins, Omar Sanseviero, Shreya Pathak, et al. T5gemma 2: Seeing, reading, and understanding longer. 
+
+arXiv preprint arXiv:2512.14856 , 2025. [51] Xiangdong Zhang, Jiaqi Liao, Shaofeng Zhang, Fanqing Meng, Xiangpeng Wan, Junchi Yan, and Yu Cheng. Videorepa: Learning physics for video generation through relational alignment with foundation models. In The Thirty-ninth Annual Conference on Neural Information Processing Systems .[52] Yifu Zhang, Hao Yang, Yuqi Zhang, Yifei Hu, Fengda Zhu, Chuang Lin, Xiaofeng Mei, Yi Jiang, Bingyue Peng, and Zehuan Yuan. Waver: Wave your way to lifelike video generation. arXiv preprint arXiv:2508.15761 , 2025. [53] Zangwei Zheng, Xiangyu Peng, Yuxuan Lou, Chenhui Shen, Tom Young, Xinying Guo, Binluo Wang, Hang Xu, Hongxin Liu, Mingyan Jiang, et al. Open-sora 2.0: Training a commercial-level video generation model in $200k. arXiv preprint arXiv:2503.09642 , 2025. 30 Figure 16: Additional qualitative human-centered generations. Representative frames from videos involving human subjects, included as supplementary qualitative results. 
+
+# A Additional results 
+
+This section presents additional qualitative results for both text-to-video and image-to-video generation in Figures 16 and 17. 
+
+# B Sampling Configuration 
+
+We describe the sampling configuration used to produce the VBench scores reported in Table 6.3. All samples are generated at 1280 × 736 spatial resolution, 121 frames, and 24 fps. 
+
+Sampler. Following Waver [ 52 ], we use the Video APG sampler [ 32 ] with momentum = 0.0, η = 0.0, and r = 27. The classifier-free guidance scale is set to 8. 
+
+Timestep schedule. We adopt the linear-quadratic timestep schedule proposed by Meta Movie Gen [ 30 ], with the linear-to-quadratic transition point set to t = 250. 31 Figure 17: Additional image-to-video results. The leftmost panel is the input image, and the remaining panels show representative generated video frames. 
+
+Negative prompt. Following Wan [ 36 ], we apply a fixed negative prompt at every sampling call. The full string used is: 
+
+The video has text and graphic overlays burned into the frame, including watermarks, logos, subtitles, timestamps, broadcast graphics, UI elements, and stray letters scattered in corners and center. The subject stays nearly frozen in a rigid pose with minimal gesture or expression change, and the little motion present looks jerky, mechanical, and discontinuous between frames. The framing feels flat, rigid, and depthless. The lighting is dull and monotone, with crushed shadows in dark regions and blown-out highlights in bright regions at the same time. The background fades out, shifts into an unrelated scene, and loses continuity without any smooth transition. The subject’s identity drifts across frames, with deformation, flickering detail, ghosting, smearing, and duplication in the face, body proportions, clothing, and accessories. Colors are flat, desaturated, and tonally compressed, and the foreground blends into the background without clear separation. Brightness, exposure, and color balance shift unevenly between consecutive frames. 
+
+# C Training Configuration 
+
+Optimizer. We use AdamW with β1 = 0.9, β2 = 0.99, ϵ = 10 −8, and weight decay 0.0. Gradients are globally clipped to a maximum norm of 1.0. 
+
+Learning rate. Rather than committing to a fixed schedule, we adjust the learning rate adaptively across stages based on a combination of qualitative inspection, VBench scores, and the current training resolution. Whenever the training configuration changes in a way that perturbs the loss landscape, such as introducing Shared Cross-Attention, increasing the spatial or temporal resolution, or otherwise altering the model or data distribution, we apply a short linear warmup before resuming training at the target learning rate. 32 Timestep sampling. At training time we first draw u ∼ U [0, 1 ] and then transform u into a training timestep t using one of two distributions, depending on the current resolution stage. For resolutions below 360p, we use the logit-normal density of Esser et al. [10], 
+
+πln (t; m, s) = 1
+
+s√2π
+
+1
+
+t(1 − t) exp 
+
+
+
+− (logit (t) − m)2
+
+2s2
+
+
+
+, (17) with (m, s) = ( 0, 1 ). From 360p onward, we switch to the cosine mode-sampling map of Esser et al. [10] ,
+
+fmode (u; s) = 1 − u − s ·
+
+
+
+cos 2  π 
+
+> 2
+
+u − 1 + u
+
+
+
+, (18) with s = 1.29. The early-stage logit-normal places more density near the high-noise region, which we found stabilizes training when the model is still learning coarse structure at low resolution; the mode-sampling distribution then redistributes density toward intermediate timesteps once the model is operating at higher resolutions where mid-noise denoising dominates perceptual quality. 
+
+Resolution-dependent timestep shifting. On top of the sampled t, we apply the standard rectified-flow timestep shift t 7 → σt 
+
+> 1+( σ−1)t
+
+, with the shift factor σ increased adaptively as resolution grows, up to a maximum of σ = 7.0 at our highest training resolution. Larger shifts bias sampling toward higher-noise timesteps, which we found necessary to preserve global structure as the token count per sample increases. 
+
+Classifier-free guidance dropout. To enable classifier-free guidance at inference, we independently drop the text and image conditions with probability 10% each during training. For dropped samples, the unconditional input is constructed by re-encoding the empty string "" through the T5Gemma2 text encoder, rather than by substituting a zero tensor. We found that zero-tensor unconditioning produces a malformed unconditional score estimate and degrades CFG sample quality, whereas encoding the empty string yields an unconditional distribution that is consistent with the encoder’s output manifold. 
+
+# D Implementation Details for FSDP2 Wrapping Order 
+
+Activation checkpointing, compilation, and FSDP wrapping order. We apply activation checkpointing, 
+
+torch.compile , and FSDP2 fully shard in that order. Per-block checkpoint wrapping must precede compilation so that compile regions align with the activation-checkpointed units, and both must precede FSDP so that each checkpointed, compiled block is sharded as an independent FSDP unit with its own parameter all-gather and gradient reduce-scatter. Wrapping is applied at three granularities: each individual transformer block, the enclosing transformer module, and the root model. Accelerate’s built-in FSDP2 path does not support this ordering for our model. Its fsdp2 apply ac locates activation-checkpointing targets through the FSDP auto-wrap policy applied to parent modules, an indirection that does not reliably hit the individual blocks inside our transformer blocks and single -transformer blocks ModuleList s. We therefore patch two entry points. First, fsdp2 apply ac is replaced with a version that directly iterates both ModuleList s, applies checkpoint wrapper to each child block, and re-registers the wrapped block into its parent via register module so that it replaces the original in place. Second, Accelerator. prepare fsdp2 is patched to enforce the activation-checkpointing → compile 
+
+→ FSDP sequence above; the stock implementation interleaves these steps in a way that breaks once activation checkpointing is applied at block granularity. To have FSDP shard the checkpoint-wrapped blocks as independent units, we include CheckpointWrapper in transformer cls names to wrap alongside 
+
+MotifVideoTransformer3DModel , producing the three-level wrapping hierarchy described above. 
+
+# E Cross-Attention Ablation Details 
+
+The qualitative ablation in Figure 18 is performed by disabling enable text cross attention at runtime in all 16 single-stream encoder blocks and running the full 50-step denoising trajectory from the same initial noise. We use the checkpoint from Stage 9 (Section 4) and generate samples at 640 × 360 resolution, with 121 frames and a fixed seed. The dual-stream and DDT decoder blocks are unchanged, as they do not include Shared Cross-Attention. Without cross-attention, text conditioning degrades in qualitatively distinct ways depending on the prompt’s compositional demands. For “A person is pushing cart,” the enabled model correctly depicts a person pushing the cart forward; the disabled model reverses the action, showing the person pulling the cart, while the scene layout is preserved but the verb semantics are lost. For “A green bird,” the failure is more severe: the disabled model renders green foliage but no bird at all , capturing the adjective while 33 A determined individual, dressed in a red flannel shirt, blue jeans, and sturdy boots, pushes a weathered wooden cart along a narrow, cobblestone street. The scene is set in a quaint, old-world village with charming stone buildings and ivy-covered walls. The cart, filled with an assortment of colorful fruits and vegetables, creaks slightly as it moves. The person’s face, partially obscured by a wide-brimmed hat, shows a mix of focus and determination. As they push the cart, the early morning sun casts long shadows, adding a golden hue to the scene, while birds chirp softly in the background, enhancing the serene atmosphere. 
+
+A vibrant green parrot with iridescent feathers perches on a delicate branch in a lush rainforest, its eyes gleaming with curiosity. The camera zooms in to capture the intricate details of its plumage, each feather shimmering in shades of emerald and lime. The bird tilts its head, revealing a striking yellow patch on its cheek, and lets out a melodious chirp that echoes through the dense foliage. As it flutters its wings, the sunlight filters through the canopy, casting a dappled glow on its vivid colors. The scene transitions to the parrot taking flight, its wings spreading wide, gliding gracefully through the verdant landscape, embodying the essence of freedom and natural beauty. 
+
+A vintage clock with ornate hands and Roman numerals sits on a rustic wooden table, its ticking sound filling the air. Beside it, a well-worn leather backpack, adorned with travel patches and a slightly frayed strap, leans against the table. The clock’s face reflects the soft morning light streaming through a nearby window, casting gentle shadows. The backpack, partially open, reveals a glimpse of a map and a journal, hinting at adventures past and future. The scene evokes a sense of nostalgia and wanderlust, with the clock symbolizing the passage of time and the backpack representing the journey ahead. Figure 18: Qualitative effect of Shared Cross-Attention. For each prompt, the top row shows generation with Shared Cross-Attention enabled; the bottom row shows the same prompt and seed with cross-attention disabled on all 16 single-stream encoder blocks (360p, 50 steps, 121 frames). 34 entirely dropping the noun. For “A clock and backpack,” the disabled model merges the two objects into a single hybrid form rather than placing them as distinct entities, collapsing the compositional structure of the prompt. These three failure modes, verb confusion, noun loss, and object merging, are precisely the symptoms the softmax dilution analysis in Section 3.3 predicts: without a dedicated text-conditioning pathway, fine-grained semantic distinctions are overwhelmed by the video-dominated attention budget. 
+
+# Contributions 
+
+All authors are alphabetically sorted by last name. 
+
+Core contributors. Wai Ting Cheung 1, Minsu Ha 1, Beomgyu Kim 1, Taewhan Kim 1, Haesol Lee 1,Dongpin Oh 1, Jeesoo Lee 2, Taehyun Kim 2, Minjae Kim 3
+
+Technical and management leadership. Sungmin Lee, Junghwan Lim 
+
+Contributors. Hyeyeon Cho, Dahye Choi, Jaeheui Her, Jaeyeon Huh, Hanbin Jung, Changjin Kang, Dongseok Kim, Jangwoong Kim, Youngrok Kim, Hyukjin Kweon, Hongjoo Lee, Jeongdoo Lee, Junhyeok Lee, Eunhwan Park, Yeongjae Park, Bokki Ryu, Dongjoo Weon 
+
+Acknowledgement We gratefully acknowledge SkyPilot [ 47 ] for helping us manage large-scale training infrastructure efficiently, and NVIDIA NeMo Curator [ 16 ] for providing a practical and scalable data-curation toolkit that substantially streamlined our preprocessing pipeline. 
+
+# Use of Large Language Models 
+
+In preparing this report, we used large language model (LLM) based assistants for English language editing, including grammar correction, rephrasing for clarity, and improving the readability of passages originally drafted by the authors. LLMs were not used to generate research ideas, design experiments, produce or analyze results, write code, or draft technical content beyond such surface-level editing. All scientific claims, experimental findings, and figures in this report were produced and verified by the authors, who take full responsibility for the contents of the manuscript. 
+
+> 1model design, evaluation, training, data processing
+> 2system optimization (kernel, parallelization)
+> 3infrastructure
+
+35
