@@ -1,0 +1,1375 @@
+Title: Occupancy Reward Shaping: Improving Credit Assignment for Offline Goal-Conditioned Reinforcement Learning
+
+URL Source: https://arxiv.org/pdf/2604.20627v1
+
+Published Time: Thu, 23 Apr 2026 01:03:35 GMT
+
+Number of Pages: 27
+
+Markdown Content:
+Published as a conference paper at ICLR 2026 
+
+# OCCUPANCY REWARD SHAPING :IMPROVING CREDIT ASSIGNMENT IN OFFLINE 
+
+# GOAL -C ONDITIONED REINFORCEMENT LEARNING 
+
+Aravind Venugopal ∗ Jiayu Chen Xudong Wu 
+
+Carnegie Mellon University The University of Hong Kong, INFIFORCE Intelligent Technology The University of Hong Kong 
+
+Chongyi Zheng Benjamin Eysenbach Jeff Schneider 
+
+Princeton University Princeton University Carnegie Mellon University 
+
+## ABSTRACT 
+
+The temporal lag between actions and their long-term consequences makes credit assignment a challenge when learning goal-directed behaviors from data. Gen-erative world models capture the distribution of future states an agent may visit, indicating that they have captured temporal information. How can that temporal information be extracted to perform credit assignment? In this paper, we formalize how the temporal information stored in world models encodes the underlying ge-ometry of the world. Leveraging optimal transport, we extract this geometry from a learned model of the occupancy measure into a reward function that captures goal-reaching information. Our resulting method, Occupancy Reward Shaping (ORS) , largely mitigates the problem of credit assignment in sparse reward set-tings. ORS provably does not alter the optimal policy, yet empirically improves performance by 2.2× across 13 diverse long-horizon locomotion and manipula-tion tasks. Moreover, we demonstrate the effectiveness of ORS in the real world for controlling nuclear fusion on 3 Tokamak control tasks. Code: https://github.com/aravindvenu7/occupancy reward shaping 
+
+Website: https://github.com/aravindvenu7.github.io/website/ors/ 
+
+## 1 INTRODUCTION 
+
+Figure 1: Average relative success rate (task-normalized) on 7 challenging OGBench tasks (Park et al., 2024a). Higher is better; 100.% matches the best algorithm per task. Our method, ORS, performs best, improving over the best baseline by 31%. 
+
+Reinforcement learning (RL) is fundamentally tied to credit assignment because effectively reasoning about the long-term consequences of actions is crucial to learn diverse goal-reaching behaviors from data. Although goal-conditioned reinforcement learning (GCRL) offers a simple, domain-agnostic and scalable framework for RL from large of-fline datasets (Liu et al., 2022a; Yang et al., 2023), GCRL agents trained with sparse rewards struggle with credit assign-ment (Eysenbach et al., 2022; Ding et al., 2019; Wang et al., 2023a; Park et al., 2024a). Therefore, the design of well-defined and meaningful reward functions, called reward shap-ing (Ng et al., 1999) is a promising solution to address the credit assignment challenge (Yu et al., 2025). While manual reward design for each goal is infeasible, ex-isting work relies on learning local temporal distance estima-tors from offline data (Hartikainen et al., 2019) and using them to build semi/non-parametric graphs (Savinov et al., 2018; Mezghani et al., 2023) and indirectly infer temporal informa-tion for credit assignment. These approaches run the risk of 
+
+> 1
+
+Corresponding author: avenugo2@andrew.cmu.edu 
+
+1
+
+> arXiv:2604.20627v1 [cs.LG] 22 Apr 2026
+
+Published as a conference paper at ICLR 2026 
+
+> Figure 2: ORS learns the occupancy measure (distribution of future states) and extracts goal-reaching informa-tion into a reward function such that states with future states closer to goal have higher rewards.
+
+scaling poorly with task complexity as composing local infor-mation to infer global temporal dependencies often leads to compounding errors. So, can we learn reward functions that accurately and directly capture long-term temporal dependencies and goal-reaching information present in offline data? 
+
+Generative world models (Janner et al., 2020b; Schramm & Boularias, 2024; Farebrother et al., 2025) have shown a remarkable ability to capture the multi-modal distribution of future states an agent may visit, i.e., the occupancy measure. This suggests that they must inherently possess the ability to reason about long-term temporal effects of actions by encoding the geometry of the envi-ronment. Nonetheless, it remains unclear how to extract such temporal information from a learned world model and leverage it for credit assignment. In this paper, we formalize how world models encode world geometry. Specifically, using tools for optimal transport, we show that long-term temporal dependencies can be explicitly recovered from the velocity field of a learned occupancy model trained with flow matching (Liu et al., 2022b; Lipman et al., 2022). Building on this insight, we propose Occupancy Reward Shaping (ORS), a reward-shaping method that extracts global goal-reaching information from the dataset occupancy measure into a scalar reward while provably preserving the optimal policy. We demonstrate that ORS significantly enhances performance, improving 2.2× over its sparse-reward base algorithm and achieving 24%-248% improvements over state-of-the-art methods on 13 challenging locomo-tion and manipulation tasks from OGBench (Park et al., 2024a). Furthermore, ORS consistently outperforms baselines on 3 tasks that involve controlling actuators in a nuclear fusion reactor called a Tokamak (Char et al., 2023), showing its utility in complex, real-world systems. 
+
+## 2 RELATED WORK 
+
+Offline GCRL. Offline GCRL has been a long-standing area of research in RL (Kaelbling, 1993; Schaul et al., 2015), stemming from a necessity to build innovative algorithms taking advantage of its rich metric structures, probabilistic goal-reaching interpretations and sub-goal compositionality. As a result, diverse types of algorithms exist in offline GCRL based on behavioral cloning (Yang et al., 2022; Hejna et al., 2023), actor-critic methods (Haarnoja et al., 2018; Kostrikov et al., 2021), hind-sight goal relabeling (Andrychowicz et al., 2017) as well as more specialized approaches based on metric learning (Wang et al., 2023a; Reichlin et al., 2024; Park et al., 2024c), contrastive rein-forcement learning (Eysenbach et al., 2022), dual RL (Ma et al., 2022; Sikchi et al., 2023b) and hierarchical RL (Chane-Sane et al., 2021; Park et al., 2023; Zhou & Kao, 2025). Hierarchical RL methods (Chane-Sane et al., 2021; Park et al., 2023) address the challenges posed by long-horizon, sparse-reward tasks with a two-level policy structure where the high level policy predicts sub-goals that a low-level policy learns to reach. Methods such as Ahn et al. (2025) address this challenge by learning an n-step critic (De Asis et al., 2018) to effectively reduce the temporal horizon. Our approach addresses this challenge using reward shaping for effective credit assignment, making ORS complementary to the methods discussed above. 2Published as a conference paper at ICLR 2026 
+
+Reward Shaping. The idea of using reward shaping to facilitate learning dates back to early RL re-search and applications (Saksida et al., 1997; Randløv & Alstrøm, 1998). In their canonical work, Ng et al. (1999) proposes potential-based reward shaping (PBRS) that preserves the optimal policy un-der shaped rewards. Potential functions have been learned using expert demonstrations (Brys et al., 2015; Kang et al., 2018), transitions (Harutyunyan et al., 2015), uncertainty (Li et al., 2025) or with discriminators to be used as exploration bonuses (Durugkar et al., 2021). Another line of research does not follow PBRS and considers reward shaping as a bonus for exploration (Pathak et al., 2017; Mguni et al., 2021; Wang et al., 2023b; Agarwal et al., 2023; Ma et al., 2024; Zheng et al., 2024) and as curriculum learning (Andrychowicz et al., 2017; Eysenbach et al., 2022; Zheng et al., 2023). Hartikainen et al. (2019) estimates local temporal distance to provide a dense reward for credit assignment in online GCRL. We address the challenge of learning shaped rewards for credit assign-ment in Offline GCRL. The closest work to ours, Mezghani et al. (2023), uses both a local reward computed with a local temporal distance classifier and a “global” reward computed using shortest path search on a graph constructed using the local distance classifier. While graph-based methods scale poorly with task complexity, we learn a single reward function capable of directly encoding global, long-horizon goal-reaching information for credit assignment by leveraging the occupancy measure. Our experiments show the effectiveness of ORS over prior state-of-the-art work. 
+
+## 3 BACKGROUND 
+
+3.1 NOTATION 
+
+Goal-Conditioned Reinforcement Learning: We consider an infinite-horizon controlled Markov Process (a MDP (Puterman, 2014) without rewards) defined by (S, A, μ, p, γ ) with state space S and action space A. p : S × A × S → R denotes the transition function while μ denotes the initial state distribution. The discount factor is denoted by γ ∈ (0 , 1) . A policy π(a|s) : S×A → R is a probabil-ity distribution mapping states to actions. Each policy induces a conditional state-action occupancy distribution dπ (s+ | s, a ) over future states s+: dπ (s+ | s, a ) = (1 − γ) P∞ 
+
+> ∆t=1
+
+γ∆t−1 P(st+∆ t =
+
+s+ | s, a, π ), which we refer to as the occupancy measure for simplicity. The objective of GCRL is to reach any goal, g ∈ S , from another state s ∈ S in the minimum number of steps. A goal-conditioned policy π(a|s, g ) : S × S × A → R maps states and goals to actions. Formally, the aim is to learn the optimal shortest-path policy π∗(a|s, g ) that maxi-mizes Eτ ∼p(τ |g)
+
+P∞ 
+
+> t=0
+
+γtδg (st) where t is the timestep, p(τ | g) = μ(s0)π(a0 | s0, g )p(s1 |
+
+s0, a 0) · · · p(si | si−1, a i−1) · · · and δg is a Dirac delta at goal g. Such a policy reaches g in the minimum number of steps. In this paper, we focus on offline GCRL. In particular, agents cannot interact with the environment for learning but have access to an offline dataset of trajectories D,where each trajectory is τ = ( s0, a 0, s 1, a 1, . . . , ; , s T ). We denote the dataset behavioral policy by 
+
+πD (a | s) and the dataset occupancy measure corresponding to πD by dπD (s+ | s, a ).
+
+Flow Matching: Flow matching aims to learn to sample from a distribution pdata , given a fi-nite number of samples x(1) , ..., x (N ) ∈ Rd drawn from pdata . Flow matching transforms a base distribution p0, which is typically a simple Isotropic Gaussian N (0 , Id) at time t = 0 to the target data distribution pdata (x) at t = 1 . This transformation is defined by a velocity field 
+
+vθ (t, x ) : [0 , 1] × Rd → Rd, parameterized by a neural network and having a corresponding flow 
+
+ψθ (t, x ) : [0 , 1] × Rd → Rd which is a unique solution to the Ordinary Differential Equation (ODE)  
+
+> ddt
+
+ψθ (t, x ) = vθ
+
+ t, ψ θ (t, x )) . The velocity field is trained to minimize:           
+
+> min
+> θEx0∼N (0 ,I d), x 1∼p(x), t ∼Unif(0 ,1) vθ(t, x t)−(x1−x0)22(1)
+
+where Unif([0 , 1]) denotes uniform sampling between 0 and 1 and xt = (1 − t) x0 + t x 1 is the linear interpolation between x0 and x1. On convergence, vθ (t, x t) learns the velocity field which transforms samples from p0 to samples from pdata by numerically integrating the ODE. In this paper, following Lipman et al. (2024); Park et al. (2025), we use linear interpolation between base and target distributions and uniform time sampling. As in Park et al. (2025), we find that the Euler method is sufficient for solving the ODE. 3Published as a conference paper at ICLR 2026 3.2 MOTIVATION 
+
+In this section, we motivate our method by examining why credit assignment becomes a challenge when using sparse rewards. We do so by analyzing the learning dynamics of the goal-conditioned value function V (s, g ) the GCRL policy π(a|s, g ) must maximize. Given a goal g, initial state s0,the optimal policy π∗(a∗|s, g ), and the optimal trajectory τ ∗ = {s0, s 1, ..., s T = g} induced by π∗,the optimal value function is monotonically non-decreasing along τ ∗: ∀si, s j ∈ τ ∗, V ∗(sj , g ) ≥
+
+V ∗(si, g ) ⇐⇒ j ≥ i. However, non-monotonicity often arises in practice due to sampling or approximation errors (Park et al., 2023; Ahn et al., 2025). High non-monotonicity in ˆV (s, g ) can cause the policy to get stuck in sub-optimal regions of the state space, especially when g is distant from s. We hypothesize that in long-horizon tasks, under sparse rewards, credit assignment becomes a challenge because ˆV (s, g ) exhibits high non-monotonicity, leading to poor policies.             
+
+> Figure 3: Average δV(y-axis ) over 5 expert tra-jectories on antmaze-giant-navigate as a func-tion of σv(x-axis ). δVincreases with σv, denot-ing increasingly more noisy and non-monotonic
+> ˆV(s, g )under sparse rewards.
+
+We now evaluate this hypothesis empirically using expert trajectories, each with a different length and a unique goal, on the sparse-reward antmaze-giant-navigate task from OGBench (Park et al., 2024a) used in Ahn et al. (2025). Trajectories are visualized in Appendix B.4. We analytically compute ˆV (s, g )
+
+as the discounted sum of rewards. By injecting mul-tiplicative noise with variance σ2 
+
+> v
+
+, we simulate er-rors in value estimation: ˆV (s, g ) ← r(s, a ∗, g ) + 
+
+γ ∗   ˆV (s′, g ) + ϵ ∗ ˆV (s′, g ), ϵ ∼ N (0 , σ 2 
+
+> v
+
+), with 
+
+γ = 0 .99 . We evaluate the quality of ˆV (s′, g ) us-ing δV , the value non-monotonicity error, computed as the proportion of states along an expert trajectory where ˆV (st+1 , g ) < ˆV (st, g ).Figure 3 plots average δV over varying σ2 
+
+> v
+
+while Fig. 4 plots ˆV (s, g ) over 5 trajectories for σv =0.0005 . The results indicate that under sparse rewards, δV is high even under small σv and increases with σv and task horizon. This motivates the central question we aim to address: 
+
+How do we design reward functions that encode long-horizon temporal structure and thereby miti-gate value non-monotonicity with effective credit assignment, leading to performative policies? 
+
+## 4 OCCUPANCY REWARD SHAPING FOR OFFLINE GCRL         
+
+> Figure 4: ˆV(s, g )(y-axis ) with sparse rewards vs time ( x-axis ) over 5 expert trajectories (each line a trajectory) from antmaze-giant-navigate .
+> ˆV(s, g )becomes increasingly noisy as we move away from goal towards the start of a trajectory (moving left on x-axis) even under small σv.
+
+First, we detail how we learn a generative model of the occupancy measure (Sec. 4.1). In Sec.4.2, we then show exactly how the occupancy measure encodes state geometry (Prop.1). This allows us to extract goal-reaching temporal information from the learned occupancy model into a reward-shaping term (Prop.2). We show that these “occupancy-shaped” rewards preserve the optimal goal-reaching policy (Sec.4.3) and finally, we summarize our method in Sec.4.4. 4.1 LEARNING THE OCCUPANCY MEASURE 
+
+The state-action conditioned occupancy measure over future states of the dataset policy πD has the following recursive form (Sutton, 1995; Janner et al., 2020a; Schramm & Boularias, 2024): 4Published as a conference paper at ICLR 2026 
+
+dπD 
+
+> θ
+
+(s+ | s, a ) = (1 − γ) p(s′ | s, a ) + γ d πD 
+
+> θ−
+
+(s+ | s′, a ′), ∀(s, a, s ′, a ′) ∈ D (2) This recursive form, reminiscent of temporal difference learning, allows learning dπD (s+ | s, a )
+
+parameterized by θ as a mixture over two components: 1. the transition function and 2. a target 
+
+dπD (s+ | s′, a ′) over subsequent future states under πD (parameterized by θ−, a time-delayed version of θ). This approach naturally stitches together future states under intersecting trajectories in D. To accurately represent the multi-modality inherent in dπD and to enable efficient computation of the ORS reward function (explained in Sec. 4.2), we learn dπD using a flow matching model with the following loss (Farebrother et al., 2025) : 
+
+Lflow (θ) = (1 − γ) Lnext (θ) + γ Lfuture (θ); ∀ (s, a, s ′, a ′) ∈ D (3) 
+
+Lnext (θ) = E s′=x1∼D  
+
+> x0∼N (0 , I d)
+> t∼Unif([0 ,1])
+
+h
+
+∥vθ (t, s, a, x t) − (x1 − x0)∥22
+
+i
+
+;
+
+Lfuture (θ) = Es+=x1∼dπD  
+
+> θ−(.|s′,a ′)
+> x0∼N (0 , I d)
+> t∼Unif([0 ,1])
+
+h
+
+vθ (t, s, a, x t) − sg [vθ− (t, s ′, a ′, x t)] 22
+
+i
+
+.
+
+where Lnext (θ) is the standard flow matching loss over the transition function and Lf uture (θ)
+
+regresses the velocity field vθ (t, s, a, x t) towards a bootstrapped estimate of the velocity field of 
+
+dπD 
+
+> θ−
+
+(s+|s′, a ′) represented by vθ− (t, s ′, a ′, x t). sg represents the stop-gradient operation. 4.2 EXTRACTING TEMPORAL INFORMATION FROM THE OCCUPANCY MEASURE 
+
+We now establish a precise connection between the occupancy measure and state space geometry. 
+
+Definition 1 (Shortest-path distance and level sets) . Let step ∗(s, g ) denote the minimum number of steps required to reach goal g from any state s ; ∀(s, g ) ∈ D . We define the level sets: 
+
+Sk = {s ∈ S : step ∗(s, g ) = k}, k = 0 , 1, 2, . . . 
+
+Clearly, S0 = {g}. Under deterministic dynamics, for any s ∈ S k with k ≥ 1, there exists an action 
+
+a∗ at state s such that the next-state distribution satisfies p(· | s, a ∗) ⊆ S k−1.
+
+This characterization of distance from goal allows us to quantify how the occupancy measure en-codes geometry in terms of the squared Wasserstein-2 distance between dπD and δg :
+
+Proposition 1 (informal) . Under suitable assumptions on goal reachability, dynamics, and dataset coverage, for all (s, a, g ) ∈ D , the average squared Wasserstein-2 distance 
+
+W 22
+
+ δg , d πD (s+ | s) := Ea∼πD (·| s)
+
+h
+
+W 22
+
+ δg , d πD (s+ | s, a )i
+
+is monotonically increasing with respect to the shortest-path layer index k. In particular, for a fixed goal g and any k ≥ 1, if s1 ∈ S k−1 and s2 ∈ S k, then 
+
+W 22
+
+ δg , d πD (s+ | s1) ≤ W 22
+
+ δg , d πD (s+ | s2).
+
+Moreover, for any state–goal pair (s, g ), the squared Wasserstein-2 distance is minimized by the optimal action: 
+
+W 22
+
+ δg , d πD (s+ | s, a ∗) ≤ W 22
+
+ δg , d πD (s+ | s, a ), ∀a ∈ A , a ∗ ∼ π∗(· | s, g ).
+
+The assumptions and proof are provided in Appendix A.3 and Appendix A.4. This formulation captures not only how far the center of mass of dπD (s+ | s, a )) is from g, but also how spread out 
+
+dπD (s+ | s, a )) is with respect to g: if state A and state B are both 5 transitions away from g but A
+
+has more future states that are farther away from the goal than B, W 22 (; ) will be lower for state B.Intuitively, this means that by defining a reward rW (s, a, g ) = −W 22 (δg , d πD (s+ | s, a )) , we can extract the state-space geometry as goal-reaching temporal information into a scalar value that is 5Published as a conference paper at ICLR 2026 
+
+Algorithm 1: Occupancy Reward Shaping. 
+
+Input: Occupancy model dπD 
+
+> θ
+
+, reward function rWψ , learning rate η
+
+// Training the occupancy model:  
+
+> 1
+
+for each iteration t = 1 to N do  
+
+> 2
+
+Sample (s, a, s +) ∼ D ; 
+
+> 3
+
+Compute Lpretrain (θ) (Eq. 8) and update θ ← θ − η∇θ Lpretrain (θ); 
+
+> 4
+
+end  
+
+> 5
+
+for each iteration t = 1 to N do  
+
+> 6
+
+Sample (s, a, s ′, a ′) ∼ D ; 
+
+> 7
+
+Compute Lf low (θ) (Eq. 3) and update θ ← θ − η∇θ Lf low (θ); 
+
+> 8
+
+end 
+
+// Training the reward function:  
+
+> 9
+
+for each iteration t = 1 to N do  
+
+> 10
+
+Sample (s, a, g ) ∼ D ; 
+
+> 11
+
+Compute Lrew (ψ) (Eq. 5) and update ψ ← ψ − η∇ψ Lrew (ψ); 
+
+> 12
+
+end 
+
+higher for states with s+ closer to g under D. Unlike prior works (Mezghani et al., 2023; Har-tikainen et al., 2019), this reward-shaping term will directly capture global long-horizon information about goal-reachability. What remains is to compute W 22 (δg , d πD (s+ | s, a )) . While exact compu-tation involves an intractable integral, we show how to estimate rW (s, a, g ) using the velocity field corresponding to dπD 
+
+> θ
+
+(s+ | s, a )) :
+
+Proposition 2. The squared Wasserstein-2 distance between δg and dπD (s+ | s, a ) is upper bounded, up to a multiplicative constant C > 0, by the mean squared error of the associated velocity field corresponding to dπD (s+ | s, a ) and the target velocity corresponding to δg :
+
+W 22
+
+ δg , d πD (s+ | s, a ) ≤ C E x1∼δg 
+
+> x0∼N (0 ,I d)
+> t∼Unif([0 ,1])
+
+v(t, s, a, x t) − (x1 − x0) 22, (4) 
+
+where xt = tx 1 + (1 − t)x0.
+
+where v(t, s, a, x t) is the velocity field corresponding to dπD (s+|s, a ) at time t. The proof is in Appendix A.5. As mentioned in Sec. 4.1, this further justifies our choice of using a flow matching model to learn dπD . Using the learned dπD 
+
+> θ
+
+from Sec. 4.1, we can now learn rW (s, a, g ) using a neural network ψ. Notably, this does not involve running an ODE solver for multiple time-steps: 
+
+Lrew (ψ) = Es,a,g ∼D 
+
+
+
+ˆrW ψ (s, a, g ) −
+
+
+
+− E x1=gx0∼N (0 , I d)
+
+> t∼Unif([0 ,1])
+
+∥vθ (t, s, a, x t) − (x1 − x0)∥22
+
+ 22
+
+
+
+(5) 4.3 ORS PRESERVES THE OPTIMAL POLICY 
+
+It remains unclear whether using rW from Sec.4.2, one can learn the same optimal policy as with sparse rewards, as it is estimated using the dataset occupancy measure dπD .
+
+Theorem 1. Under suitable assumptions on goal reachability, dynamics, and dataset coverage, the greedy goal-conditioned policy: 
+
+πgreedy (a | s, g ) = arg max  
+
+> a∈A
+
+Q∗(s, a, g ),
+
+where Q∗(s, a, g ) denotes the optimal action-value function induced by the reward rW (s, a, g ),coincides with the optimal shortest-path policy π∗(a | s, g ).
+
+Please refer to Appendix A.6 for the proof. ORS thus enables efficient use of the rich goal-reaching information present in the dataset occupancy measure without having to estimate the new occupancy measure at each intermediate policy improvement step. 6Published as a conference paper at ICLR 2026 4.4 METHOD SUMMARY 
+
+ORS has 3 stages: 1. Train the flow matching occupancy model dπD 
+
+> θ
+
+using Eq. 3; 2. Train the reward function rWψ using Eq. 5; and 3. Train a goal-conditioned policy using any offline GCRL algorithm that uses a TD-learning critic. Stages 1 and 2 that involve learning dπD 
+
+> θ
+
+and rWψ are summarized in Alg. 1. Details on architecture and hyperparameters are provided in Appendix B.6. 
+
+## 5 EXPERIMENTS 
+
+In this section, we present an extensive empirical analysis of ORS across a variety of challenging long-horizon offline GCRL tasks. We then conduct detailed analyses and ablations to dissect key design choices underlying our algorithm. 
+
+Tasks: For our empirical analysis, we primarily use OGBench (Park et al., 2024a), a benchmark specifically built for evaluating offline GCRL algorithms. We choose OGBench over older bench-marks such as Fu et al. (2020); Tarasov et al. (2023) for its task diversity, challenging long-horizon sparse-reward tasks that are unsaturated as of 2025, and comprehensive multi-goal evaluation. OGBench tasks are broadly categorized into 4 types: maze navigation, cube manipulation, puzzle manipulation, and scene tasks. We select tasks with varying levels of task complexity and planning horizon. from OGBench to be representative of these 4 categories. Within each category, we include tasks of varying complexity (e.g., cube-double and cube-triple) and varying dataset quality (e.g., cube-triple-play and cube-triple-noisy). We provide a detailed explanation of tasks in Appendix B.1. To demonstrate effectiveness in real-world settings, we evaluate ORS on actuator control tasks in a nuclear fusion reactor called a Tokamak. We use raw sensor and actuator data collected from the DIII-D tokamak located in San Diego, CA, USA. ORS controls 4 actuators that influence evolution of plasma in the Tokamak, a system characterized by highly non-linear, stochastic dynamics and complex physics. We evaluate over 3 separate tasks, each tracking a certain scalar or profile state variable: βN (normalized ratio between plasma pressure and magnetic pressure), Electron density and Ion rotation. These quantities critically influence plasma stability and overall power output required for commercially viable nuclear fusion. Please refer to Appendix B.2 for further details. 
+
+Baselines: We compare ORS against a set of representative baselines. These include Goal Con-ditioned Behavioral Cloning ( GCBC ) (Ghosh et al., 2019); Goal-Conditioned Implicit Q Learning (GCIQL ) (Kostrikov et al., 2021) and Goal-Conditioned Implicit Value Learning ( GCIVL ) (Park et al., 2023) which approximate value functions using expectile regression (Newey & Powell, 1987) and recover policies using behavior-constrained deterministic policy gradient (DDPG + BC) and advantage-weighted regression (AWR), respectively (Park et al., 2024b). Quasimetric RL (QRL ) (Wang et al., 2023a) learns a specialized quasimetric goal-conditioned value function with a dual objective. Contrastive RL ( CRL ) (Eysenbach et al., 2022) fits a Monte Carlo goal-conditioned value function using contrastive learning and extracts a greedy policy from it. We also compare ORS to several methods designed for long-horizon, sparse-reward settings. Go-Fresh (Mezghani et al., 2023) learns a shaped reward as a sum of a local reward from a tempo-ral distance classifier between states and a global reward computed by shortest-path search on a graph constructed with the local distance classifier. SMORE (Sikchi et al., 2023a) is an occupancy-matching method that uses dual RL to learn unnormalized densities that reflect the distance to goal. Hierarchical Implicit Q Learning ( HIQL ) (Park et al., 2023) trains a low-level policy to reach goals sampled from a high-level policy, both trained via a single GCIVL-style value function. Subgoal Advantage-Weighted Policy Bootstrapping ( SAW ) (Zhou & Kao, 2025) improves over HIQl by training a non-hierarchical goal-conditioned policy by bootstrapping on subgoal-conditioned poli-cies with advantage-weighted importance sampling. n-step GCIQL and GCIQL-OTA use different techniques to learn a GCIQL critic using n-step TD learning (De Asis et al., 2018; Ahn et al., 2025). These baselines ensure a standalone comparison of our method against two key strategies to horizon reduction in RL. Both ORS and Go-Fresh use GCIQL with a Gaussian policy, owing to its popular-ity and simplicity and to ensure fair comparison. We build on the codebase of OGBench and make use of the official implementation for Go-Fresh. All algorithms use hindsight relabeling (Kaelbling, 7Published as a conference paper at ICLR 2026                                                                                                                                                                                                                                                                                              
+
+> Table 1: ORS vs baselines: Overall average (binary) success rate (%) across the 5 testtime goals over 8 seeds per task per algorithm. We report the 95% bootstrapped C.I. size after the ± sign.
+> Dataset GCBC GC-IVL QRL CRL GC-IQL Go-Fresh ORS (ours)
+> antmaze-large-navigate 25 ±318 ±364 ±18 90 ±434 ±488 ±388 ±7
+> antmaze-giant-navigate 0±00±09±439 ±80±030 ±10 56 ±9
+> cube-double-play 1±136 ±31±010 ±240 ±517 ±645 ±7
+> cube-triple-play 0±01±10±06±37±318 ±537 ±8
+> puzzle-4x4-play 0±013 ±20±00±026 ±374 ±670 ±5
+> puzzle-4x5-play 0±07±10±01±014 ±120 ±120 ±0
+> puzzle-4x6-play 0±010 ±20±04±112 ±117 ±420 ±2
+> scene-play 5±142 ±45±119 ±251 ±456 ±10 80 ±4
+> antmaze-large-explore 0±08±60±00±01±138 ±10 22 ±7cube-triple-noisy 1±19±11±03±12±15±422 ±7
+> puzzle-4x4-noisy 0±020 ±30±00±029 ±750 ±556 ±7
+> puzzle-4x6-noisy 0±017 ±20±06±318 ±219 ±419 ±1
+> scene-noisy 1±126 ±59±11±126 ±234 ±540 ±5Mean 2.5 15.9 6.9 13.7 20.0 35.8 44.2
+
+1993; Andrychowicz et al., 2017). Appendix B.3-B.8 provides additional information on baselines, hyperparameters used and wall-clock time. 5.1 RESULTS 
+
+Performance on OGBench is measured by average (binary) success rates on 5 test-time goals of each task. We train algorithms to convergence and average the results over 8 seeds . We list the number of training iterations per task in Appendix B.5. Performance on Tokamak tasks is measured as the cumulative reward per episode, where reward is the L2 distance between the goal variables to track and the actual achieved quantities. On Tokamak tasks, we evaluate on 10 test-time goals over 4seeds . We discuss the results below: 
+
+How effective is ORS? ORS achieves the best performance on most tasks, with especially large gains on more complex domains. Table 1 summarizes results over 12 offline locomotion and ma-nipulation datasets, where *-play/*-navigate denote noisy expert datasets and *-noisy/*-explore 
+
+denote highly sub-optimal datasets (Park et al., 2024a). ORS achieves a 2.2× improvement in performance on average over its base algorithm GCIQL that uses sparse rewards. While we see that GCIQL/GCIVL struggle on locomotion and QRL/CRL struggle on manipulation, ORS consis-tently outperforms these baselines on both domains. ORS outperforms Go-Fresh on the majority of tasks, demonstrating the effectiveness of occupancy-based reward shaping over graph-based reward shaping, especially in complex tasks such as antmaze-giant-navigate and cube-triple-play that are characterized by long horizons upto 2000 steps long (Park et al., 2024a). We also see that ORS remains effective even under highly sub-optimal data in the *-noisy/*-explore datasets. Notably, only ORS and Go-Fresh produce non-zero performance on antmaze-large-explore . Although Go-Fresh outperforms ORS on this task, we hypothesize that this could be because the additional local rewards used by Go-Fresh are effective in such a task. 
+
+How does ORS compare to other strategies for long-horizon, sparse-reward offline GCRL? On average, ORS outperforms the next-best method GO-Fresh by 24% and achieves 2.2 × and 1.9 ×
+
+high performance than hierarchical (HIQL) and n-step return approaches(GCIQL-OTA), respec-tively. From Table 2, we see that while hierarchical or policy-bootstrapped-based methods like HIQL and SAW are effective on antmaze locomotion but struggle on manipulation tasks. SMORE is largely ineffective with a mean performance of just 2.8% while n-step return methods perform poorly on noisy datasets. In contrast, the strong performance of ORS with a simple non-hierarchical policy underscores the effectiveness of its occupancy-based reward shaping. 
+
+Is ORS effective in real-world tasks? We now examine the ability of ORS to track goals by con-trolling actuators in real-world Tokamak control tasks. Table 3 compares ORS with baselines specif-ically designed for long-horizon, sparse-reward offline GCRL. While HIQL and SAW perform rela-tively well for rotation control, they perform poorly on other tasks. While SMORE performs poorly 8Published as a conference paper at ICLR 2026 overall, both n-step GCIQL and GCIQL-OTA perform well on density control but show poor perfor-mance on other tasks. GO-Fresh performs poorly overall on all tasks; we believe this is because graph-based reward shaping is ineffective in tasks with stochastic dynamics. ORS consistently achieves best performance across the Tokamak control, highlighting its effectiveness in complex real-world tasks. 
+
+Figure 5: Left: ORS leads to lower average value non-monotonicity δV at lower noise levels ( σv ) over expert trajectories compared to using sparse rewards or just using ˆV (, g ) = rW (s, g ); Center: ORS induces less noisy estimates of ˆV (s, g ) over expert trajectories even for long horizons; and Right: ORS rewards over 5000 state-action pairs (denoted as dots) for a single fixed goal (denoted as x) smoothly decay in magnitude with temporal distance from goal. All plots in this figure are computed over antmaze-giant-navigate .
+
+How does ORS influence value learning? We analyze how ORS influences the learning dynamics of the induced value function on antmaze-giant-navigate by improving credit assignment . Follow-ing the setup in Sec. 3.2, we analytically compute ˆV (s, g ) induced by ORS rewards under varying noise levels σv . Figure 5 (left) reports how the average δV varies with σv for sparse rewards, ORS, and a variant that directly uses ˆV (s, g ) = rW (s, g ). Relative to sparse rewards, ORS exhibits δV
+
+that is an order of magnitude smaller at lower noise levels. We plot the approximate value func-tion ˆV (s, g ) induced by ORS over the same 5 trajectories in Sec. 3.2 in Fig. 5 (center) , showing estimates that are much less noisy than sparse-reward ˆV (s, g ) over long horizons. Finally, Figure 5 (right) plots ORS rewards for a fixed goal over 5000 uniformly sampled state-action pairs, each state displayed in the figure by its x-y position in the maze. ORS reward magni-tudes decay smoothly with increasing temporal distance from goal, with dark dots corresponding to states (eg. ends of trajectories) very distant from goal. 
+
+How do different design choices affect ORS? We now examine some key design choices behind ORS. First, we compare ORS with a baseline called L2 that computes the uses L2 distance to goal for reward shaping. Table 4 shows that L2 rewards are ineffective and can hurt performance as shown by GCIQL with L2 rewards performing worse than sparse-reward GCIQL. 
+
+Table 2: ORS vs long-horizon sparse-reward offline GCRL strategies on OGBench tasks: Overall average (binary) success rate (%) across the 5 test time goals over 8 seeds per task per algorithm. We report the 95% bootstrapped C.I. size after the ± sign.                                                                                                                                                                                                                                                                                                
+
+> Dataset HIQL SAW SMORE n-step GCIQL GCIQL-OTA Go-Fresh ORS (ours)
+> antmaze-large-navigate 91 ±286 ±522 ±553 ±990 ±488 ±388 ±7antmaze-giant-navigate 72 ±748 ±91±11±126 ±530 ±10 56 ±9cube-double-play 6±240 ±72±24±33±217 ±645 ±7
+> cube-triple-play 3±26±60±01±12±218 ±537 ±8
+> puzzle-4x4-play 7±217 ±12 0±046 ±585 ±474 ±670 ±5puzzle-4x5-play 8±48±40±05±219 ±120 ±120 ±0
+> puzzle-4x6-play 3±18±40±014 ±315 ±317 ±420 ±2
+> scene-play 38 ±363 ±68±226 ±742 ±756 ±10 80 ±4
+> antmaze-large-explore 0±015 ±80±00±00±038 ±10 22 ±7cube-triple-noisy 2±10±01±12±12±15±422 ±7
+> puzzle-4x4-noisy 3±33±30±00±00±050 ±556 ±7
+> puzzle-4x6-noisy 2±18±60±012 ±615 ±319 ±419 ±1
+> scene-noisy 25 ±433 ±63±22±23±234 ±540 ±5Mean 20.0 25.8 2.8 12.7 23.2 35.8 44.2
+
+9Published as a conference paper at ICLR 2026 
+
+Table 3: ORS vs long-horizon sparse-reward offline GCRL strategies on 3 challenging Tokamak control tasks: Overall average cumulative return across 10 testtime goals over 4 seeds per task per algorithm. We report the 95% bootstrapped C.I. size after the ± sign.                                                                                             
+
+> Task HIQL SAW SMORE n-step GCIQL GCIQL-OTA GO-Fresh ORS
+> Tokamak βN-45.26 ±3.83 -51.39 ±8.16 −56 .06 ±12 .71 −88 .7±44 .3−67 .73 ±9.73 -48.20 ±11.72 -44.76 ±8.42
+> Tokamak density −49 .8±7.5−44 .0±2.3−54 .0±10 .8-25.6 ±4.1 -27.1 ±2.5 −38 .6±12 .6-26.9 ±6.6
+> Tokamak rotation −24 .4±1.3−26 .4±5.1−28 .5±6.7−57 .4±46 .6−30 .1±6.9−28 .9±7.4-22.4 ±0.6
+> Dataset ORS L2 GCIQL
+> antmaze-giant-navigate 56 ±93±20±0cube-triple-play 37 ±83±17±3
+
+Table 4: ORS vs L2 rewards 
+
+Next, we ablate over design choices of the ORS reward function and Q-function by comparing ORS against a version that uses state-only rewards 
+
+rW (s, g ) named ORS-s and a variant that uses the reward function itself as the Q-function, i.e., Q(s, a, g ) = rW (s, a, g ) named ORS-r. We keep the base algorithm the same. 
+
+Figure 6: ORS vs ORS-s vs ORS-r over 5 testtime goals and 8 seeds on scene-play (error bars show 95% bootstrapped CI) 
+
+In experiments on the manipulation task scene-play 
+
+in Fig. 6, ORS performs best, showing the impor-tance of learning a Q-function that is a cumulative sum over rW (s, a, g ), especially when the task in-volves stitching over trajectories to learn the optimal 
+
+Q∗. We hypothesize that the poor performance of ORS-r is due to noisy estimates of the Q function, as evidenced by our analysis in Fig. 5. We also ablate the performance of ORS over vary-ing values of the expectile parameter κ of GCIQL which is crucially linked to the density of re-wards (Kostrikov et al., 2021). The results in Table 5 show higher performance at lower κ in locomotion tasks. We hypothesize that this is due to the rich learning signal from dense rewards of ORS. In manipulation tasks, as task complexity increases, the κ at which we get best performance increases. 
+
+## 6 CONCLUSION Dataset κ=0.6 κ=0.75 κ=0.9                                     
+
+> antmaze-giant-navigate 56 ±915 ±61±1puzzle-4x4-play 70 ±540 ±421 ±3scene-play 70 ±580 ±471 ±7cube-triple-play 4±327 ±12 37 ±8
+
+Table 5: Performance of ORS over varying values of κ.
+
+In this paper, we show how generative world models implicitly capture world geometry and introduce Occupancy Re-ward Shaping, a novel reward-shaping method for offline GCRL that utilizes a generative occupancy model to extract global goal-reaching information into a goal-conditioned re-ward function. Unlike prior work that relies on graph-building, ORS scales effectively with task complexity and enables learning performative policies over diverse datasets. ORS is simple to im-plement on top of existing GCRL algorithms and achieves state-of-the-art results over challenging tasks, including real-world Tokamak control. 
+
+Limitations. Reward shaping methods, by virtue of being sample-based, are less effective in long-horizon tasks with highly combinatorial state spaces and very few ways to achieve task success (e.g. a large multi-step combination lock puzzle). In such regimes, particularly in the offline setting, even ORS rewards may provide limited signal since the occupancy measure has a high Wasserstein distance from goal for almost all states. This challenge could potentially be addressed by learning an occupancy measure over a filtered set of “useful” future states and by augmenting the ORS reward with local rewards that capture short-range state dependencies. ACKNOWLEDGEMENTS 
+
+We would like to thank Grace Liu and Mahsa Bastankhah for reviewing the paper. This material is based upon work supported in part by the U.S. Department of Energy, Office of Fusion Energy 10 Published as a conference paper at ICLR 2026 Sciences, under Award DE-SC0024544 and on work supported by the National Science Foundation under Award No. 2441665. Any opinions, findings and conclusions or recommendations expressed in this material are those of the author(s) and do not necessarily reflect the views of the National Science Foundation. 
+
+LLM usage: We used LLMs to aid in LaTeX formatting while writing the paper. 
+
+Reproducibility Statement: We make our code available on Github. To ensure reliable compar-ison, each RL algorithm is evaluated over 8 random seeds and 95% bootstrapped CIs are reported as error bars in tables and plots. Additional information on baselines is provided in Appendix B.2-B.6. We state this information in Sec. 5.1 of the main paper. All proofs are in Appendix A and assumptions are stated in Appendix A.3. We state this in Sec. 4.2 of the main paper. 
+
+## REFERENCES 
+
+Joseph Abbate, Rory Conlin, and Egemen Kolemen. Data-driven profile prediction for diii-d. Nu-clear Fusion , 61(4):046027, 2021. Siddhant Agarwal, Ishan Durugkar, Peter Stone, and Amy Zhang. f-policy gradients: A general framework for goal-conditioned rl using f-divergences. Advances in Neural Information Process-ing Systems , 36:12100–12123, 2023. Hongjoon Ahn, Heewoong Choi, Jisu Han, and Taesup Moon. Option-aware temporally abstracted value for offline goal-conditioned reinforcement learning. arXiv preprint arXiv:2505.12737 ,2025. Marcin Andrychowicz, Filip Wolski, Alex Ray, Jonas Schneider, Rachel Fong, Peter Welinder, Bob McGrew, Josh Tobin, OpenAI Pieter Abbeel, and Wojciech Zaremba. Hindsight experience re-play. Advances in neural information processing systems , 30, 2017. Tim Brys, Anna Harutyunyan, Halit Bener Suay, Sonia Chernova, Matthew E Taylor, and Ann Now´ e. Reinforcement learning from demonstration through shaping. In IJCAI , pp. 3352–3358, 2015. Elliot Chane-Sane, Cordelia Schmid, and Ivan Laptev. Goal-conditioned reinforcement learning with imagined subgoals. In International conference on machine learning , pp. 1430–1440. PMLR, 2021. Ian Char, Joseph Abbate, L´ aszl´ o Bard´ oczi, Mark Boyer, Youngseog Chung, Rory Conlin, Keith Er-ickson, Viraj Mehta, Nathan Richner, Egemen Kolemen, et al. Offline model-based reinforcement learning for tokamak control. In Learning for Dynamics and Control Conference , pp. 1357–1372. PMLR, 2023. Ian Char, Youngseog Chung, Joseph Abbate, Egemen Kolemen, and Jeff Schneider. Full shot pre-dictions for the diii-d tokamak via deep recurrent networks. arXiv preprint arXiv:2404.12416 ,2024. Kristopher De Asis, J Hernandez-Garcia, G Holland, and Richard Sutton. Multi-step reinforcement learning: A unifying algorithm. In Proceedings of the AAAI conference on artificial intelligence ,volume 32, 2018. Yiming Ding, Carlos Florensa, Pieter Abbeel, and Mariano Phielipp. Goal-conditioned imitation learning. Advances in neural information processing systems , 32, 2019. Ishan Durugkar, Mauricio Tec, Scott Niekum, and Peter Stone. Adversarial intrinsic motivation for reinforcement learning. Advances in Neural Information Processing Systems , 34:8622–8636, 2021. Benjamin Eysenbach, Tianjun Zhang, Sergey Levine, and Russ R Salakhutdinov. Contrastive learn-ing as goal-conditioned reinforcement learning. Advances in Neural Information Processing Sys-tems , 35:35603–35620, 2022. 11 Published as a conference paper at ICLR 2026 Jesse Farebrother, Matteo Pirotta, Andrea Tirinzoni, R´ emi Munos, Alessandro Lazaric, and Ahmed Touati. Temporal difference flows. arXiv preprint arXiv:2503.09817 , 2025. Justin Fu, Aviral Kumar, Ofir Nachum, George Tucker, and Sergey Levine. D4rl: Datasets for deep data-driven reinforcement learning. arXiv preprint arXiv:2004.07219 , 2020. Scott Fujimoto and Shixiang Shane Gu. A minimalist approach to offline reinforcement learning. 
+
+Advances in neural information processing systems , 34:20132–20145, 2021. Dibya Ghosh, Abhishek Gupta, Justin Fu, Ashwin Reddy, Coline Devin, Benjamin Eysenbach, and Sergey Levine. Learning to reach goals without reinforcement learning. 2019. Tuomas Haarnoja, Aurick Zhou, Pieter Abbeel, and Sergey Levine. Soft actor-critic: Off-policy maximum entropy deep reinforcement learning with a stochastic actor. In International confer-ence on machine learning , pp. 1861–1870. Pmlr, 2018. Kristian Hartikainen, Xinyang Geng, Tuomas Haarnoja, and Sergey Levine. Dynamical distance learning for semi-supervised and unsupervised skill discovery. arXiv preprint arXiv:1907.08225 ,2019. Kristian Hartikainen, Xinyang Geng, Tuomas Haarnoja, and Sergey Levine. Dynamical distance learning for semi-supervised and unsupervised skill discovery, 2020. URL https://arxiv. org/abs/1907.08225 .Anna Harutyunyan, Sam Devlin, Peter Vrancx, and Ann Now´ e. Expressing arbitrary reward func-tions as potential-based advice. In Proceedings of the AAAI conference on artificial intelligence ,volume 29, 2015. Joey Hejna, Jensen Gao, and Dorsa Sadigh. Distance weighted supervised learning for offline inter-action data. In International Conference on Machine Learning , pp. 12882–12906. PMLR, 2023. Dan Hendrycks and Kevin Gimpel. Gaussian error linear units (gelus). arXiv preprint arXiv:1606.08415 , 2016. Michael Janner, Igor Mordatch, and Sergey Levine. Gamma-models: Generative temporal difference learning for infinite-horizon prediction. Advances in neural information processing systems , 33: 1724–1735, 2020a. Michael Janner, Igor Mordatch, and Sergey Levine. Generative temporal difference learning for infinite-horizon prediction. arXiv preprint arXiv:2010.14496 , 2020b. Zhengyao Jiang, Tianjun Zhang, Michael Janner, Yueying Li, Tim Rockt¨ aschel, Edward Grefen-stette, and Yuandong Tian. Efficient planning in a compact latent action space. arXiv preprint arXiv:2208.10291 , 2022. Leslie Pack Kaelbling. Learning to achieve goals. In IJCAI , volume 2, pp. 1094–8, 1993. Bingyi Kang, Zequn Jie, and Jiashi Feng. Policy optimization with demonstrations. In International conference on machine learning , pp. 2469–2478. PMLR, 2018. Diederik P Kingma and Jimmy Ba. Adam: A method for stochastic optimization. arXiv preprint arXiv:1412.6980 , 2014. Ilya Kostrikov, Ashvin Nair, and Sergey Levine. Offline reinforcement learning with implicit q-learning. arXiv preprint arXiv:2110.06169 , 2021. Mingxuan Li, Junzhe Zhang, and Elias Bareinboim. Automatic reward shaping from confounded offline data. arXiv preprint arXiv:2505.11478 , 2025. Yaron Lipman, Ricky TQ Chen, Heli Ben-Hamu, Maximilian Nickel, and Matt Le. Flow matching for generative modeling. arXiv preprint arXiv:2210.02747 , 2022. Yaron Lipman, Marton Havasi, Peter Holderrieth, Neta Shaul, Matt Le, Brian Karrer, Ricky TQ Chen, David Lopez-Paz, Heli Ben-Hamu, and Itai Gat. Flow matching guide and code. arXiv preprint arXiv:2412.06264 , 2024. 12 Published as a conference paper at ICLR 2026 Minghuan Liu, Menghui Zhu, and Weinan Zhang. Goal-conditioned reinforcement learning: Prob-lems and solutions. arXiv preprint arXiv:2201.08299 , 2022a. Xingchao Liu, Chengyue Gong, and Qiang Liu. Flow straight and fast: Learning to generate and transfer data with rectified flow. arXiv preprint arXiv:2209.03003 , 2022b. Lei Lv, Yunfei Li, Yu Luo, Fuchun Sun, Tao Kong, Jiafeng Xu, and Xiao Ma. Flow-based policy for online reinforcement learning. arXiv preprint arXiv:2506.12811 , 2025. Haozhe Ma, Zhengding Luo, Thanh Vinh Vo, Kuankuan Sima, and Tze-Yun Leong. Highly efficient self-adaptive reward shaping for reinforcement learning. arXiv preprint arXiv:2408.03029 , 2024. Jason Yecheng Ma, Jason Yan, Dinesh Jayaraman, and Osbert Bastani. Offline goal-conditioned reinforcement learning via f -advantage regression. Advances in neural information processing systems , 35:310–323, 2022. Marlos C Machado, Andre Barreto, Doina Precup, and Michael Bowling. Temporal abstraction in reinforcement learning with the successor representation. Journal of machine learning research ,24(80):1–69, 2023. Lina Mezghani, Sainbayar Sukhbaatar, Piotr Bojanowski, Alessandro Lazaric, and Karteek Alahari. Learning goal-conditioned policies offline with self-supervised reward shaping. In Conference on robot learning , pp. 1401–1410. PMLR, 2023. David Mguni, Jianhong Wang, Taher Jafferjee, Nicolas Perez-Nieves, Wenbin Song, Yaodong Yang, Feifei Tong, Hui Chen, Jiangcheng Zhu, Yali Du, et al. Learning to shape rewards using a game of switching controls. arXiv preprint arXiv:2103.09159 , 2021. Volodymyr Mnih, Koray Kavukcuoglu, David Silver, Andrei A Rusu, Joel Veness, Marc G Belle-mare, Alex Graves, Martin Riedmiller, Andreas K Fidjeland, Georg Ostrovski, et al. Human-level control through deep reinforcement learning. nature , 518(7540):529–533, 2015. Whitney K Newey and James L Powell. Asymmetric least squares estimation and testing. Econo-metrica: Journal of the Econometric Society , pp. 819–847, 1987. Andrew Y Ng, Daishi Harada, and Stuart Russell. Policy invariance under reward transformations: Theory and application to reward shaping. In Icml , volume 99, pp. 278–287. Citeseer, 1999. Seohong Park, Dibya Ghosh, Benjamin Eysenbach, and Sergey Levine. Hiql: Offline goal-conditioned rl with latent states as actions. Advances in Neural Information Processing Systems ,36:34866–34891, 2023. Seohong Park, Kevin Frans, Benjamin Eysenbach, and Sergey Levine. Ogbench: Benchmarking offline goal-conditioned rl. arXiv preprint arXiv:2410.20092 , 2024a. Seohong Park, Kevin Frans, Sergey Levine, and Aviral Kumar. Is value learning really the main bottleneck in offline rl? Advances in Neural Information Processing Systems , 37:79029–79056, 2024b. Seohong Park, Tobias Kreiman, and Sergey Levine. Foundation policies with hilbert representations. 
+
+arXiv preprint arXiv:2402.15567 , 2024c. Seohong Park, Qiyang Li, and Sergey Levine. Flow q-learning. arXiv preprint arXiv:2502.02538 ,2025. Deepak Pathak, Pulkit Agrawal, Alexei A Efros, and Trevor Darrell. Curiosity-driven exploration by self-supervised prediction. In International conference on machine learning , pp. 2778–2787. PMLR, 2017. Martin L Puterman. Markov decision processes: discrete stochastic dynamic programming . John Wiley & Sons, 2014. Jette Randløv and Preben Alstrøm. Learning to drive a bicycle using reinforcement learning and shaping. In ICML , volume 98, pp. 463–471, 1998. 13 Published as a conference paper at ICLR 2026 Alfredo Reichlin, Miguel Vasco, Hang Yin, and Danica Kragic. Learning goal-conditioned policies from sub-optimal offline data via metric learning. arXiv preprint arXiv:2402.10820 , 2024. Lisa M Saksida, Scott M Raymond, and David S Touretzky. Shaping robot behavior using principles from instrumental conditioning. Robotics and Autonomous Systems , 22(3-4):231–249, 1997. Nikolay Savinov, Alexey Dosovitskiy, and Vladlen Koltun. Semi-parametric topological memory for navigation. arXiv preprint arXiv:1803.00653 , 2018. Tom Schaul, Daniel Horgan, Karol Gregor, and David Silver. Universal value function approxima-tors. In International conference on machine learning , pp. 1312–1320. PMLR, 2015. Liam Schramm and Abdeslam Boularias. Bellman diffusion models. arXiv preprint arXiv:2407.12163 , 2024. Harshit Sikchi, Rohan Chitnis, Ahmed Touati, Alborz Geramifard, Amy Zhang, and Scott Niekum. Score models for offline goal-conditioned reinforcement learning. In The Twelfth International Conference on Learning Representations , 2023a. Harshit Sikchi, Qinqing Zheng, Amy Zhang, and Scott Niekum. Dual rl: Unification and new methods for reinforcement and imitation learning. arXiv preprint arXiv:2302.08560 , 2023b. Richard S Sutton. Td models: Modeling the world at a mixture of time scales. In Machine learning proceedings 1995 , pp. 531–539. Elsevier, 1995. Denis Tarasov, Vladislav Kurenkov, Alexander Nikulin, and Sergey Kolesnikov. Revisiting the min-imalist approach to offline reinforcement learning. Advances in Neural Information Processing Systems , 36:11592–11620, 2023. Michael L Walker, Peter De Vries, Federico Felici, and Eugenio Schuster. Introduction to tokamak plasma control. In 2020 American Control Conference (ACC) , pp. 2901–2918. IEEE, 2020. Tongzhou Wang, Antonio Torralba, Phillip Isola, and Amy Zhang. Optimal goal-reaching reinforce-ment learning via quasimetric learning. In International Conference on Machine Learning , pp. 36411–36430. PMLR, 2023a. Yiming Wang, Ming Yang, Renzhi Dong, Binbin Sun, Furui Liu, et al. Efficient potential-based exploration in reinforcement learning using inverse dynamic bisimulation metric. Advances in Neural Information Processing Systems , 36:38786–38797, 2023b. Rui Yang, Yiming Lu, Wenzhe Li, Hao Sun, Meng Fang, Yali Du, Xiu Li, Lei Han, and Chongjie Zhang. Rethinking goal-conditioned supervised learning and its connection to offline rl. arXiv preprint arXiv:2202.04478 , 2022. Rui Yang, Lin Yong, Xiaoteng Ma, Hao Hu, Chongjie Zhang, and Tong Zhang. What is essential for unseen goal generalization of offline goal-conditioned rl? In International Conference on Machine Learning , pp. 39543–39571. PMLR, 2023. Rui Yu, Shenghua Wan, Yucen Wang, Chen-Xiao Gao, Le Gan, Zongzhang Zhang, and De-Chuan Zhan. Reward models in deep reinforcement learning: A survey. arXiv preprint arXiv:2506.15421 , 2025. Wenhao Zhan, Baihe Huang, Audrey Huang, Nan Jiang, and Jason Lee. Offline reinforcement learning with realizability and single-policy concentrability. In Conference on Learning Theory ,pp. 2730–2775. PMLR, 2022. Chongyi Zheng, Ruslan Salakhutdinov, and Benjamin Eysenbach. Contrastive difference predictive coding. arXiv preprint arXiv:2310.20141 , 2023. Chongyi Zheng, Jens Tuyls, Joanne Peng, and Benjamin Eysenbach. Can a misl fly? analysis and ingredients for mutual information skill learning. arXiv preprint arXiv:2412.08021 , 2024. John L Zhou and Jonathan C Kao. Flattening hierarchies with policy bootstrapping. arXiv preprint arXiv:2505.14975 , 2025. 14 Published as a conference paper at ICLR 2026 
+
+# Appendices 
+
+## A PROOFS 
+
+We introduce notation in Sec. A.1. We then provide common setup used for all proofs in Sec. A.2. We introduce the assumptions used in Sec. A.3. Sec. A.4, A.5 and A.6 provide the proofs for Proposition1, Proposition2 and Theorem1, respectively. A.1 NOTATION 
+
+• Shortest-path distance : We use step ∗(s, g ) to denote the minimum number of steps to reach g from s. We define level sets: 
+
+Sk = {s ∈ S : step ∗(s, g ) = k}, k = 0 , 1, 2, . . . 
+
+Clearly, S0 = {g}. Under deterministic dynamics, there exists an action a∗ at state s such that p(. | s, a ∗) ∈ S k−1 whenever s ∈ S k, k ≥ 1.A.2 COMMON SETUP FOR PROOFS 
+
+The squared Wasserstein-2 distance between two probability measures μ and ν is defined as: 
+
+W 22 (μ, ν ) = inf 
+
+> λ∈Λ( μ,ν )
+
+Z
+
+∥x − y∥2dλ (x, y )
+
+where Λ( μ, ν ) is the set of all joint measures with marginals μ and ν.We consider the special case where one measure is a Dirac delta, μ = δg , located at a single point 
+
+g. In this case, any valid transport plan must move all mass from the point g. This removes the need for optimization, as the transport plan is uniquely determined to be the product measure Λ( x, y ) = 
+
+δg (x)ν(y).Substituting this unique plan into the definition yields: 
+
+W 22 (δg , ν ) = 
+
+Z Z
+
+∥y − x∥2δg (x)ν(y)dxdy 
+
+=
+
+Z
+
+∥y − g∥2ν(y)dy (by the sifting property of δg (x)) 
+
+The result is the expected squared Euclidean distance from the point g to the distribution ν.By replacing the general measure ν with the specific transition probability dπD (s+ | s, a ) and renaming the integration variable, we obtain the final form: 
+
+W 22 (δg , d πD (s+ | s, a )) = 
+
+Z
+
+∥s+ − g∥2dπD (ds + | s, a ) = M πD (s, a, g )
+
+With this setup, we now define 
+
+Φ( s, g ) := ∥s − g∥2, M πD (s, a, g ) := 
+
+Z
+
+Φ( s+, g ) dπD (ds + | s, a ).
+
+Then 
+
+rW (s, a, g ) = −M πD (s, a, g ).
+
+Recall the expanded form of dπ :
+
+dπD (s+ | s, a ) = (1 − γ) p(s′ | s, a ) + γ d πD (s+ | s′, a ′), ∀(s, a, s ′, a ′) ∈ D 
+
+Now, substitute into the definition of M π as an integral, and under the assumption of deterministic dynamics: 
+
+M πD (s, a, g ) = 
+
+Z
+
+Φ( s+, g ) dπD (ds + | s, a )=
+
+Z
+
+Φ( s+, g ) (1 − γ)δs′ (s+ = s′) + γd πD (s+ | s′, a ′) ds +
+
+15 Published as a conference paper at ICLR 2026 Using the linearity of the integral, we decompose the above expression into two terms: 
+
+M πD (s, a, g ) = (1 − γ)Φ( s′, g ) + + γ
+
+Z
+
+Φ( s+, g )dπD (s+ | s′, a ′) ds +
+
+= (1 − γ)Φ( s′, g ) + γM πD (s′, a ′, g ).
+
+It is notable that M πD (s, a, g ) resembles a squared goal-conditioned Wasserstein-2 distance ana-logue of the successor representation (Machado et al., 2023). We also define the state-only version M πD (s, g ) = Ea∼πD (.|s)M πD (s, a, g )
+
+A.3 ASSUMPTIONS 
+
+This section lists the assumptions we use to develop our proofs: 
+
+Assumption A.1 (Deterministic dynamics) . We assume that the environment dynamics are deter-ministic: For any state s ∈ S and action a ∈ A , the state transition probability p(s′ | s, a ) is a point mass distribution, concentrated on the unique successor state f (s, a ). That is, 
+
+p(· | s, a ) = δf (s,a )(·).
+
+Remark A.1. This is a common assumption made for the sake of analytical tractability in founda-tional reinforcement learning theory. It allows for a clear analysis of the core properties of value functions and policies without the complexities introduced by stochasticity. This assumption serves as a standard basis for theoretical analysis in related work, for instance, in Hartikainen et al. (2020). 
+
+Assumption A.2 (One-step reachability) .
+
+∀k ≥ 1, ∀s ∈ Sk, ∃ a∗(s) such that s′|s, a ∗ ∈ Sk−1.
+
+Remark A.2. This assumption is inherent to the definition of a well-posed shortest-path problem. It simply formalizes that the goal is reachable and a shortest path exists from all relevant states. 
+
+Assumption A.3. The potential function Φ( s, g ) is strongly monotonic with respect to the shortest-path distance step ∗(s, g ). For any two states sa, s b, if step ∗(sa, g ) ≤ step ∗(sb, g ), then 
+
+Φ( sa, g ) ≤ Φ( sb, g ).
+
+Furthermore, for any k ≥ 1, if s1 ∈ Sk−1 and s2 ∈ Sk, there exists a constant ∆Φ > 0 such that 
+
+Φ( s2, g ) ≥ Φ( s1, g ) + ∆ Φ.
+
+Remark A.3. This assumption ensures that the signal provided by the Wasserstein distance is strong and informative, providing a non-trivial cost increase when moving away from the goal. 
+
+Assumption A.4 (Layer monotonicity of πD ). We assume the offline policy πD is consistent with the shortest-path layer structure. For any k ≥ 1, if s1 ∈ Sk−1 and s2 ∈ Sk, their successors under 
+
+πD , s′ 
+
+> 1
+
+= f (s1, π D (s1)) and s′ 
+
+> 2
+
+= f (s2, π D (s2)) must maintain their relative layer ordering. That is, step ∗(s′
+
+> 1
+
+, g ) ≤ step ∗(s′
+
+> 2
+
+, g ).
+
+Remark A.4. Assumption A.4 is a condition on the quality of the offline data, which is a standard requirement for obtaining theoretical guarantees in the offline RL setting (Zhan et al., 2022). 
+
+16 Published as a conference paper at ICLR 2026 A.4 MONOTONICITY OF GOAL -CONDITIONED REWARD FUNCTION (P ROPOSITION 1) 
+
+Proposition. Under suitable assumptions on goal reachability, dynamics, and dataset coverage, for all (s, a, g ) ∈ D , the average squared Wasserstein-2 distance 
+
+W 22
+
+ δg , d πD (s+ | s) := Ea∼πD (·| s)
+
+h
+
+W 22
+
+ δg , d πD (s+ | s, a )i
+
+is monotonically increasing with respect to the shortest-path layer index k. In particular, for a fixed goal g and any k ≥ 1, if s1 ∈ S k−1 and s2 ∈ S k, then 
+
+W 22
+
+ δg , d πD (s+ | s1) ≤ W 22
+
+ δg , d πD (s+ | s2).
+
+Moreover, for any state–goal pair (s, g ), the squared Wasserstein-2 distance is minimized by the optimal action: 
+
+W 22
+
+ δg , d πD (s+ | s, a ∗) ≤ W 22
+
+ δg , d πD (s+ | s, a ), ∀a ∈ A , a ∗ ∼ π∗(· | s, g ).
+
+We prove the proposition in two parts: We first prove that the average W 22 distance is monotoni-cally decreasing in shortest-path distance to goal and then show that W 22 (δg , d πD (s+ | s, a ∗)) ≤
+
+W 22 (δg , d πD (s+ | s, a )) for any (s, a, g ). Recall that we define the shortest-path distance in terms of the layer index k and show that W 22 (δg , d πD (s+ | s, a )) = M πD (s, a, g ) in Sec. A.2. We can now re-write the first part of the proposition as: 
+
+1 (Layer Monotonicity of M πD ). Under Assumptions A.1, A.3 and A.4, the function M πD is mono-tonically increasing with respect to the shortest-path layer index k. For goal g and any k ≥ 1, if 
+
+s1 ∈ Sk−1 and s2 ∈ Sk, we have: 
+
+M πD (s1, g ) ≤ M πD (s2, g ).
+
+It is important to note that the indices k here are such that k = 0 refers to the goal state, i.e. index 
+
+k − 1 defines a state closer to goal than index k.
+
+Proof. Let us define the Bellman operator T πD which maps a function M to a new function T πD M :
+
+(T πD M )( s, g ) = (1 − γ)Φ( f (s, π D (s)) , g ) + γM (f (s, π D (s)) , g ).
+
+We prove this statement by analyzing the properties of the Bellman evaluation operator T πD asso-ciated with the policy πD .The function M πD is the unique fixed point of this operator, satisfying M πD = T πD (M πD ). The ex-istence and uniqueness of this fixed point, and the convergence of value iteration (Mi+1 = T πD Mi)
+
+to it from any starting function M0, is guaranteed by the Banach Fixed-Point Theorem. This is because the operator T πD is a contraction mapping due to the discount factor γ < 1.To show this, we take any two functions Ma, M b and measure the distance between their outputs under the supremum norm ∥Ma − Mb∥∞ = max s |Ma(s) − Mb(s)|:
+
+∥T πD Ma − T πD Mb∥∞ = max  
+
+> s
+
+(1 − γ)Φ( s′, g ) + γM a(s′, g ) −  (1 − γ)Φ( s′, g ) + γM b(s′, g )
+
+= max  
+
+> s
+
+γ|Ma(s′, g ) − Mb(s′, g )| where s′ = f (s, π D (s)) 
+
+≤ γ max  
+
+> z∈S
+
+|Ma(z, g ) − Mb(z, g )|
+
+= γ∥Ma − Mb∥∞.
+
+Since γ < 1, the operator is a contraction. Therefore, the sequence converges to the unique fixed point M πD .Now, we prove that the operator T πD preserves the property of monotonicity. Let M be an arbitrary function that is monotonically increasing with respect to the layer index k. We must show that the resulting function T πD M is also monotonic. Let s1 ∈ Sk−1 and s2 ∈ Sk. Let their successors be s′ 
+
+> 1
+
+= f (s1, π D (s1)) and s′ 
+
+> 2
+
+= f (s2, π D (s2)) .We want to show that (T πD M )( s1, g ) ≤ (T πD M )( s2, g ).17 Published as a conference paper at ICLR 2026 Consider the difference: 
+
+(T πD M )( s2, g ) − (T πD M )( s1, g ) = (1 − γ)[Φ( s′
+
+> 2
+
+, g ) − Φ( s′
+
+> 1
+
+, g )] + γ[M (s′
+
+> 2
+
+, g ) − M (s′
+
+> 1
+
+, g )] .
+
+By Assumption A.4, we have step ∗(s′
+
+> 1
+
+, g ) ≤ step ∗(s′
+
+> 2
+
+, g ). Now we analyze the two terms in the difference: • By Assumption A.3, the condition step ∗(s′
+
+> 1
+
+, g ) ≤ step ∗(s′
+
+> 2
+
+, g ) directly implies that 
+
+[Φ( s′
+
+> 1
+
+, g ) ≤ Φ( s′
+
+> 2
+
+, g )] . The first term [Φ( s′
+
+> 2
+
+, g ) − Φ( s′
+
+> 1
+
+, g )] is non-negative. • By our premise for this step, the function M is monotonic. Since d∗(s′
+
+> 1
+
+, g ) ≤ d∗(s′
+
+> 2
+
+, g ), it follows that M (s′
+
+> 1
+
+, g ) ≤ M (s′
+
+> 2
+
+, g ). Thus, the second term [M (s′
+
+> 2
+
+, g ) − M (s′
+
+> 1
+
+, g )] is also non-negative. Since both terms are non-negative, their sum is non-negative, and thus (T πD M )( s1, g ) ≤
+
+(T πD M )( s2, g ). This proves that the operator T πD preserves monotonicity. The value iteration process starts with an initial value function M0(s) = 0 for all s. The zero func-tion is trivially monotonic. Since the operator T πD preserves monotonicity, the entire sequence of value functions {M0, M 1, M 2, . . . } generated by Mi+1 = T πD Mi consists of monotonic functions. The final value function M πD is the limit of this sequence, and the limit of a sequence of monotonic functions is also monotonic. Therefore, M πD is monotonically increasing with respect to the layer index k.It follows that average W 22 distance Ea∼πD (·| s)W 22 (δg , d πD (s+ | s, a )) is monotonically decreasing in shortest-path distance towards goal g.We now prove the second part. Similar to part 1, we can re-write in terms of M πD as follows: 
+
+2 (Optimal actions under M πD (s, a, g )). Under Assumptions A.1-A.4 and the layer monotonicity of 
+
+M πD , for any state s ∈ Sk with k ≥ 1, any optimal, shortest-path-inducing, action a∗ ∼ π∗(.|s, g ),and any non-optimal action abad , the function M πD is strictly smaller for the shortest-path action. That is, 
+
+M πD (s, a ∗, g ) < M πD (s, a bad , g ).
+
+Proof. Let s∗ = f (s, a ∗) and sbad = f (s, a bad ). By definition, s∗ ∈ Sk−1 and sbad ∈ Sj for some 
+
+j ≥ k. We analyze the difference ∆M = M πD (s, a bad , g ) − M πD (s, a ∗, g ):
+
+∆M =
+
+h
+
+(1 − γ)Φ( sbad , f ) + γM πD (sbad , g )
+
+i
+
+−
+
+h
+
+(1 − γ)Φ( s∗, g ) + γM πD (s∗, g )
+
+i
+
+= (1 − γ)[Φ( sbad , g ) − Φ( s∗, g )] 
+
+| {z }
+
+> Term 1
+
++ γ[M πD (sbad , g ) − M πD (s∗, g )] 
+
+| {z }
+
+> Term 2
+
+For Term 1, since s∗ ∈ Sk−1 and sbad ∈ Sj with j ≥ k, by Assumption A.3, we have Φ( sbad , g ) ≥
+
+Φ( s∗, g ) + ∆ Φ. Thus, Term 1 is strictly positive and bounded below by (1 − γ)∆ Φ > 0.For Term 2, since s∗ ∈ Sk−1 and sbad ∈ Sj with j ≥ k, by Lemma 1, we have M πD (s∗, g ) ≤
+
+M πD (sbad , g ). Thus, Term 2 is non-negative. The sum of a strictly positive term and a non-negative term is strictly positive. Therefore, ∆M > 0.It follows that rW (s, a ∗, g ) > r W (s, a bad , g ) or equivalently, rW (s, a ∗, g ) ≥ rW (s, a, g ), where a
+
+can be any action in D at state s, which concludes the proof. A.5 ESTIMATING SQUARED WASSERSTEIN -2 DISTANCE (P ROPOSITION 2) 
+
+Proposition. The squared Wasserstein-2 distance between δg and dπD (s+ | s, a ) is upper bounded, up to a multiplicative constant C > 0, by the mean squared error of the associated velocity field corresponding to dπD (s+ | s, a ) and the target velocity corresponding to δg :
+
+W 22
+
+ δg , d πD (s+ | s, a ) ≤ C E x1∼δg 
+
+> x0∼N (0 ,I d)
+> t∼Unif([0 ,1])
+
+v(t, s, a, x t) − (x1 − x0) 22, (6) 18 Published as a conference paper at ICLR 2026 
+
+where xt = tx 1 + (1 − t)x0.
+
+We note that x1 − x0 gives us the velocity at (x0, x 1), where x1 = g. We start from the definition of squared Wasserstein-2 distance in Sec. A.2. In our case, μ corresponds to δg and ν corresponds to dπD 
+
+> θ
+
+(s+ | s, a ). As μ = δg , a point mass centered at g, the transport plan is uniquely determined to be the product measure λ(x, s +) = δg (x)dπD 
+
+> θ
+
+(s+ | s, a ) (Sec. A.2). For a given (s, a, g ), the inequality follows from Lemma 1 of Lv et al. (2025) by Gronwall’s inequality: 
+
+inf   
+
+> λ∈Λ( δg, d πD
+> θ)
+
+Z
+
+∥x − s+∥22 dλ (x, s +) = W 22
+
+ δg , d πD 
+
+> θ
+
+(s+ | s, a ).
+
+≤ C E g=x1∼δg ,x0∼N (0 ,I d),t∼Unif([0 ,1]) 
+
+h
+
+vdπD (t, s, a, x t) − (x1 − x0) 22
+
+i (7) A.6 OPTIMALITY OF ORS POLICY (P ROOF OF THEOREM 1) 
+
+Theorem. Under suitable assumptions on goal reachability, dynamics, and dataset coverage, the greedy goal-conditioned policy: 
+
+πgreedy (a | s, g ) = arg max  
+
+> a∈A
+
+Q∗(s, a, g ),
+
+where Q∗(s, a, g ) denotes the optimal action-value function induced by the reward rW (s, a, g ),coincides with the optimal shortest-path policy π∗(a | s, g ).
+
+The optimal action-value function, Q∗(s, a, g ), for the reward rW (s, a, g ) is the unique fixed point of the Bellman optimality operator: 
+
+Q∗(s, a, g ) = rW (s, a, g ) + γ max  
+
+> a′
+
+Q∗(f (s, a ), a ′, g ).
+
+The corresponding optimal state-value function is V ∗(s, g ) = max a′ Q∗(s, a ′, g ). πgreedy is the policy that greedily maximizes Q∗(s, a, g ):
+
+πgreedy (a|s, g ) := arg max  
+
+> a
+
+Q∗(s, a, g ) = arg min  
+
+> a
+
+{M πD (s, a, g ) − γV ∗(f (s, a ), g )}.
+
+Lemma A.1 (Layer-wise Monotonicity of the Optimal Value Function V ∗). Under Assump-tions A.1-A.4 and layer monotonicity of M πD (Sec. A.4), the value function of the optimal shortest-path policy, V ∗(s, g ), is strictly monotonically non-decreasing with the shortest-path layer index (i.e., the value is strictly higher for states closer to the goal). For any k ≥ 1, if s1 ∈ Sk−1 and 
+
+s2 ∈ Sk, we have: 
+
+V ∗(s1, g ) − V ∗(s2, g ) ≥ (1 − γk−1)∆ Φ > 0.
+
+Consequently, it holds that V ∗(s2, g ) < V ∗(s1, g ).Proof. Let π∗ denote the optimal shortest-path policy. For the sake of clarity, we write that for any state s and goal g, let a∗(s) = π∗(a∗|s, g ). We first establish the difference in the one-step cost for taking a shortest-path action from two adjacent layers. Let sa ∈ Sj−1 and sb ∈ Sj for any j ≥ 1. Let their successors under π∗ be s′ 
+
+> a
+
+= f (sa, a ∗(sa)) ∈
+
+Sj−2 and s′ 
+
+> b
+
+= f (sb, a ∗(sb)) ∈ Sj−1. Consider the difference in their one-step costs: 
+
+∆Mstep = M πD (sb, a ∗(sb), g ) − M πD (sa, a ∗(sa), g )=
+
+h
+
+(1 − γ)Φ( s′
+
+> b
+
+, g ) + γM πD (s′
+
+> b
+
+, g )
+
+i
+
+−
+
+h
+
+(1 − γ)Φ( s′
+
+> a
+
+, g ) + γM πD (s′
+
+> a
+
+, g )
+
+i
+
+= (1 − γ)[Φ( s′
+
+> b
+
+, g ) − Φ( s′
+
+> a
+
+, g )] + γ[M πD (s′
+
+> b
+
+, g ) − M πD (s′
+
+> a
+
+, g )] .
+
+By Assumption 3 (Strong Monotonicity of Φ), since s′ 
+
+> a
+
+∈ Sj−2 and s′ 
+
+> b
+
+∈ Sj−1, we have [Φ( s′
+
+> b
+
+, g ) −
+
+Φ( s′
+
+> a
+
+, g )] ≥ ∆Φ. By Lemma 1 (Layer Monotonicity of M πD ), since s′ 
+
+> a
+
+∈ Sj−2 and s′ 
+
+> b
+
+∈ Sj−1, we have [M πD (s′
+
+> b
+
+, g ) − M πD (s′
+
+> a
+
+, g )] ≥ 0. Therefore, we have a lower bound on the single-step cost difference: 
+
+M πD (sb, a ∗(sb), g ) − M πD (sa, a ∗(sa), g ) ≥ (1 − γ)∆ Φ.
+
+19 Published as a conference paper at ICLR 2026 Now, let’s consider the two shortest-path trajectories starting from s1 ∈ Sk−1 and s2 ∈ Sk.Let τ ∗ 
+
+> 1
+
+= (s1,0, s 1,1, . . . , s 1,k −1 = g) be the trajectory starting from s1,0 = s1. Let τ ∗ 
+
+> 2
+
+=(s2,0, s 2,1, . . . , s 2,k = g) be the trajectory starting from s2,0 = s2. By definition of the shortest-path policy, we have s1,t ∈ Sk−1−t and s2,t ∈ Sk−t for t ∈ [0 , k − 1] .The value functions are the sum of discounted negative costs: 
+
+V ∗(s1, g ) = −
+
+> k−2
+
+X
+
+> t=0
+
+γtM πD (s1,t , a ∗(s1,t ), g )
+
+V ∗(s2, g ) = −
+
+> k−1
+
+X
+
+> t=0
+
+γtM πD (s2,t , a ∗(s2,t ), g )
+
+Let’s analyze the difference V ∗(s1, g ) − V ∗(s2, g ):
+
+V ∗(s1, g ) − V ∗(s2, g ) = 
+
+> k−1
+
+X
+
+> t=0
+
+γtM πD (s2,t , a ∗(s2,t ), g ) −
+
+> k−2
+
+X
+
+> t=0
+
+γtM πD (s1,t , a ∗(s1,t ), g )= γk−1M πD (s2,k −1, a ∗(s2,k −1), g ) + 
+
+> k−2
+
+X
+
+> t=0
+
+γth
+
+M πD (s2,t , a ∗(s2,t ), g ) − M πD (s1,t , a ∗(s1,t ), g )
+
+i
+
+.
+
+For each term in the summation (for t ∈ [0 , k − 2] ), we have s1,t ∈ Sk−1−t and s2,t ∈ Sk−t.Applying our single-step cost difference result, we get: 
+
+M πD (s2,t , a ∗(s2,t ), g ) − M πD (s1,t , a ∗(s1,t ), g ) ≥ (1 − γ)∆ Φ.
+
+The last term for the τ ∗ 
+
+> 2
+
+trajectory is M πD (s2,k −1, a ∗(s2,k −1), g ). Since s2,k −1 ∈ S1, its successor is g ∈ S0. We know M πD ≥ 0. So we can lower bound the entire difference: 
+
+V π∗ 
+
+> W
+
+(s1, g ) − V π∗ 
+
+> W
+
+(s2, g ) ≥ γk−1 · 0 + 
+
+> k−2
+
+X
+
+> t=0
+
+γt(1 − γ)∆ Φ
+
+= (1 − γ)∆ Φ
+
+> k−2
+
+X
+
+> t=0
+
+γt
+
+= (1 − γ)∆ Φ
+
+1 − γk−1
+
+1 − γ
+
+= (1 − γk−1)∆ Φ.
+
+Since k ≥ 1 and γ ∈ (0 , 1) , the term (1 − γk−1) is strictly positive. As ∆Φ > 0, the entire lower bound is strictly positive. This completes the proof. 
+
+Theorem A.1 (Equivalence of the Q-learning Optimum and the Shortest Path) . Under Assump-tions A.1-A.4 and noting that rW (s, a ∗, g ) > r W (s, a bad , g ) (Sec A.4), the greedy policy with respect to Q∗ is the optimal shortest-path policy π∗.Proof. We must show that for any state (s, g ), the shortest-path action a∗ = π∗(.|s, g ) is the unique maximizer of the action-value function Q∗(s, a, g ) and is therefore, the same action chosen by 
+
+πgreedy (. | s, g ). That is, for any non-shortest-path action abad ̸ = a∗:
+
+Q∗(s, a ∗, g ) > Q ∗(s, a bad , g ).
+
+Let’s analyze the difference ∆Q = Q∗(s, a ∗, g ) − Q∗(s, a bad , g ). Let the successor states be s∗ =
+
+f (s, a ∗) and sbad = f (s, a bad ).
+
+∆Q =
+
+h
+
+rW (s, a ∗, g ) + γV ∗(s∗, g )
+
+i
+
+−
+
+h
+
+rW (s, a bad , g ) + γV ∗(sbad , g )
+
+i
+
+=
+
+h
+
+− M πD (s, a ∗, g ) + γV ∗(s∗, g )
+
+i
+
+−
+
+h
+
+− M πD (s, a bad , g ) + γV ∗(sbad , g )
+
+i
+
+=
+
+h
+
+M πD (s, a bad , g ) − M πD (s, a ∗, g )
+
+i| {z }
+
+> Term 1
+
++ γ
+
+h
+
+V ∗(s∗, g ) − V ∗(sbad , g )
+
+i| {z }
+
+> Term 2
+
+20 Published as a conference paper at ICLR 2026 We will now analyze the two terms of this expression. The first term, M πD (s, a bad , g ) − M πD (s, a ∗, g ), by part 2 of the proof in Sec. A.4, this term is guaranteed to be positive. We now analyze the second term, γ[V ∗(s∗, g ) − V ∗(sbad , g )] . By definition, the successor state s∗
+
+lies in a layer closer to the goal than sbad (i.e., d∗(s∗, g ) < d ∗(sbad , g )). It therefore follows directly from Lemma A.1 that 
+
+V ∗(sbad , g ) < V ∗(s∗, g ).
+
+Thus, the term V ∗(s∗, g ) − V ∗(sbad , g ) is strictly positive. The difference in Q-values, ∆Q, is the sum of a strictly positive term and a strictly positive term (Term 2). The sum is therefore strictly positive. 
+
+∆Q > 0 i.e Q∗(s, a ∗, g ) > Q ∗(s, a bad , g )
+
+This shows that for any state s, the shortest-path action a∗ ∼ π∗(a|s, g ) is the unique greedy action with respect to Q∗. Therefore, the greedy policy with respect to Q∗ must be the optimal shortest-path policy π∗.
+
+## B ADDITIONAL INFORMATION 
+
+B.1 OGBENCH T ASKS 
+
+• Antmaze datasets: Antmaze involves controlling a quadruped Ant robot with 8 degrees of freedom (DoF) to reach a given goal location in the maze. The agent must learn both high-level navigation and low-level locomotion skills purely from offline data. We perform experiments on 3 types of challenging mazes: antmaze-large-navigate , antmaze-giant-navigate and antmaze-large-explore .
+
+antmaze-giant is twice the size of the large and same size as antmaze-ultra in (Jiang et al., 2022) designed to substantially challenge long-horizon planning capabilities. Both 
+
+antmaze-large-navigate and antmaze-giant-navigate are collected with noisy expert SAC policies that repeatedly move towards randomly sampled goals (Park et al., 2024a). 
+
+antmaze-large-explore features extremely low quality yet high coverage data consisting of random exploratory trajectories. • Cube datasets: The cube environments involve manipulation of cube blocks using a robot arm. We perform experiments on 2 cube-play datasets which are collected using a scripted policy that repeatedly picks a cube and places it in other random locations or on another cube: cube-double-play (2 cubes) and cube-triple-play (3 cubes). During evaluation, the agent is required to perform cube moving, stacking, swapping or permutations according to the provided goal configuration. This requires learning generalizable pick-and-place operations with multiple objects and stitching across unstructured data to achieve this. The task horizon also increases with the number of cubes. We also perform experiments on the 
+
+cube-triple-noisy dataset which involves highly sub-optimal data with noisy transitions. • Puzzle datasets: These environments specifically test out the combinatorial generalization abilities of the agent (upto 224 puzzle configurations and a much larger state space due to robotic manipulation on the puzzle) under very long horizons. They require solving the Lights Out puzzle (Park et al., 2024a), which consists of a 2D grid with buttons in cells, where pressing buttons toggles the color the that button and buttons around it. The agent has to achieve an appropriate goal configuration of colors by pressing buttons by controlling a robot arm. We evaluate algorithms on play datasets of puzzle-4x4 , puzzle-4x5 and puzzle-4x6 ; and noisy datasets of puzzle-4x4 and puzzle-4x6 . These are particularly challenging tasks (Park et al., 2024a). • Scene datasets: The scene tasks challenge sequential, long-horizon planning. They in-volve manipulating diverse objects: a cube, a window, a drawer and two locks. scene-play 
+
+features a dataset collected using a scripted policy that randomly interacts with the objects. At test-time, the agent has to arrange objects into a given goal configuration. These tasks can involve up to 8 sub-tasks e.g. unlock a drawer, then open it, then put a cube in it and close it again, etc. The agent must therefore be able to stitch together multiple skills to 21 Published as a conference paper at ICLR 2026 achieve success. scene-noisy involves the same tasks but the dataset is of substantially lower quality. 
+
+> Figure 7: OGBench tasks.
+
+B.2 TOKAMAK TASKS 
+
+A tokamak (Figure 8) is a scientific device that uses electro-magnetic fields to confine extremely hot ionized gas called plasma in a toroidal chamber, with the aim of achieving controlled nuclear fusion It is considered the most promising experimental design for achieving commercial nuclear fusion at scale, opening up avenues for nearly unlimited clean energy. We use a dataset of raw sensor and actuator data collected from the DIII-D tokamak located in San Diego, CA, USA. Each trajectory corresponds to one plasma discharge, with a control frequency of 25 ms. A control task corresponds to tracking certain state variables of the plasma through the duration of a discharge. While we were not able to get experiment time on the reactor on short notice, we evaluated each RL algorithm using rollouts from a thoroughly tested and accurately learned model of plasma dynamics (Char et al., 2023; 2024) as a proxy. Each RL algorithm was evaluated based on how closely it tracks a given goal state of the plasma. The reward at each time-step during evaluation corresponds to the L2 distance between the goal variables to track and the actual quantities achieved through control. 
+
+> Figure 8: Tokamak fusion reactor from (Walker et al., 2020).
+
+22 Published as a conference paper at ICLR 2026 We evaluated each algorithm over 10 goals. The offline dataset size was roughly 50k samples after data cleaning and processing. The state and action spaces are outlined in the following table: 
+
+Category Variables 
+
+State Space 
+
+Scalar States: βN , Internal Inductance, Line Averaged Density, Loop Voltage, Stored Energy 
+
+Profile States: Electron Density, Electron Temperature, Pressure, Safety Factor, Ion Temperature, Ion Rotation Action Space Power Injected, Torque Injected, Total Deuterium Gas Injection, Total ECH Power Please refer to Abbate et al. (2021); Char et al. (2023; 2024) for detailed explanations of the specific variables and actuators. B.3 ADDITIONAL INFORMATION ON BASELINES 
+
+• For baselines provided in the OGBench (Park et al., 2024a) repository, we use the best hyperparameters provided in the paper. These include: GCBC, GCIVL, GCIQL, QRL, CRL and HIQL .• GCIQL : GCIQL is a goal-conditioned variant of Implicit Q Learning (Kostrikov et al., 2021) that fits the optimal Q∗ using expectile regression (Newey & Powell, 1987). GCIQL learns Q and V as follows: 
+
+LV
+
+> GCIQL
+
+(V ) = E(s,a )∼pD (s,a ), g ∼pD
+
+> mixed (g|s)
+
+ℓ2
+
+> κ
+
+  ¯Q(s, a, g ) − V (s, g ) ,
+
+LQ
+
+> GCIQL
+
+(Q) = E(s,a,s ′)∼pD (s,a,s ′), g ∼pD
+
+> mixed (g|s)
+
+h rW (s, a, g ) + γV (s′, g ) − Q(s, a, g )2i
+
+Here, ¯Q is the target Q function (Mnih et al., 2015), κ is the expectile and rW (s, a, g ) is the ORS reward. For policy extraction, we use deterministic policy gradient with a behavioral regularization ( DDPG + BC ) (Fujimoto & Gu, 2021): 
+
+JDDPG+BC (π) = E(s,a )∼pD (s,a ), g ∼pD 
+
+> mixed (g|s)
+
+[Q(s, π μ(s, g ), g ) + α log π(a | s, g )] 
+
+where πμ(s, g ) = Ea∼π(a|s,g )[a]. We use double-Q learning and normalize the Q values before policy extraction. • Go-Fresh (Mezghani et al., 2023): Go-Fresh involves 3 stages: Training the R-Net, a neural network that learns local temporal distances between states, using R-Net and R-Net embeddings to create a semi-parametric graph of the offline dataset and then training a policy. While training a policy, every 1000 iterations of training, Go-Fresh creates a new dataset where each tuple corresponds to a randomly sampled (s, g ) pair from the dataset. We noticed in initial experiments that even when Go-Fresh is trained using the same GCRL algorithm as ORS (GCIQL), overall success-rate was close to 0 across tasks. To ensure a fair and unbiased comparison, we modified the Go-Fresh codebase to have the same goal sampling strategy from OGBench (detailed in Appendix D of (Park et al., 2024a) and in the last item of this sub-section) used for all other baselines. This substantially improved performance and is required to produce non-negligible performance, as reported in Tables 1 and 2. Furthermore, noticing that Go-Fresh is tested on relatively simpler tasks compared to ours in their paper (Mezghani et al., 2023), we modify the following hyperparameters to account for the increased task difficulty, in addition to using best values for other hyperparameters: We used a memory capacity of 5000 on all tasks which we found to be sufficient (the graph building stage consistently produced a graph with less than 5000 nodes). We increased the R-Net size to an MLP of 64 units (we did not see an improvement in classification accuracy for large sizes) and used a local distance threshold τ = 10 on all tasks. We also see that weighing the local reward by a factor of 5 before summing it with the global reward gave better performance. • Goal sampling for all algorithms : The same goal-sampling method was used for all base-lines in this paper as well as ORS and all variations. Goals were sampled in three different ways according to probabilities from a categorical distribution defined as follows: 23 Published as a conference paper at ICLR 2026 
+
+– pD
+
+> cur
+
+(g|s): Dirac delta distribution centered at the current state s.
+
+– pD
+
+> traj
+
+(g|s): goal is sampled from future states of s from the same trajectory with uni-form sampling. 
+
+– pD
+
+> rand
+
+(g|s): goal is uniformly sampled from D.We provide information on the specific values used in Sec. B.6 and B.7 and Table 6. • n-step returns: We implement two ways of doing n-step returns in the critic with sparse rewards (where r(s, g ) = −1(s̸ = g) and t is the MDP timestep): 1. n-step GCIQL : Q(st, a t, g ) = Pt+n−1 
+
+> i=t
+
+r(st+i, g ) + γnQ(st+n, π (at+n|st+n, g ), g )
+
+2. GCIQL-OTA (based on the core idea in (Ahn et al., 2025)): 
+
+Q(st, a t, g ) = −1(st+n̸ = g) + γQ (st+n, π (at+n|st+n, g ), g )
+
+As evident, we use GCIQL as the base algorithm for n-step return algorithms. We provide the specific hyperparameters used for each task in Table 6. Please refer to Sec. B.7 for information on all other common hyperparameters. 
+
+Table 6: Specific hyperparameters for best performance with n-step GCIQL and GCIQL-OTA                                           
+
+> Dataset α(BC-coefficient) κ(Expectile) nγActor ( pD
+> cur , p D
+> traj , p D
+> rand )puzzle-4x6-play 1.0 0.9 25 0.995 (0, 1, 0) cube-triple-play 3.0 0.9 50 0.995 (0, 1, 0) antmaze-large-navigate 0.3 0.9 50 0.995 (0, 1, 0) antmaze-giant-navigate 0.3 0.9 50 0.995 (0, 1, 0) puzzle-4x6-noisy 0.03 0.9 25 0.995 (0, 1, 0) cube-triple-noisy 0.03 0.9 50 0.995 (0, 1, 0) antmaze-large-explore 0.01 0.9 50 0.995 (0, 0, 1)
+
+24 Published as a conference paper at ICLR 2026 B.4 TRAJECTORY VISUALIZATIONS : A NALYSED TRAJECTORIES 
+
+## 0 1 2 3 4
+
+Figure 9: Expert trajectories of varying lengths on antmaze-giant-navigate used for analysis in Sec. 3.2 and Sec. 5.1. The green dot represents the starting position and the star represents the goal. 
+
+B.5 TRAINING ITERATIONS 
+
+Table 7: Training iterations per task. All algorithms are trained for the same number of iterations. 
+
+Dataset Training Iterations 
+
+cube-double-play 1M puzzle-4x4-play 1M scene-play 1M puzzle-4x5-play 1M puzzle-4x6-play 1M cube-triple-play 2M antmaze-large-navigate 3M antmaze-giant-navigate 6M puzzle-4x4-noisy 1M scene-noisy 1M puzzle-4x6-noisy 1M cube-triple-noisy 1M antmaze-large-explore 6M 
+
+B.6 OCCUPANCY AND REWARD MODEL HYPERPARAMETERS 
+
+Table 8: Occupancy and reward-model hyperparameters. 
+
+Hyperparameter Value 
+
+Gradient steps 2M Optimizer Adam (Kingma & Ba, 2014) Learning rate 0.0003 Batch size 256 Architecture MLP MLP size {512, 512, 512, 512 }
+
+Nonlinearity GELU (Hendrycks & Gimpel, 2016) Layer normalization True Target net update rate (occupancy model) 0.005 Discount factor γ (occupancy model) 0.99 Flow steps 22 (antmaze-giant-navigate), 55 (antmaze-large-navigate), 45 (other tasks) Reward ( pD
+
+> cur
+
+, p D
+
+> traj
+
+, p D
+
+> rand
+
+) ratio for goal sampling (0.2, 0.5, 0.3) 
+
+We added a warm-start stage without bootstrapping to the occupancy model by training it to predict future states s+ distributed according to a geometric distribution over trajectory timesteps tτ ∼
+
+Geom (1 − γ) starting the current state s:
+
+Lpretrain (θ) = Estτ =x1∼D ,t τ ∼Geom (1 −γ),x0∼N (0 , I d),t ∼Unif([0 ,1]) 
+
+h
+
+∥vθ (t, s, a, x t) − (x1 − x0)∥22
+
+i
+
+(8) for the first 1M epochs and then training it using the bootstrapping loss in Sec. 4.1 for next next 1M epochs, however we did not see any consistent improvements from doing this. 25 Published as a conference paper at ICLR 2026 B.7 POLICY TRAINING HYPERPARAMETERS 
+
+We first list hyperparameters common to all algorithms in Table 9: 
+
+Table 9: Common hyperparameters for policy training. 
+
+Hyperparameter Value 
+
+Optimizer Adam (Kingma & Ba, 2014) Learning rate 0.0003 Batch size 1024 Architecture MLP MLP size (Actor and Critic) {512, 512, 512 }
+
+Nonlinearity GELU (Hendrycks & Gimpel, 2016) Layer normalization True Target critic update rate 0.005 Critic ( pD
+
+> cur
+
+, p D
+
+> traj
+
+, p D
+
+> rand
+
+) ratio for goal sampling (0.2, 0.5, 0.3) 
+
+We then provide specific hyperparameters used for ORS and Go-Fresh (which use GCIQL as the base algorithm to train policies) in Table 10: 
+
+Table 10: Specific hyperparameters for policy training: ORS and Go-Fresh                                                                           
+
+> Dataset α(BC-coefficient) κ(Expectile) γActor ( pD
+> cur , p D
+> traj , p D
+> rand )reward scaling for ORS (linear scaling x: ( r/x ))
+> puzzle-4x4-play 0.6 0.6 0.99 (0, 1, 0) 0.75 puzzle-4x5-play 0.6 0.6 0.99 (0, 0.5, 0.5) 0.75 puzzle-4x6-play 0.6 0.9 0.99 (0, 0.5, 0.5) 0.25 cube-double-play 0.3 0.75 0.99 (0, 0.5, 0.5) 0.25 cube-triple-play 0.3 0.9 0.99 (0, 0.5, 0.5) 0.25 scene-play 0.3 0.75 0.99 (0, 0.5, 0.5) 0.75 antmaze-large-navigate 0.15 0.6 0.995 (0, 1, 0) 2.0 antmaze-giant-navigate 0.1 0.6 0.995 (0, 1, 0) 2.0 puzzle-4x4-noisy 0.05 0.6 0.99 (0, 1, 0) 0.25 puzzle-4x6-noisy 0.05 0.75 0.99 (0, 1, 0) 0.25 cube-triple-noisy 0.03 0.75 0.99 (0, 0.5, 0.5) 1.0 scene-noisy 0.1 0.75 0.99 (0, 1, 0) 0.25 antmaze-large-explore 0.015 0.9 0.99 (0, 0.5, 0.5) 3.0
+
+B.8 WALL -CLOCK TIME 
+
+The average wall-clock time per iteration is as follows: 
+
+Method Component Time per iteration (ms) ORS Occupancy model 14 Reward function 8Policy training 6.5 GO-FRESH R-NET training 9.5 Policy training 7.2 
+
+GO-FRESH also has a graph computation time that ranges between 1.5-10 mins depending on the task and dataset. For default GCIQL, policy training takes 7.2 ms per iteration. All times were re-ported on a single NVIDIA RTX A6000 GPU. We typically see that reward function and occupancy model losses converge in around 500k iterations. R-Net training typically runs for 500k iterations. 26 Published as a conference paper at ICLR 2026 While ORS does lead to a slightly higher computational overhead, it also leads to a 2.3 × increase in performance over GCIQL, its base algorithm, and exhibits stronger performance than GO-FRESH on a variety of tasks. GO-FRESH requires training a distance classifier, training a graph memory and building a graph, each of which involves hyperparameter tuning for the size of the R-Net, number of edges in the graph, number of negative pairs for training the R-Net, distance threshold for the R-Net and careful weighing of local and global rewards during policy training. In contrast, ORS is simple to train, does not require storing a large graph in memory and is easy to tune. We agree that increasing the efficiency of ORS is an important direction for future work. 27

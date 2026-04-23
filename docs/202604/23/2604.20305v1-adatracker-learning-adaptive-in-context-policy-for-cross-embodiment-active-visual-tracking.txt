@@ -1,0 +1,425 @@
+Title: AdaTracker: Learning Adaptive In-Context Policy for Cross-Embodiment Active Visual Tracking
+
+URL Source: https://arxiv.org/pdf/2604.20305v1
+
+Published Time: Thu, 23 Apr 2026 00:38:30 GMT
+
+Number of Pages: 6
+
+Markdown Content:
+> IEEE ROBOTICS AND AUTOMATION LETTERS. PREPRINT VERSION. ACCEPTED APRIL, 2026 1
+
+# AdaTracker: Learning Adaptive In-Context Policy for Cross-Embodiment Active Visual Tracking 
+
+Kui Wu 1, Hao Chen 2, Jinzhu Han 3, Haijun Liu 4, Churan Wang 5, Yizhou Wang 6, Zhoujun Li 1, Si Liu 1 and Fangwei Zhong 3B
+
+Abstract —Realizing active visual tracking with a single unified model across diverse robots is challenging, as the physical constraints and motion dynamics vary drastically from one platform to another. Existing approaches typically train separate models for each embodiment, leading to poor scalability and limited generalization. To address this, we propose AdaTracker, an adaptive in-context policy learning framework that robustly tracks targets on diverse robot morphologies. Our key insight is to explicitly model embodiment-specific constraints through an Embodiment Context Encoder, which infers embodiment-specific constraints from history. This contextual representation dynamically modulates a Context-Aware Policy, enabling it to infer optimal control actions for unseen embodiments in a zero-shot manner. To enhance robustness, we introduce two auxiliary objectives to ensure accurate context identification and temporal consistency. Experiments in both simulation and the real world demonstrate that AdaTracker significantly outperforms state-of-the-art methods in cross-embodiment generalization, sample efficiency, and zero-shot adaptation. 
+
+Index Terms —Embodied Visual Tracking, In-context Rein-forcement Learning, Cross-Embodiment Generalization. 
+
+I. I NTRODUCTION 
+
+Embodied Visual Tracking (EVT) is a cornerstone of au-tonomous agents, requiring agents to actively follow targets in dynamic 3D environments, which has wide-ranging appli-cations in mobile robotics, assistant robotics, and aerial smart photography. Recent EVT methods have progressed from online rein-forcement learning [1] to offline paradigms and vision-language-action (VLA) frameworks [2], yet they remain optimized for fixed morphological configurations. Current policies are typically optimized for a fixed morphological 
+
+Manuscript received: January, 15, 2026; Revised March, 29, 2026; Accepted April, 14, 2026. This paper was recommended for publication by Editor Jens Kober upon evaluation of the Associate Editor and Reviewers’ comments. This work was supported by NSFC-62406010, Beijing Natural Science Foundation L252010, the Fundamental Research Funds for the Central Universities, and the State Key Lab of General Artificial Intelligence at Peking University. 
+
+Bindicates corresponding author 
+
+> 1
+
+Kui Wu, Zhoujun Li and Si Liu are with Beihang University, Beijing, China wukui@buaa.edu.cn 
+
+> 2
+
+Hao Chen is with City University of Macau, Macau, China 
+
+> 3
+
+Jinzhu Han and Fangwei Zhong are with the School of Artificial Intelligence, Beijing Normal University, Beijing, China 
+
+fangweizhong@bnu.edu.cn 
+
+> 4
+
+Haijun Liu is with Minzu University of China, Beijing, China 
+
+> 5
+
+Churan Wang is with Center for Data Science in Clinical Medicine, Peking University Third Hospital, Beijing, China 
+
+> 6
+
+Yizhou Wang is with School of Computer Science, Peking University, Beijing, China Digital Object Identifier (DOI): see top of this page. Deployments of AdaTracker on Diverse Robot    
+
+> 1234
+> 1234
+> UAV Indoor Tracking
+
+Wheel Robot Social Tracking 
+
+Quadruped Irregular Terrain Tracking      
+
+> 1234
+> 2341
+> 1
+> 2
+> 3
+> 4
+> … … 2
+> 1
+> 3
+> 4
+
+Fig. 1. AdaTracker enables a single, unified policy to perform Embodied Visual Tracking (EVT) across heterogeneous robotic platforms with diverse viewpoints and motion dynamics, achieving cross-embodiment generalization and robust real-world tracking without retraining or recalibration. 
+
+configuration. Consequently, a policy trained for a wheeled robot often fails catastrophically when deployed on a high-altitude drone or a trotting quadruped. This failure stems from coupled perception-control shifts: differing viewpoints and speed limits alter action decisions, while differing dynamics alter action effects, rendering the observation distribution non-stationary across platforms. Such “embodiment mismatch” forces robot-specific policy training, multiplying engineering efforts and preventing knowledge reuse across platforms with different viewpoints or dynamics. To bridge this gap, we present AdaTracker, an adaptive in-context tracking framework designed for zero-shot general-ization across heterogeneous robotic platforms. By inferring hidden physical constraints, such as camera height and speed  
+
+> arXiv:2604.20305v1 [cs.RO] 22 Apr 2026 IEEE ROBOTICS AND AUTOMATION LETTERS. PREPRINT VERSION. ACCEPTED APRIL, 2026 2
+
+limits from interaction history via the Embodiment Context Encoder, AdaTracker conditions a recurrent control policy on the inferred latent context, enabling seamless adaptation without manual fine-tuning or recalibration. Two auxiliary tasks, a supervised context identification objective and a self-supervised temporal consistency objective, further stabilize latent context learning. Our main contributions are: (1) We propose AdaTracker, an adaptive in-context tracking framework, enabling a policy to adaptively control heteroge-neous robots. (2) We extend the standard EVT benchmark to evaluate cross-embodiment generalization. Our method achieves the state-of-the-art (SOTA) performance against strong baselines. (3)We release an annotated cross-embodiment tracking dataset with 190k steps and a scalable generation pipeline. (4)We validate the approach through zero-shot transfer experiments on three distinct real-world robots, demonstrating practical cross-embodiment tracking capability. II. R ELATED WORK 
+
+Embodied Visual Tracking (EVT) . The EVT task requires an agent to actively control its motion to keep a target within the field of view. Prior EVT methods relied heavily on Deep Reinforcement Learning (DRL) with online interac-tion [1], [3]–[8], which is often computationally expensive and time-consuming. To improve efficiency, offline reinforcement learning (Offline RL) methods [9], [10] learn policies from pre-collected datasets, avoiding costly online data collection. More recently, Vision-Language-Action (VLA) models such as TrackVLA [2] have further advanced EVT by leveraging web-scale data and imitation learning to train robust tracking policies. In this work, we improve cross-embodiment general-ization without increasing online interaction cost. We adopt offline reinforcement learning paradigm and condition the control policy on the latent embodiment-context representation during training. 
+
+Cross-Embodiment Generalization. Recent studies ex-plore learning a unified policy [11] that transfers across robots with different dynamics and sensing. State-based ap-proaches [12] often leverage explicit embodiment descriptors and action-space matching, which may be difficult when the target embodiment is unknown, partially observed, or hard to align. Another line of work adapts from limited interac-tion via in-context RL/trajectory-conditioned policies [13]– [15] or context-conditioned dynamics models [16]. However, these context representations are typically learned to support prediction or system identification, and are not necessarily suitable as a conditioning signal for embodied visual tracking. In EVT, embodiment changes induce coupled shifts in both visual observations and action effects, making the closed-loop tracking policy highly sensitive to context drift. Consequently, directly encoding context into a latent vector may fail to serve as a reliable goal representation for tracking and can destabilize policy execution when used for conditioning. Moti-vated by this mismatch, we design a goal-aligned embodiment context using task-oriented auxiliary objectives tailored to EVT: context identification (camera height prediction and reward prediction) and temporal consistency, then condition the tracking policy on this context [17] to improve closed-loop robustness under distribution shift. III. ADAPTIVE POLICY LEARNING VIA SELF -A WARE 
+
+CONTEXT 
+
+We follow the Embodied Visual Tracking setting [10], [18], where an agent uses ego-centric RGB observations to output actions with a learned policy πθ to keep the target in view. At test time, the policy has no priors of the robot configuration, so it must adapt its behavior to different viewpoints and motion dynamics. We argue that cross-embodiment generalization can be achieved by conditioning the policy on inferred embodi-ment attributes and action-induced feedback. Accordingly, our framework integrates self-aware adaptation via two stages: 
+
+Embodiment Context Encoding and Context-Conditioned Policy Learning .
+
+A. Embodiment Context Encoding 
+
+Following [10], we use a Visual Foundation Model (VFM;e.g., SAM2 [19]) to produce text-prompted segmenta-tion masks (e.g., “person, obstacles”), which mitigates visual-induced domain shift. An initialization step automatically selects the target and renders it with a consistent pixel value. We stack masks over the past K steps (Fig. 2) as the context encoding input to the RL policy. At deployment, VFM infer-ence is pipelined with the RL controller at ≈20 Hz (Nvidia RTX A3000), meeting the latency requirements of onboard deployment. Segmentation provides a largely morphology-agnostic se-mantic input, but cross-embodiment transfer additionally re-quires awareness of embodiment-dependent dynamics (e.g., camera height, inertia, actuation response). We therefore learn an Embodiment Context Encoder that infers a compact latent vector from short histories of masks and actions. At time 
+
+t, we form Ht = {(mτ , aτ )}t−1 
+
+> τ=t−K
+
+, where mτ is the text-conditioned mask and aτ is the normalized action. fψ applies a convolutional backbone and a single-layer LSTM [20], [21], producing zt = fψ (Ht ), a summary of how the platform re-sponds to actions under its viewpoint and dynamic constraints. To encourage zt to encode embodiment-relevant factors, we train fψ with two auxiliary objectives. 
+
+1) Context identification (supervised): An auxiliary MLP head gφ predicts the immediate reward and camera height: ˆrt , ˆht = gφ (zt ). We use mean-squared error losses 
+
+Lreward = E  ˆrt − rt
+
+2, Lheight = E  ˆht − h2 (1) where rt is the environment reward (Section IV-A4) and 
+
+h is the episode-level camera height. Reward prediction ties 
+
+zt to action-induced dynamics; height prediction encourages viewpoint sensitivity without explicit calibration. 
+
+2) Context Temporal Consistency (self-Supervised): Since embodiment is fixed within an episode, we regularize zt to stabilize quickly early in the rollout. For episode e of length IEEE ROBOTICS AND AUTOMATION LETTERS. PREPRINT VERSION. ACCEPTED APRIL, 2026 3Prompt :
+
+> {Person, Obstacles }
+
+## AdaTracker : Learning Adaptive In -Context Policy for Cross -Embodiment Active Visual Tracking 
+
+> Mask
+> Encoder
+> Sequence
+> Encoder
+> Actor
+
+VFM         
+
+> 𝑜 !,𝑜 ",𝑜 #..𝑜 $
+> 𝑚 !,𝑚 ",𝑚 #..𝑚 $
+> 𝑚 !
+
+𝑧 !
+
+Embodiment Context Encoder 
+
+Context -Conditioned Policy Latent Space      
+
+> 𝑧 !
+> 𝑧 "
+> 𝑧 #
+> 𝑧 $𝑧 !
+> 𝑧 "
+> 𝑧 #
+> 𝑧 $
+> Embodiment 1 Embodiment 2
+> Camera View Pred.
+> Reward Pred.
+> MLP
+> 1Context Identification 2Context Temporal Consistency
+> 𝑧 !
+> 𝑡 𝑧 "
+> 𝑧 %
+
+… 𝑧 ̅ (')  
+
+> Initial 𝑇 steps
+> 𝑧 )
+
+…       
+
+> 𝐿 "#$% =1
+> 𝐾 '𝐶𝑜𝑠𝑖𝑛𝑒𝑆𝑖𝑚 (𝑧 ̅&,𝑧 !)
+> '
+> (
+
+Auxiliary Task for Context Encoder            
+
+> 𝑐𝑜𝑛𝑐𝑎𝑡 (𝑥 )
+> "$$ ,𝑧 !)
+> 𝐿 *&+,*! =𝐿2𝑁𝑜𝑟𝑚 (ℎ&,ℎ<!)
+> 𝐿 -&./-0 =𝐿2𝑁𝑜𝑟𝑚 (𝑟 !,𝑟 ̂!)
+> 𝑎 !Text -Conditioned Mask
+> Latent Context
+> Vector
+> Past 𝑘 steps
+> Critic Current step
+
+𝐻 ! 
+
+> (e.g., Grounded -SAM)
+
+Diverse Context Input      
+
+> ~ 2 m /s
+> ~ 1 m /s
+> ~ 3 m /s
+> Action
+> Action
+> Action
+> (𝑎 !"#:%"&,𝑚 !"#:%"&)
+> …
+> Context Encoder
+
+Perception 
+
+> (VFM)
+
+Fig. 2. Our framework learns a single, unified policy capable of zero-shot transfer across diverse robot morphologies. The Embodiment Context Encoder (Top Center) infers latent context zt from historical mask-action pairs via two auxiliary tasks, conditioning the Recurrent Policy (Bottom Center) for adaptive cross-embodiment adaptation. 
+
+Te, we define the episode-average context ¯ z(e) = 1
+
+Te ∑Te
+
+t=1 z(e)
+
+t
+
+and penalize deviations of the first K steps from this average: 
+
+Lcons = Ee
+
+"
+
+1 − 1
+
+K
+
+K
+
+# ∑
+
+t=1
+
+CosineSim (¯z(e)
+
+t , z(e)
+
+#
+
+(2) with K ≪ Te. This constraint is applied only within each episode, promoting fast identification while allowing different embodiments to occupy distinct regions of the context space. Overall, the representation loss is Lrep = Lreward + Lheight +
+
+Lcons . At deployment, we discard gφ and use fψ to compute 
+
+zt online. 
+
+B. Context-Conditioned Policy Learning 
+
+Given the inferred embodiment context zt , we learn a single recurrent policy that adapts its control strategy across hetero-geneous platforms by conditioning decision-making on zt .
+
+1) Policy architecture.: At time t, the current mask mt is encoded by a convolutional backbone: xcnn 
+
+t = CNN (mt ). In parallel, the context encoder produces zt from recent mask-action history. We concatenate both features and update a recurrent module: ut = concat  xcnn 
+
+t , zt
+
+
+
+xt , (ht , ct ) = LSTM  ut , (ht−1, ct−1). (3) 
+
+xt serves as the shared input to the actor-critic network, enabling context-conditioned behavior adjustment. 
+
+2) Optimize policy network via Offline RL.: We adopt Con-servative Q-Learning within the Soft Actor-Critic framework (CQL-SAC) [9], comprising critic Qθ and actor Vφ . The CQL-SAC agent comprises a critic network Qθ , where Qθ
+
+estimates state–action values, and Vφ represents the control policy, where θ and φ denote network parameters. In addition, CQL-SAC employs an entropy regularization coefficient α to control the level of exploration. The Q-functions are updated by minimizing the following objective: 
+
+LD = Es
+
+
+
+log ∑
+
+a
+
+exp (Qi
+
+θ (s, a)) − Ea∼πφ (a|s)[Qi
+
+θ (s, a)] 
+
+
+
++ 12 Es,a,s′
+
+h 
+
+Qi
+
+θ (s, a) −
+
+
+
+r + γEa′∼πφ
+
+Qmin 
+
+ s′, a′
+
+−α log πφ
+
+ a′ | s′ 2i
+
+(4) where i ∈ { 1, 2}, Qmin = min i∈{ 1,2}Qi
+
+θ and Qi
+
+θ share the same structure. γ is the discount factor, πφ is the policy that derived from the actor network Vφ . The first term is the CQL regularization term, which encourages the Q-function to be close to the log-density of the data distribution, and the second term is the standard SAC objective. The actor is optimized to maximize Q-value while preserv-ing entropy: 
+
+Lactor = Es∼D,a∼πφ
+
+h
+
+α log πφ (a|s) − Qmin (s, a)
+
+i
+
+(5) We jointly optimize the context encoder fψ and the policy 
+
+πφ on the offline dataset. 
+
+C. Scalable Cross-Embodiment Data Generation 
+
+To support this architecture and complement the spar-sity of cross-embodiment tracking data, we develop an in-teraction API on top of the previous EVT task simula-tor [22], [23], enabling scalable cross-embodiment tracking data generation with configurable embodiment parameters. In this paper, we collect 190K step trajectories for train-ing, featuring embodiment-space augmentation across cam-era heights Htrain = {0.5m, 1.0m, 1.7m} and velocity limits 
+
+Vtrain ∈ [0.8, 1.5] m/s. We select Htrain and Vtrain to cover rep-resentative configurations across common mobile platforms. To evaluate generalization beyond the training distribution, we test on out-of-distribution embodiments (Table II) with higher viewpoints (up to 3.0 m) and extreme speeds (0.3 m/s and 3.0 m/s). IV. E XPERIMENTS 
+
+Prior EVT works evaluate tracking under fixed robot settings; we instead emphasize cross-embodiment generalization and 
+
+sim-to-real transfer , studying: (Q1) zero-shot generalization across viewpoints and kinematic limits; (Q2) comparison against classical, online-adaptive, and SOTA baselines; and 
+
+(Q3) real-world transfer to heterogeneous platforms. IEEE ROBOTICS AND AUTOMATION LETTERS. PREPRINT VERSION. ACCEPTED APRIL, 2026 4
+
+A. Experiment Setup 1) Virtual Environments: We follow the EVT bench-mark [10] and evaluate on five published simulated scenes: SimpleRoom, ParkingLot, UrbanCity, UrbanRoad, and 
+
+SnowVillage , which cover diverse appearance and challenges (e.g., low light, clutter, and uneven terrain). 
+
+2) Embodiment Configurations: We customize 16 kinds of embodiments by varying camera height and kinematic con-straints. Table I reports results averaged over all embodiments in each environment, while Table II breaks down performance across embodiments in SimpleRoom to isolate embodiment effects. 
+
+3) Action space and low-level control: All embodiments share the same mid-level action interface: the policy outputs velocity commands. We vary the action space across embodi-ments by imposing embodiment-specific bounds (Table II). In simulation, an interpolation module converts the commanded velocity into simulator control inputs by smoothly tracking the desired base motion. On real robots, we use the platform’s built-in locomotion controller. Rather than engineering per-embodiment action-interface adapters, we argue that a truly scalable cross-embodiment policy should adapt its own control behavior to varying dynamics via context inference, which is precisely what the Embodiment Context Encoder achieves. The mid-level velocity interface thus provides a portable abstraction natively supported across heterogeneous platforms. 
+
+4) Task Setting: We adopt the standard EVT protocol [10], [23]: episodes last up to 500 steps (50 episodes per embodi-ment); success requires the target within 90 ◦ FOV and 7.5 m; failure is declared after 50 consecutive lost steps. The step reward is: 
+
+rt = 1 − |ρt − ρ∗|
+
+ρmax 
+
+− |θt − θ ∗|
+
+θmax 
+
+where (ρt , θt ) is the target’s relative polar position, (ρ∗, θ ∗) = (2.5 m , 0◦) is the desired tracking pose and (ρmax , θmax ) = (7.5m, ±45 ◦) denoting the maximum distance and bearing deviations considered in the task. 
+
+5) Evaluation Metrics: In simulation, we report Accumu-lated Reward (AR) (mean return per episode), Episode Length (EL) (mean steps), and Success Rate (SR) [10], [23]. In real-world evaluation, ground-truth pose is unavailable, so we report the Mean Reward (MR) to replace the AR metric. Specifically, we modify the step reward calculation by using the center and size deviations between the real-time target’s bounding box Bt and the initial Binit :
+
+MR = 1
+
+L
+
+> L
+
+# ∑
+
+> 0
+
+Rdev (t), Rdev = 11 + ∆c(Bt , Binit ) + ∆s(Bt , Binit )
+
+where ∆c(Bt , Binit ) = ∥ct − cinit ∥2 , ∆s(Bt , Binit ) =
+
+∥[wt , ht ] − [winit , hinit ]∥2 , and c denotes the normalized box center while (w, h) denote normalized width and height. 
+
+6) Baselines.: We compare against methods representing classical control, online adaptation, and recent SOTA ap-proaches: (1) PID + Video Tracker : a conventional pipeline that uses a passive video tracker for target localization (SAM2 [24] + GroundingDINO [25]) and a PID controller for motion control. (2) Online RL : an online RL agent [1] fine-tuned for each embodiment configuration in a sequential (continual) manner, serving as an embodiment-specific adapta-tion baseline. (3) Offline EVT [10]: previous offline-RL SOTA for EVT. (4) TrackVLA [2]: recent SOTA vision-language-action model. 
+
+B. Results on Simulation 1) Comparative Study in Unseen Environments: We evalu-ate zero-shot generalization by training on SimpleRoom (used for data collection) and testing on four unseen environments spanning indoor to snowy outdoor scenes. Table I reports performance averaged over 16 embodiment configurations per environment, measuring cross-embodiment robustness. Overall, AdaTracker achieves the best results across all environments, demonstrating strong robustness to both en-vironmental shift and embodiment variation. PID + Video Tracker is stable but consistently weaker: although strong perception (e.g., SAM2 [24], GroundingDINO [25]) improves target localization, a fixed PID controller is hard to tune across embodiments and accumulates errors after brief tar-get losses. Online RL remains sensitive to viewpoint and dynamics changes under cross-embodiment evaluation, and also exhibits worse environmental generalization due to the direct use of RGB observations. Notably, under the sequential continual fine-tuning, we observe performance degradation on previously visited configurations, consistent with catastrophic forgetting and limited transfer across embodiments. Track-VLA is competitive near its training distribution but degrades under out-of-distribution embodiments, consistent with Ta-ble II. Offline EVT attains comparable EL and SR in some environments but substantially lower AR, suggesting weaker preference for high-reward tracking states under distribution shift. 
+
+2) Detailed Analysis of Cross-Embodiment Generalization: 
+
+To isolate embodiment effects from environmental factors, we report per-configuration results in SimpleRoom (Table II). The table details the 16 embodiment configurations utilized in Table I by sweeping camera height and target speed, including both in-distribution and OOD settings. We test camera heights 
+
+Htest = {0.3, 1.0, 1.7, 3.0} m and target maximum moving speed up to 3 .0 m/s, requiring extrapolation to extreme view-points and faster dynamics beyond the training distribution. 
+
+Viewpoint adaptation. TrackVLA exhibits a pronounced viewpoint gap: while it performs well at low camera heights, its success rate drops to 0.06 at higher viewpoints. In con-trast, AdaTracker maintains consistently strong performance (SR ≥ 0.90) across all heights, indicating that the context encoder effectively captures perspective-dependent factors and conditions the policy accordingly. 
+
+Dynamics adaptation. Under faster target motion (e.g., 3.0 m/s), TrackVLA exhibits insufficient responsiveness un-der high-speed target motion and Offline EVT often pro-duces suboptimal control (e.g., AR ≤ 40), suggesting limited embodiment-aware adaptation. Offline EVT achieves reason-able EL/SR in several configurations, but its markedly lower AR indicates weaker preference for high-reward tracking states, which we attribute to the lack of context inference. IEEE ROBOTICS AND AUTOMATION LETTERS. PREPRINT VERSION. ACCEPTED APRIL, 2026 5
+
+TABLE I QUANTITATIVE RESULTS ACROSS UNSEEN VIRTUAL ENVIRONMENTS (AR/EL/SR FORMAT ), AVERAGED OVER 16 EMBODIMENT CONFIGURATIONS PER ENVIRONMENT .Methods SimpleRoom Parking Lot UrbanCity UrbanRoad Snow Village Mean PID + Video Tracker 76/322/0.58 -87/211/0.34 -22/289/0.46 -168/207/0.28 -113/218/0.32 -63/249/0.40 Online RL -32/215/0.34 -168/197/0.16 -172/189/0.22 -178/145/0.14 -189/169/0.06 -148/183/0.18 TrackVLA 128/396/0.62 -53/319/0.47 -4/340/0.54 -78/324/0.47 49/303/0.38 8/336/0.50 Offline EVT 204/451/0.76 16/446/0.78 34/477/0.84 1/446/0.79 107/326/0.59 72/429/0.75 
+
+AdaTracker (Ours) 368/492/0.98 152/488/0.92 212/478/0.94 163/398/0.87 154/357/0.82 209/443/0.91 
+
+TABLE II PER -EMBODIMENT RESULTS IN SimpleRoom (AR/EL/SR), ISOLATING CAMERA HEIGHT AND TARGET SPEED ACROSS IN -DISTRIBUTION AND OOD 
+
+> CONFIGURATIONS
+
+.
+
+Method Camera Height Target Speed 0.5 m/s 1.0 m/s 2.0 m/s 3.0 m/s Mean ± std 
+
+PID+Video Tracker 0.3m 362/496/0.98 35/390/0.58 -21/261/0.45 -44/180/0.35 1.0m 370/496/0.98 40/385/0.55 -32/255/0.40 -33/185/0.38 76/322/0.58 1.7m 391/500/1.0 40/395/0.62 -13/270/0.50 -37/190/0.42 ±192/ ±213/ ±0.41 3.0m 198/302/0.6 25/375/0.52 -25/275/0.52 -40/195/0.40 Online RL 0.3m -45/221/0.26 -47/220/0.24 -35/211/0.32 -23/260/0.56 1.0m -40/205/0.20 -49/206/0.18 -44/191/0.36 -10/260/0.48 -32/215/0.34 1.7m -37/204/0.22 -32/197/0.24 -10/193/0.40 -15/248/0.52 ±33/ ±65/ ±0.12 3.0m -49/213/0.24 -41/208/0.22 -19/203/0.44 -16/198/0.54 TrackVLA 0.3m 296/500/1.0 379/500/1.0 326/500/1.0 85/433/0.7 1.0m 318/500/1.0 387/500/1.0 268/463/0.76 32/383/0.4 128/396/0.62 1.7m -54/493/0.96 89/461/0.86 67/352/0.44 19/381/0.46 ±170/ ±118/ ±0.38 3.0m -73/198/0.06 -49/178/0.0 -9/267/0.22 -40/227/0.06 Offline EVT 0.3m 200/491/0.94 173/495/0.94 66/468/0.82 27/488/0.92 1.0m 311/496/0.98 270/490/0.94 111/444/0.6 40/351/0.28 204/451/0.77 1.7m 391/500/1.0 370/500/1.0 340/498/0.98 277/500/1.0 ±133/ ±76/ ±0.30 3.0m 337/484/0.9 269/456/0.7 91/311/0.28 4/259/0.08 
+
+AdaTracker (Ours) 
+
+0.3m 324/500/1.0 336/500/1.0 240/433/0.96 115/494/0.94 1.0m 432/500/1.0 423/500/1.0 385/495/0.96 282/498/0.98 368/492/0.98 
+
+1.7m 464/500/1.0 451/500/1.0 424/496/0.98 369/497/0.96 ±94/ ±17/ ±0.03 3.0m 454/500/1.0 433/491/0.96 409/488/0.96 339/476/0.90 
+
+AdaTracker remains robust at high speeds (e.g., SR up to 0.98), demonstrating effective adaptation to changing dynamics and kinematic constraints. Overall, TrackVLA and Offline EVT perform well in configurations close to their training conditions but degrade substantially under embodiment shifts. AdaTracker is consis-tently strong across the full grid and achieves the best mean AR/EL/SR. 
+
+TABLE III 
+
+ABLATION STUDY . WE REPORT MEAN AR/EL/SR OF ADA TRACKER AND VARIANTS THAT REMOVE Context Identification task , Temporal Consistency task , entire Embodiment Context Encoding AND THE LSTM structure .AR/EL/SR 
+
+Ours 368/492/0.98 
+
+Ours w/o Context Identification 277/401/0.76 Ours w/o Context Temporal Consistency 282/383/0.72 Ours w/o Embodiment Context Encoding 196/324/0.62 Ours w/o LSTM 172/311/0.60 
+
+3) Ablations: To evaluate the contribution of each compo-nent in AdaTracker, we perform ablations and report the aver-age of three metrics over 16 embodiment configurations (Ta-ble III). Removing either the Context Identification or Context Temporal Consistency task degrades performance and often yields poorly tuned control (e.g., overshooting/oscillations). We also remove the entire Embodiment Context Encoding 
+
+and fine-tune the single motion control policy on data pooled across all training embodiments. Without explicit context, the policy becomes unstable under extreme viewpoints and sudden direction change and often fails to re-center the target. We attribute this to pooled training inducing ambiguous, multi-modal action requirements across embodiments; without con-text to disambiguate which high-reward state/action mapping applies, the policy cannot reliably predict appropriate ac-tions. Finally, ablating the LSTM further reduces long-horizon tracking performance, indicating the importance of temporal aggregation for stable context estimation. 
+
+C. Real-world Cross-Embodiment Evaluation 
+
+We deploy our policy directly onto three robot platforms without any fine-tuning, including Wheeled Robot, Quadruped robot and Drone. These experiments assess the agent’s ability to adapt to real-world dynamics, varying camera perspectives, and environmental disturbances. IEEE ROBOTICS AND AUTOMATION LETTERS. PREPRINT VERSION. ACCEPTED APRIL, 2026 6
+
+TABLE IV REAL -WORLD PERFORMANCE COMPARISON OF ADA TRACKER AND 
+
+OFFLINE EVT ACROSS THREE DISTINCT ROBOTIC PLATFORMS .
+
+Platform Method MR EL SR 
+
+Wheeled Robot Ours 0.86 ± 0.04 725 ± 23 1.0 Offline EVT 0.82 ± 0.12 726 ± 22 1.0 Quadruped Robot Ours 0.84 ±0.06 1120 ± 15 1.0 Offline EVT 0.66 ± 0.26 626 ± 278 0.60 Drone Ours 0.83 ± 0.12 1321 ± 213 0.80 Offline EVT 0.42 ± 0.14 454 ± 28 0.00 
+
+1) Evaluation Setting: We evaluate the generalization across three challenge real-world scenarios, including indoor corridor, social crowds, and irregular terrain, as shown in Figure 1. During evaluation, the target person follows an S-shaped trajectory, forcing the robot to perform continuous turning and velocity adjustments. We conduct 5 trials for each embodiment. 
+
+2) Results: Table IV compares AdaTracker with Offline EVT , which is selected as the real-world baseline due to its comparable simulation performance and lightweight infer-ence suitable for on-board deployment. While both methods perform well on the wheeled robot, AdaTracker consistently achieves higher MR and maintains high SR across all plat-forms. Compared to Offline EVT, AdaTracker explicitly infers embodiment context and conditions the policy on this latent context, enabling adaptive control under platform-dependent viewpoint and dynamics changes. This difference is most evident on the quadruped and UAV. Offline EVT degrades substantially on the quadruped, where irregular terrain induces a larger viewpoint shift when the target moves along a slope; without explicit context inference, the policy tends to produce suboptimal corrective actions and loses stable alignment. The gap further widens on the drone, where significant inertial effects and camera shake caused by the aerial viewpoint in-troduce fast ego-motion and rapid scale/pose changes, further amplifying the mismatch between the training conditions and real-world deployment. As a result, Offline EVT often fails to re-stabilize tracking, leading to substantially lower MR and SR. In contrast, AdaTracker remains robust under these disturbances due to embodiment-context-conditioned control. V. C ONCLUSION AND DISCUSSION 
+
+Embodiment differences across and within robot deploy-ments make per-platform retraining costly. AdaTracker ad-dresses this by modeling embodiment variation via a compact latent context, enabling a single tracking policy to transfer across heterogeneous platforms. Our results show that purely RL-based solutions remain sensitive to condition changes, while scaling model capacity alone is also suboptimal. Future work will explore conditioned RL to unify diverse mobile tasks into a single general-purpose motion control policy via the naturally extensible mid-level velocity interface. REFERENCES [1] F. Zhong, P. Sun, W. Luo, T. Yan, and Y. Wang, “Ad-vat+: An asymmetric dueling mechanism for learning and understanding visual active tracking,” IEEE Transactions on Pattern Analysis and Machine Intelligence , vol. 43, no. 5, pp. 1467–1482, 2019. [2] S. Wang, J. Zhang, M. Li, J. Liu, A. Li, K. Wu, F. Zhong, J. Yu, Z. Zhang, and H. Wang, “Trackvla: Embodied visual tracking in the wild,” in CoRL , pp. 4139–4164, PMLR, 2025. [3] W. Luo, P. Sun, F. Zhong, W. Liu, T. Zhang, and Y. Wang, “End-to-end active object tracking and its real-world deployment via reinforcement learning,” IEEE Transactions on Pattern Analysis and Machine Intelli-gence , vol. 42, no. 6, pp. 1317–1332, 2020. [4] W. Zhang, K. Song, X. Rong, and Y. Li, “Coarse-to-fine uav target tracking with deep reinforcement learning,” IEEE Transactions on Automation Science and Engineering , vol. 16, no. 4, pp. 1522–1530, 2018. [5] M. Xi, Y. Zhou, Z. Chen, W. Zhou, and H. Li, “Anti-distractor active object tracking in 3d environments,” IEEE Transactions on Circuits and Systems for Video Technology , vol. 32, no. 6, pp. 3697–3707, 2021. [6] J. Li, J. Xu, F. Zhong, X. Kong, Y. Qiao, and Y. Wang, “Pose-assisted multi-camera collaboration for active object tracking,” in AAAI , vol. 34, pp. 759–766, 2020. [7] A. Devo, A. Dionigi, and G. Costante, “Enhancing continuous control of mobile robots for end-to-end visual active tracking,” Robotics and Autonomous Systems , vol. 142, p. 103799, 2021. [8] F. Zhong, X. Bi, Y. Zhang, W. Zhang, and Y. Wang, “Rspt: reconstruct surroundings and predict trajectory for generalizable active object track-ing,” in AAAI , pp. 3705–3714, 2023. [9] A. Kumar, A. Zhou, G. Tucker, and S. Levine, “Conservative q-learning for offline reinforcement learning,” NeurIPS , vol. 33, pp. 1179–1191, 2020. [10] F. Zhong, K. Wu, H. Ci, C. Wang, and H. Chen, “Empowering embodied visual tracking with visual foundation models and offline rl,” in ECCV ,pp. 139–155, 2024. [11] A. O’Neill, Rehman, et al. , “Open x-embodiment: Robotic learning datasets and rt-x models : Open x-embodiment collaboration0,” in ICRA ,pp. 6892–6903, 2024. [12] C. Sferrazza, D.-M. Huang, F. Liu, J. Lee, and P. Abbeel, “Body transformer: Leveraging robot embodiment for policy learning,” in 
+
+CoRL , 2024. [13] J. Grigsby, L. Fan, and Y. Zhu, “AMAGO: Scalable in-context reinforce-ment learning for adaptive agents,” in ICLR , 2024. [14] M. Fu, H. Huang, et al. , “Icrt: In-context imitation learning via next-token prediction,” in ICRA , 2025. [15] C. Xu, B. Zhong, Q. Liang, Y. Zheng, G. Li, and S. Song, “Less is more: Token context-aware learning for object tracking,” in AAAI , pp. 8824– 8832, 2025. [16] K. Lee, Y. Seo, S. Lee, H. Lee, and J. Shin, “Context-aware dynamics model for generalization in model-based reinforcement learning,” in 
+
+ICML , pp. 5757–5766, PMLR, 2020. [17] M. Liu, M. Zhu, and W. Zhang, “Goal-conditioned reinforcement learning: Problems and solutions,” arXiv preprint arXiv:2201.08299 ,2022. [18] F. Zhong, P. Sun, W. Luo, T. Yan, and Y. Wang, “Towards distraction-robust active visual tracking,” in ICML , pp. 12782–12792, PMLR, 2021. [19] Y. Cheng, L. Li, Y. Xu, X. Li, Z. Yang, W. Wang, and Y. Yang, “Segment and track anything,” arXiv preprint arXiv:2305.06558 , 2023. [20] K. He, X. Zhang, S. Ren, and J. Sun, “Deep residual learning for image recognition,” in CVPR , pp. 770–778, 2016. [21] Y. LeCun, L. Bottou, Y. Bengio, and P. Haffner, “Gradient-based learning applied to document recognition,” Proceedings of the IEEE , vol. 86, no. 11, pp. 2278–2324, 1998. [22] W. Qiu, F. Zhong, Y. Zhang, S. Qiao, Z. Xiao, T. S. Kim, Y. Wang, and A. Yuille, “Unrealcv: Virtual worlds for computer vision,” in ACM MM ,pp. 1221–1224, 2017. [23] F. Zhong, K. Wu, C. Wang, H. Chen, H. Ci, Z. Li, and Y. Wang, “Unrealzoo: Enriching photo-realistic virtual worlds for embodied ai,” in ICCV , pp. 5769–5779, 2025. [24] N. Ravi, V. Gabeur, et al. , “SAM 2: Segment anything in images and videos,” in The Thirteenth International Conference on Learning Representations , 2025. [25] S. Liu, Z. Zeng, T. Ren, F. Li, H. Zhang, J. Yang, Q. Jiang, C. Li, J. Yang, H. Su, et al. , “Grounding dino: Marrying dino with grounded pre-training for open-set object detection,” in ECCV , pp. 38–55, Springer, 2024.

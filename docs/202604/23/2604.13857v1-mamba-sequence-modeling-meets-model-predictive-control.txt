@@ -1,0 +1,1062 @@
+Title: Mamba Sequence Modeling meets Model Predictive Control
+
+URL Source: https://arxiv.org/pdf/2604.13857v1
+
+Published Time: Thu, 16 Apr 2026 01:10:29 GMT
+
+Number of Pages: 13
+
+Markdown Content:
+> .
+
+# Mamba Sequence Modeling meets Model Predictive Control 
+
+M. Cevaal 1, T.O. de Jong 2 (Student Member, IEEE), M. Lazar 2 (Senior Member, IEEE) 
+
+> 1Tilburg University, The Netherlands
+> 2Eindhoven University of Technology, The Netherlands CORRESPONDING AUTHOR: M. Cevaal (e-mail: m.cevaal@tilburguniversity.edu)
+
+ABSTRACT In this paper, we consider the design of Model Predictive Control (MPC) algorithms based on Mamba neural networks. Mamba is a neural network architecture capable of sub-quadratic computational scaling in sequence length with state-of-the-art modeling capabilities. We provide a consistent and complete mathematical description of the Mamba neural network is provided. Then, adjustments and optimizations are made to construct a decoder-only Mamba multi-step predictor for MPC and an input-output formulation is given for sequence-to-sequence modeling of dynamical systems. The performance of Mamba-MPC is evaluated on several numerical examples and compared to a Long-Short-Term-Memory based MPC (LSTM-MPC) equivalent. First, a Single-Input-Single-Output (SISO) Van der Pol oscillator is considered, where stability, reference tracking, and noise robustness are evaluated. Then, a MIMO Four Tank setup is introduced where Multiple-Input-Multiple-Output (MIMO) reference tracking is evaluated. Lastly, Mamba-MPC is implemented on a physical Quanser Aero2 setup for closed-loop reference tracking. The results demonstrate that Mamba-MPC is able to stabilize and track a reference for SISO and MIMO systems, both in simulation and on a physical setup. Moreover, Mamba-MPC consistently outperforms LSTM-MPC in predictive control and is significantly computationally faster. 
+
+INDEX TERMS Model predictive control, Neural networks, Recurrent neural networks, Machine learning, Data-driven modeling 
+
+I. INTRODUCTION 
+
+Model Predictive Control (MPC) is a highly successful advanced control methodology which can be merged with 
+
+Neural Networks (NN) as predictors and thus leverage their universal approximation properties [1] for closed-loop control. Particularly when operating on complex nonlinear systems, this is an interesting approach because accurate first-principles models are often difficult to obtain. Neverthe-less, a crucial limiting factor for the successful application of NN within the MPC framework is that their intricate nonlinear architecture inherently introduces computational complexity, which restricts computational tractability and poses challenges for online implementation. Early efforts to model nonlinear dynamics for MPC used feedforward NNs [2], but these models struggle to capture long-range temporal dependencies and suffer from cascading errors in multi-step predictions. Recurrent architectures such as Re-current Neural Networks (RNN) for MPC [3] address this by propagating temporal information via latent states and have been shown to explicitly exhibit state-space dynamics in [4]. Nevertheless, modeling long-range dependencies with RNN remains a challenge. Consequently, gating augmentations were introduced in Long Short-Term Memory (LSTM) [5], [6] and Gated Recurrent Units (GRU) [7], [8] to enable long-range prediction. Despite these advances, accurate modeling over longer prediction horizons remains challenging due to the persistent accumulation of errors inherent to one-step ahead predictors. More recently, Transformer networks [9] have emerged for modeling global temporal relations which is particularly advantageous in the modeling of extremely long prediction horizons. A multi-step Transformer predictor for MPC was constructed in [10], and compared to LSTM. In comparison to LSTM, the multi-step Transformer showed superior performance and speed, although the computational benefit largely stemmed from the construction of a multi-step predictor. A challenge with Transformers is that the main mechanism of Transformers, attention, leads to quadratic computational scaling when increasing the length of the prediction horizon. This limits the practical implementation of Transformers in MPC. A novel NN architecture, Mamba [11], has recently emerged as a compelling alternative, built on structured state-space models [12]. Mamba incorporates a context-aware selection mechanism that propagates relevant information from past sequence steps in the hidden states, effectively incorporating the gating mechanism found in GRUs. Gating mechanisms in NNs have been shown to   
+
+> This work is licensed under a Creative Commons Attribution 4.0 License. For more information, see https://creativecommons.org/licenses/by/4.0/ VOLUME , 1
+> arXiv:2604.13857v1 [math.OC] 15 Apr 2026 M.Cevaal ET AL .: Mamba Sequence Modeling meets Model Predictive Control
+
+enable the network to learn time warping functions [13], which aids efficient storing of information. Crucially, the selection mechanism enables Mamba to scale linearly in computational cost when increasing the sequence length. Furthermore, Mamba has demonstrated superior performance compared to Transformers and DeepONet [14] in the mod-eling of dynamical systems [15] when used as a neural operator for learning Sequence-to-Sequence (Seq2Seq) map-pings. Consequently, a Mamba-based prediction model is an excellent candidate for predictive control, which, to the best of our knowledge, has not been explored. It is worth mentioning that an approach that combines elements of the Mamba architecture with a linear-in-control Koopman operator approach for MPC was recently presented in [16]. Therein Mamba is used as a linear state-space matrix generator in combination with a Koopman operator to form a lifted time-varying linear state-space system model. To the best of our knowledge, an implementation of Mamba for MPC where the full Mamba architecture is employed as a multi-step predictor has not yet been explored. Therefore, in this paper, we investigate the application of Mamba in predictive control of nonlinear dynamical systems by constructing a data-driven Mamba-MPC algorithm. The first challenge is to construct a Mamba-based multi-step predictor while maintaining equal sequence length between input and output. The second challenge is to construct a multi-step formulation of Seq2Seq to enable input/output mapping for a set of initial conditions. We thus aim to formulate a Mamba-based predictor that allows for MIMO multi-step predictions. The first contribution of this paper is (i) a complete and consistent mathematical description of the underlying operations employed within the Mamba NN architecture. Note that, to the best of our knowledge, a complete rigorous mathematical description of the Mamba NN is not available in the literature, which currently hampers understanding of the underlying functional operations and reproducibility. The second contribution is (ii) to provide an adaptation and optimization of Mamba for Mamba-MPC as well as a Seq2Seq input-output embedding. The third contri-bution is (iii) implementation of Mamba-MPC in real-time control of a challenging physical Quanser Aero2 system. To enhance reproducibility, we provide for all learning and MPC algorithms the implementation code in Python using PyTorch and CasADI. The remainder of the paper is structured as follows. Sec-tion II introduces notation and definitions. Section III reviews MPC preliminaries and define the problem statement. In Sec-tion IV a mathematical description of Mamba is provided. In Section V, the Mamba-MPC algorithm is derived. In Section VI, we test Mamba-MPC for 2 numerical examples, the Van der Pol oscillator and a MIMO Four Tank system. In Section VII we provide an implementation on a physical setup as a proof of concept for practical application of Mamba-MPC. Section VIII presents conclusions and future work. 
+
+> II. Notations and Definitions
+
+Basic notation and definitions are given next. 
+
+> a: Vectors
+
+For any finite collection of q ∈ N≥1 vectors (ξ1, . . . , ξ q ) ∈
+
+Rn1 × · · · × Rnq , we define the operator col ( ξ1, . . . , ξ q ) := 
+
+ ξ⊤ 
+
+> 1
+
+. . . ξ⊤
+
+> q
+
+⊤.
+
+> b: Matrices
+
+For any two matrices A ∈ Rn×m B ∈ Rn×m, we denote the Hadamard product by A ⊙ B, defined as 
+
+A ⊙ B =
+
+
+
+a1,1b1,1 · · · a1,m b1,m 
+
+... ...
+
+an, 1bn, 1 · · · an,m bn,m 
+
+ .
+
+Given scalars a1, a 2, . . . , a n ∈ R we define the diagonal matrix A = diag (a1, a 2, . . . , a n) ∈ Rn×n where Ai,j = ai
+
+when i = j and Ai,j = 0 when i̸ = j such that A has 
+
+a1, a 2, . . . , a n on its diagonal and zeros elsewhere. Given a vector w = [ w1, . . . , w l]⊤ ∈ Rl we define a Toeplitz matrix constructed from vector w as Toeplitz (w) = 
+
+
+
+w1 . . . wl 0 . . . 00 w1 . . . wl . . . 0
+
+... ... . . . . . . . . . ...
+
+0 . . . 0 w1 . . . wl
+
+ .
+
+> c: Tensors
+
+In this paper tensors up to rank 3 are mostly considered. Let calligraphic variables, e.g., T ∈ Rd1×d2×d3 denote a tensor. When operating on a tensor, let T:,i, : ∈ Rd1×d3 , denote the 
+
+ith slice of the second dimension, e.g., for a tensor B ∈ 
+
+R2×2×2, e.g., 
+
+B =
+
+ b1 b2
+
+b3 b4
+
+
+
+,
+
+b5 b6
+
+b7 b8
+
+ 
+
+, (1) we denote the 1-st slice of dimension d2 by: 
+
+B:,1,: =  b1 b2
+
+ , b5 b6
+
+ . (2) Furthermore, we denote the matricization of a rank 3 tensor by mat : Rb×n×m → Rbn ×m, which amounts to combining the first and second dimension. For example, mat 
+
+ a1 a2
+
+a3 a4
+
+
+
+,
+
+a5 a6
+
+a7 a8
+
+ 
+
+=
+
+
+
+a1 a2
+
+a3 a4
+
+a5 a6
+
+a7 a8
+
+ . (3) For a tensor composed of matrices Q = ( Q1, Q 2, . . . , Q M ),the construction of a block diagonal matrix from tensor Q
+
+is denoted by blk (Q) = 
+
+
+
+Q1 0 . . . 00 Q2 . . . 0
+
+... ... . . . ...
+
+0 . . . 0 QM
+
+ .
+
+Given a matrix F ∈ Rm×n where F = [ f1, f 2, . . . , f n] and 
+
+fi is the i-th column of F , the vectorization operation on F
+
+is defined as vec (F ) = f ⊤ 
+
+> 1
+
+, f ⊤ 
+
+> 2
+
+, . . . , f ⊤
+
+> n
+
+⊤ . 
+
+> 2VOLUME
+
+Moreover, for the process where a matrix is created from a vector g = [ g1, . . . , g l] ∈ Rmn is defined as 
+
+H = QV →M (g, m, n ) ,
+
+where (m, n ) denote the dimension of H, i.e., H ∈ Rm×n.
+
+d: Broadcasting Hadamard Product 
+
+As an example of the broadcasting Hadamard product, consider the following example for a matrix and a column vector: f1 f2
+
+f3 f4
+
+
+
+⊡
+
+g1
+
+g2
+
+
+
+=
+
+f1 f2
+
+f3 f4
+
+
+
+⊙
+
+g1 g1
+
+g2 g2
+
+
+
+. (4) Similarly, for a matrix and row vector: 
+
+f1 f2
+
+f3 f4
+
+
+
+⊡ g1 g2
+
+ =
+
+f1 f2
+
+f3 f4
+
+
+
+⊙
+
+g1 g2
+
+g1 g2
+
+
+
+. (5) Consider two rank 3 tensors D ∈ RI1×I2×I3 and E ∈
+
+RJ1×J2×J3 . Then the broadcasting operation can be used to perform the Hadamard product between tensors of different dimensions, F = D ⊡ E, as follows, 
+
+F = D ⊡ E := bc (D, size (E)) ⊙ bc (E, size (D)) = D′ ⊙ E ′,
+
+F ∈ Rmax( I1,J 1)×max( I2,J 2)×max( I3,J 3).
+
+Above size : Rn×m×p → R × R × R returns the shape of the input tensor as an n-tuple such that size (J ) = ( J1, J 2, J 3).Furthermore, the broadcasting function bc : RI1×I2×I3 ×
+
+RJ1 × RJ2 × RJ3 → Rmax( I1,J 1)×max( I2,J 2)×max( I3,J 3) is a function that has a tensor and n-tuple as arguments such that for tensor D and size (E) for all n, if In = 1 , replicates all elements of D along the n-th mode Jn times such that 
+
+D′ = bc (D, size (E)) .To perform the broadcasted Hadamard product, a nec-essary condition must be satisfied for the broadcasted Hadamard product to be well-defined. Consider two rank 
+
+3 tensors D ∈ RI1×I2×I3 and E ∈ RJ1×J2×J3 . The broad-casting condition for D and E holds if for any n ∈ { 1, 2, 3}
+
+one of the following conditions is satisfied: In = Jn, In = 1 
+
+or Jn = 1 .
+
+e: Einstein Summation 
+
+To perform Einstein summation, consider two tensors H ∈ 
+
+RP ×T ×R×E and K ∈ RP ×T ×E . The output L ∈ RP ×T ×R
+
+is obtained by contracting the common dimension E as follows: 
+
+Lp,t,r =
+
+> E
+
+X
+
+> e=1
+
+Hp,t,r,e Kp,t,e , (6) where the indices p, t, r correspond to the free dimensions and e is the summation index. 
+
+III. MPC Preliminaries and Problem Statement 
+
+Consider a continuous time-invariant nonlinear MIMO state-space system, i.e., 
+
+˙x (t) = fc (x (t) , u (t)) (7a) 
+
+y (t) = hc (x (t) , u (t)) (7b) with inputs u ∈ U ⊂ Rnu , states x ∈ X ⊂ Rnx and outputs 
+
+y ∈ Y ⊂ Rny , time t ∈ R≥0. Above fc : U × X → Y and 
+
+hc : U × X → Y are unknown suitable functions that allow for existence of unique solutions. To perform sequential computation on (7), the model needs to be discretized, for example, by means of zero-order hold (ZOH). In general, a discrete-time nonlinear MIMO system is described by, i.e., 
+
+x (k + 1) = f (x (k) , u (k)) , (8a) 
+
+y (k) = h (x (k) , u (k)) , (8b) where for a discrete time instant k ∈ N, the continuous time 
+
+t = kT s, where Ts ∈ R represents the sampling time/period. In discrete-time predictive control, sequences of future inputs and predicted outputs over a prediction horizon N ∈ N≥1
+
+are generally of interest. Consider thus a sequence of inputs u[0 ,N −1] (k) and outputs y[1 ,N ] (k) described by: 
+
+u[0 ,N −1] (k) := [ u (0 |k) , . . . , u (N − 1|k)] , (9a) 
+
+y[1 ,N ](k) := [ y (1 |k) , . . . , y (N |k)] , (9b) where the input sequence is mapped to a sequence of outputs for any initial condition by a suitable map F : UN ×X → YN.Assuming that a suitable map F can accurately describe the Seq2Seq multi-step representation of the MIMO nonlinear system in (8), then a prototype predictive control problem can be formulated as follows: 
+
+Problem 1. Prototype MPC problem 
+
+min    
+
+> u[0 ,N −1] (k),y [1 ,N ](k)
+
+lN (y (N |k)) +  
+
+> N−1
+
+X
+
+> i=0
+
+l (y (i|k) , u (i|k)) 
+
+subject to: 
+
+y[1 ,N ](k) = F  u[0 ,N −1] (k) , x 0 (k) ,u[0 ,N −1] (k) ∈ U × . . . × U,y[1 ,N ] (k) ∈ Y × . . . × Y,y(0 |k) = y(k).
+
+(10) Model Predictive Control (Problem 1) 
+
+˙x = fc (x, u )
+
+y = hc (x)
+
+ZOH Ts
+
+y(t)
+
+y(kT s) u(kT s)
+
+u(t)
+
+F  u[0 ,N −1] (k) , xini (k)   
+
+> FIGURE 1: Illustration of the Model Predictive Control closed-loop control architecture.
+> VOLUME 3M.Cevaal ET AL .: Mamba Sequence Modeling meets Model Predictive Control
+
+In (10) x0 (k) is the initial condition that can be the initial state x (k), if the measured states are available, or a stacked vector of past inputs and outputs that encode the state information. F is a suitable map such that the sequence of inputs u[0 ,N −1] (k) and the initial condition x0(k) are mapped to the output sequence y[1 ,N ] (k). F can be explicitly constructed if the functions f, h are known, by repeated appropriate function compositions. An illustration of using Problem 1 to define a closed-loop control architecture is provided in Figure 1. For the learning of the map F, several approaches can be considered. A common data-driven approach is to utilize NN architectures for the multi-step predictor. A feedforward NN was applied as multi-step predictor in MPC [2] and achieved promising results. In [10] a multi-step predictor is constructed based on a Transformer network and is suc-cessfully applied in the MPC framework but at significant computational cost. Another approach is operator networks such as DeepONet [14], which were recently adapted for implementation in MPC in [17]. In [15] a comparative study is done involving DeepONet, Transformer based approaches, and Mamba for the modeling of dynamical systems. Mamba consistently achieves superior performance with respect to DeepONet and Transformer based approaches. Furthermore, Mamba was inherently designed for linear computational scaling with respect to the prediction horizon. Consequently, Mamba is of significant interest as an application to learn nonlinear mappings for multi-step prediction in the MPC framework. In particular, Mamba-based decoder-only ar-chitectures are of interest, such that the total parameter count and therefore computational complexity in Problem 1 remains minimal. Therefore, the problem statement can be summarized as follows. 
+
+Problem statement: Given the discrete-time nonlinear MIMO system in (8), the goal is to approximate the multi-step Seq2Seq map F from future inputs u[0 ,N −1] (k) to future outputs y[1 ,N ] (k) for a set of initial conditions xini (k) by means of Mamba NNs. The input of the network should have a sequence length equal to the sequence length of the output such that decoder-only structures can be utilized for computational tractability. The model should predict a multi-step sequence in a single forward pass, such that efficient predictive control is enabled. 
+
+IV. Mamba: Mathematical Description 
+
+Let the map from input to output be described by Y =
+
+FMamba (U ) where FMamba (U ) is defined according to: 
+
+FMamba (U ) :=  FSSM ◦ σ  FConv 
+
+ U W ⊤
+
+> S
+
+ ⊙ YR
+
+ W ⊤
+
+> Y
+
+(11) where 
+
+YR = σ  U W ⊤
+
+> R
+
+ , (12a) 
+
+σ(UC ) = UC ⊙ 11 + exp ( −UC ) . (12b) In FMamba , the functions σ : R → R in (11) and (12a) refer to an element-wise SiLU activation function [18]. Con-    
+
+> FIGURE 2: A schematic of the Mamba block architecture. The input Uis processed through two parallel paths: a main path featuring a convolution layer, a hidden layer of activation functions, a SSM block that implements a time-varying linear dynamical system in the feature space, and a residual path with a hidden layer of activation functions. The final output is the element-wise product of the outputs of these two paths.
+> TABLE 1: Model Parameter Definitions
+
+Parameter Definition 
+
+Ba Batch Size 
+
+L Sequence Length 
+
+D Model Dimension 
+
+E Expansion Factor 
+
+N Prediction Horizon 
+
+S Hidden State Dimension 
+
+K Convolutional Kernel Size 
+
+dτ Rank of ∆ Approximation 
+
+sequently, the exponential function in (12b) is an element-wise function. Furthermore, mappings W ⊤ 
+
+> S
+
+, W ⊤ 
+
+> R
+
+: RL×D →
+
+RL×ED are lifting operators that expand the feature space of the input, while W ⊤ 
+
+> Y
+
+: RL×ED → RL×D are projection operators that reduce the feature space. The functions FSSM 
+
+and FConv require a more detailed description and will be further highlighted in the following sections. To illustrate the general structure of the Mamba function, a graphical description can be seen in Figure 2. Within the architecture of Mamba, an input is typically provided as a tensor denoted by U ∈ RBa×L×D where the parameter definitions are given in Table 1. For the following section, the dimension Ba will be considered of size one, such that U = mat (U) ∈ RL×D ,for simplicity. 
+
+A. 1D Convolution 
+
+Next, a depthwise 1 dimensional convolutional layer (1D Conv) is applied along the sequence length dimension L of the expanded input. The addition of 1D Conv in Mamba is such that linear combinations of features of prior sequence steps can be incorporated into the current sequence step. Hence, this allows for modeling linear temporal dependen-cies. An illustration of the operation is given in Figure 3. Let the 1D Conv function FConv be described by: 
+
+FConv (US ) := QV →M (˜ u, ED, L )⊤ , (13)  
+
+> 4VOLUME
+
+where 
+
+˜u =T vec 
+
+ ˜U
+
+
+
++ ˜b, (14a) 
+
+T =blk (T ) , (14b) 
+
+T =Toeplitz (κd, :) , d = 1 , . . . , ED, (14c) 
+
+˜U = ¯0l, U ⊤ 
+
+> S
+
+, ¯0r
+
+ , (14d) 
+
+˜b =col (b, . . . , b ) ∈ RED ·L. (14e) To further expand on the 1D Conv operation, each step will be highlighted. First, the input is transposed U ⊤ 
+
+> S
+
+∈ RED ×L
+
+such that the 1D Conv is applied along the sequence length. Furthermore, the input is padded to maintain the input and output size. The padding is added to the input matrix ˜U such that ˜U = ¯0l, U ⊤ 
+
+> S
+
+, ¯0r
+
+ ∈ RED ×L+K−1, (15) where for kernel size K ∈ N if kernel size K − 1
+
+is odd, then padding is applied asymmetrically such that 
+
+¯0l ∈ RED ×⌊ (K−1) /2⌋ and ¯0r ∈ RED ×⌈ (K−1) /2⌉. Afterwards, the input ˜U is flattened to a vector 
+
+˜u = vec 
+
+ ˜U
+
+
+
+∈ RED (L+K−1) . (16) Next, because a depthwise 1D Conv is utilized, consider a learnable set of weighted sliding windows κ ∈ RED ×K ,where for every expanded model dimension [1 , . . . , ED ]
+
+there is a unique sliding window 
+
+κd, : = [ kd, 1, . . . , k d,K ] , (17) that is reconstructed into a block diagonal matrix consisting of unique Toeplitz matrices, for every model dimension, 
+
+T =Toeplitz (κd, :) , d = 1 , . . . , ED, (18a) 
+
+T =blk (T ) . (18b) Lastly, a bias term is added to each model dimension by constructing a vector by repeating each bias b, L times, such that ˜b = col (b, . . . , b ) . (19) In the following section, the SSM block will be explained in mathematical detail. 
+
+B. SSM 
+
+The SSM function is the core innovation of Mamba, which implements a time-varying content-aware recurrent mecha-nism for sequence modeling. Let FSSM describe the SSM function: 
+
+YS = FSSM (Uσ ) := HLC + Uσ ⊡ D, (20) where the input components are constructed by two sets of operations, i.e., first, the state-space model 
+
+Hτ = ¯Aτ ⊙ Hτ −1 + ¯Bτ ⊡ Uστ, :, (21) and second, the discretization operations 
+
+¯A = exp (∆ τ ⊡ A) , (22a) 
+
+¯B = ∆ τ ⊡ Uσ W ⊤ 
+
+> B
+
+, (22b) 
+
+∆τ = FN N 
+
+ Uσ W ⊤
+
+> ∆
+
+ , (22c) 
+
+C = Uσ W ⊤ 
+
+> C
+
+. (22d)       
+
+> FIGURE 3: An illustration of the 1D causal convolution operation im-plemented as a matrix multiplication. The convolution kernel for each dimension dis transformed into a Toeplitz matrix Td, which are then combined into a block-diagonal matrix T. This allows the entire depthwise convolution to be computed efficiently in parallel.
+
+To elaborate on the SSM function, the state-space modeling and discretization steps are further clarified. First, the discretization algorithm is considered, which incorporates a context aware selection mechanism. This is achieved by constructing B, C ∈ RL×S and ∆ ∈ RL×dt from the input Uσ by means of maps W ⊤ 
+
+> B
+
+: RL×ED → RL×S ,
+
+W ⊤ 
+
+> C
+
+: RL×ED → RL×S and W ⊤ 
+
+> ∆
+
+: RL×ED → RL×dt :
+
+B = Uσ W ⊤ 
+
+> B
+
+, (23a) 
+
+C = Uσ W ⊤ 
+
+> C
+
+, (23b) 
+
+∆ = Uσ W ⊤ 
+
+> ∆
+
+. (23c) By making B and C input dependent, B becomes analogous to an input selection gate and C becomes the output selection gate. To finalize the construction of the sampling time matrix, a softplus activation is applied, element-wise, to allow ∆t to be a nonlinear function that can describe time warping [13]. Furthermore, a map W ⊤ 
+
+> ∆τ
+
+: RL×dt → RL×ED and bias term 
+
+b∆τ are added. Thus, ∆τ is described by: 
+
+∆τ = ln  1 + exp  ∆W ⊤ 
+
+> ∆τ
+
++ b∆τ
+
+ , (24) which can be seen as a feedforward NN: 
+
+∆τ =: FN N (Uσ ) . (25) The application of a softplus activation function is motivated by the connection to the GRU gating mechanism, which is shown in [11], where, similarly to B and C, by constructing 
+
+∆τ from the input, ∆τ becomes analogous to a gate that dynamically focuses on past sequences or current inputs. The temporal focus is achieved by applying discretizations to parameters A ∈ RED ×S and B to construct ¯A and ¯B
+
+such that ¯A dictates what information in hidden states Hτ
+
+should be propagated versus what input information should be stored in Hτ through ¯B. A graphical illustration is given in Figure 4. 
+
+Remark 1. It should be noted that A is a dense matrix where the row vectors contain the diagonal elements of    
+
+> VOLUME 5M.Cevaal ET AL .: Mamba Sequence Modeling meets Model Predictive Control
+> FIGURE 4: A visual representation of the discretization algorithm in the SSM function.
+
+individual matrices. Therefore, tensor ¯A (Uσ ) is a dense tensor where for every sequence step l = 1 , . . . , L there is a unique matrix ¯Al. Furthermore, every column vector in matrix ¯Al ∈ RED ×S contains the diagonal elements of matrix ¯Al,d such that for every sequence step in L, there exist ED parallel SSM, as can be seen in Figure 5. The fact that A is a diagonal matrix is a key component because it allows the ZOH to be approximated using the exponents of the diagonal components rather than a matrix exponential, which would lead to unstable gradients [19]. 
+
+Next we present the state-space modeling algorithm, which is fundamentally based on (8). For Mamba, a par-allelized description of (8) is used which implements the context aware matrices of (22). Furthermore, a trainable feed-through parameter D ∈ RED is introduced. Mamba’s parallelized discrete SSM is described by: 
+
+Hτ = ¯Aτ ⊙ Hτ −1 + ¯Bτ ⊡ Uστ, :, (26) where τ = 1, . . . , L is fictitious time, H0 is initialized as a zero matrix, and Hτ can be partitioned as Hτ =[hτ, 1, . . . , h τ,ED ] ∈ RED ×S . The output of the SSM algo-rithm is constructed by: 
+
+YS =
+
+> S
+
+X
+
+> s=1
+
+HLb,l,d,s Cb,l,s + Uσ ⊡ D. (27) An illustration of how the SSM mechanism operates is given in Figure 5. This can be regarded as an L step-ahead time-varying linear predictor in the feature space. 
+
+Remark 2. We emphasize that the parallelized description given in (26) is equivalent to a time-varying linear state-space model and strictly offers computational benefits. 
+
+Now that a consistent and complete mathematical descrip-tion is provided for Mamba, a graphical illustration of the full model is given in Figure 6.  
+
+> FIGURE 5: A visual representation of the selective state-space block in a Mamba NN
+
+In the next section, we will discuss the adaptation required for implementation of Mamba as a multi-step predictor in Model Predictive Control. 
+
+V. Mamba for Predictive Control 
+
+In this section, a novel implementation of Mamba for pre-dictive control is introduced that allows Mamba to learn the Seq2Seq mapping for an arbitrary initial state. To this end, a novel embedding is introduced of u[0 ,N −1] (k) and x0(k) that maintains the same input sequence length as output sequence length for y[1 ,N ](k) such that the usage of a decoder-only architecture is enabled. In the previous Section IV, L was used to describe the length of a sequence, but in control systems it is common to use prediction horizon N . From this section onward, the prediction horizon N will be used instead of the sequence length L.
+
+A. Data Embedding 
+
+In a decoder-only architecture utilizing Mamba, no changes are made to the sequence length dimension. Therefore, an alternative input embedding can be constructed where the input sequence is concatenated with initial condition columns. Consider a dataset D =: [ X0, U f , Y f ] with amount of samples TX0 = [ x0 (0) , . . . , x 0 (T − 1)] , (28a) 
+
+Uf = [ u[0 ,N −1] (0) ⊤ , . . . , u [0 ,N −1] (T − 1) ⊤], (28b) 
+
+Yf = [ y[1 ,N ](1) ⊤, . . . , y [1 ,N ] (T )⊤], (28c) where X0 ∈ RT ×1×nx , Uf ∈ RT ×N ×nu and Yf ∈
+
+RT ×N ×ny . Then the following input embedding can be constructed for each sample in the dataset.   
+
+> 6VOLUME FIGURE 6: A complete schematic of the Mamba block-wise architecture (for simplicity of illustration, the two different input lifting operators corresponding to the two main parallel paths are merged into one).
+
+Definition 1. Input and output embedding for MPC 
+
+UIC (k) = FIC (u[0 ,N −1] (k), x 0(k)) := 
+
+
+
+u (0 |k)⊤ x (0 |k)⊤
+
+u (1 |k)⊤ x (0 |k)⊤
+
+... ...
+
+u (N − 1|k)⊤ x (0 |k)⊤
+
+ ∈ RN ×nu+nx (29) 
+
+where UIC (k) is constructed for each sample in dataset D.Furthermore, the output embedding for every sample in the batch is given by; 
+
+Y (k) := 
+
+
+
+y (1 |k)⊤
+
+...
+
+y (N |k)⊤
+
+ ∈ RN ×ny . (30) The structure given in (29) allows the embedding of an arbitrary number of initial states, inputs, and outputs and maintains the sequence length. 
+
+B. Mamba-MPC 
+
+To effectively construct a Seq2Seq mapping from embedding (29) while utilizing Mamba, adjustments are incorporated. Let FMPC (UIC ) denote the function describing the Mamba-MPC function, where FMPC (UIC ) is described by: 
+
+ˆY = FMPC (UIC ) := F ˆY◦FRMS (FMamba (U ) + Uin , W RMS 2 )
+
+(31) where 
+
+Uin = FE (UIC ) (32a) 
+
+U = FRMS (Uin , W RMS 1 ). (32b) Although (31) conceptually contains a single FMamba , mul-tiple Mamba layers can be cascaded when required. As introduced in (11), the input to Mamba must be of dimension 
+
+D. Therefore, the input embedding is projected to the input dimension D by the map WE : RB×N ×nu+nx → RB×N ×D
+
+such that: 
+
+Uin = FE(UIC ) := UIC W ⊤ 
+
+> E
+
++ bE, (33) where bE is a bias term. Furthermore, the input to the Mamba block needs to be normalized to allow deeper networks and gradient condi-tioning [20]. The choice was made for Root-Mean-Square-Layer-Normalization (RMSNorm) [21] due to the lower computational cost compared to layer normalization. In (31) there are two RMSNorm layers present, which, conceptually, are the same. However, each layer has unique parameters. Generally, the RMS function can be described as: 
+
+FRMS (U, W RMS ) := WRMS ⊙ U
+
+q 1
+
+> D
+
+PDk=1 (U:,k )2 + ϵ
+
+(34) where WRMS is the weighting, which is a learnable param-eter, and ϵ is a small static bias. Furthermore, a residual connection from the output of FE is added to improve gradient flow. Therefore, the output of the second RMSNorm is given by: 
+
+YRMS = FRMS (YMamba + Uin , W RMS 2 ) (35) 
+
+Remark 3. Although residual connections are commonly used for gradient flow, residual connections also add linear time invariant (LTI) components to the output which simpli-fies the learning problem. Therefore, Mamba-MPC can be separated into an LTI component, a nonlinear time invariant component in the Mamba residual branch (12a) , and a temporal modeling branch in the SSM block (20) .
+
+Lastly, a linear projection is utilized to map the model dimension to the output dimension by means of map W ˆY :  
+
+> VOLUME 7M.Cevaal ET AL .: Mamba Sequence Modeling meets Model Predictive Control
+
+RB×N ×D → RB×N ×ny :
+
+ˆY = YRMS W ⊤ 
+
+> ˆY
+
++ b ˆY , (36) where b ˆY is a bias term. Now that the network structure of Mamba-MPC has been defined, a model learning problem can be constructed: 
+
+Problem 2. Mamba-MPC learning problem 
+
+arg min J
+
+
+
+Y train , ˆY train 
+
+= || Y train − ˆY train || 22
+
+|| Y train || 22
+
+(37a) 
+
+subject to: 
+
+ˆY train = FMPC ◦ FIC 
+
+ U train  
+
+> f
+
+, X train 
+
+> 0
+
+ . (37b) Above U train  
+
+> f
+
+is the set of input sequences, Xtrain  
+
+> 0
+
+is the set of initial conditions and Y train is the set output sequences, when used in training. Next, the prediction model can be used in the predictive control for tracking a reference r(k) = [ r(0 |k), . . . , r (N |k)] ,with the error between the output sequence and the reference defined as εy[0 ,N ] := y[0 ,N ](k) − r[0 ,N ](k). Furthermore, the change in input is penalized given by ∆u[0 ,N −1] (k) = 
+
+u[0 ,N −1] (k) − u[−1,N −2] (k), where u(−1|k) := u(k − 1) .
+
+Problem 3. Mamba-MPC 
+
+min 
+
+u[0 ,N −1] (k)
+
+y[1 ,N ](k)
+
+ε⊤  
+
+> y[0 ,N ]
+
+Ωεy[0 ,N ] + ∆ u[0 ,N −1] (k)⊤Ψ∆ u[0 ,N −1] (k)
+
+subject to: 
+
+y[1 ,N ](k) = FMPC ◦ FIC 
+
+ u[0 ,N −1] (k), x 0 (k) ,u[0 ,N −1] (k) ∈ U × . . . × U,y[1 ,N ] (k) ∈ Y × . . . × Y,y(0 |k) = y(k).
+
+Above the quadratic cost function weight matrices are defined as follows: 
+
+Ω = 
+
+
+
+Q
+
+. . .
+
+QP
+
+ , Ψ = 
+
+
+
+R
+
+. . .
+
+R
+
+ .
+
+In the next section, we analyze the performance of Mamba-MPC as defined in Problem 3 by means of 2 nonlinear benchmark examples. 
+
+VI. Validation in Numerical Examples 
+
+This section details the comprehensive evaluation of the proposed Mamba-MPC scheme across a series of perfor-mance metrics. We evaluate the performance of Mamba-MPC against a state-space LSTM [22] based MPC controller as in [17]. The utilized parameters can be found in Table 2 and Table 3 for the Van der Pol and Four tank, respectively. First, the SISO Van der Pol oscillator is considered where stabilization is tested for multiple initial conditions. Subsequently, a tracking performance comparison against LSTM-MPC is made where a fair assessment is ensured                                                                            
+
+> TABLE 2: Comparison of Mamba-MPC and LSTM-MPC for the Van der Pol System.
+> Van der Pol
+> Reference Tracking Noise Mamba LSTM Mamba LSTM
+> Model Architecture
+> Model Dim. D8282Kernel Size 10 -10 -State Dim. 826 426 Horizon N10 10 10 10 Layers 6-6-Params 3418 3052 3418 3052
+> Controller Performance
+> MAE 0.066 0.072 0.07 0.09
+> MSE 0.058 0.066 0.03 0.04
+> Comp. Time (s) 0.018 0.20 0.07 0.71
+> Sampling Time (s) 0.1 0.1 0.1 0.1
+> Training Metrics
+> Time (min) 400 35 400 35 Train Loss 2·10 −58.4·10 −76.8·10 −56.2·10 −4
+> Val. Loss 5.5·10 −56.9·10 −58.8·10 −52.2·10 −2
+
+by using identical datasets, MPC cost function, prediction horizon, and network parameter count. Thereafter, robust-ness against noise is tested during reference tracking and compared against LSTM-MPC. Afterwards, the MIMO Four Tank benchmark is introduced where reference tracking for multiple outputs is tested and compared with NMPC, where again, a fair comparison is made in terms of MPC cost and prediction horizon. Finally, the Mamba-MPC is applied to a physical benchmark system, the Quanser Aero2, to validate real-time reference tracking performance. All results presented in this section were generated using PyTorch and CasADI frameworks which were executed on an Nvidia RTX 4070 and AMD Ryzen 9 7845HX CPU, respectively. 
+
+A. Van der Pol Oscillator 
+
+Mamba-MPC is first evaluated on the SISO Van der Pol system with control input, i.e., 
+
+˙x1 = x2, (38a) 
+
+˙x2 = μ  1 − x21
+
+ x2 + u, (38b) 
+
+y = x1, (38c) with μ = 1 , input u ∈ R, output y ∈ R and initial states 
+
+x0 ∈ R2. Furthermore, the Van der Pol is discretized with forward Euler with sampling time Ts = 0 .1 s. The specific selection of μ = 1 ensures that Van der Pol exhibits limit cycle behavior, thereby constituting a non-trivial benchmark problem. A dataset consisting of T = 40000 samples is created via an open-loop identification experiment, in which a multisine input signal is used featuring a peak amplitude of 15 , across a frequency range of approximately 0.0049 
+
+Hz to 4.88 Hz, containing 30 harmonics. A training and validation dataset is created according to (29) and utilized in learning Problem (37). A model is constructed according to the model parameters given in Table 2. The model is trained for 4000 epochs in PyTorch, using the Adam     
+
+> 8VOLUME FIGURE 7: Closed-loop performance of Mamba-MPC for stabilization of a Van der Pol oscillator for 100 different initial conditions.
+
+optimizer [23] with an initial learning rate lr = 1 · 10 −3, an L2 regularization cost of λ = 10 −5, weight decay factor of 
+
+wt = 1 · 10 −5, and exponential learning rate scheduler with 
+
+γ = 0 .998 per 10 epochs. The PyTorch model is implemented as a CasADI function to formulate the prediction model in 3to enable closed-loop control. We first assess the system’s ability to stabilize a system for a variety of initial conditions. To generate a diverse set of initial conditions, x0 = col (x1(0) , x 2(0)) , 100 realizations are drawn according to x1(0) ∼ Uniform (−2.5, 2.5) and 
+
+x2(0) ∼ Uniform (−2.0, 2.0) . For the Mamba-MPC scheme (3) the prediction horizon is N = 10 , Q = 50 , R = 0 .5
+
+and P = 100 . This optimization problem is solved using IPOPT solver [24], which is employed for all Van der Pol examples. Consider the stabilizing closed-loop response of Mamba-MPC for the Van der Pol for 100 initial condition realizations in Figure 7. The results confirm that Mamba-MPC successfully stabilizes the system for all sampled trajectories, though one specific trajectory exhibited a higher amplitude of oscillations during the convergence phase. To evaluate the tracking performance of Mamba-MPC, a comparative analysis is conducted against LSTM. Mamba-MPC and LSTM are trained on a identical dataset and are trained according to learning Problem (37). The choice of the LSTM as baseline is motivated by the architec-tural similarities between Mamba and LSTM specifically regarding their recurrent states and gating mechanism. To ensure an equitable comparison, the parameter budget in each model is constrained to be approximately equal. Both control schemes are implemented with a prediction horizon 
+
+N = 10 and Q = 100 , R = 0 .5. Consider the closed-loop response for tracking a piece-wise constant reference     
+
+> FIGURE 8: Comparison between Mamba-MPC ( ) and LSTM-MPC ( )for a piece-wise constant reference ( ) on a Van der Pol oscillator.
+
+signal in Figure 8. Generally, both MPC controllers demon-strate a comparable ability to track the reference signal, a finding substantiated when considering the Mean-Absolute-Error (MAE) and Mean-Squared-Error (MSE) in Table 2. However, when considering the mean computation time, Mamba-MPC outperforms with a sampling time of 0.018 s, whereas LSTM-MPC does not stay within the sampling time of the system at 0.2s. Lastly, we evaluate the reference tracking capabilities of Mamba-MPC under stochastic noise conditions. We perform a direct comparison with LSTM-MPC. The dataset acquired in the previous example is corrupted with a Gaussian, zero-mean, additive white noise realization such that the measured states x0 and output y have a signal-to-noise ratio of SN R =20 . Subsequently, both the Mamba and LSTM models are retrained according to (37) with the same settings as in the previous example. In closed-loop control implementation, zero-mean Gaus-sian white noise with standard deviation s = [0 .16 , 0.13] 
+
+is added to each measured state, respectively. A total of 
+
+100 independent noise realizations are created to perform a Monte-Carlo evaluation. Both control schemes are imple-mented with a prediction horizon N = 10 and quadratic cost 
+
+Q = 50 , R = 1 and terminal cost P = 10 . We quantitatively compare the control schemes for the following criteria: 
+
+ISE = 
+
+> tmax
+
+X
+
+> k=0
+
+∥y(k) − r(k)∥22, IAE =
+
+> tmax
+
+X
+
+> k=0
+
+∥y(k) − r(k)∥1,
+
+Input Energy =
+
+> tmax
+
+X
+
+> k=0
+
+∥u(k)∥22, (39) where ISE indicates the integral squared error and IAE indicates the integral absolute error. The resulting mean tracking performance and associated standard deviations are       
+
+> VOLUME 9M.Cevaal ET AL .: Mamba Sequence Modeling meets Model Predictive Control
+> FIGURE 9: A closed-loop reference ( ) tracking comparison between Mamba-MPC ( ) and LSTM-MPC ( ) under noise conditions with a Signal-to-Noise Ratio (SNR) conditions of 20. The solid line indicates the mean value, and the shaded area represents the standard deviation obtained across 100 noise realizations.
+
+presented in Figure 9 indicating that Mamba-MPC effec-tively mitigates measurement noise effects. Quantitatively, the ISE and IAE suggest that Mamba-MPC achieves supe-rior tracking performance compared to LSTM-MPC, albeit demanding a higher magnitude of input energy. However, closer inspection of the tracking performance, reveals that Mamba-MPC generally exhibits a higher standard deviation than LSTM-MPC. Furthermore, LSTM-MPC maintains a lower tracking error across the simulation, excluding the start of simulation. This initial suboptimality in LSTM-MPC is likely due to its reliance on the hidden state for predictions, where the initialization of the hidden state at initial time t = 0 is non-trivial. Once the hidden state converges, LSTM-MPC demonstrates a higher degree of noise robustness, in comparison to Mamba-MPC. We suspect that this is due to reinitialization of the hidden states of Mamba-MPC as 0 at every control interval. Consequently, this renders Mamba-MPC more sensitive to perturbations in the initial condition. Nevertheless, when considering the mean computation time in 2, Mamba-MPC is significantly faster than LSTM-MPC with a mean computation time of 
+
+0.07 s and 0.71 s, respectively. This indicates that in the presence of noise, Mamba-MPC is a reliable candidate. 
+
+B. Four Tank System 
+
+As a second example, a system with four interconnected tanks (Four Tank) is considered from [25] as a benchmark  
+
+> TABLE 3: Comparison of Mamba-MPC and LSTM-MPC for the MIMO Four Tank System.
+
+Four Tank (MIMO) 
+
+Mamba LSTM 
+
+Model Architecture 
+
+Model Dim. D 6 6Kernel Size 20 -State Dim. 4 20 Horizon N 20 20 Layers 1 -Params 708 2324 
+
+Controller Performance 
+
+MAE [2 , 1, 1, 1] · 10 −2 [4 , 4, 5, 5] · 10 −2
+
+MSE [4 , 3, 1, 1] · 10 −3 [4 , 5, 5, 7] · 10 −3
+
+Comp. Time (s) 0.14 0.65 
+
+Sampling Time (s) 5.0 5.0 
+
+Training Metrics 
+
+Time (min) 400 180 Train Loss 5.1 · 10 −7 5.1 · 10 −5
+
+Val. Loss 1.1 · 10 −5 3.2 · 10 −4
+
+for MIMO systems, i.e, 
+
+˙x1 = −a1
+
+Sc
+
+p2gx 1 + a3
+
+Sc
+
+p2gx 3 + γa
+
+3600 Sc
+
+u1, (40a) 
+
+˙x2 = −a2
+
+Sc
+
+p2gx 2 + a4
+
+Sc
+
+p2gx 4 + γb
+
+3600 Sc
+
+u2, (40b) 
+
+˙x3 = −a3
+
+Sc
+
+p2gx 3 + (1 − γb)3600 Sc
+
+u2, (40c) 
+
+˙x4 = −a4
+
+Sc
+
+p2gx 4 + (1 − γa)3600 Sc
+
+u1, (40d) where each state col (x1, x 2, x 3, x 4) represents the water level of each of the four tanks, respectively. The parameters of the four tank system are given in Table 4. For the Four Tank example we assume that all states are measurable. Note that the system outputs and initial conditions are the states 
+
+x, x 0 ∈ R4 and the inputs are u ∈ R2, hence a MIMO system. To gather data, an open-loop experiment is performed using a piece-wise-constant input signal with sampling time Ts = 5 
+
+and T = 80000 samples of input-state data are collected. The dataset is generated according to (29) and used in training according to (37). The model is trained for a total of 3000 epochs with the Adam optimizer [23] with identical hyperparameters and settings as in the Van der Pol example. A model is trained with parameters given in 3. Similarly to the Van der Pol example, an evaluation of Mamba-MPC is made against LSTM-MPC. The models are trained on identical datasets according to learning Prob-lem (37) where the parameter budget is ideally set to be approximately equal. However, for LSTM-MPC, to obtain an accurate model a higher amount of parameters were necessary, therefore the parameter budget was ignored. The trained models are implemented into the MPC scheme (3) which is constructed with input constraints U = {u ∈
+
+R2|col (0 , 0) ≤ u ≤ col (4 , 4) }, tracking cost Q = 100 and   
+
+> 10 VOLUME TABLE 4: Parameters for the Four-Tank System
+
+Parameter Value 
+
+Tank cross-sectional area ( Sc) 0.06 m2
+
+Leakage orifice area ( a1) 1.31 × 10 −4 m2
+
+Leakage orifice area ( a2) 1.51 × 10 −4 m2
+
+Leakage orifice area ( a3) 9.27 × 10 −5 m2
+
+Leakage orifice area ( a4) 8.82 × 10 −5 m2
+
+Three-way valve opening ratio ( γa) 0.3
+
+Three-way valve opening ratio ( γb) 0.4
+
+Gravitational acceleration ( g) 9.81 m/s 2
+
+input cost R = 1 . Consider the control input and closed-loop output given in Figure 10, it can be seen that Mamba-MPC is able to track the piece-wise constant references for all system states and significantly outperforms LSTM-MPC whereas containing a significantly lower amount of parameters. Notably, the sampling time at 0.14 s is well within the sampling time of the system at Ts = 5 s as can be seen in Table 3 and is significantly faster than the sampling time of LSTM-MPC at 0.65 s.     
+
+> FIGURE 10: Closed-loop performance comparison between Mamba-MPC () and LSTM-MPC ( ) on the MIMO Four Tank system for piece-wise constant reference trajectories ( ).
+
+VII. Validation on a Physical Setup: The Quanser Aero2 
+
+To assess the performance of Mamba-MPC on a physical setup, the Quanser Aero2 is considered, which can be seen in Figure 11 alongside its free-body diagram. In this example, the 2-DOF configuration is considered. The Aero2 has inputs 
+
+u ∈ R2 corresponding to the voltages supplied to the DC motors of rotor 1 and rotor 2. The system outputs y ∈ R3
+
+encompassing the pitch angle, sine and cosine components of the yaw. For the initial conditions, pitch rate and yaw rate are added such that the initial condition x0 ∈ R5. A  
+
+> TABLE 5: Parameters and Performance for Mamba-MPC on the Quanser Aero2 Setup.
+
+Quanser Aero2 
+
+Mamba 
+
+Model Architecture 
+
+Model Dim. D 8Kernel Size 20 State Dim. 4Horizon N 18 Layers 2Params 983 
+
+Controller Performance 
+
+MAE [87 , 128 , 134] · 10 −3
+
+MSE [22 , 90 , 91] · 10 −3
+
+Comp. Time (s) 0.038 
+
+Sampling Time (s) 0.04 
+
+Training Metrics 
+
+Time (min) 400 Train Loss 2.2 · 10 −3
+
+Val. Loss 2.0 · 10 −2 
+
+> FIGURE 11: Left: Image of Quanser Aero2. Right: Free-body diagram of the dynamics of the Quanser Aero2
+
+dedicated training dataset is constructed via an open-loop experiment. Data acquisition is performed at a sampling frequency of fs = 100 Hz for T = 240 · 10 3 samples where the input signal is constructed with a multi-level 
+
+Pseudo Random Binary Signal (PRBS) as carrier wave, with amplitudes [±8, ±10 , ±12] and maximum switching frequency of 2 Hz. On top of the carrier wave, a multisine is superimposed featuring amplitudes 4, 2, 1, respectively, across a frequency range of 0.015 Hz to 2.485 Hz containing 
+
+500 harmonics. Due to computational limitations, the data was down-sampled to fs = 25 Hz to reduce the compu-tational requirement. The definitive dataset is constructed according to (29) for a prediction horizon of N = 18 .Mamba-MPC is trained for 2000 epochs according to (37) with hyperparameters given in Table 5. The model is implemented into the MPC scheme (3) with 
+
+Q = diag (6 , 1.5, 1.5) , R = diag (0 .1, 0.1) and P = 1 · 10 3
+
+with input constraints U = {u ∈ R2|col (−14 , −14) ≤
+
+u ≤ col (14 , 14) } and pitch angle constraints Y1 = {x1 ∈  
+
+> VOLUME 11 M.Cevaal ET AL .: Mamba Sequence Modeling meets Model Predictive Control
+
+FIGURE 12: Closed-loop reference tracking of Mamba-MPC on the Quanser Aero2 physical setup. The states are indicated by ( ) which track a piece-wise constant reference indicated by ( ). The inputs are indicated by ( ). 
+
+R| − 0.7 ≤ x1 ≤ 0.7}. To remain within the sampling frequency of fs = 25 Hz an SQP solver is used in CasADI. To further improve the computational speed, a warm start of the Lagrangian multipliers is added. Consider the closed-loop response for a piece-wise constant reference signal in Figure 12. In general, Mamba-MPC is able to successfully track the reference signal for the pitch angle and yaw angle. In particular, the mean computation time per iteration is 
+
+0.038 s which is below the sampling time of the system at 
+
+0.04 s. Overall, Mamba-MPC is able to successfully stabilize and track a piece-wise constant reference on the Aero2 while remaining computationally tractable. 1
+
+VIII. Conclusion 
+
+In this paper, we developed Mamba-MPC, an MPC formu-lation that utilizes Mamba NN as a multi-step predictor, and a novel data embedding for Seq2Seq modeling. A complete and consistent mathematical description of the Mamba NN was given and the modeling advantages of Mamba were highlighted. We provided an embedding of initial conditions and input sequence such that decoder-only architectures can be utilized for multi-step prediction. We evaluated the performance of Mamba-MPC on two simulated nonlinear systems where we tested stabilization, noise robustness, reference tracking and MIMO reference tracking. Further-more, we implemented Mamba-MPC on a physical Quanser Aero2 setup. On the simulated benchmarks, Mamba-MPC 
+
+> 1
+
+A video demonstration of Mamba-MPC on the Quanser Aero2 is available at: https://youtu.be/JZUzMLH1HeU 
+
+successfully stabilizes a nonlinear systems, it is robust to noisy data, and outperforms LSTM-MPC on reference track-ing. Furthermore, on all benchmarks, Mamba-MPC stays within the desired computation time. Moreover, Mamba-MPC successfully performed MIMO reference tracking on the Quanser Aero2 at real-time control sampling interval of 
+
+0.04 s. Future work will consider: 
+
+• Evaluating the performance of the SSM function when the diagonal terms in A are allowed to be complex. Complex valued diagonal terms could increase the modeling capacity of Mamba in dynamical systems; 
+
+• Implementing Mamba-MPC using Acados for further computational efficiency; 
+
+• Developing a closed-loop stability analysis framework for Mamba-MPC. 
+
+REFERENCES 
+
+[1] T. Chen and H. Chen, “Universal approximation to nonlinear operators by neural networks with arbitrary activation functions and its applica-tion to dynamical systems,” IEEE Transactions on Neural Networks ,vol. 6, pp. 911–917, 1995. [2] M. Lazar and O. Pastravanu, “A neural predictive controller for non-linear systems,” Mathematics and Computers in Simulation , vol. 60, pp. 315–324, 2002. [3] Y. Pan and J. Wang, “Model predictive control for nonlinear affine systems based on the simplified dual neural network,” in IEEE Con-ference on Control Applications (CCA) & Intelligent Control (ISIC) ,2009, pp. 683–688. [4] J. H. Hoekstra, B. Cseppento, G. I. Beintema, M. Schoukens, Z. Kollr, and R. Tth, “Computationally efficient predictive control based on ANN state-space models,” in Proceedings of the IEEE Conference on Decision and Control . Institute of Electrical and Electronics Engineers Inc., 2023, pp. 6336–6341. [5] S. Hochreiter and J. Schmidhuber, “Long short-term memory,” Neural Computation , vol. 9, pp. 1735–1780, nov 1997. [6] N. Mohajerin and S. L. Waslander, “Multistep Prediction of Dynamic Systems With Recurrent Neural Networks,” vol. 30, no. 11, pp. 3370–3383. [Online]. Available: https://ieeexplore.ieee.org/document/ 8630673/ [7] K. Cho, B. Van Merrienboer, C. Gulcehre, D. Bahdanau, F. Bougares, H. Schwenk, and Y. Bengio, “Learning Phrase Representations using RNN EncoderDecoder for Statistical Machine Translation,” in Proceedings of the 2014 Conference on Empirical Methods in Natural Language Processing (EMNLP) . Association for Computational Linguistics, pp. 1724–1734. [Online]. Available: http://aclweb.org/anthology/D14-1179 [8] F. Bonassi, C. F. O. da Silva, and R. Scattolini, “Nonlinear MPC for offset-free tracking of systems learned by GRU neural networks,” 2021. [9] A. Vaswani, N. Shazeer, N. Parmar, J. Uszkoreit, L. Jones, A. N. Gomez, . Kaiser, and I. Polosukhin, “Attention is All you Need.” [10] J. Park, M. R. Babaei, S. A. Munoz, A. N. Venkat, and J. D. Heden-gren, “Simultaneous multistep Transformer architecture for model predictive control,” Computers and Chemical Engineering , vol. 178, oct 2023. [11] A. Gu and T. Dao, “Mamba: Linear-time sequence modeling with selective state spaces,” arXiv preprint arXiv:2312.00752, dec 2023. [Online]. Available: http://arxiv.org/abs/2312.00752 [12] A. Gu, K. Goel, and C. R, “Efficiently modeling long sequences with structured state spaces,” arXiv preprint arXiv:2111.00396, oct 2021. [Online]. Available: http://arxiv.org/abs/2111.00396 [13] C. Tallec and Y. Ollivier, “Can recurrent neural networks warp time?” arXiv preprint arXiv:1804.11188, mar 2018. [Online]. Available: http://arxiv.org/abs/1804.11188 [14] L. Lu, P. Jin, and G. E. Karniadakis, “DeepONet: Learning nonlinear operators for identifying differential equations based on the universal approximation theorem of operators,” Nature Machine Intelligence ,vol. 3, pp. 218–229, mar 2021.  
+
+> 12 VOLUME
+
+[15] Z. Hu, N. A. Daryakenari, Q. Shen, K. Kawaguchi, and G. E. Karniadakis. State-Space Models are Accurate and Efficient Neural Operators for Dynamical Systems. [Online]. Available: https: //www.ssrn.com/abstract=4990229 [16] Z. Li, M. Han, and X. Yin, “MamKO: Mamba-based koopman operator for modeling and predictive control,” in The Thirteenth International Conference on Learning Representations , 2025. [Online]. Available: https://openreview.net/forum?id=hNjCVVm0EQ [17] T. O. De Jong, K. Shukla, and M. Lazar, “Deep Operator Neural Network Model Predictive Control,” vol. 4, pp. 501–517. [Online]. Available: https://ieeexplore.ieee.org/document/11181185/ [18] N. Shazeer, “GLU variants improve Transformer,” arXiv preprint arXiv:2002.05202, feb 2020. [Online]. Available: http://arxiv.org/abs/ 2002.05202 [19] M. Lezcano-Casado and D. Martnez-Rubio, “Cheap orthogonal constraints in neural networks: A simple parametrization of the orthogonal and unitary group,” arXiv preprint arXiv:1901.08428, may 2019. [Online]. Available: http://arxiv.org/abs/1901.08428 [20] E. S. Lubana, R. P. Dick, and H. Tanaka, “Beyond BatchNorm: Towards a unified understanding of normalization in deep learning,” arXiv preprint arXiv:2106.05956, oct 2021. [Online]. Available: http://arxiv.org/abs/2106.05956 [21] B. Zhang and R. Sennrich, “Root Mean Square Layer Normalization.” [Online]. Available: https://www.zora.uzh.ch/id/eprint/177483 [22] M. awryczuk and K. Zarzycki, “LSTM and GRU type recurrent neural networks in model predictive control: A review,” Neurocomputing , vol. 632, jun 2025. [23] D. P. Kingma and J. Ba, “Adam: A Method for Stochastic Optimization.” [Online]. Available: http://arxiv.org/abs/1412.6980 [24] A. Wchter and L. T. Biegler, “On the implementation of an interior-point filter line-search algorithm for large-scale nonlinear program-ming,” Mathematical Programming , vol. 106, pp. 25–57, may 2006. [25] P. C. Blaud, P. Chevrel, F. Claveau, P. Haurant, and A. Mouraud, “Four MPC implementations compared on the Quadruple Tank Process benchmark: pros and cons of neural MPC,” in IFAC-PapersOnLine ,vol. 55. Elsevier B.V., jul 2022, pp. 344–349. 
+
+Michiel Cevaal received the B.S. degree in Elec-trical Engineering from Eindhoven University of Technology, Eindhoven, The Netherlands, in 2022 and the M.S. degree in Electrical Engineering from Eindhoven University of Technology, Eindhoven, The Netherlands in 2025. He is currently pursuing the Ph.D. degree at Tilburg University in collabora-tion with the Data Science Center of Excellence of the Ministry of Defense. His research is focused on autonomous multi-agent drone swarms in ad-versarial conditions. 
+
+Thomas O. de Jong (Student Member, IEEE) received the B.S. degree in Mechanical Engi-neering from Eindhoven university of Technology, Eindhoven, The Netherlands, in 2021 and the M.S. degree in Systems and Control from Eindhoven university of Technology, Eindhoven, The Nether-lands, in 2023. He is currently pursuing the Ph.D. degree in Systems and Control in Eindhoven, The Netherlands, in 2021 and the M.S. degree in Systems and Control at Eindhoven University of Technology, Eindhoven, The Netherlands. 
+
+Dr. Mircea Lazar (Senior Member, IEEE) is an Associate Professor in Constrained Control of Complex Systems at the Electrical Engineering Department, Eindhoven University of Technology, The Netherlands. His research interests cover Lya-punov functions, distributed control, neural net-works and constrained control of nonlinear and hybrid systems, including model predictive con-trol. His research is driven by control problems in power systems, power electronics, high-precision mechatronics, automotive and biological systems. Dr. Lazar received the European Embedded Control Institute Ph.D. Award in 2007 for his Ph.D. dissertation. He received a VENI personal grant from the Dutch Research Council (NWO) in 2008 and he supervised 13 Ph.D. researchers (2 received the Cum Laude distinction). Dr. Lazar chaired the 4th IFAC Conference on Nonlinear Model Predictive Control in 2012. He is an Active Member of the IFAC Technical Committees 1.3 Discrete Event and Hybrid Systems, 2.3 Nonlinear Control Systems and an Associate Editor of IEEE Transactions on Automatic Control.
