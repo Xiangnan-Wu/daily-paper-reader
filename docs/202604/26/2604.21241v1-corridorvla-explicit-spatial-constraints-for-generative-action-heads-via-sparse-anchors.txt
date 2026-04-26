@@ -1,0 +1,327 @@
+Title: CorridorVLA: Explicit Spatial Constraints for Generative Action Heads via Sparse Anchors
+
+URL Source: https://arxiv.org/pdf/2604.21241v1
+
+Published Time: Fri, 24 Apr 2026 00:24:28 GMT
+
+Number of Pages: 7
+
+Markdown Content:
+# CorridorVLA: Explicit Spatial Constraints for Generative Action Heads via Sparse Anchors 
+
+Dachong Li 1 Zhuangzhuang Chen 1 Jin Zhang 1 Jianqiang Li 21 College of Computer Science and Software Engineering, Shenzhen University, Shenzhen, China  
+
+> 2
+
+National Engineering Laboratory for Big Data System Computing Technology. 
+
+{lidachong2023, chenzhuangzhuang2016 }@email.szu.edu.cn, lijq@szu.edu.cn 
+
+Abstract — Vision–Language–Action (VLA) models often use intermediate representations to connect multimodal inputs with continuous control, yet spatial guidance is often injected implicitly through latent features. We propose CorridorVLA, which predicts sparse spatial anchors as incremental physical changes (e.g., ∆-positions) and uses them to impose an explicit tolerance region in the training objective for action generation. The anchors define a corridor that guides a flow-matching action head: trajectories whose implied spatial evolution falls outside it receive corrective gradients, while minor deviations from contacts and execution noise are permitted. On the more challenging LIBERO-Plus benchmark, CorridorVLA yields consistent gains across both SmolVLA and GR00T, improving success rate by 3.4% –12 .4% over the corresponding baselines; notably, our GR00T-Corr variant reaches a success rate of 
+
+83 .21% . These results indicate that action-aligned physical cues can provide direct and interpretable constraints for generative action policies, complementing spatial guidance encoded in visual or latent forms. Code will be publicly available at 
+
+https://github.com/corridorVLA .
+
+I. I NTRODUCTION 
+
+Vision–Language–Action (VLA) models have recently drawn increasing attention as a route toward general-purpose robotic policies that unify perception, language grounding, and control. Early large-scale systems such as RT-2 [1] and OpenVLA [2] suggest that scaling multimodal backbones can translate into broader task coverage in robotics. At the same time, the field has been actively experimenting with different design choices—from diffusion/flow-based action heads that improve continuous control fidelity (e.g., Octo [3], pi0 [4], RDT [5]), to richer multimodal structures and training signals (e.g., GR-1/GR-2 [6], [7], RoboDreamer [8], and RL-augmented variants [9], [10]). These parallel threads reflect an ongoing evolution of VLA paradigms rather than a settled blueprint [11]. Alongside architectural progress, the robotics community continues to accumulate data from increasingly diverse plat-forms and setups. Differences in embodiments, controllers, camera configurations, and annotation conventions make it natural for datasets to expose heterogeneous state/action pa-rameterizations and task-specific idiosyncrasies. A recurring theme in VLA design is therefore to introduce interme-diate representations that capture task-relevant structure in a more shareable form—goal images, affordance-like cues, reward codes, or other abstractions summarized in recent surveys [12]. While such representations do not eliminate VLM action 
+
+expert VLM action 
+
+expert       
+
+> img lang
+> qt
+> img lang qtnoise noise
+> action action emb
+
+(A) (B)             
+
+> loss
+> Fig. 1. Motivation. (A) A common VLA route encodes spatial guidance in an image-style latent: the backbone predicts location-related visual tokens/features that modulate the vision–language latent representation, thereby influencing action generation indirectly. ( B) CorridorVLA explores a lightweight alternative: the backbone predicts sparse key spatial anchors as text-style physical quantities, and these anchors impose an explicit corridor constraint on the downstream action generation objective.
+
+heterogeneity, they provide a practical interface for transfer-ring common semantics across robots and tasks. Among candidate intermediates, spatial cues are partic-ularly prominent. A broad line of work seeks to represent “what should change” in the scene—often through future-oriented or change-focused modeling—and use it to sup-port action generation. For instance, CoTVLA [13] and DreamVLA [14] highlight the utility of emphasizing re-gions of change, and ReconVLA [15] explores predicting future observations to inform long-horizon behavior. These approaches encode spatial guidance in visual or latent forms and inject it through representation learning. Motivated by the same goal of leveraging spatial structure, we explore a complementary route: can spatial guidance be expressed as 
+
+direct, text-style physical quantities that align more closely with the action space, and can such cues constrain action generation at the objective level? In this paper, we explore this direction through Corri-dorVLA . We predict sparse future spatial anchors as in-cremental changes (e.g., end-effector ∆-positions) from the vision–language backbone using learnable slots. We then use these anchors to impose an explicit tolerance region in the learning objective for action generation: the spatial evolution implied by the generated trajectory is encouraged to stay within the tolerance band, with deviations receiving corrective gradients while minor execution noise and contacts remain permissible. We instantiate this idea on top of a 
+
+> arXiv:2604.21241v1 [cs.RO] 23 Apr 2026
+
+flow-matching action expert, where the corridor regularizer complements the standard velocity regression objective. Using SmolVLA [16] as a baseline, we evaluate Corri-dorVLA on the LIBERO benchmark [17] and observe a 4% improvement over the baseline. We view these results as evidence that sparse, text-style spatial anchors can be coupled with generative action heads to provide a direct and interpretable form of spatial guidance. Our contributions are three-fold:  
+
+> •
+
+We propose CorridorVLA , which predicts sparse future spatial anchors as action-aligned physical cues and uses them to constrain action generation through a tolerance-region objective.  
+
+> •
+
+We formulate an explicit loss-space coupling between text-style physical cues and a flow-matching action head, complementing prior visual/latent spatial-cue for-mulations.  
+
+> •
+
+We demonstrate consistent gains on LIBERO, achiev-ing a 4% improvement over the baseline, and provide ablations that clarify effective design choices. II. R ELATED WORK 
+
+A. Spatially Grounded Intermediate Representations 
+
+Recent progress in Vision–Language–Action (VLA) mod-eling has been closely tied to how information is repre-sented and organized for embodied decision making. Arecent survey from an action-tokenization perspective [12] summarizes multiple tokenizable forms of multimodal in-formation, reflecting the community effort to build scalable VLA systems under heterogeneous embodiments, sensors, and dataset conventions. In this landscape, a prominent direction is to introduce intermediate representations that help connect high-level multimodal understanding with low-level continuous control. A considerable body of work uses future-state imagery or video as outputs or intermediate targets, including CoTVLA [13], DreamVLA [14], and ReconVLA [15]. These approaches emphasize modeling state transitions and often benefit from the sparsity of predictive signals (e.g., focusing on regions that change). Our work is motivated by a related intuition—spatial evolution provides useful structure—but explores a different instantiation: rather than representing future changes through visual-style intermediates, we study sparse, low-dimensional physical quantities as predictive spatial cues, and further use them to impose an explicit constraint on action generation. Another line of research strengthens cross-modal reason-ing by designing prompts or token layouts that better align vision and language with embodied semantics. For example, InterleaveVLA [18] interleaves textual and visual tokens to improve cross-modal comprehension. In contrast, we focus less on enriching the input stream and more on shaping a lightweight intermediate signal that is closer to the control space, aiming to provide direct guidance for the downstream action module while keeping the interface compact. Several recent methods also move representations closer to action generation, either by learning action-oriented latents for downstream policies (e.g., UniVLA [19]) or by formu-lating policies in purely textual terms (e.g., VLA-0 [20]). ReKep [21] is particularly relevant in its use of language-derived explicit spatial constraints, realized as keypoint-based cost functions solved via hierarchical optimization. In contrast, CorridorVLA predicts sparse future key positions as physical cues and converts them into a loss-space tolerance corridor that directly guides a generative action head, pro-viding a lightweight and interpretable way to inject spatial objectives into continuous trajectory generation. 
+
+B. View-Centered Spatial Grounding 
+
+Several recent VLA works explore camera-centric or ego-centric formulations that build a unified representation space from the agent’s first-person view, including OC-VLA [22], EgoVLA [23], and cVLA [24]. By treating the camera view as the primary reference frame, these methods aim to align perception with action in a view-consistent manner, which is broadly compatible with our motivation of using grounded representations to connect multimodal inputs and control. At the same time, camera-centered parameterizations in-herit practical variability across platforms: camera resolution, field of view, calibration, and mounting all differ substan-tially from one robot to another, and the resulting repre-sentation space may shift accordingly. This makes cross-system transfer sensitive to viewpoint and sensor configu-ration, especially when embodiments differ or the camera undergoes non-negligible motion during execution. In addi-tion, incorporating motion-related information often requires reasoning about coordinate transforms (e.g., between ego-centric and world frames) and maintaining estimates of pose and extrinsics, which can complicate the pipeline when used as a persistent reference. Motivated by these considerations, our work instead investigates a compact spatial intermediate expressed as simple physical quantities, aiming to remain interpretable and to couple more directly with the action generator without relying on a camera-defined coordinate system. III. M ETHOD 
+
+We view robotic action execution as a structured evolution of spatial states: objects and the end-effector move through a sequence of meaningful configurations before a task is completed. Motivated by this perspective, several VLA sys-tems introduce auxiliary predictions—such as goal images, future videos, or waypoints—to provide spatial guidance for action generation. These signals can be effective, but they are commonly encoded in visual or latent forms, which may entangle task-relevant motion cues with appearance-level details and typically influence the action head only through implicit feature interactions. In this work, we ask a more direct question: can text-style 
+
+spatial cues, expressed as simple physical quantities of spatial change, serve as an effective intermediate representation for VLA? We focus on predicting sparse key waypoints along an execution window and using them as explicit spatial constraints during action generation. This design aims to (i) put the yellow 
+
+> and white mug in
+> the microwave
+> and close it
+
+VLM  
+
+> Vision
+> Encoder
+> Text
+> Tokenizer MLP
+> Learningable
+> embeding
+
+Action 
+
+Expert       
+
+> Noise
+> atat+l at+ T
+> MLP
+> (A) Framework At|q tΔq t
+> Timestep
+> trajectory
+> buffer
+> (B) K ey Pos Fig. 2. Framework. (A) The backbone predicts a small set of future key spatial increments, while the action output is augmented with the corresponding end-effector displacement fields. These key increments are then used to constrain action generation, requiring only a few additional prediction slots with minimal changes to the original VLA pipeline. ( B)Spatial-change guidance provides a simple prior: manipulation trajectories tend to evolve smoothly, so sparse key increments can offer a safe, structured signal that reduces unstructured exploration under stochastic generation.
+
+keep the intermediate signal close to the control manifold (e.g., incremental displacements rather than images), and (ii) make the guidance act at the objective level, providing a clear training signal beyond latent feature shaping. To study this question with minimal confounding factors, we build on SmolVLA [16]. Its lightweight backbone enables fast iteration and fine-grained ablations, while the relatively small parameter count helps attribute performance changes to representation and objective design rather than increased model capacity. Two requirements guide our formulation. First, the spa-tial physical quantities should be introduced before action generation, so that they can be predicted from the same vision–language context as the policy. Second, they should exert direct influence on the action generator itself—not only by modifying hidden features, but also by imposing explicit constraints on the generated trajectories. 
+
+A. Sparse Key-Position Prediction 
+
+We predict a sparse set of future spatial anchors as lightweight physical cues, instantiated as end-effector (EE) 3D ∆-positions at K temporally spaced steps within a length-
+
+T action chunk. To support different horizons across tasks and backbones, we represent these cues with learnable anchor slots , implemented as a small set of learnable tokens appended to the backbone input. While an autoregressive design could also generate such cues, it typically couples computation and parameterization more tightly to the pre-diction length; in contrast, the slot-based formulation keeps this dependence mild and makes it straightforward to vary the predicted quantity and sampling window.       
+
+> TABLE I SUCCESS RATES (%) ON LIBERO FOR THE 4-IN -1 MODEL .
+
+Method Long Goal Object Spatial Avg SmolVLA-Base 72.0 89.0 98.0 87.0 86.5 pos 74.6 90.8 93.4 87.2 86.5 
+
+∆-pos 75.6 90 93.6 90.8 87.5 
+
+We instantiate the anchor target as either absolute EE posi-tions or incremental EE position changes. Absolute positions can be sensitive to viewpoint/calibration and episode-specific offsets, while incremental targets better match the change-driven nature of control. As shown in Table I, predicting EE ∆-positions ( ∆-pos ) consistently outperforms predicting absolute positions ( pos ), and we therefore use ∆-positions as our default anchor representation. Formally, let ot denote the image observation and lt the language instruction at time t. We introduce K learnable anchor slots e ∈ RK×d . The backbone encoder fθ (·) takes image, language, and the slots as input, and outputs a fused hidden representation Ht ∈ RN×d together with predicted sparse EE increments c∆pt ∈ RK×3:
+
+ Ht , c∆pt
+
+ = fθ (ot , lt , e) . (1) Here c∆pt = {c∆pt,k}Kk=1 denotes the predicted anchor incre-ments. Let ∆p⋆ 
+
+> t
+
+= {∆p⋆
+
+> t,k
+
+}Kk=1 be the corresponding ground-truth sparse increments computed from temporally subsampled states. We supervise the anchors using 
+
+L∆p = 1
+
+K
+
+> K
+
+# ∑
+
+> k=1
+
+ρ
+
+ c∆pt,k − ∆p⋆ 
+
+> t,k2
+
+
+
+, (2) where ρ(·) is a robust penalty (e.g., ℓ1 or Huber). 
+
+B. Aligning Action Supervision with Spatial Variability 
+
+In manipulation, the commanded action and the realized spatial displacement can differ due to actuation biases and intermittent contacts. To make supervision better reflect the physical effect of control, we extend the action target with an explicit displacement term. Concretely, for each step in an action chunk, we augment the action vector with the corresponding end-effector ∆-position, and denote the resulting extended action as ˜ At ≜ [at ; ∆pt ]. We refer to this output design as extra-A . Beyond providing an additional physically grounded training signal, extra-A also aligns the action-head supervision with the backbone-predicted sparse anchors in Sec. III-A, enabling the two components to share a common spatial quantity. We further combine sparse-anchor prediction with extra-A in a merged variant ( merge in Table II). Empirically, this combination yields consistent gains, suggesting that explic-itly coupling backbone-predicted spatial cues with action-generation supervision is a practical direction for improving generative VLA policies. TABLE II SUCCESS RATES (%) ON LIBERO FOR THE 4-IN -1 MODEL .Method Long Goal Object Spatial Avg SmolVLA-Base 72.0 89.0 98.0 87.0 86.5 extra-A 76.6 87 99.2 89.8 88.15 
+
+∆-pos 75.6 90 93.6 90.8 87.5 merge 79.2 90.4 94 92.4 89 
+
+C. Flow Matching with Trajectory-Aware Coupling 
+
+We train the action expert with flow matching (FM) as in SmolVLA, and couple it with trajectory-level spatial constraints from the same sparse anchors in Sec. III-A and Sec. III-B. This coupling uses two terms: a corridor buffer 
+
+that defines a tolerant safe region to shrink the stochastic search space, and an in-corridor consistency term that contin-ues refining predictions after they enter the buffer. Together, they behave like a smooth-L1 objective: fast correction outside the corridor and gradual convergence inside. The overall objective combines the FM loss, the anchor prediction loss (Eq. (2)), and the corridor regularizer. 
+
+a) Flow matching in the extended action space.: Let ˜A ∈ RT ×D denote an extended action chunk with extra-A augmentation (Sec. III-B), and define x = vec ( ˜A) ∈ Rd .Given Gaussian noise ξ ∼ N (0, I) and t ∼ U (0, 1), FM defines 
+
+zt = ( 1 − t)x + t ξ , t ∈ [0, 1], (3) and learns a time-conditioned velocity field vθ (zt ,t) via 
+
+LFM = Et,x,ξ
+
+h
+
+∥vθ (zt ,t) − (ξ − x)∥22
+
+i
+
+. (4) Following the standard decoding used in FM action models, we form an estimate of the (vectorized) action sample at time 
+
+t as ˆxt = zt − t vθ (zt ,t), ˆAt = unvec (ˆxt ) ∈ RT ×D. (5) 
+
+b) Anchor extraction and corridor buffer.: We use 
+
+anchors to denote the sparse end-effector ∆-position incre-ments at K temporally spaced steps in the chunk. Let p⋆ =
+
+{∆p⋆ 
+
+> k
+
+}Kk=1 ∈ RK×3 be the ground-truth anchors (Sec. III-A). We define an extraction operator g(·) that selects the same anchor time indices and reads the ∆-position (xyz) fields from an extended action chunk. Concretely, g(A) ∈ RK×3
+
+is obtained by (i) indexing A at the K anchor steps and (ii) slicing the ∆-position sub-vector; in implementation, this is a standard gather -style indexing operation with shared anchor indices. To allow sample-dependent slack while avoiding overly small corridors, we set the corridor width as 
+
+δ ≜ α · max  
+
+> k∈{ 1,..., K}
+
+∥g(A⋆)k − ∆p⋆ 
+
+> k
+
+∥2 , α = 2, (6) where A⋆ is the ground-truth extended action chunk. We then penalize violations outside the corridor: 
+
+Lbuf (t) = 1
+
+K
+
+> K
+
+# ∑
+
+> k=1
+
+ g( ˆAt )k − ∆p⋆  
+
+> k2
+
+− δ  
+
+> +
+
+, (7)   
+
+> Fig. 3. Spatial-change prior from end-effector trajectories. A typical end-effector positional trajectory evolves smoothly with a low effective dimension. Within an action-generation window, a few key positions remain closely aligned with the full trajectory. Using the distance between the key positions and the dense trajectory as a tolerance threshold defines a feasible band that filters out many implausible predictions in the noisy, stochastic search regime, providing a reliable structural prior for action generation.
+
+where [·]+ = max (·, 0).
+
+c) In-corridor consistency.: Once ˆAt enters the corri-dor, Eq. (7) becomes inactive. To keep refining the trajectory and prevent drift within the feasible region, we add a con-sistency term based on stage-wise cumulative progress. Let 
+
+C (·) denote the cumulative-sum operator applied along time on the same extracted ∆-position sequence, i.e., C (g(A)) τ =
+
+∑τ 
+
+> j=1
+
+g(A) j. We define 
+
+Lcons (t) = 
+
+> K
+
+# ∑
+
+> τ=1
+
+wτ C (g( ˆAt )) τ − C (p⋆)τ 
+
+> 22
+
+, (8) with increasing weights wτ = τ  
+
+> ∑Kj=1j
+
+= 2τ 
+
+> K(K+1)
+
+to emphasize later stages. 
+
+d) Noise-aware weighting and overall objective.: We weight the corridor regularizer by noise level, since ge-ometric constraints are most reliable when the FM state is closer to data. From Eq. (3), zt becomes increasingly noise-dominated as t → 1, and thus less informative for enforcing spatial consistency. We therefore use w(t) = 1 − t
+
+to downweight high-noise stages and emphasize the corridor constraints as t → 0. 
+
+Lcorr (t) = w(t) Lbuf (t) + Lcons (t). (9) The overall training objective is 
+
+L = LFM + λ∆pL∆p + λcorr Et
+
+Lcorr (t), (10) where L∆p is defined in Eq. (2). IV. E XPERIMENT 
+
+A. Experimental Setup 
+
+We evaluate our method on two representative VLA back-bones: SmolVLA and GR00T . SmolVLA is implemented using the LeRobot framework [25] (v0.32), while GR00T follows the public implementation provided by StarVLA .Unless stated otherwise, we keep the training protocols and hyperparameters identical to the respective official defaults for both backbones, ensuring a fair and reproducible com-parison. TABLE III SUCCESS RATES (%) ON LIBERO FOR THE 4-IN -1 MODEL . Corr 
+
+> DENOTES OUR METHOD .
+
+Method Long Goal Object Spatial Avg 
+
+π0(3.3B) 73 95.0 86.0 90.0 86.0 GraspVLA [27] 82.0 91.2 94.1 - 89.1 NORA [28] 74.6 89.4 89.4 92.2 87.9 SmolVLA-Base 72.0 89.0 87.0 98.0 86.5 
+
+SmolVLA-Corr 85.2 90.8 95.8 92 90.95 
+
+Our method introduces a sparse set of future spatial anchors derived from the action chunk. Specifically, given the action horizon (chunk size) used by the flow-matching action head, we sample K sparse anchor steps and predict their corresponding spatial increments in the backbone; we use 
+
+K=3 by default. This only requires adding a small number of prediction tokens to the backbone ( K=3 additional tokens in our implementation), while leaving the model capacity and all other settings unchanged. We conduct experiments on 
+
+LIBERO [17] and LIBERO-Plus [26]. Since the SmolVLA vision encoder operates at 512 resolution, we re-render LIBERO observations to 512 ×512, which allows us to repro-duce the reported SmolVLA (0.45B) performance (SR 86 .5% vs. 87 .4% reported). For LIBERO-Plus, the released data only supports the default 256 ×256 resolution, so all results on LIBERO-Plus are reported under 256 input resolution. 
+
+B. Main Results 
+
+Our method, denoted as Corr , mainly modifies the training objective with a corridor-style constraint and leaves the architecture nearly unchanged. In practice, we only add 
+
+K=3 future-state prediction tokens to the backbone, lead-ing to negligible overhead (Table III). On LIBERO (Ta-ble III), SmolVLA-Corr improves success rate by 4 .45% over SmolVLA-Base, while keeping inference cost essentially the same. We further test robustness on the more challenging LIBERO-Plus benchmark (Table IV). Since LIBERO-Plus is released at 256 ×256 resolution, SmolVLA does not op-erate under its preferred 512-resolution setting. Even so, SmolVLA-Corr achieves a 12 .4% gain over SmolVLA-Base, showing that the corridor constraint remains effective under stronger perturbations and less favorable inputs. Finally, we validate cross-backbone transfer by applying the same modification to GR00T. GR00T-Corr improves success rate by 7.98% over GR00T-Base and compares favorably to baselines reported in the LIBERO-Plus benchmark. V. A BLATION STUDY 
+
+A. Necessity of Corridor Loss Components 
+
+CorridorVLA augments the standard flow-matching ob-jective with two corridor terms: a buffer constraint and an in-corridor consistency refinement. A natural question is whether both terms are necessary, or whether the gain mainly comes from one component. As shown in Table V, removing either term causes a clear drop in performance, while using                                                                                              
+
+> TABLE IV SUCCESS RATES (%) ON LIBERO-P LUS FOR THE 4-IN -1 MODEL .Corr
+> DENOTES OUR METHOD .Method Long Goal Object Spatial Avg NORA [28] 36.3 38.8 34.4 47.6 39 UniVLA [19] 39.9 40.7 36.7 55.5 42.9 SmolVLA-Base 46.53 35.89 66.2 32.85 45.37
+> SmolVLA-Corr 49.27 55.27 72.36 54.04 57.74
+> π048.4 44.9 61.4 60.7 53.6 OpenVLA-OFT [29] 66.4 63 66.5 84 69.6 GR00T-Base [30] 62.21 68.54 84.55 85.64 75.23
+> GR00T-Corr 74.55 85.75 88.4 84.14 83.21
+> TABLE V SUCCESS RATE (%) ON LIBERO (4-IN -1) WITH ABLATED CORRIDOR LOSS COMPONENTS .Method Long Goal Object Spatial Avg merge 79.2 90.4 94 92.4 89 +Lbuf 80.6 92.4 92.6 92.4 89.5 +Lcons 82.4 89.2 97.8 92.2 90.4 +Lbuf +Lcons −RDP 80.2 88.2 95.8 92.2 89.1 +Lbuf +Lcons 85.2 90.8 95.8 92 90.95
+
+both yields the best results. The effect is more pronounced on long-horizon tasks in LIBERO-Plus, where stable action generation benefits more from both out-of-corridor correction and in-corridor refinement. By default, we select the K anchor steps using a two-stage simplification: we first apply the Ramer–Douglas–Peucker (RDP) algorithm, a standard polyline simplification method that retains salient points while keeping the trajectory within a prescribed approximation error, and then use a dynamic-programming (DP) minimax selection to down-select exactly 
+
+K anchors by minimizing the worst-case approximation error along the trajectory. In Table V, we also evaluate uniform interval sampling, which performs worse, indicating that geometry-aware anchor selection provides more informative supervision than naive spacing. 
+
+B. Prediction-as-output and backbone interaction 
+
+To understand how predictive spatial cues should interact with the vision–language backbone, we first replace the state pathway from encoding-as-input to prediction-as-output 
+
+(State-as-Output in Table VI). Under the default prefix-style masking used in SmolVLA, state tokens act mainly as suffix conditioning. Once treated as prediction targets, allowing these predicted tokens to attend bidirectionally to the vision– language context ( State-as-Output+BiAttn ) yields consistent gains. This suggests that when spatial cues are modeled as prediction targets, richer cross-modal exchange in the backbone can be beneficial, motivating our use of prediction-style anchors with bidirectional interaction. 
+
+C. Reference versus prediction burden: what to predict 
+
+We next ask whether “predicting more” state informa-tion necessarily translates into better guidance. Somewhat unexpectedly, jointly predicting both current and future TABLE VI SUCCESS RATE (%) ON LIBERO (4-IN -1) FOR ABLATIONS OF PREDICTION -AS -OUTPUT INTERACTION AND ANCHOR TARGETS .Method Long Goal Object Spatial Avg SmolVLA-Base 72.0 89.0 98.0 87.0 86.5 State-as-Output 69 89 95 88.8 85.45 State-as-Output+BiAttn 70.40 89.60 94.40 91 86.35 Predict-CF-State 68.4 88.6 93.6 89.8 85.1 Keep-C/Predict-F (Causal) 70.4 90.8 95.8 87.6 86.15 Keep-C/Predict-F (BiAttn) 70.8 90.8 97.4 88.2 86.8 EE-Pos Anchor 74.6 90.8 93.4 87.2 86.5 EE-∆Pos Anchor 75.6 90 93.6 90.8 87.5 
+
+states ( Predict-CF-State ) degrades performance (Table VI). A plausible explanation is that forecasting high-dimensional states increases the learning burden and can weaken the role of the observed current state as a stable reference, making the auxiliary signal less reliable for downstream action generation. This motivates a more conservative design: we keep the current state as an input reference and predict only a future cue. With this setup, the bidirectional variant (Keep-C/Predict-F (BiAttn) ) consistently outperforms both the causal-masked counterpart ( Keep-C/Predict-F (Causal) )and the baseline in Table VI, indicating that richer cross-modal interaction remains helpful in this setting. Since retaining the current state restores performance, the difficulty may largely stem from predicting an overly com-plex state representation. We therefore probe simpler, action-aligned targets: predicting only the end-effector position ( EE-Pos Anchor ), and further decoupling from absolute offsets by predicting incremental position changes ( EE-∆Pos Anchor ). The incremental form yields the most stable gains, and we therefore adopt EE ∆-position anchors throughout the paper. VI. D ISCUSSION 
+
+Two limitations of this work should be noted. First, we do not report real-robot experiments. CorridorVLA is designed as a lightweight modification on top of existing VLA policies—primarily through objective-level constraints and a minimal interface extension—and our study focuses on verifying whether such constraints provide consistent benefits under standard embodied benchmarks. Real-world deploy-ment, however, depends on additional factors inherited from the base models (e.g., data collection procedures, sim-to-real gaps, and system identification), which are not addressed by a loss-level change alone. We view real-robot validation as an important next step, particularly to test whether corridor widths and noise-aware weighting should adapt to contact likelihood and uncertainty in physical interaction. Second, we do not provide a head-to-head comparison with spatial-cue designs that rely on image-based or latent visual intermediates, such as InterleaveVLA and Recon-VLA. These methods represent spatial guidance in a dif-ferent form—often through richer visual signals and heavier generative components—and are typically evaluated under different training budgets and architectural assumptions. Our goal here is not to replace such approaches, but to probe a complementary question: whether text-style spatial cues, expressed as simple physical quantities closer to the action manifold, can directly constrain generative action policies. The consistent gains we observe across two backbones and two benchmarks suggest that this direction is viable, even with minimal architectural changes. This points to an alter-native design axis for spatial intermediates: beyond shaping hidden features implicitly, spatial objectives can be injected explicitly at the action-generation level through a tolerant corridor that supports fast correction outside the region and gradual refinement within it. This corridor-based formulation makes spatial guidance explicit and controllable. Its effectiveness is largely governed by three coupled choices: the anchor representation (we use end-effector ∆-positions as a simple, action-aligned starting point), the corridor schedule that keeps constraints reliable under stochastic FM sampling, and the way gradients are balanced inside versus outside the corridor. Understanding these factors may provide a practical route to richer, more interpretable intermediate interactions between the vision– language backbone and the action head. VII. C ONCLUSION 
+
+We presented CorridorVLA , which predicts sparse spatial anchors as action-aligned physical cues and uses them to impose an explicit tolerance constraint for a flow-matching action head. This objective-level coupling corrects trajec-tories when their implied spatial evolution violates the tolerance, while remaining permissive to minor deviations from contacts and execution noise. On the more challenging LIBERO-Plus benchmark, CorridorVLA improves success rate by 3 .4%–12 .4% across both SmolVLA and GR00T. More broadly, our results highlight a complementary design axis for spatial intermediates in VLA: in addition to encoding spatial structure implicitly in visual/latent features, compact physical cues can directly constrain continuous trajectory generation through the training objective. We hope this per-spective encourages further exploration of action-manifold-aligned intermediates for connecting vision–language under-standing and robot control. REFERENCES [1] A. Brohan, N. Brown, J. Carbajal, Y. Chebotar, X. Chen, K. Choromanski, T. Ding, D. Driess, A. Dubey, C. Finn, P. Florence, C. Fu, M. G. Arenas, K. Gopalakrishnan, K. Han, K. Hausman, A. Herzog, J. Hsu, B. Ichter, A. Irpan, N. Joshi, R. Julian, D. Kalashnikov, Y. Kuang, I. Leal, L. Lee, T.-W. E. Lee, S. Levine, Y. Lu, H. Michalewski, I. Mordatch, K. Pertsch, K. Rao, K. Reymann, M. Ryoo, G. Salazar, P. Sanketi, P. Sermanet, J. Singh, A. Singh, R. Soricut, H. Tran, V. Vanhoucke, Q. Vuong, A. Wahid, S. Welker, P. Wohlhart, J. Wu, F. Xia, T. Xiao, P. Xu, S. Xu, T. Yu, and B. Zitkovich, “Rt-2: Vision-language-action models transfer web knowledge to robotic control,” in            
+
+> Proceedings of The 7th Conference on Robot Learning (CoRL) , ser. Proceedings of Machine Learning Research, vol. 229, 2023, pp. 2165–2183, also available as arXiv:2307.15818. [Online]. Available: https://proceedings.mlr.press/v229/zitkovich23a.html [2] M. J. Kim, K. Pertsch, S. Karamcheti, T. Xiao, A. Balakrishna, S. Nair, R. Rafailov, E. Foster, G. Lam, P. Sanketi, et al. , “Open-vla: An open-source vision-language-action model,” arXiv preprint arXiv:2406.09246 , 2024.
+
+[3] D. Ghosh, H. Walke, K. Pertsch, K. Black, O. Mees, S. Dasari, J. Hejna, T. Kreiman, C. Xu, J. Luo, Y. L. Tan, L. Y. Chen, P. Sanketi, Q. Vuong, T. Xiao, D. Sadigh, C. Finn, S. Levine, et al. , “Octo: An open-source generalist robot policy,” arXiv preprint arXiv:2405.12213 ,2024. [4] K. Black, N. Brown, D. Driess, A. Esmail, M. Equi, C. Finn, N. Fusai, L. Groom, K. Hausman, B. Ichter, S. Jakubczak, T. Jones, L. Ke, S. Levine, A. Li-Bell, M. Mothukuri, S. Nair, K. Pertsch, L. X. Shi, J. Tanner, Q. Vuong, A. Walling, H. Wang, and U. Zhilinsky, “ π0: A vision-language-action flow model for general robot control,” arXiv preprint arXiv:2410.24164 , 2024. [5] S. Liu, L. Wu, B. Li, H. Tan, H. Chen, Z. Wang, K. Xu, H. Su, and J. Zhu, “Rdt-1b: a diffusion foundation model for bimanual manipulation,” arXiv preprint arXiv:2410.07864 , 2024. [6] H. Wu, Y. Jing, C. Cheang, G. Chen, J. Xu, X. Li, M. Liu, H. Li, and T. Kong, “Unleashing large-scale video generative pre-training for visual robot manipulation,” arXiv preprint arXiv:2312.13139 , 2023. [7] C.-L. Cheang, G. Chen, Y. Jing, T. Kong, H. Li, Y. Li, Y. Liu, H. Wu, J. Xu, Y. Yang, H. Zhang, and M. Zhu, “Gr-2: A generative video-language-action model with web-scale knowledge for robot manipulation,” arXiv preprint arXiv:2410.06158 , 2024. [8] S. Zhou, Y. Du, J. Chen, Y. Li, D.-Y. Yeung, and C. Gan, “Robo-dreamer: Learning compositional world models for robot imagination,” 
+
+arXiv preprint arXiv:2404.12377 , 2024. [9] H. Li, Y. Zuo, J. Yu, Y. Zhang, Z. Yang, K. Zhang, X. Zhu, Y. Zhang, T. Chen, G. Cui, D. Wang, D. Luo, Y. Fan, Y. Sun, J. Zeng, J. Pang, S. Zhang, Y. Wang, Y. Mu, B. Zhou, and N. Ding, “Simplevla-rl: Scaling vision-language-action (vla) training via reinforcement learning,” arXiv preprint arXiv:2509.09674 , 2025. [10] G. Lu, W. Chen, X. Li, Z. Sun, Y. Zhang, R. Yang, and S. Wang, “Vla-rl: Towards masterful and general robotic manipulation with scalable reinforcement learning,” arXiv preprint arXiv:2505.18719 , 2025. [11] D. Zhang, J. Sun, C. Hu, X. Wu, Z. Yuan, R. Zhou, F. Shen, and Q. Zhou, “Pure vision language action (vla) models: A comprehensive survey,” arXiv preprint arXiv:2509.19012 , 2025. [12] Y. Zhong, F. Bai, S. Cai, X. Huang, Z. Chen, X. Zhang, Y. Wang, S. Guo, T. Guan, K. N. Lui, et al. , “A survey on vision-language-action models: An action tokenization perspective,” arXiv preprint arXiv:2507.01925 , 2025. [13] Q. Zhao, Y. Lu, M. J. Kim, Z. Fu, Z. Zhang, Y. Wu, Z. Li, Q. Ma, S. Han, C. Finn, et al. , “Cot-vla: Visual chain-of-thought reasoning for vision-language-action models,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) ,2025, pp. 1702–1713. [14] W. Zhang, H. Liu, Z. Qi, Y. Wang, X. Yu, J. Zhang, R. Dong, J. He, F. Lu, H. Wang, et al. , “Dreamvla: A vision-language-action model dreamed with comprehensive world knowledge,” arXiv preprint arXiv:2507.04447 , 2025. [15] W. Song, Z. Zhou, H. Zhao, J. Chen, P. Ding, H. Yan, Y. Huang, F. Tang, D. Wang, and H. Li, “Reconvla: Reconstructive vision-language-action model as effective robot perceiver,” arXiv preprint arXiv:2508.10333 , 2025. [16] M. Shukor, D. Aubakirova, F. Capuano, P. Kooijmans, S. Palma, A. Zouitine, M. Aractingi, C. Pascal, M. Russi, A. Marafioti, et al. ,“Smolvla: A vision-language-action model for affordable and efficient robotics,” arXiv preprint arXiv:2506.01844 , 2025. [17] B. Liu, Y. Zhu, C. Gao, Y. Feng, Q. Liu, Y. Zhu, and P. Stone, “Libero: Benchmarking knowledge transfer for lifelong robot learning,” arXiv preprint arXiv:2306.03310 , 2023. [18] C. Fan, X. Jia, Y. Sun, Y. Wang, J. Wei, Z. Gong, X. Zhao, M. Tomizuka, X. Yang, J. Yan, et al. , “Interleave-vla: Enhancing robot manipulation with interleaved image-text instructions,” arXiv preprint arXiv:2505.02152 , 2025. [19] Q. Bu, Y. Yang, J. Cai, S. Gao, G. Ren, M. Yao, P. Luo, and H. Li, “Univla: Learning to act anywhere with task-centric latent actions,” 2025. [Online]. Available: https://arxiv.org/abs/2505.06111 [20] A. Goyal, H. Hadfield, X. Yang, V. Blukis, and F. Ramos, “Vla-0: Building state-of-the-art vlas with zero modification,” arXiv preprint arXiv:2510.13054 , 2025. [21] W. Huang, C. Wang, Y. Li, R. Zhang, and L. Fei-Fei, “Rekep: Spatio-temporal reasoning of relational keypoint constraints for robotic manipulation,” 2024. [Online]. Available: https://arxiv.org/abs/ 2409.01652 [22] T. Zhang, H. Duan, H. Hao, Y. Qiao, J. Dai, and Z. Hou, “Grounding actions in camera space: Observation-centric vision-language-action policy,” arXiv preprint arXiv:2508.13103 , 2025. [23] R. Yang, Q. Yu, Y. Wu, R. Yan, B. Li, A.-C. Cheng, X. Zou, Y. Fang, H. Yin, S. Liu, S. Han, Y. Lu, and X. Wang, “Egovla: Learning vision–language–action models from egocentric human videos,” arXiv preprint arXiv:2507.12440 , 2025. [Online]. Available: https://arxiv.org/abs/2507.12440 [24] M. Argus, J. Bratulic, H. Masnavi, M. Velikanov, N. Heppert, A. Val-ada, and T. Brox, “cvla: Towards efficient camera-space vlas,” arXiv preprint arXiv:2507.02190 , 2025. [25] R. Cad` ene, S. Alibert, A. Soare, Q. Gallouedec, A. Zouitine, S. Palma, P. Kooijmans, M. Aractingi, M. Shukor, D. Aubakirova, M. Russi, F. Capuano, C. Pascal, J. Moss, and T. Wolf, “Lerobot: State-of-the-art machine learning for real-world robotics in pytorch,” arXiv preprint arXiv:2510.12403 , 2025. [26] S. Fei, S. Wang, J. Shi, Z. Dai, J. Cai, P. Qian, L. Ji, X. He, S. Zhang, Z. Fei, J. Fu, J. Gong, and X. Qiu, “Libero-plus: In-depth robustness analysis of vision-language-action models,” 2025. [Online]. Available: https://arxiv.org/abs/2510.13626 [27] S. Deng, M. Yan, S. Wei, H. Ma, Y. Yang, J. Chen, Z. Zhang, T. Yang, X. Zhang, W. Zhang, H. Cui, Z. Zhang, and H. Wang, “Graspvla: a grasping foundation model pre-trained on billion-scale synthetic action data,” 2025. [Online]. Available: https://arxiv.org/abs/2505.03233 [28] C.-Y. Hung, Q. Sun, P. Hong, A. Zadeh, C. Li, U.-X. Tan, N. Majumder, and S. Poria, “Nora: A small open-sourced generalist vision language action model for embodied tasks,” 2025. [Online]. Available: https://arxiv.org/abs/2504.19854 [29] M. J. Kim, C. Finn, and P. Liang, “Fine-tuning vision-language-action models: Optimizing speed and success,” 2025. [Online]. Available: https://arxiv.org/abs/2502.19645 [30] NVIDIA, :, J. Bjorck, F. Casta˜ neda, N. Cherniadev, X. Da, R. Ding, L. J. Fan, Y. Fang, D. Fox, F. Hu, S. Huang, J. Jang, Z. Jiang, J. Kautz, K. Kundalia, L. Lao, Z. Li, Z. Lin, K. Lin, G. Liu, E. Llontop, L. Magne, A. Mandlekar, A. Narayan, S. Nasiriany, S. Reed, Y. L. Tan, G. Wang, Z. Wang, J. Wang, Q. Wang, J. Xiang, Y. Xie, Y. Xu, Z. Xu, S. Ye, Z. Yu, A. Zhang, H. Zhang, Y. Zhao, R. Zheng, and Y. Zhu, “Gr00t n1: An open foundation model for generalist humanoid robots,” 2025. [Online]. Available: https://arxiv.org/abs/2503.14734 
+
+APPENDIX This version corrects a data processing issue identified after initial internal review. Experimental results and per-formance metrics have been updated accordingly. The core methodology and conclusions remain unchanged.

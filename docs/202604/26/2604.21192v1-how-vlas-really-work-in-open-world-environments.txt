@@ -1,0 +1,271 @@
+Title: How VLAs (Really) Work In Open-World Environments
+
+URL Source: https://arxiv.org/pdf/2604.21192v1
+
+Published Time: Fri, 24 Apr 2026 00:20:42 GMT
+
+Number of Pages: 8
+
+Markdown Content:
+# How VLAs (Really) Work In Open-World Environments 
+
+Amir Rasouli Yangzheng Wu Zhiyuan Li Rui Heng Yang Xuan Zhao Charles Eret ∗ Sajjad Pakdamansavoji ∗
+
+Abstract — Vision-language-action models (VLAs) have been extensively used in robotics applications, achieving great success in various manipulation problems. More recently, VLAs have been used in long-horizon tasks and evaluated on benchmarks, such as BEHAVIOR1K (B1K), for solving complex household chores. The common metric for measuring progress in such benchmarks is success rate or partial score based on satisfaction of progress-agnostic criteria, meaning only the final states of the objects are considered, regardless of the events that lead to such states. In this paper, we argue that using such evaluation protocols say little about safety aspects of operation and can potentially exaggerate reported performance, undermining core challenges for future real-world deployment. To this end, we conduct a thorough analysis of state-of-the-art models on the B1K Challenge and evaluate policies in terms of robustness via reproducibility and consistency of performance, safety aspects of policies operations, task awareness, and key elements leading to the incompletion of tasks. We then propose evaluation protocols to capture safety violations to better measure the true performance of the policies in more complex and interactive scenarios. At the end, we discuss the limitations of the existing VLAs and motivate future research. 
+
+I. I NTRODUCTION 
+
+In recent years, especially after the introduction of robotics foundational models, we have witnessed great progress in the field of robotics. Vision-language-action (VLA) models have been increasingly applied to a broad range of embodied tasks, including complex and longer-horizon tasks, such as performing household chores, that can last minutes to accomplish [1]. Due to the inherent reproducibility and safety chal-lenges of evaluation in real-world settings, realistic simu-lation benchmarks, such as BEHAVIOR1K (B1K) [2], have emerged as a practical alternative for testing VLA policies. B1K is a large-scale benchmark containing over 1000 house-hold tasks, ranging from cleaning and organizing rooms to preparing and cooking food. Despite the widespread use of a diverse set of safety metrics for evaluating motion plan-ning policies in safety-critical domains, such as autonomous driving [3], evaluation in the context of assistive robotics is predominantly based on success rate [4], [5], [6], [7], [8]. B1K is no exception and uses success rate of the tasks as the primary metric. In the case of incompletion, a partial score is computed based on the percentage of sub-goals that are satisfied. The score is computed in a progress-agnostic manner, meaning only the final state of the target objects are considered.         
+
+> Noah’s Ark Laboratory, Huawei Technologies Canada. ∗Work was done while at Huawei Canada. Put appliances in the cabinet
+> •3 x appliances inside cabinet
+> •Cabinet not closed Q-score = 0.75 sQ = 0.5
+> Put food items in the same box
+> •3x items in box
+> •Fridge is closed
+> •2x items not in box
+> sQ = 0.67 seQ = 0.63
+> TV = 1
+> nTV = 1
+> •2 x appliances inside cabinet
+> •An appliance damaged
+> •Cabinet not closed
+> +
+> •Box in correct position
+> •Board dropped
+
+Fig. 1: Examples of calculating success metric. In B1K only the final state of the objects are considered to measure success. ( Top ) three objects are in the cabinet but the cabinet is not closed, hence Q-score is 0.75. Our safety Q-score (sQ), penalizes the score since one appliance was dropped (target violated (TV)) and damaged. ( Bottom ), three objects are properly placed in the box and fridge is closed, hence Q-score and sQ are 0.67. Our safety enhanced Q-score (seQ) adds two additional sub-goals for non-targets, the box and chopping board. Since the board is dropped (non-target violated (nTV)), seQ is 0.63. Such an evaluation protocol, while capturing the overall task completion, provides little insight into how safely the robot behaves in the environment. Relying solely on success-based metrics can potentially exaggerate perceived progress and obscure key challenges in real-world deployment. This limitation arises from two main factors. First, the inher-ent complexity of long-horizon tasks makes success-based evaluation insufficient. These tasks often span minutes and require the integration of multiple skills, including instruction understanding, navigation, localization, grasp estimation, and motion planning. As a result, evaluating performance solely based on sub-goal satisfaction offers little diagnostic value and fails to reveal the underlying sources of failure. The second factor concerns how success is measured. Goal criteria consider only the final states of target objects, e.g. food is in the fridge or the cabinet’s door is closed, while the states of non-target and support objects are entirely ignored. For instance, if the robot drops the chopping board or the knife on the floor during the slicing vegetable task, it is not penalized. In addition, the evaluation is progress-agnostic, meaning only the final states of the target objects are assessed 
+
+> arXiv:2604.21192v1 [cs.RO] 23 Apr 2026
+
+regardless of how they were achieved. This means the robot can potentially collide with the furniture, damage target objects, or commit other safety violations and still obtain full credit for satisfying the sub-goals. It is widely accepted that safety aspects must be addressed for the reliable deployment of robot policies in any shared real-world environments. In this work, our goal is to provide a systematic analysis of the limitations of VLA policies for real-world deployment and highlight the shortcomings of the existing benchmarks. We select B1K as one of the most comprehensive evaluation platforms for household tasks to date, and conduct an in-depth analysis of the top two state-of-the-art VLA policies on this benchmark. In particular, we assess the robustness of the top model in terms of reproducibility across independent runs and consistency across task trials, and perform quali-tative analysis of causes of failures by reviewing recorded executions and report how frequently they arise in complex and interactive tasks. We then propose alternative metrics to measure safe violations and their impact on the final success of top two policies (see Figure 1), followed by discussion on potential practical solutions to remedy the observed failures. In summary, our contributions are three-fold:  
+
+> •
+
+In-depth analysis of the top VLA policy on the B1K Challenge in terms of the reproducibility of the results, consistency of the policy’s performance across different trials, and sources of failures.  
+
+> •
+
+Safety-aware evaluation. We propose safety metrics beyond progress-agnostic success measures to capture safety violations during task execution. Our metrics build upon the existing B1K evaluation framework to make success criteria more reflective of the robot’s task progress, and introduce two additional metrics to explicitly quantify safety violations.  
+
+> •
+
+Practical remedies. We propose a set of architecture-agnostic strategies to motivate future research in devel-oping more reliable robotic policies, including safety-aware data curation, structured curriculum design, and deployment-oriented validation, with the goal of im-proving robustness and safety in real-world deployment. II. R ELATED WORKS 
+
+A. Vision-Language-Action Policies 
+
+Recent advances in foundation models have led to the emergence of vision–language–action (VLA) models for robot motion planning. These approaches are typically built on large-scale transformer-based architectures trained on diverse multimodal datasets, enabling them to map visual observations, language instructions, and robot states to down-stream control signals for navigation and manipulation tasks [7], [8], [9], [10], [11]. More recently, VLAs have been deployed in open-world environments. For example, π0.5 [1] adopts a co-training strategy over heterogeneous data sources, including both robotic and web-scale data, to improve generalization for long-horizon household tasks. This model demonstrates promising performance in many scenarios, such as bed making, cleaning, and object sorting. Building on the π0.5
+
+architecture, the Robot Learning Collective (RLC) [12] and OpenPI Comet [13] further improve open-world task per-formance by enhancing the action generation module and scaling the training process. Despite these promising results, VLAs remain sensitive to distribution shifts [14]. Their performance can degrade substantially when distractors are introduced [15], when non-target objects are modified [16], or when background factors, such as lighting, texture, or camera pose change [17]. These shifts often lead to object confusion, unintended collisions, or grasp failures. These analyses, however, are conducted in constrained tabletop settings with fixed manipulators and limited object interactions. In contrast, we evaluate VLA policies in broader open-world scenarios that require mobile manipulation, spatial reasoning, and long-horizon execution. Our goal is to provide a more realistic assessment of robust-ness and deployment readiness in complex and interactive open-world environments. 
+
+B. Evaluation Protocols 1) Benchmarks: Simulation benchmarks have become es-sential for evaluating robot policies due to the cost, safety, and reproducibility challenges of real-world testing. A wide range of benchmarks have been proposed [18], [4], [5], many of which target specific and often complex tasks, such as food preparation [19], furniture assembly [20], human–robot collaboration [21], and spatial reasoning [22]. Some benchmarks extend beyond tabletop manipulation to larger and more realistic environments, including kitchens [6] and full household settings [23], [24]. However, these envi-ronments often trade off physical or visual fidelity, which can increase the sim-to-real gap. BEHAVIOR-1K (B1K) [2] is one of the most compre-hensive open-world benchmarks to date, offering both high task diversity and realistic simulation. It consists of 1,000 ev-eryday household activities in fully furnished environments, including kitchens, offices, bedrooms, and outdoor spaces. In a recent challenge [25], 50 representative tasks were selected, and participants were invited to submit their solutions. In this work, we adopt this challenge setup and evaluate the top two winning policies across a diverse set of tasks. 
+
+2) Metrics: Robot manipulation policies are typically evaluated using success rate [4], [5], [6], [7], [8], sometimes supplemented by efficiency measures, such as execution time [2] or action count [26]. Other metrics including executability [27], error-based corrections [28], and object placement accuracy [29]. In BEHAVIOR-1K, due to the long-horizon nature of the tasks, Q-score [2] is used to measure partial success based on the percentage of completed sub-goals. However, similar to other success-based metrics, it is progress-agnostic, meaning it only evaluates the final task state and does not capture the quality or safety of the execution process. We argue that, similar to other safety-critical domains, such as autonomous driving [3], assistive robotics requires 0                                                 
+
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> 0.9
+> 1
+> 012345678910 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49
+> Q-score
+> Task
+> Original
+> Reproduced
+
+Fig. 2: The posted results of the RLC policy and reproduced ones using the officially released checkpoints. The values show large disparity between results. explicit safety-aware evaluation. Existing works often mea-sure safety through collision statistics, including success degradation under increased clutter [30], fraction of collision-free trajectories [31], or frequency of collisions [32]. How-ever, treating all contacts as unsafe can overestimate the risks, as physical interaction with non-target objects is often inevitable or even necessary in real-world manipulation. For example, a robot retrieving an object from a bed may contact the mattress without causing harm, or in a crowded space, the robot may need to move surrounding objects to access a target. Therefore, we propose a more holistic safety evaluation framework that considers the consequences 
+
+of actions. Specifically, we define safety violations based on whether an action leads to violations (or hazards), such as damaging objects, environmental disruption, or unstable behavior, regardless of whether the violation arises from collision, poor grasping, or unsafe motion. III. E VALUATING VLA S IN OPEN -W ORLD 
+
+Objective. VLA policies model an action distribution conditioned on an observation, i.e. p(AT |Ot), where AT =[at, a t+1 , ...a t+m] is the predicted action sequence and m is the action prediction horizon. The observation ot comprises one or more images from different viewpoints, a language instruction, and the proprioceptive state of the robot, such as joint angles and end-effector pose. 
+
+Benchmark : For this analysis, we adopt BEHAVIOR1K (B1K) [2]. We evaluate on the 50 tasks selected for the B1K 2025 Challenge [25], drawn from a diverse set of household scenes spanning kitchens, offices, bedrooms, living rooms, and backyards, with objectives ranging from organizing and cleaning to storing and cooking, among others. Each task is accompanied by a short language instruction describing what the robot needs to accomplish. Every task comprises 10 variations, or trials, in which the initial positions of the robot and objects are randomized. 
+
+Models. For this analysis, we primarily report results for the winning model of the B1K 2025 Challenge, RLC [12]. On the held-out test set, RLC and the runner-up model, Comet [13], perform comparably overall. 
+
+Metrics. B1K uses two key metrics, success rate and Q-score. If all the sub-goal conditions (i.e. predicates defined in Behavior Domain Definition Language (BDDL)) are sat-isfied, then the run is considered a success. Otherwise, Q-score is used which measures the percentage of the sub-goals (predicates) that are satisfied. Given the overall low success rate of the policies on B1K, we use Q-score as our base metric. 
+
+A. Robustness 1) Reproducibility: In this section our goal is to de-termine whether the reported results of the models can be reproduced. To minimize model variability, we evaluate the official published checkpoints and seeds on our local machines using the official script of B1K for installation of the simulation environment and task descriptions. The posted and reproduced per-task results of the RLC model are summarized in Figure 2. For brevity, we only use the task id numbers. Refer to the Appendix for details. At a first glance, we observe a big gap between the two runs across most tasks, exceeding 27% for tasks 24, 26, and 27. In some cases, e.g. task 37, our reproduced result yields a score of 0.1 whereas the officially posted one is 0. We deduce that one potential source of instability can be the non-deterministic nature of the simulator. In each run there can be minor changes in lighting, shadow rendering, or object appearances that can have a significant impact on the performance of the VLA policy. These results indicate that VLAs can, in fact, be very sensitive to visual perturbations as was discussed earlier in Section II-A. 
+
+2) Consistency: For this experiment, our goal is to evalu-ate how consistent the model is across different trials for each task, i.e. how much randomness is involved in successfully completing a given task. For this purpose, we look at the variability of the Q-score across different trials. For this evaluation, to minimize the effect of hardware or simulation 0.0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.8 0.9 1.0                                                  
+
+> Q-score Task
+> 33 34 35 36 37 41 49 48 428 23 25 47 44 29 11 30 39 19 13 2731 38 46 14 343 26 27 10 615 18 832 12 24 20 516 42 921 0117 45 22 40
+
+Fig. 3: Performance of RLC per task, showing the Q-score across different trials. The tasks are sorted, in an ascending order based on the average Q-score from left to right. setup, we report on the posted results on B1K leaderboard. Figure 3, shows the variability of RLC’s performance. The very large bars indicate that about 50% of the scenarios skewed towards either end, i.e. the policy either completely succeeded or failed. In many scenarios we also observe outliers, indicating high degree of chance in performing sub-tasks. It should be noted that a part of the variability can be due to inconsistencies in the simulation, as shown previously. However, the changes observed here are significantly higher, indicating the potential effect of scene configurations. 
+
+B. What Leads to Failure 
+
+In this section, our goal is to identify the sources of failures. As we argued earlier, although success rate (or Q-score) is effective in terms of showing the overall progress, it says very little about the causes of failures. At the same time, defining metrics that capture all sources of failure is very cumbersome if not impossible. To this end, following the past works [33], we resort to expert viewing analysis. For this purpose, we employed 8 robotics experts to analyze video recordings of the policy performing the tasks. There are overall 500 recordings, 50 tasks and 10 trials for each task. The videos were divided among the experts who where tasked to identify the causes of errors for each sub-goal. We then grouped the failures into 10 categories as fol-lows: Task confusion , robot confuses two different tasks, i.e. it performs unrelated sub-tasks from different tasks; Abrupt termination , the robot halts in the middle of execution; 
+
+Semantic confusion , the robot confuses objects; Navigation failure , the robot fails to position itself, localize the target, or find a safe passage; Improper object handling , the robot fails to hold or carry objects properly; Skill failure , involves failure to perform certain actions, e.g. opening, closing, holding, flipping, etc.; Collision , the robot collides with the furniture, walls, or objects; Execution order confusion , the robot confuses the order of sub-tasks to perform; Placement failure , the robot cannot find a proper place or puts the object in a wrong place; Grasp failure , the robot fails to grasp or pick up the object. We are primarily interested in identifying what types of errors occur in each task, hence we only count one instance 0
+
+> 5
+> 10
+> 15
+> 20
+> 25
+> 30
+> 35
+> 40
+
+Fig. 4: Different types of errors occurred in tasks. The graph only shows one occurrence of the failure per task. of the failure among all trials per task (see the Appendix Figure 7 for total number of occurrences). As shown in Figure 4, Fail to grasp is the most common source of error. The majority of the cases are those in which the robot does not have a clear grasp pose, hence it needs to move the object before attempting to pick it up. This is common for books or other flat objects that are on tabletops or similar surfaces and the robot needs to move them to the edge of the surface in order to pick them up. Incorrect depth estimation and localization of the object are also common, indicating the lack of 3D understanding. We can also observe that collision occurs often. It is almost always the case that the robot hits objects that are not the current focus, e.g. furniture, containers, or any other objects that are not currently being manipulated. Such lack of obstacle-awareness is particularly interesting in B1K as the scenarios are generally not cluttered, and most objects in the scenes are within the scope of the tasks. For instance, these objects include the table that the robot needs to place plates on, the coffee machine in which coffee filter is to be inserted in, or the chopping board to be used for slicing vegetables. Other sources of error worth discussing here are order and task confusion. For the former, it is quite common that the robot does not properly follow the order of sub-tasks. For instance, the robot picks up an object in each hand before Fails to hang the painting 
+
+> on the wall
+> Cannot locate the easter
+> egg in the backyard
+> Collides with table and
+> falls over
+> Cannot stack the plates
+> and gets stuck
+> Drops the puzzle while
+> trying to grasp it
+> Places the shoe in the
+> fridge instead of shoe rack
+> Halts indefinitely in front
+> of the fridge
+> Picks up objects before
+> opening drawer
+> Picks up the plant instead
+> of the spray
+> Drops pizza while holding
+> the plate
+
+Fig. 5: Qualitative examples of failures of the RLC policy that lead to unsuccessful attempts in B1K. opening the cabinet or the drawer to put the objects in. More interestingly, in some scenarios task confusion occurs. For instance, the robot picks up the chicken and places it on the shoe rack or brings a shoe to the kitchen and places it in the fridge. Qualitative examples are shown in Figure 5. IV. M EASURING SAFETY 
+
+A. Safety-Aware Metrics 
+
+In recent works, collision rate (CR), the ratio of scenarios in which collision occurs, is used as the measure of safety [32], [31]. This metric, however, has two shortcomings. First, the metric considers any unwanted contact with non-targets as collision. In reality, not all contacts should be treated as collisions. The robot can have contact with a table while picking a cup or might contact non-target objects to move them aside in order to reach to a target location. Second, even if we consider contacts as collisions, reporting a single contact per scenario is not informative in terms of the consequence of the collision. We propose measuring safety as a consequence of ac-tions, i.e. violations, that can disrupt the environment or perhaps lead to damaging objects or posing risks to the robot or humans. Under this definition, safety encompasses not only hazardous collisions but also unsafe actions, such as mishandling sensitive objects. However, accounting for all types of hazards in complex household environments is very challenging, due to the diversity of objects, environment configurations, and the range of actions the robot can engage in. This difficulty is further compounded by limitations of the simulation environment, where not all elements can be accurately detected or measured. To address these challenges, we make the following as-sumption. We only consider the objects that are in the scope of the task, meaning the target objects as well as the non-target objects, e.g. table, chopping board, etc., that the robot needs to interact with in order to complete its task. This limits object diversity to simplify metric computation, while also ensuring the robot is aware of all relevant objects included in the task description. Objects not included in the task description could pose a greater challenge for the robot. Building on the BDDL-based evaluation framework of B1K, each task contains its own BDDL file, which includes the list of objects in the scope of the task, their initial states, and sub-goal predicates that are to be satisfied. The predicates can indicate either the state of an object, e.g. the fridge is closed, or the relation between objects, e.g. the jar is inside the cabinet. To illustrate, in the rearrange the kitchen task (see top scenario in Figure 1), there are four sub-goals: three involve placing the appliances inside the cabinet, and one requires closing the cabinet. In our example, since the cabinet is not properly closed, only three goals are satisfied, and therefore the Q-score is 0.75. Notably, the Q-score is progress-agnostic: it is computed solely from the final states of the objects, regardless of how those states are achieved. We base the design of our metrics on the sub-goal predicates. Let G = {g1, . . . , g N } denote the N sub-goal predicates for a task, where gi ∈ { 0, 1} is the final state of the i-th sub-goal. The original Q-score and our two proposed extensions, sQ and seQ, are defined as: 
+
+Q = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+gi (1) 
+
+sQ = 1
+
+N
+
+> N
+
+X
+
+> i=1
+
+gi · pi · hi (2) 
+
+seQ =
+
+PNi=1 gi · pi · hi + PMj=1 sj
+
+N + M (3) where pi, h i ∈ {0, 1} are the placement and handling 
+
+indicators for target objects, and S = {s1, . . . , s M } are additional sub-goals for non-target support objects. 
+
+1) Safety Q-score (sQ): The sQ metric (Eq. 2) penalizes the Q-score based on two criteria. The placement criterion (pi) requires objects, such as kettles, mugs, and bottles to be placed upright; pi = 0 if the roll or pitch angle deviates beyond 30 ◦ from the original orientation. The handling 
+
+criterion ( hi) tracks whether critical objects were handled safely; hi = 0 if the object is dropped or mishandled. TABLE I: Results of the top 2 models reruns on the B1K Challenge reported using the Q-score (Q) and proposed metrics. Task names are shortened for brevity. Red means the score reduction occurred only due to target violations (TV) and blue means non-target violations (nTV) contributed to score reduction. The direction of arrows shows higher or lower is better.                                                                                                                                                                                                                                                                          
+
+> RLC Comet Task QsQ seQ-Oracle seQ nTV TV QsQ seQ-Oracle seQ nTV TV
+> Can meat 0.025 0.000 0.192 0.182 00.7 0.000 0.000 0.182 0.182 00.4 Prepare lunch 0.483 0.483 0.656 0.600 0.5 0.1 0.300 0.300 0.533 0.522 0.1 0.3 Set up coffee 0.300 0.233 0.511 0.444 0.4 0.9 0.200 0.150 0.450 0.411 0.4 1.1 Can Food 0.030 0.030 0.254 0.162 1.2 0.4 0.020 0.020 0.246 0.162 1.1 0.1 Freeze pies 0.057 0.057 0.175 0.175 00.1 0.129 0.129 0.238 0.238 00.1 Box books 0.150 0.150 0.150 0.150 00.1 0.117 0.100 0.108 0.100 00.1 Bring water 0.233 0.133 0.388 0.350 01.2 0.400 0.267 0.500 0.450 00.6 Collect toys 0.583 0.583 0.583 0.583 01.1 0.550 0.550 0.550 0.550 00.1 Make popcorn 0.800 0.800 0.800 0.800 00.2 0.300 0.300 0.300 0.300 00.1 Clear food 0.080 0.060 0.336 0.329 01.3 0.040 0.020 0.307 0.300 00.5 Rearrange kitchen 0.275 0.175 0.225 0.175 00.7 0.200 0.050 0.125 0.050 01.2 Put away decor 0.343 0.343 0.425 0.425 000.386 0.386 0.463 0.463 00Put dishes 0.314 0.314 0.314 0.314 00.5 0.293 0.293 0.293 0.293 00.4 Cook cabbage 0.000 0.000 0.556 0.389 1.5 0.2 0.050 0.050 0.578 0.433 1.3 0Clean up plates 0.043 0.043 0.163 0.150 0.1 1.6 0.014 0.014 0.138 0.138 00.7 Get organized 0.050 0.040 0.132 0.127 01.2 0.010 0.010 0.100 0.100 01.1 Chop onion 0.325 0.325 0.663 0.563 0.8 00.150 0.150 0.575 0.475 0.8 0Cook bacon 0.414 0.414 0.488 0.488 00.3 0.057 0.057 0.175 0.175 04.8 Clean desk 0.136 0.118 0.314 0.271 0.5 0.1 0.109 0.091 0.293 0.250 0.5 0.1 Sort vegetables 0.469 0.469 0.569 0.450 1.9 00.515 0.515 0.606 0.488 1.9 0
+> Average 0.256 0.239 0.395 0.356 0.35 0.53 0.192 0.173 0.338 0.304 0.31 0.59
+
+Critical objects include electrical devices (e.g. toasters), fragile objects (e.g. plates), non-empty containers (e.g. fruit basket, bottle of water), and cooked food (e.g. pizza, cookie). Table II illustrates this with the rearrange kitchen example from Figure 1: the mixer was dropped ( h3 = 0 ) and the cabinet was not closed ( g4 = 0 ), yielding Q = 3 /4 = 0 .75 
+
+vs. sQ = 2 /4 = 0 .50 .TABLE II: sQ evaluation for the task 8 rearrange kitchen 
+
+Sub-goal gi pi hi gi · pi · hi
+
+Appliance 1 in cabinet 1 1 1 1Appliance 2 in cabinet 1 1 1 1Mixer in cabinet 1 1 0 0Cabinet closed 0 1 1 0
+
+2) Safety-Enhanced Q-score (seQ): The seQ metric (Eq. 3) extends sQ by introducing M sub-goals for support objects , i.e. non-target objects (e.g. chopping board, table) that the robot interacts with during the task. A support object sub-goal sj is set to 0 when the interaction causes a safety hazard (e.g. the object falls) or displaces the object beyond 10cm from its original position; mere contact does not constitute a violation. Table III illustrates this with the prepare lunchbox example (bottom sequence in Figure 1): the chopping board is dropped ( s2 = 0 ), yielding seQ =(4 + 1) /(6 + 2) = 0 .625 .TABLE III: seQ evaluation for task 12 prepare lunchbox 
+
+(N = 6 , M = 2 ). Default sub-goals are evaluated per sQ; four out of six are satisfied. 
+
+Sub-goal Value Note Default sub-goals (sQ) 4/6 per Eq. 2 Box (support) s1 = 1 position maintained Chopping board (support) s2 = 0 dropped on floor 
+
+seQ = (4 + 1) /(6 + 2) = 0 .625 
+
+3) Supplementary Metrics: We also report seQ-Oracle ,which sets all support object sub-goals to 1, i.e. 
+
+seQ -Oracle = ( P gi · pi · hi + M )/(N + M ). This serves as an upper bound for seQ, isolating the impact of non-target violations. Additionally, we report the average number of target violations ( TV ) and non-target violations ( nTV ) per task, since violations that cause total failure may result in 
+
+Q = sQ , making the safety penalty invisible in the score. 
+
+B. Evaluation 
+
+Tasks. Among the 50 tasks in the B1K Challenge, many are either very simple without additional non-target objects, e.g. cook hotdog, or very long and challenging, e.g. make pizza. Out of all the scenarios, we selected 20 scenarios with moderate difficulty involving some forms of interactions with non-target objects. 
+
+Models. We report the results on the new metrics for the top 2 models on the B1K Challenge’s leaderboard, namely Robot Learning Collective (RLC) and Comet. 
+
+Results. We reran the top 2 models from the B1K Chal-lenge using the published checkpoints to compute all metrics. The results are summarized in Table I. Note that the overall success of the policies is very low reaching the maximum of 26%. As shown in Section III-B, many of these failures are due to grasping issue or inability to navigate to the correct position. In such cases, the task does not progress, hence the chance of safety violations to occur is minimal. Despite this, and limited scope of safety violations considered, we can see a drop in performance across most tasks when violations are considered to assess sub-goals. In the case of the original score adjustment, we observe performance drop of up to 35% across the tasks. The degree of change varies for each model. For RLC, the most impact is observed on rearrange kitchen where performance drops by 10%, whereas Comet performance drops by 15% on the same task. There is a high degree of similarity between the two models’ performance on different tasks, indicating general Drops the sausage on the   
+
+> floor
+> Drops the chopping board
+> on the floor
+> Hits and trips over the
+> coffee machine
+> Holds the bottle of water
+> sideway
+> Picks and flips the chair
+> upside down
+
+Fig. 6: Qualitative examples of safety violations that resulted in score penalty. challenges of certain tasks for both models. In all tasks (except put away decor) where sQ is the same as Q-score, we can observe some form of violations. In fact for both models, in 85% of the cases, target violations occurred. In many cases these violations lead to failure of sub-goal accomplishment, hence Q-score and sQ yield the same values. In the case of put away decor, no violation had occurred. Compared to other tasks, here, the interaction with non-target objects, in this case the coffee table, is limited to moving the cauldron next to the table. As a result, the robot does not directly contact the table. Considering seQ score which involves non-target objects’ goals, we can see up to 40% of the cases contain some form of violation. In some cases, not only did the robot not satisfy any of the primary objectives (e.g. cook cabbage), it also committed non-target safety violations (e.g. by dropping the chopping board on the floor). Qualitative examples of these failures are shown in Figure 6. V. D ISCUSSION 
+
+Our study reveals both the promise and the limitations of current SOTA VLA policies from the B1K Challenge for real-world deployment. On one hand, the evaluated policies demonstrate a trending capability to complete many complex sub-tasks within long-horizon household tasks. On the other hand, the overall success rates remain relatively low, especially under realistic complex open-world settings. This gap suggests that current VLAs, while promising, are still far from reliable deployment in assistive or safety-critical environments. 
+
+Long-horizon reasoning. One key limitation is the lack of robust long-horizon reasoning and adaptation. Many failures, such as confusion, arise from insufficient task understanding, poor spatial grounding, or inability to recover from early-stage errors. Future work should therefore focus on improv-ing extreme long-horizon memory, as explored in very recent works [34], temporal abstraction, akin to predictive coding in representation learning [35], and interactive capabilities via predictive capability by world modeling [36]. In particular, VLAs should be able to maintain persistent state repre-sentations, handle interruptions, and actively interact with users or the environment to resolve ambiguity. This includes incorporating explicit memory modules, adaptive replanning, and feedback-driven execution, which are essential for real-world robustness. Subtasking or decomposition of long-horizon tasks into shorter, sequential, intermediate goals [37] can also potentially minimize task ambiguity, whether it is execution order or cross-task confusion. 
+
+Safety-aware operation. Another key challenge revealed in this work is safety and feasibility. Although violations are rarely observed in the training data, unsafe or unstable behaviors frequently emerge during rollout, indicating agap between the training distribution and deployment. For instance, demonstrations typically involve physically stable object configurations, yet the learned policies can generate implausible motions. This raises questions about whether generative action models adequately capture physical con-straints. While such models provide flexibility, their ability to ensure safety and stability in real-world settings remains lim-ited. Attempts have been made to enforce safety constrained architecturally [38], but perhaps filling the safety gap requires stronger inductive biases, constraint-aware decoding, hybrid approaches, or active learning [39]. 
+
+Simulation environment. The current simulation environ-ments still lack sufficient interaction realism. In B1K, most objects are modeled as rigid bodies, which limits the evalu-ation of real-world factors, such as deformable objects, food manipulation, and friction-dependent interactions. Although liquid interaction is partially supported, the fidelity of fluid simulation remains limited. Improving physical realism and incorporating richer interaction models will be critical for evaluating embodied policies in more realistic settings. 
+
+Evaluation. Overall, our findings suggest that future re-search should move beyond success-driven evaluation toward robustness, safety, and deployability. This includes improving long-horizon reasoning and interaction, enforcing safety and feasibility during action generation, and developing more realistic evaluation environments. VI. C ONCLUSIONS 
+
+In this work we conducted an in depth analysis of state-of-the-art VLAs in open-world simulation environments and revealed many mistakes the models make which are not of-ten reported using conventional evaluation protocols. Based on our analysis, we proposed novel extensions to existing success metrics, supplementary measures, and showed that our approach can effectively capture many violations that the robot may commit during execution of a task. Finally, we discussed challenges that VLA policies are facing and potential remedies to motivate the future research. REFERENCES [1] K. Black, N. Brown, et al. , “ π0.5: a vision-language-action model with open-world generalization,” in CoRL , 2025. [2] C. Li, R. Zhang, et al. , “Behavior-1k: A benchmark for embodied ai with 1,000 everyday activities and realistic simulation,” in CoRL ,2023. [3] M. Alban, E. Ahmadi, et al. , “Getting smarter for motion planning in autonomous driving systems,” in IV , 2025. [4] A. Zeng, P. Florence, et al. , “Transporter networks: Rearranging the visual world for robotic manipulation,” in CoRL , 2021. [5] Y. Jiang, A. Gupta, et al. , “Vima: General robot manipulation with multimodal prompts,” in ICML , 2022. [6] S. Nasiriany, S. Nasiriany, et al. , “Robocasa365: A large-scale simu-lation framework for training and benchmarking generalist robots,” in 
+
+ICLR , 2026. [7] J. Zheng, J. Li, et al. , “X-VLA: Soft-prompted transformer as scalable cross-embodiment vision-language-action model,” in ICLR , 2026. [8] A. Brohan, N. Brown, et al. , “RT-1: Robotics Transformer for Real-World Control at Scale,” in RSS , 2023. [9] B. Zitkovich, T. Yu, et al. , “RT-2: Vision-language-action models transfer web knowledge to robotic control,” in CoRL , 2023. [10] D. Driess, F. Xia, et al. , “Palm-e: an embodied multimodal language model,” in ICML , 2023. [11] Y. Wang, X. Li, et al. , “Unified vision-language-action model,” in 
+
+ICLR .[12] I. Larchenko, G. Zarin, and A. Karnatak, “Task adaptation of vision-language-action model: 1st place solution for the 2025 behavior challenge,” arXiv:2512.06951 , 2025. [13] J. Bai, Y.-W. Chao, et al. , “Openpi comet: Competition solution for 2025 behavior challenge,” arXiv preprint arXiv:2512.10071 , 2025. [14] S. Pakdamansavoji, M. Pourkeshavarz, et al. , “Improving robotic manipulation robustness via nice scene surgery,” arXiv:2511.22777 ,2025. [15] A. Rasouli, M. Alban, et al. , “Distracted robot: How visual clutter undermine robotic manipulation,” arXiv preprint arXiv:2511.22780 ,2025. [16] S. Karamcheti, S. Nair, et al. , “Language-driven representation learn-ing for robotics,” in RSS , 2023. [17] W. Pumacay, I. Singh, et al. , “The colosseum: A benchmark for evaluating generalization for robotic manipulation,” in RSS , 2024. [18] Y. Zhu, J. Wong, et al. , “robosuite: A modular simulation framework and benchmark for robot learning,” arXiv:2009.12293 , 2020. [19] Z. Mandi, S. Jain, and S. Song, “Roco: Dialectic multi-robot collab-oration with large language models,” in ICRA , 2024. [20] Y. Lee, E. S. Hu, and J. J. Lim, “IKEA furniture assembly environment for long-horizon complex manipulation tasks,” in ICRA , 2021. [21] J. Thumm, F. Trost, and M. Althoff, “Human-robot gym: Benchmark-ing reinforcement learning in human-robot collaboration,” in ICRA ,2024. [22] B. Liu, Y. Zhu, et al. , “Libero: Benchmarking knowledge transfer for lifelong robot learning,” in NeurIPS , 2023. [23] M. Shridhar, X. Yuan, et al. , “{ALFW }orld: Aligning text and embodied environments for interactive learning,” in ICLR , 2021. [24] X. Puig, K. Ra, et al. , “Virtualhome: Simulating household activities via programs,” in CVPR , 2018. [25] “2025 behavior challenge,” https://behavior.stanford.edu/challenge/, accessed: 2026-02-26. [26] Y. Kant, A. Ramachandran, et al. , “Housekeep: Tidying virtual house-holds using commonsense reasoning,” in ECCV , 2022. [27] K. Rana, J. Haviland, et al. , “Sayplan: Grounding large language models using 3d scene graphs for scalable robot task planning,” in 
+
+CoRL , 2023. [28] W. Huang, P. Abbeel, et al. , “Language models as zero-shot planners: Extracting actionable knowledge for embodied agents,” in ICML ,2022. [29] A. Khandelwal, L. Weihs, et al. , “Simple but effective: Clip embed-dings for embodied ai,” in CVPR , 2022. [30] X. Ye, R. H. Yang, et al. , “Ra-dp: Rapid adaptive diffusion policy for training-free high-frequency robotics replanning,” in IROS , 2025. [31] J. Carvalho, A. T. Le, et al. , “Motion planning diffusion: Learning and adapting robot motion planning with diffusion models,” Transactions on Robotics , 2025. [32] R. H. Yang, X. Zhao, et al. , “Cape: Context-aware diffusion policy via proximal mode expansion for collision avoidance,” arXiv:2511.22773 ,2025. [33] S. Cai, B. Zhang, et al. , “Groot: Learning to follow instructions by watching gameplay videos,” in ICLR , 2024. [34] D. Li, Y. Zhang, et al. , “Towards long-horizon vision-language-action system: Reasoning, acting and memory,” in ICCV , 2025. [35] C. Zheng, R. Salakhutdinov, and B. Eysenbach, “Contrastive difference predictive coding,” in ICLR , 2024. [36] Q. Garrido, N. Ballas, et al. , “Intuitive physics understanding emerges from self-supervised pretraining on natural videos,” arXiv:2502.11831 ,2025. [37] S. Pirk, K. Hausman, et al. , “Modeling long-horizon tasks as sequential interaction landscapes,” in CoRL , 2020. [38] S. Hu, Z. Liu, et al. , “Vlsa: Vision-language-action models with plug-and-play safety constraint layer,” arXiv:2512.11891 , 2025. [39] H. Niu, T. Ji, et al. , “H2o+: an improved framework for hybrid offline-and-online rl with dynamics gaps,” in ICRA , 2025. 
+
+APPENDIX 
+
+Task Descriptions. The following are the task description of B1K Challenge and corresponding ids. The ones appear in blue color are the tasks chosen for new metric analysis. 
+
+0 turning on radio, 1 picking up trash, 2 putting away Halloween decorations, 3 cleaning up plates and food, 4 can meat, 5 setting mousetraps, 6 hiding Easter eggs, 7 picking up toys, 8 rearranging kitchen furniture, 9 putting up Christ-mas decorations inside, 10 set up a coffee station in your kitchen, 11 putting dishes away after cleaning, 12 preparing lunch box, 13 loading the car, 14 carrying in groceries, 15 
+
+bringing in wood, 16 moving boxes to storage, 17 bringing water, 18 tidying bedroom, 19 outfit a basic toolbox, 20 
+
+sorting vegetables, 21 collecting childrens toys, 22 putting shoes on rack, 23 boxing books up for storage, 24 storing food, 25 clearing food from table into fridge, 26 assembling gift baskets, 27 sorting household items, 28 getting organized for work, 29 clean up your desk, 30 setting the fire, 31 clean boxing gloves, 32 wash a baseball cap, 33 wash dog toys, 34 
+
+hanging pictures, 35 attach a camera to a tripod, 36 clean a patio, 37 clean a trumpet, 38 spraying for bugs, 39 spraying fruit trees, 40 make microwave popcorn, 41 cook cabbage, 
+
+42 chop an onion, 43 slicing vegetables, 44 chopping wood, 
+
+45 cook hot dogs, 46 cook bacon, 47 freeze pies, 48 canning food, 49 make pizza. 0
+
+> 20
+> 40
+> 60
+> 80
+> 100
+> 120
+> 140
+
+Fig. 7: Total number of one occurrence of the failure among all tasks. 
+
+Total number of failures are shown in Figure 7. when total number of occurrences is considered, some ranking different compared to per-task failures as in Figure 5. For instance, we can see the occurrences of order confusion is more likely compared to collision, almost matching place-ment failures. Object handling and skill issues also occur more compared to navigation.

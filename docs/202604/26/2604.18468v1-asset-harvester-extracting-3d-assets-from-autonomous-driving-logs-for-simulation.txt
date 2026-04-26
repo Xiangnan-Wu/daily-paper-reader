@@ -1,0 +1,441 @@
+Title: Asset Harvester: Extracting 3D Assets from Autonomous Driving Logs for Simulation
+
+URL Source: https://arxiv.org/pdf/2604.18468v1
+
+Published Time: Tue, 21 Apr 2026 02:48:00 GMT
+
+Number of Pages: 22
+
+Markdown Content:
+> 2026-4-21
+
+# Asset Harvester : Extracting 3D Assets from Autonomous Driving Logs for Simulation 
+
+Tianshi Cao*, Jiawei Ren*, Yuxuan Zhang, Jaewoo Seo, Jiahui Huang, Shikhar Solanki, Haotian Zhang, Mingfei Guo, Haithem Turki, Muxingzi Li, Yue Zhu, Sipeng Zhang, Zan Gojcic, Sanja Fidler, Kangxue Yin* †
+
+> NVIDIA 1
+
+# Abstract 
+
+Closed-loop simulation is a core component of autonomous vehicle (AV) development, enabling scalable testing, training, and safety validation before real-world deployment. Neural scene reconstruction converts driving logs into interactive 3D environments for simulation, but it does not produce complete 3D object assets required for agent manipulation and large-viewpoint novel-view synthesis. To address this challenge, we present Asset Harvester , an image-to-3D model and end-to-end pipeline that converts sparse, in-the-wild object observations from real driving logs into complete, simulation-ready assets. Rather than relying on a single model component, we developed a system-level design for real-world AV data that combines large-scale curation of object-centric training tuples, geometry-aware preprocessing across heterogeneous sensors, and a robust training recipe that couples sparse-view-conditioned mul-tiview generation with 3D Gaussian lifting. Within this system, SparseViewDiT is explicitly designed to address limited-angle views and other real-world data challenges. Together with hybrid data cura-tion, augmentation, and self-distillation, this system enables scalable conversion of sparse AV object observations into reusable 3D assets. Code: https://github.com/nvidia/asset-harvester/ Website: https://research.nvidia.com/labs/sil/projects/asset-harvester/ 
+
+# 1. Introduction 
+
+Closed-loop simulation is a critical component in developing autonomous vehicles (AVs), enabling scalable training, testing, and safety validation of the policy models in simulation before deploying them in the real world [ 1, 2, 3]. NuRec [ 4 ], the latest neural reconstruction engine developed by NVIDIA for closed-loop AV simulation, builds 3D reconstructions of real world drives. A key limitation of per-scene neural reconstruction methods, such as 3DGUT [ 5] used in NuRec, is that they can only reconstruct what has been observed. Unseen regions remain empty or undefined, which is particularly problematic in closed-loop simulation, where changes in ego trajectory and manipulation of traffic participants (e.g., moving or replacing a vehicle) expose previously unobserved regions of 3D objects. To address the issue, we propose Asset Harvester , an image-to-3D model and end-to-end pipeline for reconstructing complete, high-quality 3D assets of AV objects, including vehicles, pedestrians, riders, and other common road objects, from real driving videos. Asset Harvester targets a data regime that is common in self-driving datasets: vast multi-camera video logs captured by calibrated sensor suites, often accompanied by paired LiDAR data and (sometimes inaccurate) 3D bounding box annotations. By cropping object instances and selecting one or a few views per object as input, our goal is to convert raw visual evidence into reusable simulation assets at scale. This setting introduces several challenges. Objects are often observed from limited and biased viewpoints due to ego motion and traffic flow, and they are frequently occluded by other agents and scene elements. In    
+
+> 1*: Core contributors. †: Project lead.
+> ©2026 NVIDIA. All rights reserved.
+> arXiv:2604.18468v1 [cs.CV] 20 Apr 2026 Asset Harvester : Extracting 3D Assets from Autonomous Driving Logs for Simulation
+
+Figure 1: Overview of Asset Harvester . Starting from large-scale AV logs stored in NCore, we crop and rectify object observations, generate multiview images with SparseViewDiT, lift them into 3D assets with an Object TokenGS, and reinsert the assets into scenes with harmonization for closed-loop simulation. addition, supervisory signals such as 3D cuboid tracks can be noisy or temporally unstable. Camera calibration and synchronization errors further introduce geometric inconsistencies across views, while uncontrolled outdoor illumination and appearance variation complicate robust texture and geometry recovery. For human subjects, non-rigid deformation and clothing motion further violate rigid-body assumptions, making multi-frame aggregation particularly challenging. 
+
+Asset Harvester addresses the above challenges through careful data curation and model designs that tolerate low-quality inputs and imperfect labels. Asset Harvester comprises three components: a data ingestion module that extracts suitable image crops from driving logs at scale; SparseViewDiT , a Sana-based [ 6] diffusion model for multiview image generation; and Object TokenGS, which lifts multiview images into 3D Gaussians and is based on the original TokenGS for scene reconstruction [ 7]. Our primary contribution lies not only in the individual modules, but also in the design of an end-to-end system for real-world data. Specifically, we introduce a pipeline for large-scale collection and curation of object-centric training tuples from autonomous driving logs, a geometry-aware preprocessing stage that consolidates heterogeneous sensors for multiview generative training, and robust training recipes for SparseViewDiT and TokenGS-based lifting. Within this system, SparseViewDiT is designed for sparse, limited-angle observations, and together with hybrid data curation, augmentation, and self-distillation, enables reconstruction of complete 3D assets for vehicles, pedestrians, riders, and other road objects. We integrate the pipeline with NVIDIA NCore [ 8] for scalable data ingest and with NuRec for asset insertion, harmonization [ 9], and closed-loop simulation. Furthermore, we introduce the NuRec AV Object Benchmark to support systematic image-to-3D evaluation under realistic viewpoint bias and sensor noise. 
+
+# 2. Asset Harvester 
+
+Our end-to-end pipeline operates on real autonomous-driving logs in NCore format. As illustrated in Figure 1, we extract object-centric views from real-world driving videos and parse their camera parameters. Given these sparse observations, we follow a standard multiview generation then 3D lifting paradigm for sparse-view-conditioned 3D asset generation: SparseViewDiT first synthesizes 16 uniformly distributed views per object at a given camera FoV and distance, and a feedforward lifting module, referred to as Object TokenGS, then converts the generated set into a compact 3D Gaussian representation with explicit geometry and appearance. We then perform asset insertion and object replacement followed up by a generative “harmonizer" that produces  
+
+> 2Asset Harvester : Extracting 3D Assets from Autonomous Driving Logs for Simulation
+
+photorealistic video frames. Our pipeline enables realistic object-level manipulation, scenario fuzzing and SDG in downstream simulation environments such as NVIDIA NuRec. 
+
+## 2.1. Data Ingestion 
+
+We parse and ingest synchronized multimodal logs containing multi-camera videos, LiDAR sweeps, 3D cuboid tracks, and per-modality timestamps. The implementation details are available in our codebase. To harvest a complete 3D asset for an object in the recording, we first locate its 3D cuboid track in the ingested logs and align the cuboid track to video frames using timestamp synchronization and camera calibration metadata (intrinsics and extrinsics). We use NVIDIA NCore SDK [ 8] to handle the rolling-shutter effects during projection. Since the original videos are captured by f-theta cameras, we project the 3D cuboid into candidate visible views, crop object-centric patches around the projected cuboid center, and rectify each crop into a canonical pinhole-camera observation [ 10 ]. To estimate occlusion, we use 3D cuboids of other objects in the same scene: we cast rays from the ego camera to the target cuboid and perform ray–box intersection tests, marking a view as occluded when another cuboid intersects the ray before it reaches the target cuboid. To further filter low-quality views, we train a Mask2Former [ 11 ] model on object crops from proprietary AV dataset, compare predicted instance masks with projected cuboids, and keep only clean, well-aligned observations. Although each object may appear in many consecutive frames, its observed viewpoints along the ego trajectory are often narrow and highly redundant. Conditioning on all dense frames is inefficient and can hurt learning: near-duplicate inputs contribute little to new geometry, while motion blur, partial occlusion, and calibration/timing noise introduce inconsistent supervision. To address this, we run farthest-point sampling over camera orientations and keep only a small set of high-quality images with diverse viewing angles as model inputs. We formulate the problem as a sparse-view-conditioned 3D generation task. A naive alternative is to first reconstruct a partial object from input videos (e.g., with 3DGS/3DGUT) and then complete it using the partial reconstruction as conditioning, but this is typically suboptimal because partial 3D Gaussian reconstructions tend to overfit visible regions and view-specific artifacts. We therefore train SparseViewDiT directly with sparse, diverse, high-quality conditioning views, which improves robustness to in-the-wild AV observations and enables reliable geometric completion from limited viewpoints. 
+
+## 2.2. SparseViewDiT 
+
+We consider sparse-input novel view synthesis with 𝑣 𝑖𝑛 input views and 𝑣 𝑜𝑢𝑡 target views. Let 𝑋 𝑖𝑛 = {𝑋 𝑖 }𝑣 𝑖𝑛 
+
+> 𝑖 =1
+
+and 𝑋 𝑜𝑢𝑡 = {𝑋 𝑗 }𝑣 𝑜𝑢𝑡  
+
+> 𝑗 =1
+
+denote the corresponding RGB images, and let Π𝑖𝑛 = {𝜋 𝑖 }𝑣 𝑖𝑛  
+
+> 𝑖 =1
+
+and Π𝑜𝑢𝑡 = {𝜋 𝑗 }𝑣 𝑜𝑢𝑡 
+
+> 𝑗 =1
+
+denote their camera parameters. The task is to generate 𝑋 𝑜𝑢𝑡 conditioned on (Π 𝑖𝑛 , 𝑋 𝑖𝑛 , Π𝑜𝑢𝑡 ). We operate in a latent-token space: 𝑥 𝑖𝑛 and 𝑥 𝑜𝑢𝑡 denote the (concatenated) latent representations of the input and output views, and we denote the full multiview latent by 𝑥 = Concat( 𝑥 𝑖𝑛 , 𝑥 𝑜𝑢𝑡 ).We model conditional generation of 𝑥 𝑜𝑢𝑡 with Flow Matching [ 12 ]. Given conditioning signals 𝑐 =( Π𝑖𝑛 ,
+
+𝑥 𝑖𝑛 , Π𝑜𝑢𝑡 ), we define a path 𝑝 𝑡 (𝑥 | 𝑐 ) from a base noise distribution 𝑝 0(𝑥 ) = 𝒩 (0 , 𝐼 ) to the conditional data distribution 𝑝 1(𝑥 | 𝑐 ). We use linear (OT) interpolation: 
+
+𝑥 𝑡 = (1 − 𝑡 )𝑥 0 + 𝑡𝑥 1, 𝑡 ∈ [0 , 1] , (1) where 𝑥 0 ∼ 𝑝 0 and 𝑥 1 ∼ 𝑝 1(· | 𝑐 ). Generation is obtained by integrating the probability-flow ODE 
+
+𝑑𝑥 𝑑𝑡 = 𝑣 𝑡 (𝑥, 𝑐 ), (2) with a time-dependent vector field 𝑣 𝑡 . We parameterize 𝑣 𝑡 by a neural network 𝑣 𝜃 and train it with the  
+
+> 3Asset Harvester : Extracting 3D Assets from Autonomous Driving Logs for Simulation
+
+Figure 2: Architecture overview of SparseViewDiT for sparse-view-conditioned multi-view generation. conditional flow matching objective (using 𝑣 -prediction): 
+
+ℒ𝐹 𝑀 = E𝑡,𝑥 0,𝑥 1,𝑐 [︀ || 𝑣 𝜃 (𝑥 𝑡 , 𝑡, 𝑐 ) − (𝑥 1 − 𝑥 0)|| 2]︀ (3) where 𝑡 is sampled uniformly from [0 , 1] . This formulation naturally supports variable numbers of input and target views through the conditioning interface 𝑐 .Our denoiser 𝑣 𝜃 follows a Diffusion Transformer (DiT) backbone [ 13 ] operating on latent image patches, following the text-to-image design of SANA [ 6], with modifications to (i) support sparse input/output configu-rations and (ii) encode 3D camera geometry explicitly. Our model architecture is provided in Figure 2 
+
+Flexible Sequence Construction. 
+
+We first encode each masked RGB view into a latent feature map using a VAE [ 14 ], and denote the resulting per-view latents by 𝑥 . We then obtain token sequences by patchifying and linearly embedding these latents, and concatenate tokens from all views along the sequence dimension. With 𝑣 𝑖𝑛 input views and 𝑣 𝑜𝑢𝑡 target views, the total sequence length is 𝐿 = ( 𝑣 𝑖𝑛 + 𝑣 𝑜𝑢𝑡 ) × 𝐿 𝑝𝑎𝑡𝑐ℎ , where 𝐿 𝑝𝑎𝑡𝑐ℎ is the number of tokens per image, enabling attention layers to directly model cross-view interactions. To distinguish conditioning from generation  
+
+> 4Asset Harvester : Extracting 3D Assets from Autonomous Driving Logs for Simulation
+
+targets, we concatenate a binary indicator mask 𝑚 ∈ { 0, 1}𝐻 ×𝑊 channel-wise to the latent feature maps prior to tokenization, where 𝑚 = 1 denotes an input view and 𝑚 = 0 denotes a target view. In addition to token-level conditioning, we encode the input images 𝑋 𝑖𝑛 with C-Radio [ 15 ] and provide the resulting image embeddings as context to the DiT cross-attention layers, replacing the text-conditioning interface used in text-to-image diffusion models. 
+
+Geometric Conditioning. 
+
+To enforce 3D consistency, we explicitly encode camera geometry using Plücker ray coordinates [ 16 ]. For every pixel corresponding to a token, we compute the ray 𝑟 = ( 𝑜, 𝑑 ) ∈ R6, representing the ray origin and direction. These coordinates are flattened and concatenated to the per-view latent tokens 𝑧 along the channel dimension. The input to the first transformer layer is thus: 
+
+𝑧 𝑖𝑛𝑝𝑢𝑡 = LinearProj (Concat (𝑧, 𝑟 𝑝𝑙𝑢𝑐𝑘𝑒𝑟 , 𝑚 )) (4) Additionally, global camera extrinsics are injected into the model via the time embedding. We map camera parameters to an embedding 𝑒 𝑐𝑎𝑚 and inject it into the adaptive layer normalization (adaLN) blocks: 
+
+𝑒 𝑚𝑜𝑑 = MLP (𝑒 𝑡 + 𝑒 𝑐𝑎𝑚 ) (5) where 𝑒 𝑡 is the sinusoidal time embedding. 
+
+Linear Attention without Positional Embeddings. 
+
+Multiview generation introduces a resolution–memory trade-off: synthesizing 𝑣 𝑜𝑢𝑡 views at higher spatial resolution increases sequence length and the cost of quadratic attention. We therefore adopt linear attention in the self attention layers and omit absolute positional embeddings, following SANA [ 6]. Linear attention improves memory efficiency and scalability with sequence length, which facilitates high-resolution multiview synthesis. Instead of relying on token indices to convey spatial layout, the model is informed of per-token geometry via the concatenated Plücker rays and the view-type mask. This design reduces sensitivity to view ordering and accommodates variable numbers of input/output views without reparameterizing positional encodings. 
+
+## 2.3. 3D Lifting 
+
+Given generated multiview outputs 𝑋 𝑜𝑢𝑡 = {𝑋 𝑗 }𝑣 𝑜𝑢𝑡  
+
+> 𝑗 =1
+
+and their camera parameters Π𝑜𝑢𝑡 = {𝜋 𝑗 }𝑣 𝑜𝑢𝑡  
+
+> 𝑗 =1
+
+, 3D lifting reconstructs a 3D asset represented as a set of 3D Gaussians. We denote the lifted representation by 
+
+𝒢 = {𝑔 𝑘 }𝐾 𝑘 =1 , 𝑔 𝑘 = ( 𝜇 𝑘 , Σ𝑘 , 𝛼 𝑘 , c𝑘 ). (6) where 𝜇 𝑘 ∈ R3 is the Gaussian center, Σ𝑘 ∈ R3×3 is its covariance (parameterized in practice by scale + rotation), 𝛼 𝑘 ∈ [0 , 1] is its opacity, and c𝑘 denotes view-dependent appearance coefficients (e.g., spherical-harmonic color). We adopt a feedforward reconstruction network for efficiency and robustness, avoiding per-instance opti-mization. Following TokenGS [ 7 ], the network uses an encoder–decoder design that predicts a compact set of Gaussian tokens, enabling us to control 𝐾 independent of image resolution. The model was trained with synthetic supervision and strong camera/image augmentations to improve tolerance to view inconsistency. 
+
+Feedforward Reconstruction 
+
+Different from optimization-based 3D reconstruction, feedforward reconstruction learns a mapping 
+
+𝑓 𝜑 : (Π 𝑜𝑢𝑡 , 𝑋 𝑜𝑢𝑡 ) ↦ → 𝒢 . (7)  
+
+> 5Asset Harvester : Extracting 3D Assets from Autonomous Driving Logs for Simulation
+
+and is trained such that rendering the predicted Gaussians from each camera matches the corresponding image. Let ℛ denote differentiable Gaussian splatting rendering. For a camera 𝜋 𝑗 , we define the rendered image 
+
+ˆ𝑋 𝑗 = ℛ(𝒢 , 𝜋 𝑗 ). (8) and optimize a reconstruction loss over output views: 
+
+ℒ𝑟𝑒𝑐 = E(𝑋 𝑜𝑢𝑡 ,Π𝑜𝑢𝑡 )
+
+⎡⎣ 1
+
+𝑣 𝑜𝑢𝑡 𝑣 𝑜𝑢𝑡 ∑︁ 
+
+> 𝑗 =1
+
+ℓ( ˆ𝑋 𝑗 , 𝑋 𝑗 )
+
+⎤⎦ . (9) where ℓ(·, ·) is a per-pixel loss (e.g., ℓ1 / SSIM / perceptual). At inference time, 𝑓 𝜑 produces 𝒢 in a single forward pass (seconds per instance). 
+
+Model Architecture 
+
+We adopt an encoder–decoder architecture following TokenGS. In encoder-only feedforward reconstruction models, the number of predicted Gaussians grows rapidly with the number of input images and image resolution, leading to substantial redundancy. For example, 16 images at 512 × 512 can produce about 4M Gaussians, which is excessive for a single object and degrades rendering efficiency. The encoder–decoder design allows us to control the number of output Gaussians by adjusting the number of query tokens, thereby decoupling the Gaussian count from the number of input pixels. For the encoder, we use a standard ViT-L [ 17 ]. For the decoder, we use a single cross-attention layer that queries 𝑁 image features with 𝑀 Gaussian tokens. Each Gaussian token is decoded into 64 Gaussians. We employ QK-norm and LayerScale in all attention layers. 
+
+Augmentation on synthetic data 
+
+Unlike the generative component of our method, reconstruction training requires high-precision, pixel-accurate supervision. Real-world annotations often lack this level of precision due to noise in camera estimation and image corruption. We therefore train the reconstruction model only on synthetic data and apply strong, diverse augmentations to reduce the sim-to-real gap. Specifically, we sample camera poses and intrinsics from real-world data and use them to render the SDG dataset. The field of view ranges from 10 ∘ to 40 ∘, which is substantially wider than standard fixed-fov rendering. For input images, following LGM [ 18 ], we apply stronger grid distortion and camera perturbations. 
+
+# 3. Data Curation and Training 
+
+Learning multi-view image generation requires paired observations across viewpoints, yet such real-world paired data are scarce in autonomous driving. Although multi-view sets can be rendered from synthetic 3D assets, they often exhibit a substantial domain gap relative to real sensor imagery. To bridge this gap, we curate a hybrid dataset that combines object-centric multi-view observations from real driving videos, synthetic data from in-house domain-specific assets, reconstructions derived from real data, and a broad-coverage Objaverse [ 19 ] subset with commercially viable Creative Commons licenses, all rendered with real world camera and pose distributions. Building on this data mixture, we adopt a three-stage training pipeline: (i) general-domain pretraining on the Objaverse subset, (ii) in-domain post-training on real and synthetic data, and (iii) supervised fine-tuning on in-domain synthetic data together with the self-distillation set. 
+
+## 3.1. In-the-wild data pipeline 
+
+We build the real-world dataset from in-house driving logs stored in NCore format, which provides synchronized multi-sensor recordings (RGB videos and Lidar), camera intrinsics/extrinsics, and 3D detection/tracking annotations for on-road objects.  
+
+> 6Asset Harvester : Extracting 3D Assets from Autonomous Driving Logs for Simulation
+
+Following the ingestion procedure in Section 2.1, we focus here on collection and curation. From candidate object-centric crops produced by running the ingestion pipeline over a large set of AV driving sessions, we group observations of the same tracked object across cameras and timestamps to form per-instance multi-view pools. We then apply quality and coverage filters. We discard candidates with low resolution, severe boundary truncation, heavy overlap with other 3D boxes, or camera-to-object distances outside a valid range. For each instance, we run farthest-point sampling on camera orientations and retain at most 32 images, maximizing angular diversity while reducing near-duplicate views. Finally, we apply Qwen2.5-VL [ 20 ] to remove blurry or heavily occluded samples. We run background segmentation on the remaining images using the Mask2Former model described in Section 2.1, followed by VLM-based checks and manual review. The final curated collection contains 278k multi-image sets of dynamic street-scene objects, including automobiles, pedestrians, riders, and construction machinery. 
+
+## 3.2. 3D synthetic data 
+
+We render synthetic 3D assets from various sources to supply relevant 3D consistent multi-view image sets to train Asset Harvester .
+
+Objaverse commercially viable subset 
+
+For general domain 3D supervision, we use 80k assets from an Objaverse subset with commercially viable licenses. For each asset, we render two camera sets. The first set is randomly sampled from the camera distribution estimated from the real driving data. The second set contains 16 views whose camera FoVs and distances are sampled from the same real data distributions, with azimuths fixed at uniformly spaced angles around the object and elevations fixed at 0 °. This design provides both realistic viewpoint statistics and consistent canonical coverage for stable multi-view 3D lifting training. 
+
+In-domain vehicle data generation 
+
+To provide high-quality in-domain vehicle observations with consistent geometry, we render a synthetic vehicle dataset using in-house 3D assets. The asset library contains approximately 200 vehicles represented in USD format with detailed part-level components. During rendering, we randomize vehicle appearance and environmental conditions using Omniverse Replicator [ 21 ], including body color, material properties, and scene lighting. For each vehicle asset, we generate 20 samples with randomized camera viewpoints and fields of view, following pose distributions estimated from real driving data. This procedure yields diverse multi-view observations while preserving physically consistent geometry and realistic sensor perspectives. The resulting dataset provides strong supervision for vehicle categories commonly encountered in autonomous-driving environments. 
+
+In-domain human data generation. 
+
+We generate a synthetic human dataset using RenderPeople assets [ 22 ] and public-domain HDRI backgrounds from PolyHaven [ 23 ]. We also use an in-house motion dataset (walk/idle/dancing, etc.) and camera pose distributions estimated from real driving videos and logs. Each sample is built from one randomly selected person and consists of two sets of renders: (1) 16 images rendered with predefined camera viewpoints in a T-pose and a random camera FoV, and (2) 16 images rendered with a random animation pose and random camera viewpoints/FoV. Thus, each person–HDR background pair yields 32 images in total. We render 12,800 such samples using NVIDIA Omniverse.  
+
+> 7Asset Harvester : Extracting 3D Assets from Autonomous Driving Logs for Simulation
+
+Self-distillation Data 
+
+After post-training, Asset Harvester can generate multiview images that largely preserve the detail and quality of a clean input image. However, images from real on-vehicle sensors often suffer from strong motion blur and distortion, which lead to low-quality predictions. To mitigate this issue, we construct a self-distillation dataset by first creating paired low- and high-quality single-view images from our real-world image set, where the high-quality images are enhanced with Qwen-Image-Edit [ 24 ]. We then use Asset Harvester to generate multiview images conditioned on the high-quality image and form new training pairs consisting of the low-quality single-view image and the corresponding high-quality generated multiview images. After screening the results, we keep up to 1000 samples per object class for training. 
+
+## 3.3. Training 
+
+Multi-stage Training 
+
+Starting from the pretrained Sana-1.6B model, we employ a multi-stage optimization pipeline designed to progressively align the model with 3D consistent multi-view image generation with realistic appearances for autonomous-driving scenarios. In the first stage, we perform 3D pre-training on Objaverse-rendered data to establish strong general-domain 3D priors and adapt the base model to structured multi-view synthesis. In the second stage, we conduct in-domain post-training on a mixed corpus of real image sets and synthetic 3D-rendered data, which improves robustness to real-world appearance variations while preserving geometric consistency. Finally, after constructing a self-distillation dataset from the post-trained model, we fine-tune on a mixture of self-distillation data and synthetic 3D-rendered data to further enhance view consistency, visual fidelity, and stability under challenging real-sensor artifacts. 
+
+Augmentation Strategies 
+
+During post-training and fine-tuning, we apply several augmentations to improve robustness to noisy real-world AV inputs. We synthesize occlusions using existing object masks so the model is regularly exposed to partially visible targets, improving stability under realistic traffic occlusion patterns. We also randomly perturb camera fov and camera extrinsics to reduce sensitivity to noise in geometric conditioning signals. In addition, we apply brightness augmentation before C-RADIO encoding of the image prompt to simulate ISP inconsistency across multi-camera sensor rigs. Together, these augmentations improve robustness to imperfect geometry, appearance shifts, and sensor-domain mismatch. 
+
+# 4. NuRec AV Object Benchmark 
+
+## 4.1. Data and Statistics 
+
+The NuRec AV Object Benchmark contain two complementary parts that reflect both controlled and challenging in-the-wild evaluation settings. 
+
+Part A (held-out-view evaluation). 
+
+For each object instance, we reserve unseen reference views that are not used as model input. These held-out views provide pseudo-ground-truth targets for quantitative image-to-3D evaluation. In this split, we report pixel correspondence based metrics including the metrics we built on DINOv3 features. The metric design explicitly supports non-rigid humans: when the object is a person, keypoints are detected and a body-part-aware distance is computed.  
+
+> 8Asset Harvester : Extracting 3D Assets from Autonomous Driving Logs for Simulation
+
+Part B (no-ground-truth hard split). 
+
+This part is intentionally more challenging, with stronger motion blur, heavier occlusion, and narrower view coverage. No reserved reference views are available, so direct ground-truth reconstruction metrics cannot be computed. Instead, we use GPT5.2 [ 25 ] to evaluate how consistent the rendered outputs are with the available input views. 
+
+Object taxonomy. 
+
+Both Part A and Part B include the same five object classes: VRU pedestrians, VRU riders (bicycles, motorcycles, and scooters), commercial vehicles (e.g., buses and trucks), consumer vehicles (e.g., sedans, SUVs, and pickups), and other objects (e.g., construction machines, trailers, trash bins, golf carts, etc.). Table 1 summarizes the number of benchmark instances per class and split. Table 1: Number of samples per class in NuRec AV Object Benchmark. Class Part A Part B Total Consumer vehicles 1,472 602 2,074 Commercial vehicles 308 405 713 VRU (pedestrians) 330 383 713 VRU (riders) 41 30 71 Other objects 55 90 145 
+
+Total 2,206 1,510 3,716 
+
+## 4.2. Metrics 
+
+We evaluate generated assets by rendering them from the cameras of preserved views and comparing the renderings against the corresponding reference images. Although we also consider standard metrics such as PSNR, SSIM and LPIPS, these pixel/perceptual metrics are sensitive to small spatial misalignments (e.g., slight differences in pose, scale, or position), and real-world AV data often contains cuboid noise and imperfect camera calibration that further destabilize pixel-aligned evaluation. We therefore introduce the following high-level metrics to better measure semantic and structural similarity between rendered and preserved images. 
+
+Rigid Embedding Distance (ED-R) 
+
+To capture higher-level semantic and structural similarity, we introduce two complementary metrics based on DINOv3 [26] embeddings. For ED-R, we first align the rendered object to the preserved ground-truth (GT) view using foreground masks. Let 𝐵 𝑟 and 𝐵 𝑔𝑡 be the rendered and GT binary object masks, with centers c𝑟 , c𝑔𝑡 and mask areas 𝐴 𝑟 , 𝐴 𝑔𝑡 .We translate the rendered view to align mask centers and scale it by √︁ 𝐴 𝑔𝑡  
+
+> 𝐴 𝑟
+
+so that the rendered mask area matches the GT mask area. Applying this transform to the rendered image and mask gives ˜𝐼 𝑟 and ˜𝐵 𝑟 .We then extract DINOv3 patch features F𝑟 , F𝑔𝑡 ∈ R𝐶 ×𝐻 𝑝 ×𝑊 𝑝 from ˜𝐼 𝑟 and 𝐼 𝑔𝑡 . Using the corresponding masks, we query foreground patch features and average them: 
+
+e𝑟 = 1
+
+|𝒮 𝑟 |∑︁ (𝑖,𝑗 )∈𝒮 𝑟 
+
+F𝑟, :,𝑖,𝑗 , e𝑔𝑡 = 1
+
+|𝒮 𝑔𝑡 |∑︁ (𝑖,𝑗 )∈𝒮 𝑔𝑡 
+
+F𝑔𝑡, :,𝑖,𝑗 , (10) where 𝒮 𝑟 and 𝒮 𝑔𝑡 are foreground patch sets defined by ˜𝐵 𝑟 and 𝐵 𝑔𝑡 . ED-R is the cosine distance between the  
+
+> 9Asset Harvester : Extracting 3D Assets from Autonomous Driving Logs for Simulation
+
+pooled embeddings: 
+
+𝑑 ED-R = 1 − e𝑟 · e𝑔𝑡 
+
+‖e𝑟 ‖ ‖ e𝑔𝑡 ‖ . (11) 
+
+Part-aware Embedding Distance (ED-P). 
+
+ED-P is a part-aware version of ED-R and is computed only for pedestrian instances. We run SAM 3D Body [ 27 ]to detect human keypoints and use them to partition each human mask into body parts (head, torso, left/right arms, and left/right legs). DINOv3 patch features are then average-pooled within each part to obtain part embeddings: 
+
+e𝑘 = 1
+
+|𝒮 𝑘 |∑︁ (𝑖,𝑗 )∈𝒮 𝑘 
+
+F:,𝑖,𝑗 , (12) where 𝒮 𝑘 is the patch set for part 𝑘 . For each part, we compute cosine distance between rendered and GT embeddings, and define ED-P as the average part distance: 
+
+𝑑 ED-P = 1
+
+|𝒦| ∑︁ 𝑘 ∈𝒦 (︃ 
+
+1 − e𝑘 𝑟 · e𝑘 𝑔𝑡 
+
+‖e𝑘 𝑟 ‖ ‖ e𝑘 𝑔𝑡 ‖)︃ , (13) where 𝒦 is the set of body parts visible in both rendered and GT masks. 
+
+GPT5.2 Pairwise Preference Rate 
+
+For benchmark Part B, where no held-out ground-truth views are available, we perform pairwise comparison between Asset Harvester and each baseline using GPT5.2. For each comparison, we provide exactly three images: a reference input view (A), one randomly rendered view from one method (B), and one randomly rendered view from the other method (C). We randomize whether Asset Harvester is assigned to B or C to avoid position bias. The GPT5.2 system prompt is shown below:  
+
+> You will receive exactly three images in this order: - A: reference image (object at the center of the image; may be partially occluded; background was masked out) - B: rendered image of a 3D reconstruction in random viewpoint - C: rendered image of another 3D reconstruction in random viewpoint Which of B or C is overall closer to the object in A (shape and appearance of the object itself)? Ignore differences that are mainly due to random viewpoint, scale, translation, or occlusion of the object. Reply with exactly one bracket containing a single token: - B if B is closer to the reference object - C if C is closer - ERROR if you did not receive exactly three images Format: [X] where X is B, C, or ERROR. No other text.
+
+After mapping B/C back to method identities, we report the percentage of valid pairwise comparisons in which Asset Harvester is preferred over the baseline. 
+
+# 5. Experiments and Results 
+
+In this section, we first present quantitative results on the benchmark introduced above, including comparisons with image-to-3D baselines, a GPT-based study on the harder split, an ablation on the number of input views, and  
+
+> 10 Asset Harvester : Extracting 3D Assets from Autonomous Driving Logs for Simulation
+
+inference-time measurements. We then present qualitative results demonstrating in-the-wild performance, out-of-distribution image generalization, pedestrian animation with our assets, and asset insertion and simulation in NuRec. 
+
+## 5.1. Quantitative Evaluation and Analysis 
+
+We compare Asset Harvester against representative image-to-3D baselines, including SAM3D [ 28 ], TRELLIS [ 29 ], and Hunyuan3D [30, 31], on the NuRec AV Object Benchmark. 
+
+Comparison Setup. 
+
+For a fair comparison, we use a single RGB input view for all methods. For Asset Harvester (AH), we report two single-view settings: (1) without camera metadata, where we estimate camera parameters using a linear-probing MLP on top of C-Radio features (trained on our training split), and (2) with camera parameters parsed from the AV scene. 
+
+Main Results. 
+
+As shown in Table 2, Asset Harvester achieves the best overall performance across all metrics against reserved views in Part A of the benchmark. The detailed evaluation results for each class are provided in the Appendix. We provide qualitative comparison with a few examples in Figure 4. Table 2: Quantitative comparison with image-to-3D baselines on Part A of the NuRec AV Object Benchmark. The best and second-best results for each metric are highlighted in bold. ED-P is a non-rigid metric and is computed only for pedestrian instances. 
+
+Method PSNR ↑ SSIM ↑ LPIPS ↓ ED-R ↓ ED-P((Ped.-only)) ↓
+
+TRELLIS [29] 20.71 0.854 0.190 0.155 0.290 Hunyuan3D-2 [30] 19.47 0.848 0.202 0.204 0.356 Hunyuan3D-2.1 [31] 18.86 0.825 0.213 0.229 0.395 SAM3D [28] 20.64 0.855 0.174 0.127 0.257 
+
+Asset Harvester (1V, est. cam pose) 21.99 0.861 0.163 0.104 0.241 
+
+Asset Harvester (1V, parsed cam pose) 22.23 0.864 0.153 0.098 0.231 
+
+GPT-study 
+
+On benchmark Part B, the reserved views are not available due to the limited viewing angles of objects in AV scenes. Therefore, we instead conduct a GPT-study where the evaluator is GPT-5.2, which is the GPT-5.2-based pairwise metric described in Section 4. The results are provided in Table 3. Detailed per-class comparisons are provided in the Appendix. Table 3: GPT-5.2 pairwise preference rates on Part B of the NuRec AV Object Benchmark. Higher percentages indicate that the corresponding method is preferred more often. AH denotes Asset Harvester .                           
+
+> Comparison AH vs Trellis AH vs HY2 AH vs HY2.1 AH vs SAM3D
+> AH (%) Baseline (%) AH (%) Baseline (%) AH (%) Baseline (%) AH (%) Baseline (%) 1V, est. cam pose 72.9 27.1 78.8 21.2 76.8 23.2 57.3 42.7 1V, parsed cam pose 73.9 26.1 78.4 21.6 75.6 24.4 59.8 40.2
+> 11
+
+Asset Harvester : Extracting 3D Assets from Autonomous Driving Logs for Simulation Input Image  Object Mask  Harvested Assets (front/back views)  Input Image  Object Mask  Harvested Assets (front/back views) 
+
+Figure 3: In-the-wild qualitative results across diverse object classes, including sedan, bus, trailer, trash bin, truck, rider, and pedestrian. The figure is organized into two result columns per row. In each result column, from left to right, we show the single-view input image, the extracted object mask, and front/back views of the generated 3D object. 
+
+12 Asset Harvester : Extracting 3D Assets from Autonomous Driving Logs for Simulation 
+
+Figure 4: Qualitative comparison against image-to-3D baselines (zoom in for details). Asset Harvester is evaluated under two camera settings: estimated camera pose and parsed camera pose. v1 v2   
+
+> v3v4
+> inference with view 1
+> Inference with view 1,2,3,4
+> inference with view 1
+> Inference with view 1,2,3,4
+> v1v2
+> v3v4
+
+Figure 5: Input-view ablation for Asset Harvester . We compare 1-view input results against 4-view input results. While single-view input already yields plausible reconstructions, additional input views with better object coverage improve sharpness and details. 
+
+Inference speed 
+
+We measure the end-to-end inference time of Asset Harvester on single NVIDIA A100 and H100 GPU and report the results in Table 4. 
+
+Ablation: Input Views 
+
+Object views in our benchmark are sampled with a minimum inter-view angle of 15 ∘, and AV viewpoints are inherently limited. As a result, only a small number of valid frames remain per sample, often just a single view. For the input-view ablation, we therefore select a subset of Part A that contains at least three valid input views. We report the resulting quality metrics under different input-view settings in Table 5. Figure 5 compares reconstructions from 1-view and 4-view inputs. The model already produces reasonable assets from a single image, but when multiple input views provide better object coverage, the generated geometry and appearance are visibly sharper and more detailed.  
+
+> 13 Asset Harvester : Extracting 3D Assets from Autonomous Driving Logs for Simulation
+
+Table 4: Asset Harvester inference-time 
+
+GPU Encoding Diffusion Lifting Total A100 0.51 s 7.38 s 3.06 s 10.95 s H100 0.27 s 3.82 s 1.69 s 5.78 s 
+
+Table 5: Ablation on number of input views 
+
+Input PSNR ↑ SSIM ↑ LPIPS ↓ ED-R ↓
+
+ED-P (Ped.-only) ↓
+
+1-view 21.68 0.855 0.156 0.098 0.219 3-view 21.71 0.855 0.152 0.087 0.207 Input Image  Object Mask  Harvested Assets (front/back views)  Input Image  Object Mask  Harvested Assets (front/back views) 
+
+Figure 6: OOD image editing and generalization with Asset Harvester . We edit AV inputs with Nano Banana to create out-of-distribution objects while preserving viewpoints, object poses, and scene background, then reconstruct plausible 3D assets from the edited observations. 
+
+## 5.2. Qualitative Results 
+
+We provide representative examples for major object classes in Figure 3 and include challenging conditions commonly observed in autonomous-driving logs, such as occlusions, night scenes, human–object interactions, blurry and low-resolution crops. Across these cases, Asset Harvester consistently produces plausible 3D assets with stable appearance. 
+
+Image Editing and OOD Generalization. 
+
+Although Asset Harvester is developed for AV use cases and trained primarily on AV data, it still generalizes well to out-of-distribution (OOD) images. This generalization broadens Asset Harvester applications, enabling long-tail AV asset generation as well as flexible object editing and customization. In the examples shown in Figure 6, we generate OOD images using Nano Banana [ 32 ] and prompt it to edit the object in AV images while preserving camera viewpoints, object poses, and background.  
+
+> 14 Asset Harvester : Extracting 3D Assets from Autonomous Driving Logs for Simulation
+
+Figure 7: Pedestrian animation results with Asset Harvester . We convert input observations into an A-pose asset, rig the generated asset with a simple LBS implemented with SOMA and GEM, and animate it with Kimodo. 
+
+Pedestrian Animation 
+
+For pedestrian animation, we first take the first input view and convert it to an A-pose image using Qwen-Image-Edit-2511 [24] with the prompt shown below. Change the posture of the person in the image to A-pose: standing in a neutral A-pose, arms slightly lowered about 30 degrees from horizontal, legs shoulder-width apart. Do not change the position and camera viewpoint. Do not change the background, lighting, or the person’s location in the frame. Maintain the aspect ratio and image quality. We then generate an A-pose pedestrian asset with our pipeline and rig it using a simple linear blend skinning (LBS) method implemented with NVIDIA SOMA [ 33 ] and GEM [ 34 ]. Figure 7 shows representative animation results in which the human motion is generated by Kimodo [35]. 
+
+Insertion and Harmonization. 
+
+We insert generated assets into 3D scenes reconstructed by NuRec. We further apply DiffusionHarmonizer [ 9]to reduce residual artifacts and improve visual integration, including more coherent shadows and stronger local photometric consistency. Example results are shown in Figure 8. 
+
+# 6. Related Work 
+
+Image-to-3D models 
+
+Recent image-conditioned 3D generation models aim to recover complete geometry and appearance from one or a few input views [ 28 , 29 , 36 ]. SAM3D [ 28 ] generalizes to in-the-wild images by training on large-scale curated 3D data and reconstructed assets by itself, while Hunyuan3D [ 30 , 36 , 37 ] emphasizes high-quality textured asset creation with a design-oriented pipeline and typically cleaner inputs. TRELLIS and TRELLIS.2 [ 29 , 38 ]focus on structured latent representations for detailed geometry and appearance. Closely related to our method  
+
+> 15 Asset Harvester : Extracting 3D Assets from Autonomous Driving Logs for Simulation
+
+Figure 8: Insertion and harmonization results with Asset Harvester . We reinsert generated assets into NuRec-reconstructed 3D scenes and apply DiffusionHarmonizer to reduce residual artifacts, improve shadows, and enhance local photometric consistency for better scene integration. is a line of prior works [ 39 , 40 , 41 , 42 , 43 ] that leverages the general capabilities of text-to-image models to construct multi-view image generators as a core component of image-to-3D pipelines. Inspired by these works, Asset Harvester incorporates a multi-view image DiT and pairs it with a training strategy and data recipe tailored to extracting 3D assets from real driving logs. Many of these methods are primarily evaluated on synthetic or curated benchmarks. Autonomous driving logs, however, present sparse viewpoints, motion blur, occlusion, and calibration noise issues that motivate domain-specific asset extraction. 
+
+Driving-Data-Centric Asset Generation. 
+
+GenAssets [ 44 ] and GINA-3D [ 45 ] are closer to our setting in that they learn from real-world driving data. GenAssets uses a reconstruct-then-generate pipeline and learns optimization-based latent codes before train-ing diffusion in the latent space, which limits the representation to those latents. GINA-3D similarly learns implicit neural assets from driving data with a tri-plane latent structure; as an implicit representation, we find it less suited for sharp surface detail compared to mesh/splat outputs. Recent vehicle-focused methods further highlight complementary design points. DreamCar [ 46 ] targets car reconstruction from very sparse forward-facing observations using car-specific generative priors, symmetry cues, and pose refinement. Urban-CAD [ 47 ] emphasizes controllable and photorealistic CAD-based digital twins with retrieval-and-optimization for simulation-time editing and insertion. RGM [ 48 ] explores relightable 3DGS car asset generation from a single image by explicitly modeling materials and illumination. These methods underscore the value of domain priors, controllability, and relightability for driving simulation, while our focus is an end-to-end log-to-asset pipeline integrated with reconstruction-centric AV simulation. 
+
+Neural Reconstruction and AV Simulation. 
+
+Neural reconstruction approaches such as NeRF [ 16 ], 3DGS [ 49 ], 3DGUT [ 5], Dynamic Neural Scene Graphs (DNSG) [ 50 ], and OmniRe [ 51 ] show strong performance on novel-view synthesis and dynamic-scene recon-struction. However, these methods remain constrained by observed data and generally cannot complete unseen  
+
+> 16 Asset Harvester : Extracting 3D Assets from Autonomous Driving Logs for Simulation
+
+regions of scenes or objects. This creates a practical gap for closed-loop simulation systems such as NuRec [ 4], CARLA [ 52 ], and AlpaSim [ 53 ], which require reusable and editable simulation-ready assets. Asset-Harvester is designed to bridge this gap. 
+
+Positioning of Our Work. 
+
+Overall, we emphasize an end-to-end log-to-asset pipeline that targets simulation-ready outputs and practical deployment considerations, while designing the model to be tolerant of in-the-wild issues. 
+
+# 7. Conclusion 
+
+We presented Asset Harvester , a log-to-asset pipeline that converts sparse, noisy, and limited-angle observations from autonomous-driving logs into simulation-ready 3D assets. The system combines NCore-based object-centric data ingestion and curation, SparseViewDiT for sparse-view-conditioned multiview generation, and TokenGS-based feedforward lifting to recover complete geometry and appearance from challenging real-world inputs. Across the pipeline, hybrid real/synthetic/self-distilled training data and robustness-oriented preprocessing and augmentation help address occlusion, calibration noise, motion blur, and viewpoint bias in AV logs. Experiments on the NuRec AV Object Benchmark show that Asset Harvester consistently outperforms strong image-to-3D baselines and remains effective in harder in-the-wild settings. We hope this work helps narrow the gap between neural reconstruction and practical closed-loop AV simulation, and provides a foundation for scalable asset extraction from real driving data. 
+
+# 8. Acknowledgement 
+
+We acknowledge the following colleagues (listed in alphabetical order by last name) for helpful discussions, feedback and support: Eric Cameracci, Bangbang Cao, Vincent Caux-Brisebois, Junsong Chen, Matt Cragun, Riccardo de Lutio, Yasaman Esfandiari, Janick Martinez Esturo, Song Han, Umar Iqbal, JF Lafleche, Jiefeng Li, Hai Loc Lu, Alex Perec, Sean Pieper, Ray Poudrier, Naveen Kumar Rai, Nick Schneider, Michal Tyszkiewicz, Qiao Wang, Enze Xie, Rurui Ye, Chang Yuan, Itai Zadok, Lei Zhang, Weihua Zhang, and Luis Zhu. 
+
+> 17
+
+Asset Harvester : Extracting 3D Assets from Autonomous Driving Logs for Simulation 
+
+# A. Per-class evaluation results 
+
+Table 6: Quantitative comparison with image-to-3D baselines on Part A of the NuRec AV Object Benchmark. For each class, we compute mean over samples. PSNR in dB; ED-R is mean embedding distance.                                                                                                                                                   
+
+> Method VRU pedestrians VRU riders commercial vehicles consumer vehicles other objects PSNR LPIPS SSIM ED-R PSNR LPIPS SSIM ED-R PSNR LPIPS SSIM ED-R PSNR LPIPS SSIM ED-R PSNR LPIPS SSIM ED-R Trellis 20.65 0.206 0.871 0.241 18.99 0.264 0.792 0.194 20.43 0.208 0.845 0.112 20.99 0.178 0.857 0.148 19.50 0.287 0.816 0.156 Hunyuan3D-2 20.63 0.190 0.873 0.295 18.40 0.246 0.789 0.205 19.21 0.216 0.838 0.157 19.58 0.194 0.851 0.197 18.25 0.266 0.808 0.159 Hunyuan3D-2.1 19.85 0.234 0.859 0.355 17.51 0.306 0.760 0.356 19.18 0.223 0.826 0.222 18.83 0.199 0.825 0.206 17.78 0.306 0.790 0.232 SAM3D 21.20 0.194 0.876 0.212 18.93 0.236 0.788 0.153 19.38 0.196 0.840 0.090 20.99 0.161 0.859 0.121 19.22 0.254 0.813 0.104 AH (1V, est. cam pose) 21.59 0.192 0.876 0.181 19.46 0.247 0.795 0.160 21.48 0.184 0.849 0.094 22.45 0.147 0.866 0.090 20.26 0.263 0.819 0.151
+> AH (1V, parsed cam pose) 21.70 0.187 0.877 0.176 19.77 0.225 0.800 0.136 21.81 0.171 0.852 0.093 22.69 0.137 0.869 0.083 20.72 0.240 0.825 0.145
+
+Table 7: GPT-5.2 pairwise preference rates on Part B of the NuRec AV Object Benchmark. Higher percentages indicate more preferred results. In this experiment, Asset Harvester (AH) estimates camera parameters from a single input view with C-Radio linear probing. 
+
+Category AH vs Trellis AH vs HY2 AH vs HY2.1 AH vs SAM3D 
+
+AH (%) Baseline (%) AH (%) Baseline (%) AH (%) Baseline (%) AH (%) Baseline (%) consumer_vehicles 75.1 24.9 83.7 16.3 78.3 21.7 58.5 41.5 commercial_vehicles 70.9 29.1 80.9 19.1 71.5 28.5 52.3 47.7 VRU_pedestrians 79.5 20.5 85.8 14.2 82.3 17.7 65.2 34.8 VRU_riders 73.3 26.7 80.0 20.0 80.0 20.0 64.4 35.6 other_objects 65.8 34.2 63.4 36.6 72.0 28.0 46.1 53.9 average 72.9 27.1 78.8 21.2 76.8 23.2 57.3 42.7 
+
+Table 8: GPT-5.2 pairwise preference rates on Part B of the NuRec AV Object Benchmark. Higher percentages indicate more preferred results. In this experiment, Asset Harvester (AH) parses object camera from NCore scene for the single view input. 
+
+Category AH vs Trellis AH vs HY2 AH vs HY2.1 AH vs SAM3D 
+
+AH (%) Baseline (%) AH (%) Baseline (%) AH (%) Baseline (%) AH (%) Baseline (%) consumer_vehicles 78.1 21.9 85.8 14.2 80.1 19.9 64.3 35.7 commercial_vehicles 70.8 29.2 81.6 18.4 71.3 28.7 55.4 44.6 VRU_pedestrians 82.7 17.3 87.7 12.3 83.7 16.3 70.5 29.5 VRU_riders 76.7 23.3 73.3 26.7 75.6 24.4 64.4 35.6 other_objects 61.3 38.7 63.4 36.6 67.5 32.5 44.4 55.6 average 73.9 26.1 78.4 21.6 75.6 24.4 59.8 40.2 
+
+18 Asset Harvester : Extracting 3D Assets from Autonomous Driving Logs for Simulation 
+
+# References 
+
+[1] Yuqi Wang, Jiawei He, Lue Fan, Hongxin Li, Yuntao Chen, and Zhaoxiang Zhang. Driving into the future: Multiview visual forecasting and planning with world model for autonomous driving, 2023. URL https://arxiv.org/abs/ 2311.17918 . 1 [2] Jingtao Ding, Yunke Zhang, Yu Shang, Yuheng Zhang, Zefang Zong, Jie Feng, Yuan Yuan, Hongyuan Su, Nian Li, Nicholas Sukiennik, et al. Understanding world or predicting future? a comprehensive survey of world models. ACM Computing Surveys , 58(3):1–38, 2025. 1 [3] Lloyd Russell, Anthony Hu, Lorenzo Bertoni, George Fedoseev, Jamie Shotton, Elahe Arani, and Gianluca Corrado. Gaia-2: A controllable multi-view generative world model for autonomous driving, 2025. URL https://arxiv.org/ abs/2503.20523 . 1 [4] NVIDIA. Nurec. Website, 2026. URL https://research.nvidia.com/labs/sil/nurec/ . Accessed 2026-03-08. 1, 17 [5] Qi Wu, Janick Martinez Esturo, Ashkan Mirzaei, Nicolas Moenne-Loccoz, and Zan Gojcic. 3dgut: Enabling distorted cameras and secondary rays in gaussian splatting. Conference on Computer Vision and Pattern Recognition (CVPR) ,2025. 1, 16 [6] Enze Xie, Junsong Chen, Junyu Chen, Han Cai, Haotian Tang, Yujun Lin, Zhekai Zhang, Muyang Li, Ligeng Zhu, Yao Lu, and Song Han. Sana: Efficient high-resolution image synthesis with linear diffusion transformers, 2024. URL 
+
+https://arxiv.org/abs/2410.10629 . 2, 4, 5 [7] Jiawei Ren, Michal Tyszkiewicz, Jiahui Huang, and Zan Gojcic. Tokengs: Decoupling 3d gaussian prediction from pixels with learnable tokens. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2026. 2, 5 [8] NVIDIA. Ncore. GitHub repository, 2026. URL https://github.com/NVIDIA/ncore . Accessed 2026-03-08. 2, 3 [9] Yuxuan Zhang, Katarína Tóthová, Zian Wang, Kangxue Yin, Haithem Turki, Riccardo de Lutio, Yen-Yu Chang, Or Litany, Sanja Fidler, and Zan Gojcic. Diffusionharmonizer: Bridging neural reconstruction and photorealistic simulation with online diffusion enhancer. arXiv preprint arXiv:2602.24096 , 2026. URL https://arxiv.org/abs/2602.24096 . 2, 15 [10] Juho Kannala and Sami S Brandt. A generic camera model and calibration method for conventional, wide-angle, and fish-eye lenses. IEEE transactions on pattern analysis and machine intelligence , 28(8):1335–1340, 2006. 3 [11] Bowen Cheng, Alexander G. Schwing, and Alexander Kirillov. Per-pixel classification is not all you need for semantic segmentation. 2021. 3 [12] Yaron Lipman, Ricky TQ Chen, Heli Ben-Hamu, Maximilian Nickel, and Matt Le. Flow matching for generative modeling. arXiv preprint arXiv:2210.02747 , 2022. 3 [13] William Peebles and Saining Xie. Scalable diffusion models with transformers. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , 2023. 4 [14] Junyu Chen, Han Cai, Junsong Chen, Enze Xie, Shang Yang, Haotian Tang, Muyang Li, Yao Lu, and Song Han. Deep compression autoencoder for efficient high-resolution diffusion models. arXiv preprint arXiv:2410.10733 , 2024. 4 [15] NVIDIA. C-radio. Hugging Face model card, 2026. URL https://huggingface.co/nvidia/C-RADIO . Accessed 2026-03-09. 5 [16] Ben Mildenhall, Pratul P. Srinivasan, Matthew Tancik, Jonathan T. Barron, Ravi Ramamoorthi, and Ren Ng. Nerf: Representing scenes as neural radiance fields for view synthesis. In European Conference on Computer Vision (ECCV) ,2020. 5, 16 [17] Alexey Dosovitskiy, Lucas Beyer, Alexander Kolesnikov, Dirk Weissenborn, Xiaohua Zhai, Thomas Unterthiner, Mostafa Dehghani, Matthias Minderer, Georg Heigold, Sylvain Gelly, Jakob Uszkoreit, and Neil Houlsby. An image is worth 16x16 words: Transformers for image recognition at scale. ICLR , 2021. 6  
+
+> 19 Asset Harvester : Extracting 3D Assets from Autonomous Driving Logs for Simulation
+
+[18] Jiaxiang Tang, Zhaoxi Chen, Xiaokang Chen, Tengfei Wang, Gang Zeng, and Ziwei Liu. Lgm: Large multi-view gaussian model for high-resolution 3d content creation. arXiv preprint arXiv:2402.05054 , 2024. 6 [19] Matt Deitke, Dustin Schwenk, Jordi Salvador, Luca Weihs, Oscar Michel, Eli VanderBilt, Ludwig Schmidt, Kiana Ehsani, Aniruddha Kembhavi, and Ali Farhadi. Objaverse: A universe of annotated 3d objects. arXiv preprint arXiv:2212.08051 ,2022. 6 [20] Qwen Team. Qwen2.5-vl, January 2025. URL https://qwenlm.github.io/blog/qwen2.5-vl/ . 7 [21] NVIDIA. Nvidia omniverse replicator. Website, 2026. URL https://developer.nvidia.com/omniverse/ replicator . Accessed 2026-02-27. 7 [22] RenderPeople. Renderpeople. Website, 2026. URL https://renderpeople.com/ . Accessed 2026-02-27. 7 [23] Poly Haven. Polyhaven. Website, 2026. URL https://polyhaven.com/ . Accessed 2026-02-27. 7 [24] Chenfei Wu, Jiahao Li, Jingren Zhou, Junyang Lin, Kaiyuan Gao, Kun Yan, Sheng ming Yin, Shuai Bai, Xiao Xu, Yilei Chen, Yuxiang Chen, Zecheng Tang, Zekai Zhang, Zhengyi Wang, An Yang, Bowen Yu, Chen Cheng, Dayiheng Liu, Deqing Li, Hang Zhang, Hao Meng, Hu Wei, Jingyuan Ni, Kai Chen, Kuan Cao, Liang Peng, Lin Qu, Minggang Wu, Peng Wang, Shuting Yu, Tingkun Wen, Wensen Feng, Xiaoxiao Xu, Yi Wang, Yichang Zhang, Yongqiang Zhu, Yujia Wu, Yuxuan Cai, and Zenan Liu. Qwen-image technical report, 2025. URL https://arxiv.org/abs/2508.02324 . 8, 15 [25] OpenAI. Gpt-5.2. OpenAI, 2026. URL https://openai.com/index/introducing-gpt-5-2/ . Accessed 2026-03-26. 9[26] Oriane Simeoni, Huy V. Vo, Maximilian Seitzer, Federico Baldassarre, Maxime Oquab, Cijo Jose, Vasil Khalidov, Marc Szafraniec, Seungeun Yi, Michaël Ramamonjisoa, Francisco Massa, Daniel Haziza, Luca Wehrstedt, Jianyuan Wang, Timothée Darcet, Théo Moutakanni, Leonel Sentana, Claire Roberts, Andrea Vedaldi, Jamie Tolan, John Brandt, Camille Couprie, Julien Mairal, Hervé Jégou, Patrick Labatut, and Piotr Bojanowski. Dinov3, 2025. 9 [27] Xitong Yang, Devansh Kukreja, Don Pinkus, Anushka Sagar, Taosha Fan, Jinhyung Park, Soyong Shin, Jinkun Cao, Jiawei Liu, Nicolas Ugrinovic, Matt Feiszli, Jitendra Malik, Piotr Dollar, and Kris Kitani. Sam 3d body: Robust full-body human mesh recovery. arXiv preprint arXiv:2602.15989 , 2026. 10 [28] SAM 3D Team, Xingyu Chen, Fu-Jen Chu, Pierre Gleize, Kevin J Liang, Alexander Sax, Hao Tang, Weiyao Wang, Michelle Guo, Thibaut Hardin, Xiang Li, Aohan Lin, Jiawei Liu, Ziqi Ma, Anushka Sagar, Bowen Song, Xiaodong Wang, Jianing Yang, Bowen Zhang, Piotr Dollár, Georgia Gkioxari, Matt Feiszli, and Jitendra Malik. Sam 3d: 3dfy anything in images, 2025. URL https://arxiv.org/abs/2511.16624 . 11, 15 [29] Jianfeng Xiang, Zelong Lv, Sicheng Xu, Yu Deng, Ruicheng Wang, Bowen Zhang, Dong Chen, Xin Tong, and Jiaolong Yang. Structured 3d latents for scalable and versatile 3d generation. arXiv preprint arXiv:2412.01506 , 2024. 11, 15 [30] Zibo Zhao, Zeqiang Lai, Qingxiang Lin, et al. Hunyuan3d 2.0: Scaling diffusion models for high resolution textured 3d assets generation. arXiv preprint arXiv:2501.12202 , 2025. 11, 15 [31] Tencent Hunyuan3D Team. Hunyuan3d 2.1: From images to high-fidelity 3d assets with production-ready pbr material, 2025. 11 [32] Google. Gemini 3 flash (nano banana 2). [Large language model], 2026. URL https://gemini.google.com/ .Accessed 2026-03-18. 14 [33] Jun Saito, Jiefeng Li, Michael de Ruyter, Miguel Guerrero, Edy Lim, Ehsan Hassani, Roger Blanco Ribera, Hyejin Moon, Magdalena Dadela, Marco Di Lucca, Qiao Wang, Xueting Li, Jan Kautz, Simon Yuen, and Umar Iqbal. Soma: Unifying parametric human body models. arXiv preprint arXiv:2603.16858 , 2026. URL https://arxiv.org/abs/2603.16858 .15 [34] Jiefeng Li, Jinkun Cao, Haotian Zhang, Davis Rempe, Jan Kautz, Umar Iqbal, and Ye Yuan. Genmo: A generalist model for human motion. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , 2025. 15  
+
+> 20 Asset Harvester : Extracting 3D Assets from Autonomous Driving Logs for Simulation
+
+[35] Davis Rempe, Mathis Petrovich, Ye Yuan, Haotian Zhang, Xue Bin Peng, Yifeng Jiang, Tingwu Wang, Umar Iqbal, David Minor, Michael de Ruyter, Jiefeng Li, Chen Tessler, Edy Lim, Eugene Jeong, Sam Wu, Ehsan Hassani, Michael Huang, Jin-Bey Yu, Chaeyeon Chung, Lina Song, Olivier Dionne, Jan Kautz, Simon Yuen, and Sanja Fidler. Kimodo: Scaling controllable human motion generation. arXiv , 2026. 15 [36] Tencent Hunyuan3D Team. Hunyuan3d 1.0: A unified framework for text-to-3d and image-to-3d generation, 2024. 15 [37] Tencent Hunyuan3D Team. Hunyuan3d 2.5: Towards high-fidelity 3d assets generation with ultimate details, 2025. URL https://arxiv.org/abs/2506.16504 . 15 [38] Jianfeng Xiang, Xiaoxue Chen, Sicheng Xu, Ruicheng Wang, Zelong Lv, Yu Deng, Hongyuan Zhu, Yue Dong, Hao Zhao, Nicholas Jing Yuan, and Jiaolong Yang. Native and compact structured latents for 3d generation. arXiv preprint arXiv:2512.14692 , 2025. 15 [39] Ruoshi Liu, Rundi Wu, Basile Van Hoorick, Pavel Tokmakov, Sergey Zakharov, and Carl Vondrick. Zero-1-to-3: Zero-shot one image to 3d object. arXiv preprint arXiv:2303.11328 , 2023. 16 [40] Yichun Shi, Peng Wang, Jianglong Ye, Mai Long, Kejie Li, and Xiao Yang. Mvdream: Multi-view diffusion for 3d generation. arXiv preprint arXiv:2308.16512 , 2023. 16 [41] Peng Wang and Yichun Shi. Imagedream: Image-prompt multi-view diffusion for 3d generation. arXiv preprint arXiv:2312.02201 , 2023. 16 [42] Shuang Wu, Youtian Lin, Feihu Zhang, Yifei Zeng, Jingxi Xu, Philip Torr, Xun Cao, and Yao Yao. Direct3d: Scalable image-to-3d generation via 3d latent diffusion transformer. arXiv preprint arXiv:2405.14832 , 2024. 16 [43] Ruiqi Gao, Aleksander Holynski, Philipp Henzler, Arthur Brussee, Ricardo Martin-Brualla, Pratul Srinivasan, Jonathan T. Barron, and Ben Poole. Cat3d: Create anything in 3d with multi-view diffusion models. arXiv preprint arXiv:2405.10314 , 2024. 16 [44] Ze Yang, Jingkang Wang, Haowei Zhang, Sivabalan Manivasagam, Yun Chen, and Raquel Urtasun. Genassets: Generating in-the-wild 3d assets in latent space. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2025. 16 [45] Bokui Shen, Xinchen Yan, Charles R. Qi, Mahyar Najibi, Boyang Deng, Leonidas Guibas, Yin Zhou, and Dragomir Anguelov. Gina-3d: Learning to generate implicit neural assets in the wild. arXiv preprint arXiv:2304.02163 , 2023. 16 [46] Xiaobiao Du, Haiyang Sun, Ming Lu, Tianqing Zhu, and Xin Yu. Dreamcar: Leveraging car-specific prior for in-the-wild 3d car reconstruction. IEEE Robotics and Automation Letters , 10(2):1840–1847, 2024. 16 [47] Yichong Lu, Yichi Cai, Shangzhan Zhang, Hongyu Zhou, Haoji Hu, Huimin Yu, Andreas Geiger, and Yiyi Liao. Urbancad: Towards highly controllable and photorealistic 3d vehicles for urban scene simulation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 27519–27530, 2025. 16 [48] Xiaoxue Chen, Jv Zheng, Hao Huang, Haoran Xu, Weihao Gu, Kangliang Chen, Huan-ang Gao, Hao Zhao, Guyue Zhou, Yaqin Zhang, et al. Rgm: Reconstructing high-fidelity 3d car assets with relightable 3d-gs generative model from a single image. arXiv preprint arXiv:2410.08181 , 2024. 16 [49] Bernhard Kerbl, Georgios Kopanas, Thomas Leimk"uhler, and George Drettakis. 3d gaussian splatting for real-time radiance field rendering. ACM Transactions on Graphics (SIGGRAPH) , 2023. 16 [50] Julian Ost, Fahim Mannan, Nils Thuerey, Julian Knodt, and Felix Heide. Neural scene graphs for dynamic scenes. In 
+
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2021. 16 [51] Ziyu Chen, Jiawei Yang, Jiahui Huang, Riccardo de Lutio, Janick Martinez Esturo, Boris Ivanovic, Or Litany, Zan Gojcic, Sanja Fidler, Marco Pavone, Li Song, and Yue Wang. Omnire: Omni urban scene reconstruction. In The Thirteenth International Conference on Learning Representations , 2025. URL https://openreview.net/forum?id=11xgiMEI5o .16  
+
+> 21 Asset Harvester : Extracting 3D Assets from Autonomous Driving Logs for Simulation
+
+[52] CARLA Team. Carla documentation: Nvidia nurec. Website, 2026. URL https://carla.readthedocs.io/en/ latest/nvidia_nurec/ . Accessed 2026-03-09. 17 [53] NVIDIA, Yulong Cao, Riccardo de Lutio, Sanja Fidler, Guillermo Garcia Cobo, Zan Gojcic, Maximilian Igl, Boris Ivanovic, Peter Karkus, Janick Martinez Esturo, Marco Pavone, Aaron Smith, Ellie Tanimura, Michal Tyszkiewicz, Michael Watson, Qi Wu, and Le Zhang. Alpasim: A modular, lightweight, and data-driven research simulator for autonomous driving. Software, October 2025. URL https://github.com/NVlabs/alpasim . 17

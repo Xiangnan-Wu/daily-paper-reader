@@ -1,0 +1,1098 @@
+Title: Efficient Reinforcement Learning using Linear Koopman Dynamics for Nonlinear Robotic Systems
+
+URL Source: https://arxiv.org/pdf/2604.19980v1
+
+Published Time: Thu, 23 Apr 2026 00:12:31 GMT
+
+Number of Pages: 12
+
+Markdown Content:
+> 1
+
+# Efficient Reinforcement Learning using Linear Koopman Dynamics for Nonlinear Robotic Systems 
+
+Wenjian Hao, Yuxuan Fang, Zehui Lu, and Shaoshuai Mou 
+
+Abstract —This paper presents a model-based reinforcement learning (RL) framework for optimal closed-loop control of nonlinear robotic systems. The proposed approach learns linear lifted dynamics through Koopman operator theory and integrates the resulting model into an actor–critic architecture for policy optimization, where the policy represents a parameterized closed-loop controller. To reduce computational cost and mitigate model rollout errors, policy gradients are estimated using one-step predictions of the learned dynamics rather than multi-step propagation. This leads to an online mini-batch policy gradient framework that enables policy improvement from streamed interaction data. The proposed framework is evaluated on several simulated nonlinear control benchmarks and two real-world hardware platforms, including a Kinova Gen3 robotic arm and a Unitree Go1 quadruped. Experimental results demonstrate improved sample efficiency over model-free RL baselines, superior control performance relative to model-based RL baselines, and control performance comparable to classical model-based methods that rely on exact system dynamics. 
+
+Index Terms —Deep Learning in Robotics and Automation; Model Learning for Control; Optimization and Optimal Control; Motion and Path Planning. 
+
+I. I NTRODUCTION 
+
+Accurate dynamical models are critical for high-performance robotic control, including manipulation, legged locomotion, and aerial systems. Classical model-based optimal control methods, such as model predictive control (MPC) [1], [2], can achieve strong performance when system dynamics are known with sufficient accuracy. However, in many robotic applications, obtaining accurate models remains challenging due to nonlinear dynamics, underactuation, contact interactions, actuator uncertainties, and environment-dependent variability [3]. These challenges have motivated the development of model-based reinforcement learning (MBRL), in which system dynamics are learned from data and leveraged to improve control policies [4]. Compared with model-free RL, MBRL can achieve significantly higher sample efficiency, which is particularly important for real-world robotic systems. However, many existing MBRL approaches rely on nonlinear deep neural networks (DNNs) for dynamics learning [5]–[11]. While flexible, such models introduce two key challenges: (i) the computational burden of repeated multi-step nonlinear propagation during policy optimization and planning, and (ii) the potential accumulation of model errors over long-horizon rollouts, which can degrade the accuracy of policy gradient estimates [12], [13]. 
+
+W. Hao, Y. Fang, and S. Mou are with the School of Aeronautics and Astronautics, Purdue University, West Lafayette, IN 47907, USA. (Email: 
+
+{hao93, fang394, mous }@purdue.edu )Z. Lu is an independent researcher. (Email: zehuilu789@gmail.com )
+
+An alternative direction within MBRL is to approximate nonlinear dynamics through linear evolution in a lifted space based on Koopman operator theory [14]. By mapping system states into a higher-dimensional latent space, the underlying nonlinear dynamics can be approximately represented by a linear system [15]. Classical approaches such as dynamic mode decomposition and extended dynamic mode decomposition construct such lifted representations by manually selecting lifting functions [16]–[19]. However, the choice of suitable lifting functions remains an open challenge, and the resulting high-dimensional lifted space can limit real-time applicability. To address these limitations, recent work has explored data-driven approaches for learning Koopman representations. For example, [20] proposed using deep learning to approximate Koopman eigenfunctions, while [21]–[25] introduced DNNs to parameterize lifting functions and learn them directly from data, referred to as deep Koopman operator (DKO) methods in the remainder of this paper. Extensions have also been developed to time-varying nonlinear systems [26], [27] and hybrid systems with contact dynamics [28]. Despite these advances, most Koopman-based control methods combine the learned lifted dynamics with classical model-based approaches that require multi-step trajectory propagation, such as MPC [29]. Although the linear latent representation improves com-putational tractability, repeated state propagation, whether over a finite horizon in MPC or MBRL, may introduce cumulative errors in cost evaluation. Motivated by these challenges, this paper proposes an online MBRL framework that integrates linear DKO-based dynamics learning with actor–critic policy optimization. The key idea is to use the learned lifted linear dynamics for one-step policy gradient estimation, rather than relying on multi-step state rollouts. Specifically, the framework simultaneously learns a linear DKO model to approximate the unknown dynamics, estimates the cost-to-go by a critic based on one-step predictions in the lifted space, and updates the policy accordingly. This results in an online learning scheme that retains the benefits of linear dynamics while mitigating error accumulation from long-horizon model propagation. The main contributions of this paper are summarized as follows:  
+
+> •
+
+We develop an online MBRL framework that jointly learns a linear Koopman model of the nonlinear robotic system ,along with a critic and a policy, using replayed transition data tuples for efficient training.  
+
+> •
+
+We derive a policy gradient estimator that exploits the linearity of the lifted dynamics for efficient gradient computation, while using one-step state prediction to mitigate rollout-induced errors.  
+
+> arXiv:2604.19980v1 [cs.RO] 21 Apr 2026 2
+> •
+
+We validate the proposed method on multiple simulation environments, including the pendulum, surface vehicle, linear time-invariant system, lunar lander, and bipedal walker, as well as on two hardware platforms, a Kinova Gen3 robotic arm and a Unitree Go1 quadruped. Exper-imental results demonstrate improved convergence rates compared with model-free RL baselines, superior control performance relative to MBRL baselines, and control performance comparable to classical model-based control using exact system dynamics. The remainder of the paper is organized as follows. Section II formulates the problem. Section III presents the proposed frame-work. Section IV presents the simulation results. Section V reports the hardware experiments. Finally, Sections VI and VII provide the discussion and conclusion, respectively. 
+
+Notations. The Euclidean norm is denoted by ∥ · ∥ . Given a matrix A ∈ Rn×m, ∥ A ∥F is its Frobenius norm, A′
+
+denotes its transpose, and A† represents its Moore-Penrose pseudoinverse. For a twice differentiable function f (x, y),
+
+∇xf (xk) := ∂f (x,y) 
+
+> ∂xx=xk
+
+and ∇xx f (xk) := ∂2f (x,y) 
+
+> ∂x∂xx=xk
+
+denote the first-order and second-order partial derivatives of f (x, y) with respect to x evaluated at xk, respectively. Similarly, ∇xy f (xk, yk) := ∂2f (x,y)    
+
+> ∂x∂y(x,y)=( xk,yk)
+
+denotes the mixed second-order partial derivative evaluated at (xk, yk).II. T HE PROBLEM 
+
+Given an arbitrary initial time index ¯t ∈ { 0, 1, 2, · · · } , we consider a classical optimal closed-loop control problem with unknown nonlinear dynamics: 
+
+u∗(x) = arg min  
+
+> u(x)
+
+J¯t(u(x)) = 
+
+> ∞
+
+X
+
+> t=¯ t
+
+γt−¯tc(x(t), u(t)) 
+
+subject to: x(t + 1) = f (x(t), u(x(t))) ,
+
+x(t) ∈ X , x(¯ t) = x¯t given ,
+
+(1) where t = ¯ t, ¯t + 1 , ¯t + 2 , · · · is a discrete-time index, x(t)
+
+represents the system state, and u(x(t)) : X → U denotes the closed-loop controller mapping. The function c : X × U → R
+
+denotes a bounded and Lipschitz continuous stage cost, 0 <γ < 1 is a discount factor. The unknown mapping f : X ×U → X describes the time-invariant nonlinear system dynamics and is assumed to be Lipschitz continuous. Throughout this paper, the state space X is assumed to be countably infinite. Since the system dynamics f is assumed to be unknown, directly solving (1) to obtain the optimal controller u∗(·) is intractable. Instead, we assume that for any x(t) ∈ X and 
+
+u(t) ∈ U , the unknown dynamics f in (1) can be represented by a parameterized function class 
+
+x(t + 1) = ˆf (x(t), u(t), θf ∗), (2) where ˆf (·, ·, θf ∗) : X × U × Rp → X is a known Lipschitz continuous function class parameterized by θf ∗ ∈ Rp. Further-more, we assume that the optimal closed-loop controller can be rewritten as a given parameterized function class 
+
+u∗(x(t)) = μ(x(t), θμ∗),
+
+where μ(·, θμ∗) : X × Rq → U is a known Lipschitz continuous function parameterized by θμ∗ ∈ Rq , hereafter referred to as the policy . Under these assumptions, the optimal closed-loop control problem reduces to estimating the optimal parameter vectors θf ∗ and θμ∗.Given a dataset of observed state–input pairs from f in (1) 
+
+D = {(xi, ui), i = 0 , 1, 2, · · · , N max },
+
+the objective of this paper is to jointly estimate θf ∗ in (2) and 
+
+θμ∗ from the dataset D. Specifically, for any initial state x¯t
+
+from D, the problem of interest is to estimate θf ∗ and solve 
+
+θμ∗ = arg min  
+
+> θμ∈Rq
+
+J¯t(θμ) = 
+
+> ∞
+
+X
+
+> t=¯ t
+
+γt−¯tc(x(t), u(t)) 
+
+subject to: x(t + 1) = ˆf (x(t), u(t), θf ∗),
+
+u(t) = μ(x(t), θμ),
+
+x(t) ∈ X , x(¯ t) = x¯t, x¯t given .
+
+(3) III. M ETHODOLOGY 
+
+In this section, we first discuss the main challenges associated with solving (3) . We then present a mini-batch learning frame-work that addresses these challenges by coupling online data collection, DKO-based dynamics learning, critic approximation, and actor updates. 
+
+A. Challenges and Main Ideas 
+
+To solve (3) , existing approaches in the literature typi-cally convert the constrained optimal control problem into an unconstrained optimization problem by incorporating the system dynamics and policy into the objective function. This formulation leads to policy gradient methods, where the policy parameters are updated using gradient descent. Specifically, let k = 0 , 1, 2, . . . denote the iteration index, 
+
+θμk ∈ Rq denote the estimate of θμ∗ at iteration k, and let 
+
+αμk > 0 denote the step size. Starting from a given initial parameter θμ 
+
+> 0
+
+, the policy is updated according to 
+
+θμk+1 = θμk − αμk ∇θμ J¯t(θμk ), (4) where ∇θμ J¯t(θμk ) is referred to as the policy gradient . Note here that the policy gradient in (4) is derived under the assumption of perfect knowledge of the system dynamics in (2) . In practice, however, the true dynamics are unknown and must be learned concurrently with the policy. In model-based policy gradient methods, this leads to evaluating the objective in (3) by propagating learned dynamics over multiple steps. Let θfk ∈ Rp denote the estimate of θf ∗ at iteration k. The mismatch between the learned and true dynamics induces the following stage cost estimation error: 
+
+ϵc
+
+> k
+
+(t + 1) = c( ˆf (x(t), u(t), θf ∗), u(t + 1)) 
+
+− c( ˆf (x(t), u(t), θfk ), u(t + 1)) .
+
+As a result, evaluating the objective function in (3) using θfk
+
+leads to the cumulative error 
+
+J¯t(θfk , θμk ) = J¯t(θμ) + 
+
+> ∞
+
+X
+
+> t=¯ t+1
+
+ϵck(t).3
+
+This reveals a key challenge of classic model-based policy gradient methods: the reliance on multi-step rollout of learned (typically nonlinear) dynamics can introduce cumulative errors in policy gradient estimation and increase computational cost. To address this challenge, the proposed method introduces two key components. First, the nonlinear system dynamics are represented using a linear DKO dynamics, which enables efficient gradient computation compared to nonlinear models. Second, a critic network [30] is employed to approximate the objective function J¯t(θμ) in (3), i.e., 
+
+J¯t(θμ) = V (x(¯ t), θJ∗), (5) where V (·, θJ∗) : Rn × Rs → R is assumed to be Lipschitz continuous and parameterized by θJ∗ ∈ Rs. This formulation enables the objective function to be computed using one-step predictions: 
+
+J¯t(θμ) = c(x¯t, μ(x¯t, θμk )) + γJ ¯t+1 (θμ)= c(x¯t, μ(x¯t, θμk )) + γV (x(¯ t + 1) , θJ∗) (6) thereby avoiding repeated multi-step rollout. In contrast to con-ventional approaches, which require long-horizon propagation to estimate gradients, the proposed framework leverages the learned critic network to replace the accumulated cost with a one-step estimate. Together, these components reduce the impact of cumulative estimation errors in policy gradient approximation while im-proving computational efficiency, leading to a more stable and scalable policy optimization framework. The overall structure is illustrated in Fig. 1. The PGDK  
+
+> 10/10/2025 1
+> DKO predictor
+> Environment Critic
+> Input with noise
+> State
+> Input
+> Input with noise
+> Predicted
+> state
+> State
+> State
+> Input
+> TD error
+> Actor
+> Prediction
+> error
+> Predicted
+> cost
+
+Fig. 1: PGDK-Online framework. 
+
+B. The Proposed Framework 
+
+We now introduce an online framework for approximating the optimal policy parameters θμ∗ in (3) . The framework contains four interacting components: (i) an online data collection module, (ii) a DKO module for dynamics approximation to obtain θf ∗ in (2) , (iii) a critic module for cost value approximation, and (iv) an actor module for policy optimization. The proposed framework, termed online policy gradient with deep Koopman representation (PGDK-Online), is summarized in Algorithm 1. 
+
+Algorithm 1: Online Policy Gradient with Deep Koop-man Representation (PGDK-Online)  
+
+> 1
+
+Initialize θf 
+
+> 0
+
+∈ Rp, θJ 
+
+> 0
+
+∈ Rs, θμ 
+
+> 0
+
+∈ Rq for g(·, θf ),
+
+V (·, θJ ), and μ(·, θμ), respectively  
+
+> 2
+
+Set k = 0 . Specify step sizes {αfk }Kk=0 , {αJk }Kk=0 ,
+
+{αμk }Kk=0 , discount factor γ, number of episodes E,horizon T , batch size N , exploration schedule σ(t),and data memory  
+
+> 3
+
+for episode = 1 , . . . , E do  
+
+> 4
+
+Reset state x(0) = x0; initialize noise process W 
+
+> 5
+
+for t = 0 , . . . , T do  
+
+> 6
+
+Apply control: ¯u(t) = μ(x(t), θμk ) + σ(t)W (t) 
+
+> 7
+
+Observe next state xt+1 and store (xt, ¯ut, xt+1 )
+
+in data memory  
+
+> 8
+
+Sample a batch of N tuples from data memory for gradients computation  
+
+> 9
+
+Update Ak, Bk, Ck, and θfk using (14)  
+
+> 10
+
+Update θJk and θμk using (15) and (16), respectively  
+
+> 11
+
+k ← k + 1  
+
+> 12
+
+end  
+
+> 13
+
+end  
+
+> 14
+
+Return: θfk+1 , θJk+1 , θμk
+
+1) Data Collection and Data Batch Sampling: To ensure adequate exploration of the state space X during online learning, the controller executes an exploration policy obtained by perturbing the current policy with a noise process [31]. Specifically, let ti denote the system time at the i-th observation. Given the state x(ti), the executed control is 
+
+¯u(ti) = μ(x(ti), θμk ) + σ(ti)W (ti) (7) where W (ti) ∈ W ⊂ Rm is sampled from a noise process and 
+
+σ(ti) ≥ 0 is a time-decay factor. Common choices for W (ti)
+
+include Gaussian noise or the Ornstein–Uhlenbeck process [32]. The perturbation term promotes exploration early in training while gradually vanishing as the policy improves. Applying the exploratory policy in (7) to the unknown system dynamics (1) produces the next state x(ti +1) . For convenience, we represent the i-th observed transition by the tuple 
+
+(xi, ui, x+ 
+
+> i
+
+) := ( x(ti), ¯u(ti), x(ti + 1)) .
+
+Since the proposed PGDK-Online operates in an online learning setting, the transition samples are collected sequentially as the system interacts with the environment. The observed tuples 
+
+(xi, ui, x+ 
+
+> i
+
+) are stored in a finite-sized data memory Di, which has a fixed maximum capacity Nmax , and is defined as follows: 
+
+Di = ∪ij=1 {(xj , uj , x+ 
+
+> j
+
+)}, i ≤ Nmax .
+
+For i > N max , the earliest i − Nmax observed tuples are discarded to accommodate new data. The value of Nmax is typically chosen to be large. To mitigate the computational burden associated with large datasets during gradient estimation, we employ mini-batch gradient descent [33]. Specifically, at each iteration k, a data 4
+
+batch of N tuples ( N ≪ Nmax ) is sampled from Di, with its index set Ik drawn uniformly from all subsets of {1, 2, · · · , i }
+
+with size N , provided that i ≥ N . The sampled data batch is then used for gradient estimation, as summarized in Lines 
+
+6 ∼ 8 of Algorithm 1. 
+
+2) Dynamics Approximation using Deep Koopman Operator (DKO): To approximate the unknown dynamics f in (1) , we employ a DKO representation for (2) given by 
+
+x(t + 1) = C∗
+
+A∗g(x(t), θf ∗) + B∗u(t)
+
+
+
+, (8) where g(·, θf ∗) : Rn → Rr denotes a lifting function of Koopman operator with r ≥ n, assumed to be Lipschitz continuous. The parameter θf ∗ ∈ Rp and matrices A∗ ∈ Rr×r,
+
+B∗ ∈ Rr×m, C∗ ∈ Rn×r are unknown constants to be learned. The dynamics (8) follows from the Koopman representation 
+
+g(x(t + 1) , θf ∗) = A∗g(x(t), θf ∗) + B∗u(t), (9) 
+
+x(t + 1) = C∗g(x(t + 1) , θf ∗), (10) where (9) describes the linear evolution of the lifted state and (10) reconstructs the system state from the lifted coordinates. We refer to [27] for a detailed discussion on the approximation properties associated with the lifting function g.One way to obtain (8) is to minimize the approximation error of (9)–(10) over the observed transition tuples: 
+
+A∗, B ∗, C ∗, θf ∗ = arg min 
+
+> A,B,C, θf
+
+X
+
+> i
+
+
+
+∥g(x+ 
+
+> i
+
+, θf ) − Ag(xi, θf )
+
+−Bui∥2 + ∥x+ 
+
+> i
+
+− Cg(x+ 
+
+> i
+
+, θf )∥2
+
+,
+
+(11) where the first norm square corresponds to the lifted-state prediction error, while the second norm square enforces reconstruction error. Since the number of data tuples is typically large, we solve (11) using mini-batch gradient descent [33]. Let θfk denote the parameter estimate of θf ∗ at iteration k. Given a sampled data batch, we construct the following data matrices: 
+
+Xk = [ x1, . . . , xN ] ∈ Rn×N ,
+
+Uk = [ u1, . . . , uN ] ∈ Rm×N ,
+
+¯Xk = [ x+1 , . . . , x+ 
+
+> N
+
+] ∈ Rn×N ,
+
+Gk = [ g(x1, θfk ), . . . , g(xN , θfk )] ∈ Rr×N ,
+
+¯Gk = [ g(x+1 , θfk ), . . . , g(x+ 
+
+> N
+
+, θfk )] ∈ Rr×N .
+
+(12) Using these matrices, the error loss function computed over the sampled data batch can be written compactly as 
+
+Lfk = 12N
+
+
+
+∥ ¯Gk − [A B ]
+
+Gk
+
+Uk
+
+
+
+∥2 
+
+> F
+
++ ∥ ¯Xk − C ¯Gk∥2
+
+> F
+
+
+
+. (13) If matrices ¯Gk and 
+
+Gk
+
+Uk
+
+
+
+have full row rank (i.e., are right-invertible), then, starting from any given θf 
+
+> 0
+
+, the matrices and parameters are updated as follows: 
+
+[Ak Bk] = ¯Gk
+
+Gk
+
+Uk
+
+†
+
+,Ck = ¯Xk ¯G†
+
+> k
+
+,
+
+θfk+1 = θfk − αfk ∇θf Lfk (Ak, B k, C k, θfk ).
+
+(14) Note that the matrices Ak, Bk, and Ck are determined by the sampled data batch and θfk , and are treated as constant during the update of θfk . This process is summarized in Line 9 of Algorithm 1. 
+
+3) Value Function Approximation (Critic): To approximate the objective function J¯t(θμ) in (3) using (5) , we estimate the parameter θJ∗ by minimizing the temporal-difference (TD) loss [34] via mini-batch gradient descent, using the same data batch as in the DKO update: 
+
+θJk+1 = θJk − αJk ∇θJ LJk (θJk ), θJ 
+
+> 0
+
+given , (15) where 
+
+LJk (θJ ) = 12N
+
+X
+
+> i∈I k
+
+
+
+c(xi, ui) + γV (x+ 
+
+> i
+
+, θJ ) − V (xi, θJ )
+
+2
+
+.
+
+Here, θJk denotes the estimate of θJ∗ at iteration k, and αJk
+
+is the corresponding step size. This process is summarized in Line 10 of Algorithm 1. 
+
+4) Policy Optimization (Actor): To obtain the optimal policy parameter θμ∗ that generalizes across diverse initial states, the policy parameter θμk is updated after the dynamics and critic parameters θfk and θJk are updated according to (14) and (15) ,respectively. The policy update uses the same sampled mini-batch as the DKO and critic updates, and is given by 
+
+θμk+1 = θμk − αμk ∇θμ ˆJ(θfk+1 , θJk+1 , θμk ), θμ 
+
+> 0
+
+given , (16) where 
+
+∇θμ ˆJ(θfk+1 , θJk+1 , θμk )= 1
+
+N
+
+X
+
+> i∈I k
+
+∇θμ ˆJi(θfk+1 , θJk+1 , θμk )= 1
+
+N
+
+X
+
+> i∈I k
+
+
+
+∇μc(xi, μ(xi, θμk )) ∇θμ μ(xi, θμk )+ γ∇ˆxV (ˆx+ 
+
+> i
+
+, θJk+1 )∇μ ˆx+ 
+
+> i
+
+∇θμ μ(xi, θμk )
+
+
+
+(17) with ˆJi(θfk+1 , θJk+1 , θμk ) an estimate of (6) at iteration k, and 
+
+ˆx+ 
+
+> i
+
+= Ck(Akg(xi, θfk+1 )+ Bkμ(xi, θμk )) denotes the one-step state prediction from DKO dynamics. Note that, due to the linear DKO dynamics, ∇μ ˆx+ 
+
+> i
+
+= CkBk
+
+in (17) is a constant matrix, which further reduces the computational cost compared with nonlinear dynamics. The gradient in (17) serves as an approximation to the policy gradient ∇θμ J¯t(θμ) in (4) , computed using the sampled mini-batch. This procedure is summarized in Line 10 of Algorithm 1. IV. N UMERICAL SIMULATIONS 
+
+In this section, we evaluate the proposed PGDK-Online framework on a set of benchmark control problems. The simulations are designed to assess three aspects of performance:  
+
+> •
+
+Convergence behavior of the learned policy compared with model-free and model-based RL baselines.  
+
+> •
+
+Stability of the proposed PGDK-Online during learning.  
+
+> •
+
+Control performance relative to model-free and model-based RL baselines, as well as classical model-based optimal control methods that utilize exact dynamics. To clarify the DNN architectures of PGDK-Online used for the pendulum and surface vehicle tasks, we summarize them in Table I. 5                      
+
+> Task DNN L1 (Act/Nodes) L2 Output Pendulum
+> gReLU/400 ReLU/300 Linear/8
+> VReLU/400 ReLU/300 Linear/1
+> μReLU/400 ReLU/300 Tanh/1 Surface vehicle
+> gReLU/200 SiLU/100 Linear/16
+> VReLU/200 ReLU/100 Linear/1
+> μReLU/200 ReLU/100 Tanh/2
+
+TABLE I: DNNs architectures of the proposed PGDK-Online. Activation functions, number of nodes, and output dimensions are reported for each network. 
+
+A. Inverted Pendulum Balancing 
+
+The dynamics of the inverted pendulum is given by 
+
+¨ψ = −3g
+
+2l sin( ψ + π) + 3
+
+ml 2 u, 
+
+where ψ denotes the angle between the pendulum and the direction of gravity, with the upright position corresponding to ψ = 0 . The system parameters are given by g = 10m /s2,
+
+m = 1kg , and l = 1m , representing gravitational acceleration, pendulum mass, and length, respectively. The system state is defined as x(t) = [ ψ(t), ˙ψ(t)] ′, with bounds [−π, −8] ′ ≤
+
+x(t) ≤ [π, 8] ′. The control input u(t) is a continuous scalar torque constrained within [−2, 2] . The system is simulated using Euler discretization: ψ(t + 1) = ψ(t) + ˙ψ(t)∆ t and 
+
+˙ψ(t + 1) = ˙ψ(t) + ¨ψ(t)∆ t, where the time step is ∆t = 0 .02s .
+
+1) Simulation Setup: For each simulation episode, the initial state x(0) is uniformly sampled between [−π, −1] ′ and [π, 1] ′,and each episode terminates when t > 200 . The control objective is to stabilize the pendulum at the upright equilibrium 
+
+xgoal = [0 , 0] ′. The reward function is defined as 
+
+r(x(t), u(t)) = −
+
+
+
+ψ(t)2 + 0 .1 ˙ψ(t)2 + 0 .001 u(t)2
+
+.
+
+To implement the proposed PGDK-Online, the DNN architec-tures are summarized in Table I. All networks are trained using the Adam optimizer [35] with a batch size of 120 .We compare PGDK-Online with representative model-free and model-based RL methods, as well as a classical optimal control baseline. Specifically, we consider:  
+
+> •
+
+Probabilistic ensembles with trajectory sampling (PETS) [10], a model-based RL method that learns probabilistic dynamics using DNN ensembles and performs control via MPC with a planning horizon of 25 . 
+
+> •
+
+Soft actor–critic (SAC) [36], a representative model-free actor–critic method.  
+
+> •
+
+MPC using the exact system dynamics with a planning horizon of 20 .To account for stochasticity in DNN training, all learning-based methods are evaluated over 5 independent runs. 
+
+2) Results and Analysis: Table II summarizes the con-vergence behavior under both 95% and 99% convergence criteria. PETS achieves the fastest convergence under the stricter 99% criterion, reflecting its rapid initial improvement. However, under the more practical 95% criterion, PGDK-Online converges substantially faster than both PETS and SAC. This difference highlights that PETS tends to saturate early, whereas PGDK-Online maintains sustained performance improvement and achieves more reliable convergence.                           
+
+> Method 95% Conv. ↓(episodes) 99% Conv. ↓(episodes)
+> PGDK-Online 32 .4±25 .630 .0±21 .5
+> PETS 78 .0±0.020 .0±0.0
+> SAC 67 .4±11 .564 .8±11 .6
+
+TABLE II: Convergence comparison for learning-based meth-ods on the inverted pendulum task. Results are reported as mean ± standard deviation over 5 independent runs. As reported in Table III, PGDK-Online attains control perfor-mance comparable to MPC, PETS, and SAC, while requiring significantly lower computation time during deployment than online optimization-based methods such as PETS and MPC. Overall, while MPC with exact dynamics achieves the best control performance, PGDK-Online provides the most favorable trade-off between performance and efficiency. Compared with PETS, it avoids early performance saturation and achieves more consistent convergence, and compared with SAC, it converges significantly faster. In addition, its low computational overhead makes it well-suited for real-time control applications where both performance and efficiency are critical.                                        
+
+> Method Time (ms) ↓Avg. Step Reward ↑Final Err ↓
+> PGDK-Online 0.038 ±0.001 −0.822 ±0.555 0.017 ±0.000
+> PETS 154 .8±4.9−0.865 ±0.419 0.021 ±0.012
+> SAC 0.102 ±0.033 −1.260 ±0.838 0.011 ±0.000
+> MPC (exact dyn.) 31 .2±11 .5−0.656 ±0.411 0.000 ±0.000
+
+TABLE III: Performance comparison of learned policies on the inverted pendulum task over 10 initial states. Reported metrics include per-step computation time, average step reward, and final tracking error. Lower computation time, higher rewards, and lower tracking errors indicate better control performance. 
+
+B. Goal-Tracking for Surface Vehicles 
+
+We consider a surface vehicle modeled as a 3-DOF rigid body with global position p = [ x, y, ψ ]′ and body-frame velocity v = [ u, v, r ]′, where (x, y ) denotes the position and 
+
+ψ is the yaw angle. The kinematic equations are given by 
+
+˙p =
+
+
+
+cos ψ − sin ψ 0sin ψ cos ψ 00 0 1
+
+ v.
+
+The body-frame dynamics are given by 
+
+M ˙v + C(v)v + Dv = τ ,
+
+where 
+
+M =
+
+
+
+m 0 00 m 00 0 Iz
+
+ , C(v) = 
+
+
+
+0 0 −mv 
+
+0 0 mu mv −mu 0
+
+ ,D =
+
+du 0 00 dv 00 0 dr
+
+ , τ =
+
+Fu
+
+0
+
+τr
+
+
+
+represent the inertia, Coriolis–centripetal, and damping matri-ces, respectively, and τ denotes the control input vector. 6
+
+For simulation, the system parameters are set to m = 8 .0 kg 
+
+and Iz = 2 .5 kg · m2, with linear drag coefficients du = 3 .0,
+
+dv = 6 .0, and dr = 1 .5. The control inputs are the surge force 
+
+Fu ∈ [−12 , 12] N and the yaw torque τr ∈ [−4, 4] N · m.
+
+1) Simulation Setup: The observation state is de-fined as x(t) = [xgoal − x(t), y goal − y(t), ψ goal −
+
+ψ(t), u (t), v (t), r (t), cos ψ(t), sin ψ(t), F u(t−1) , τ r (t−1)] ′ ∈
+
+R8, where Fu and τr are initialized to zero. The control objective is to steer the boat from a given initial state to the target state pgoal = [3 .0, 4.0, 0.0] ′. For each simulation episode, the initial position p(0) is uniformly sampled from the range bounded by [−0.2, −0.2, −π/ 20] ′ and [0 .2, 0.2, π/ 20] ′, and the episode terminates when t > 200 . The reward function is defined as 
+
+r(x(t), τ (t)) = −0.4∥p(t) − pgoal ∥2 − 0.03 ∥v(t)∥2
+
+−0.0008 ∥τ (t)∥2 + 80 Isucc ,
+
+where Isucc = 1 if ∥ p(t) − pgoal ∥< 0.05 , and Isucc = 0 
+
+otherwise. The proposed PGDK-Online aims to learn a mapping from (x(t), τ (t)) to x(t + 1) .For implementation of the proposed PGDK-Online, the DNN architectures are summarized in Table I. We consider SAC, PETS with a planning horizon of 25 , and MPC with a planning horizon of 20 as baseline methods, consistent with the pendulum example. To account for randomness in DNN training, all learning-based methods are evaluated over 
+
+5 independent runs, using a batch size of 120 .0 100 200 300 400 500 
+
+> Episodes
+> 10
+> 8
+> 6
+> 4
+> 2
+> 0
+> 2
+> Averge step reward
+> PGDK-Online
+> PETS
+> SAC
+
+Fig. 2: Learning curves of the learning-based methods on the surface vehicle task. Higher rewards indicate better control performance. Solid lines denote the mean over 5 runs, and shaded regions represent the corresponding standard deviation. 
+
+2) Results and Analysis: As shown in Fig. 2, for the surface vehicle task, the proposed PGDK-Online achieves a convergence rate comparable to PETS, while exhibiting more stable learning behavior as the number of training episodes increases. In contrast, PGDK-Online converges significantly faster than the model-free SAC method in terms of training episodes, while achieving comparable performance. Further-more, Table IV shows that the proposed PGDK-Online attains control performance comparable to MPC and outperforms PETS and SAC, while requiring substantially less computation                                         
+
+> Method Time (ms) ↓Avg. Step Reward ↑Final Err ↓
+> PGDK-Online 0.042 ±0.015 0.494 ±0.861 0.797 ±0.851
+> PETS 172 .9±0.4−0.768 ±0.024 2.155 ±0.036
+> SAC 0.086 ±0.026 −0.546 ±0.090 1.103 ±0.072
+> MPC (exact dyn.) 4.3±0.11.025 ±0.102 0.122 ±0.001
+
+TABLE IV: Performance comparison of learned policies on the surface vehicle task over 10 initial states. Reported metrics include per-step computation time, average step reward, and final tracking error. Lower computation time, higher rewards, and lower tracking errors indicate better control performance. time during deployment than the online optimization-based approaches used in PETS and MPC. 
+
+C. Generalization Examples 
+
+To demonstrate the generalizability of the proposed PGDK-Online, we evaluate it on both linear and nonlinear systems, including a linear time-invariant (LTI) system and two standard nonlinear benchmark environments, lunar lander and bipedal walker, from OpenAI Gym [37]. Furthermore, we assess control performance as system complexity increases by comparing the proposed PGDK-Online with representative model-based and model-free baselines. 
+
+1) LTI System: The dynamics of the LTI system is 
+
+x(t + 1) = 
+
+0.5 0.50 1
+
+
+
+x(t) + 
+
+01
+
+
+
+u(t),
+
+where [−5, −5] ′ ≤ x(t) ≤ [5 , 5] ′ and −1 ≤ u(t) ≤ 1 denote the system state and control input at time t, respectively, and 
+
+x(0) is uniformly sampled from the interval [−0.1, −0.1] ′ and 
+
+[0 .1, 0.1] ′. The objective of this example is to design a policy for driving the system state toward the goal state xgoal = [1 , 1] ′
+
+starting from any given initial state, for which we define the following reward function: 
+
+r(x(t), u (t)) = −
+
+
+
+∥ x(t) − xgoal ) ∥2 +0 .001 u(t)2
+
+.
+
+In this example, we evaluate the performance of the proposed PGDK-Online against the classical optimal control method, linear quadratic regulator (LQR), which has access to the exact system dynamics with horizon 50 and uses the same reward function. Furthermore, we first train PGDK-Online and collect the resulting dataset, which is then used as an offline dataset to train PGDK, in order to investigate the impact of online versus offline data on policy performance. 
+
+2) Lunar Lander: The lunar lander task requires controlling a lander to achieve a safe landing on a designated pad without any collision. The system has an 8-dimensional state, including position, velocity, orientation, and contact indicators, and a 2-dimensional continuous action corresponding to the main engine thrust and lateral control. We compare the proposed PGDK-Online with the model-free RL baseline deep deterministic policy gradient (DDPG) [31]. 
+
+3) Bipedal Walker: The bipedal walker task aims to control a bipedal robot to achieve stable forward locomotion over uneven terrain without falling. The system has a 24 -dimensional state capturing joint positions, velocities, and contact information, 70 20 40 60 80 100 120 
+
+> Episodes
+> 25
+> 20
+> 15
+> 10
+> 5
+> 0
+> Average step reward
+> PGDK-Online
+> PGDK-Offline
+
+(a) LTI dynamics. The solid line denotes the mean over 5 runs, and the shaded region represents the standard deviation. 0 50 100 150 200 250 300 
+
+> Episodes
+> 4.0
+> 3.5
+> 3.0
+> 2.5
+> 2.0
+> 1.5
+> 1.0
+> 0.5
+> Average step reward
+> PGDK-Online
+> DDPG
+> PETS
+
+(b) Cumulative average step reward for the lunar lander task. 0 200 400 600 800 1000 1200 
+
+> Episodes
+> 2.25
+> 2.00
+> 1.75
+> 1.50
+> 1.25
+> 1.00
+> 0.75
+> 0.50
+> Average step reward
+> PGDK-Online
+> DDPG
+> PETS
+
+(c) Cumulative average step reward for the bipedal walker task. 
+
+Fig. 3: Learning curves for the benchmark tasks, where a higher reward indicates better control performance. and 4-dimensional continuous control inputs corresponding to joint torques. We compare the proposed PGDK-Online with DDPG. 
+
+4) Simulation Setup: The DNN architectures of the proposed PGDK-Online are summarized in Table V. For the LTI example, we first execute the PGDK-Online algorithm to generate a replay dataset, which is then used to train the offline PGDK model. For both PGDK and LQR, the state and input are clipped to satisfy the corresponding constraints. The LQR is implemented with a horizon of 50 . For training, the batch sizes are set to 50 , 120 , and 128 for the LTI, lunar lander, and bipedal walker tasks, respectively. 
+
+Task DNN L1 (Act/nodes) L2 (Act/nodes) Output (Act/Dim) LTI 
+
+g ReLU/400 ReLU/300 Linear/4 
+
+V ReLU/400 ReLU/300 Linear/1 
+
+μ ReLU/400 ReLU/300 Tanh/1 Lunar 
+
+g ReLU/512 Tanh/300 Linear/12 
+
+V ReLU/512 ReLU/300 Linear/1 
+
+μ ReLU/512 ReLU/300 Tanh/2 Bipedal 
+
+g GeLU/500 ReLU/300 Linear/30 
+
+V LeakyReLU/500 LeakyReLU/300 Linear/1 
+
+μ ReLU/500 ReLU/300 Tanh/4 
+
+TABLE V: DNN architectures of the proposed PGDK-Online. Reported are the activation functions, number of nodes, and output dimensions of the networks. 
+
+5) Results and Analysis.: As shown in Fig. 3a, the proposed PGDK-Online achieves a convergence rate comparable to that of the offline PGDK approach in terms of training episodes, while offering improved computational efficiency in gradient evaluation, since offline PGDK computes gradients using the entire dataset. Furthermore, Table VI shows that the policy learned by PGDK-Online yields rewards consistently closer to those of the benchmark LQR controller than the offline PGDK method when evaluated from identical initial states. This improvement can be attributed to the reduced susceptibility of PGDK-Online to local minima. In contrast to offline PGDK, which is trained on a fixed dataset, PGDK-Online updates gradients using data batches sampled from a continually refreshed replay buffer, thereby improving exploration of the parameter space. 0 10 20 30 40 50           
+
+> 0.0
+> 0.5
+> 1.0
+> x1(t)
+> Online PGDK
+> Offline PGDK
+> LQR
+> goal
+> 010 20 30 40 50
+> 0
+> 1
+> x2(t)
+> Online PGDK
+> Offline PGDK
+> LQR
+> goal
+> 010 20 30 40 50
+> Time steps
+> 0
+> 1
+> u(t)
+> Online PGDK
+> Offline PGDK
+> LQR
+> goal
+
+Fig. 4: Trajectories from PGDK and LQR. Notably, Fig. 4 illustrates example trajectory comparisons between the PGDK-based controllers and the LQR controller. Both online and offline PGDK tend to apply more aggressive control inputs than LQR in this LTI setting, resulting in faster convergence to the goal state at the expense of higher control effort. In contrast, the LQR controller produces smoother tra-jectories with more conservative inputs, reflecting its optimality under a quadratic cost formulation. As shown in Figs. 3b–3c, the proposed PGDK-Online exhibits faster convergence than PETS and DDPG on both the lunar lander and bipedal walker tasks. Table VI further shows that it achieves a higher final reward than DDPG on the lunar lander task and a higher average reward on the bipedal walker task. As illustrated in Fig. 3b, PGDK-Online experiences a sharp reward decrease during the initial 0 ∼ 15 episodes, due to combined dynamics and critic learning errors in the early stage. In contrast, DDPG is affected only by critic approximation errors, while PETS is primarily limited by model inaccuracies. V. H ARDWARE EXPERIMENTS 
+
+In this section, we evaluate the proposed framework on two hardware platforms, a robotic arm and a quadruped robot, 8                                                            
+
+> Task Method Time ( ×10 −5)↓Avg. Reward ↑Final Rew. ↑
+> LTI
+> PGDK-Online 5.1±4.8−0.12 ±0.14 0.00
+> PGDK-Off 5.2±4.5−0.16 ±0.14 −0.02
+> LQR (exact dyn.) 1.6e5 −0.06 ±0.07 0.00
+> Lunar PGDK-Online 3.9±0.10.13 ±0.03 0.35 ±0.00
+> DDPG 3.9±1.40.89 ±0.37 0.13 ±0.09
+> Bipedal PGDK-Online 4.1±0.50.04 ±0.17 –DDPG 3.7±0.4−0.69 ±0.43 –
+
+TABLE VI: Performance on additional benchmarks (mean ±
+
+std over 10 episodes). Metrics include per-step computation time, average reward, and final reward. Lower computation time and higher rewards indicate better control performance. to assess its applicability in real-world hardware settings. For clarity, the DNN architectures employed in the proposed PGDK-Online method are summarized in Table VII.                              
+
+> Task DNN L1 (Act./nodes) L2 L3 Output Robotic arm
+> gL.ReLU/512 L.ReLU/256 –Tanh/12
+> VL.ReLU/512 L.ReLU/256 L.ReLU/128 Linear/1
+> μL.ReLU/512 L.ReLU/256 –Tanh/6 Quadruped
+> gReLU/256 ReLU/256 –Linear/16
+> VReLU/256 ReLU/256 –Linear/1
+> μReLU/256 ReLU/256 –Tanh/12
+
+TABLE VII: DNN architectures of the proposed PGDK-Online. L.ReLU denotes the LeakyReLU activation function. 
+
+A. Robotic Arm 
+
+We conduct hardware experiments on goal-tracking and collision-avoidance tasks using the Kinova Gen3 platform [38], a 7-DOF robotic arm equipped with joint encoders and torque sensors. The PGDK-Online framework is first trained in the Kinova Gazebo simulator and then deployed on the physical robot. As a result, measurement noise on the real platform is not explicitly modeled during training. For these tasks, which focus on goal-tracking with and without obstacle avoidance, the gripper is excluded, resulting in a 6-DOF system. The system state is defined as x(t) ∈ R6,representing the joint angles of the robotic arm, initialized at 
+
+[0 , π/ 4, π/ 2, 0, π/ 2] . Due to the lack of direct torque control in the Kinova Gen3 Lite simulator, the control input is defined as the joint velocity u(t) = ˙ x(t) ∈ R6. Data tuples (xt, ut, x+ 
+
+> t
+
+)
+
+are collected at a fixed frequency of 10Hz . The proposed algorithm is implemented in Python and executed through the robot operating system on a desktop computer equipped with an NVIDIA 2080 Ti GPU and 128 GB of RAM. The Gazebo simulation environment is illustrated in Fig. 5. 
+
+1) Goal-Tracking Task: Let p(t) ∈ R3 denote the position of the end-effector of the robotic arm. The objective is to drive the end-effector to pgoal = [0 .24 , 0.28 , 0.83] ′ while minimizing control effort. The reward function is defined as 
+
+r(p(t), u(t)) = −
+
+
+
+ep(t)′Qep(t) + u(t)′Ru(t)
+
+
+
+, (18) where ep(t) = p(t) − pgoal denotes the position track-ing error, and Q = diag(8 .0, 0.02 , 0.05) and R =
+
+Fig. 5: Gazebo simulation of the Kinova Gen3 Lite for goal-tracking tasks with and without the obstacle. 
+
+diag(0 .02 , 0.02 , 0.02 , 0.02 , 0.02 , 0.02) are diagonal weighting matrices. Although the reward is defined based on the end-effector position p(t), PGDK-Online learns the system dynamics in the joint-angle space using DKO by modeling the mapping from 
+
+(x(t), u(t)) to x(t + 1) . Furthermore, both Gazebo simulations and real-world experiments on the robotic arm indicate that, although the initial state x(0) is nominally fixed, it exhibits slight variations across training and testing episodes. The DNN architectures for the proposed PGDK-Online are summarized in Table VII. All networks are trained using the Adam optimizer with a batch size of 100 . Each episode terminates when t > 100 . To account for stochasticity in DNN training, the experiment is conducted over 5 independent runs. 
+
+Results and Analysis. As shown in Fig. 6, the proposed PGDK-Online identifies a feasible policy within approximately 
+
+10 episodes, with both the episode reward improving rapidly and the goal-tracking error decreasing significantly. The learning curves converge around 100 episodes, after which performance stabilizes. The variance across runs is high during early exploration but diminishes over time, indicating improved training stability. 0 100 200 300 400 500 
+
+> Episodes
+> 700
+> 600
+> 500
+> 400
+> 300
+> 200
+> 100
+> 0
+> 100
+> Episode reward
+> Episode reward
+> Final goal error
+> 0.2
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> Final goal error
+
+Fig. 6: Learning curves and final goal-tracking errors over training episodes for the goal-tracking task. Higher rewards and lower goal-tracking errors indicate better control performance. Solid lines denote the mean over 5 runs, and shaded regions represent the corresponding standard deviation. 9Start 
+
+## Goal 
+
+> Trained Policy for Goal -Reaching
+
+## Obstacle 
+
+## is hit .
+
+## Obstacle 
+
+## is not hit .
+
+Trained Policy for 
+
+Goal -Reaching and 
+
+Obstacle Avoidance 
+
+Fig. 7: Experiments on the Kinova Gen3 Lite robotic arm. The task is performed with a fixed initial state (blue rounded rectangle, dashed to indicate occlusion) and a common target state (green circle). The first subfigure shows the end-effector trajectory for goal tracking generated by the policy learned by PGDK-Online. The second subfigure illustrates that, without training, the nominal trajectory collides with the obstacle (dashed orange line: nominal trajectory; red line: collision). After applying PGDK-Online, the robot successfully generates an obstacle-avoiding trajectory, as shown in the third subfigure. Furthermore, Fig. 7 shows that the policy learned in the Gazebo simulation generalizes well to the real robotic arm, despite the presence of unknown execution noise. 
+
+2) Goal-Tracking Task with Collision Avoidance: To further evaluate safety-aware performance, we consider a goal-tracking task in the presence of obstacles. The learned policy from the obstacle-free goal-tracking task is used as the initial policy. In our experiments, obstacles are deliberately placed to obstruct the nominal trajectory of the learned policy. The obstacle is modeled as a cuboid with dimensions 
+
+0.04m × 0.04m × 0.65m , located at [x, y, z ] = [0 .29 , 0.26 , 0] .It forms a vertical column that blocks the direct path to the goal, requiring collision-free maneuvering. A collision penalty is incorporated into the reward function (18) and is defined as 
+
+ˆr(p(t), u(t)) = r(p(t), u(t)) − 100 Icoll + 20 Isucc , (19) where Icoll is an indicator function that equals 1 if a collision is detected and 0 otherwise, with collisions determined through geometric constraints by checking intersections between the robot links and the obstacle volume. Similarly, Isucc equals 1
+
+if ∥ ep(t) ∥2≤ 0.05 and 0 otherwise. The DNN architectures used in the proposed PGDK-Online are detailed in Table VII. Training is performed using the Adam optimizer with a batch size of 100 . Each episode terminates upon collision, i.e., when Icoll = 1 , or when the time step exceeds t > 150 . To reduce the impact of stochasticity in DNN training, the experiment is conducted for 5 runs. 
+
+Results and Analysis. As shown in Fig. 8, for the goal-tracking task with obstacle avoidance, the proposed PGDK-Online gradually improves policy performance, as indicated by increasing average step reward and decreasing goal-tracking error. Compared with the obstacle-free case, convergence is slower due to the added safety constraints, with stabilization occurring after approximately 400 ∼ 500 episodes. The larger number of training episodes relative to the goal-tracking task is primarily due to early episode termination upon collision. The initially high variance reflects exploration under collision constraints, while the discrete reward function (19) further increases the difficulty of critic convergence. The variance decreases over time, indicating improved training stability. Overall, the method successfully learns a collision-free policy with consistent tracking performance. 0 100 200 300 400 500 600 
+
+> Episodes
+> 1.5
+> 1.0
+> 0.5
+> 0.0
+> 0.5
+> 1.0
+> Average step reward
+> Final goal error
+
+Fig. 8: Learning curves and final goal-tracking errors for the goal-tracking task with obstacle avoidance. Higher rewards and lower goal-tracking errors indicate better control performance. Solid lines show the mean over 5 runs, with shaded regions indicating standard deviation. Moreover, as shown in Fig. 7, starting from the policy learned in the goal-tracking task, the proposed PGDK-Online further trains the policy in the Gazebo simulator, enabling the robotic arm to reach the goal while avoiding collisions with the obstacle. 10 
+
+B. Quadruped Robot 
+
+We demonstrate the proposed PGDK-Online on a goal-tracking task using the Unitree Go1 quadruped robot plat-form [39], where the system states are obtained from a motion capture system. The simplified system state is defined as 
+
+x = [ x, y, ψ, v x, v y , ˙ψ, h′]′ ∈ R9,
+
+where x and y denote the global position, ψ is the yaw angle, vx and vy are the body-frame linear velocities, and 
+
+h = [ lx, l y , a m]′ ∈ R3 represents the centroidal momentum state. The body-frame velocities are related to the global-frame velocities by vx
+
+vy
+
+
+
+=
+
+ cos ψ sin ψ
+
+− sin ψ cos ψ
+
+  ˙x
+
+˙y
+
+
+
+.
+
+The control input is defined as 
+
+u = [ afwd , a lat , a z]′ ∈ R3
+
+which corresponds to the commanded forward and lateral accelerations in the body frame and the desired yaw angular acceleration, respectively. The centroidal momentum dynamics are given by 
+
+˙h =
+
+m cos ψ −m sin ψ 0
+
+m sin ψ m cos ψ 00 0 Izz 
+
+ u,
+
+where m = 12 kg is the robot mass and Izz = 0 .9 kg · m2 is the yaw moment of inertia. The control objective is to drive the quadruped to the desired goal pose [xgoal , y goal , ψ goal ] = [1 .5, 0, 0] . As the task primarily depends on the base motion, we consider an 8-dimensional task-oriented state defined as 
+
+s = [∆ x, ∆y, ∆ψ, cos ψ, sin ψ, v x, v y , ˙ψ]′ ∈ R8, (20) where ∆x = x − xgoal , ∆y = y − ygoal , and ∆ψ = ψ − ψgoal .The reward function is defined as 
+
+r(s) = −
+
+
+
+6∆ x2 + 20∆ y2 + 4 .5∆ ψ2
+
+.
+
+1) Setup: The DNNs g, V , and μ follow the architectures specified in Table VII and are trained using a batch size of 
+
+150 with the Adam optimizer. Each episode terminates when 
+
+t > 200 . The PGDK-Online aims to learn a mapping from 
+
+(s(t), u(t)) to s(t+1) . To account for the stochasticity in DNN training, PGDK-Online is evaluated over 5 independent runs. 
+
+2) Results and Analysis: The learning curve in Fig. 9 shows that PGDK-Online improves steadily over training episodes. In the early stage, the reward is low and exhibits high variance due to exploration. As training progresses, both the reward and stability improve, with the curve plateauing after approximately 
+
+100 ∼ 150 episodes, indicating convergence. The reduced variance further suggests consistent performance across runs, and the final reward near zero demonstrates effective control performance. As shown in Table VIII, PGDK-Online achieves significantly lower computation time than MPC, enabling real-time deploy-ment. While MPC attains lower tracking errors, PGDK-Online achieves comparable final tracking error with only slightly 0 25 50 75 100 125 150 175 200 
+
+> Episodes
+> 250
+> 200
+> 150
+> 100
+> 50
+> 0
+> 50
+> Averge step reward
+> PGDK-Online
+
+Fig. 9: Learning curves. The solid line denotes the mean over 5
+
+runs, and the shaded region represents the standard deviation. higher average error. In addition, although MPC produces smoother control inputs, PGDK-Online exhibits higher control variability, reflecting a trade-off between tracking accuracy, control smoothness, and computational efficiency. Overall, PGDK-Online provides a favorable balance between control performance and real-time applicability.                             
+
+> Method Time (ms) ↓Avg. Err. ↓Final Err. ↓Smooth ↓
+> PGDK-Online 0.04 ±0.01 0.72 ±0.03 0.05 ±0.02 0.98 ±0.65
+> MPC (exact dyn.) 42 .3±9.90.57 ±0.06 0.05 ±0.00 0.02 ±0.01
+
+TABLE VIII: Performance comparison over 10 initial states in simulation. Reported metrics include per-step computation time, average and final tracking errors, and control smoothness, defined as V = 1
+
+> T
+
+PT −1 
+
+> t=0
+
+∥u(t + 1) − u(t)∥2.As shown in Fig. 10 and Table VIII, in simulation, MPC using exact dynamics achieves better tracking performance, as expected. In real-world execution, however, the proposed PGDK-Online attains performance comparable to MPC in terms of both average and final tracking errors. This indicates that, despite not relying on exact system dynamics, the proposed approach can achieve near-optimal performance and remains competitive under real-world uncertainties.                                
+
+> Task Method Avg. Tracking Err. ↓Final Tracking Err. ↓
+> Planned PGDK-Online 0.927 ±0.230 0.032 ±0.009
+> MPC (exact dyn.) 0.864 ±0.077 0.083 ±0.030
+> Executed PGDK-Online 1.063 ±0.160 0.045 ±0.016
+> MPC (exact dyn.) 1.203 ±0.073 0.112 ±0.039
+
+TABLE IX: Hardware deployment performance comparison be-tween PGDK and MPC over 3 initial states, where both methods are evaluated from identical initial conditions. “Planned” refers to trajectories generated in the simulation environment, while “Executed” denotes real-world execution of these trajectories. Lower values indicate better tracking performance. VI. D ISCUSSION 
+
+The proposed framework is motivated by the observation that learned dynamics models are most vulnerable when used for 11 Start 
+
+Start 
+
+Start 
+
+Goal 
+
+Goal 
+
+Goal 
+
+> PGDK
+> MPC
+> PGDK
+> MPC
+> PGDK
+> MPC
+
+Fig. 10: Experiments on the Unitree Go1 quadruped robot. Three distinct initial states (blue rounded rectangles) and a common target state (green circle) are considered. The trajectories generated by MPC with exact dynamics (orange curves with arrows) and the proposed PGDK-Online method (yellow curves with arrows) are shown. long-horizon rollouts during policy improvement. By leveraging the learned lifted dynamics primarily for one-step prediction within an actor–critic update, PGDK-Online mitigates error accumulation while still exploiting model structure to improve data efficiency. The experimental studies are designed to evaluate this princi-ple progressively. The pendulum example provides a controlled setting to examine convergence behavior and sample efficiency. Additional simulation benchmarks assess generalization across a broader class of nonlinear continuous-control tasks. Finally, the robotic arm and quadruped experiments demonstrate the applicability of the framework to higher-dimensional systems with practical constraints. Several implementation aspects are critical in practice. The lifting architecture must be sufficiently expressive to ensure accurate one-step prediction. Replay buffer composition and sampled data batch size influence both convergence speed and stability. For hardware deployment, additional safety mechanisms or conservative control constraints may be required during early training. Overall, the results indicate that PGDK-Online effectively balances model utilization and robustness, making it well-suited for real-world robotic learning tasks. VII. C ONCLUDING REMARKS 
+
+In this paper, we presented PGDK-Online, an online model-based RL framework for nonlinear systems with unknown dynamics that integrates linear deep Koopman-based dynamics learning with actor–critic policy optimization. By computing policy updates using one-step lifted-space prediction, the method avoids repeated multi-step rollout of learned models, thereby improving computational efficiency and mitigating long-horizon model errors. An online mini-batch gradient descent implementation enables policy learning from streamed data, with convergence validated through numerical simulations. Extensive simulations and hardware experiments demonstrate that PGDK-Online achieves strong sample efficiency compared with model-free approaches, control performance comparable to model-based methods that rely on exact system dynamics, and significantly reduced computational cost during deployment. Future work will focus on safety-aware online learning, improved replay buffer sampling strategies, stronger theoretical guarantees under function approximation errors, and extensions to more complex robotic scenarios, including contact-rich manipulation and multi-agent systems. REFERENCES [1] B. D. Anderson and J. B. Moore, Optimal control: linear quadratic methods . Courier Corporation, 2007. [2] B. Kouvaritakis and M. Cannon, “Model predictive control,” Switzerland: Springer International Publishing , vol. 38, no. 13-56, p. 7, 2016. [3] M. Hutter, C. Gehring, D. Jud, A. Lauber, C. D. Bellicoso, V. Tsounis, J. Hwangbo, K. Bodie, P. Fankhauser, M. Bloesch et al. , “Anymal-a highly mobile and dynamic quadrupedal robot,” in 2016 IEEE/RSJ international conference on intelligent robots and systems (IROS) . IEEE, 2016, pp. 38–44. [4] K. Doya, “Reinforcement learning in continuous time and space,” Neural computation , vol. 12, no. 1, pp. 219–245, 2000. [5] E. Hernandaz and Y. Arkun, “Neural network modeling and an extended dmc algorithm to control nonlinear systems,” in American Control Conference . IEEE, 1990, pp. 2454–2459. [6] W. Miller, R. Hewes, F. Glanz, and L. Kraft, “Real-time dynamic control of an industrial manipulator using a neural network-based learning controller,” Transactions on Robotics and Automation , vol. 6, no. 1, pp. 1–9, 1990. [7] A. Draeger, S. Engell, and H. Ranke, “Model predictive control using neural networks,” Control Systems Magazine , vol. 15, no. 5, pp. 61–66, 1995. [8] S. Levine, C. Finn, T. Darrell, and P. Abbeel, “End-to-end training of deep visuomotor policies,” The Journal of Machine Learning Research ,vol. 17, no. 1, pp. 1334–1373, 2016. [9] M. P. Deisenroth, C. E. Rasmussen, and D. Fox, “Learning to control a low-cost manipulator using data-efficient reinforcement learning,” 
+
+Robotics: Science and Systems VII , vol. 7, pp. 57–64, 2011. [10] K. Chua, R. Calandra, R. McAllister, and S. Levine, “Deep reinforcement learning in a handful of trials using probabilistic dynamics models,” 
+
+Advances in neural information processing systems , vol. 31, 2018. [11] I. Askari, A. Vaziri, X. Tu, S. Zeng, and H. Fang, “Model predictive inferential control of neural state-space models for autonomous vehicle motion planning,” IEEE Transactions on Robotics , 2025. [12] K. Tanaka, “An approach to stability criteria of neural-network control systems,” Transactions on Neural Networks , vol. 7, no. 3, pp. 629–642, 1996. [13] A. S. Polydoros and L. Nalpantidis, “Survey of model-based reinforce-ment learning: Applications on robotics,” Journal of Intelligent & Robotic Systems , vol. 86, no. 2, pp. 153–173, 2017. [14] B. O. Koopman, “Hamiltonian systems and transformation in hilbert space,” Proceedings of the national academy of sciences of the united states of america , vol. 17, no. 5, p. 315, 1931. [15] I. Mezi ´c, “On applications of the spectral theory of the koopman operator in dynamical systems and control theory,” in Conference on Decision and Control . IEEE, 2015, pp. 7034–7041. [16] J. L. Proctor, S. L. Brunton, and J. N. Kutz, “Dynamic mode decom-position with control,” SIAM Journal on Applied Dynamical Systems ,vol. 15, no. 1, pp. 142–161, 2016. [17] A. Mauroy and J. Goncalves, “Linear identification of nonlinear systems: A lifting technique based on the koopman operator,” in Conference on Decision and Control . IEEE, 2016, pp. 6500–6505. 12 
+
+[18] M. Korda and I. Mezi ´c, “On convergence of extended dynamic mode decomposition to the koopman operator,” Journal of Nonlinear Science ,vol. 28, no. 2, pp. 687–710, 2018. [19] J. L. Proctor, S. L. Brunton, and J. N. Kutz, “Generalizing koopman theory to allow for inputs and control,” SIAM Journal on Applied Dynamical Systems , vol. 17, no. 1, pp. 909–930, 2018. [20] B. Lusch, S. L. Brunton, and J. N. Kutz, “Data-driven discovery of koopman eigenfunctions using deep learning,” Bulletin of the American Physical Society , 2017. [21] J. Morton, A. Jameson, M. J. Kochenderfer, and F. Witherden, “Deep dynamical modeling and control of unsteady fluid flows,” Advances in Neural Information Processing Systems , vol. 31, 2018. [22] E. Yeung, S. Kundu, and N. Hodas, “Learning deep neural network representations for koopman operators of nonlinear dynamical systems,” in American Control Conference (ACC) . IEEE, 2019, pp. 4832–4839. [23] B. Lusch, J. N. Kutz, and S. L. Brunton, “Deep learning for universal linear embeddings of nonlinear dynamics,” Nature communications , vol. 9, no. 1, pp. 1–10, 2018. [24] Y. Han, W. Hao, and U. Vaidya, “Deep learning of koopman representa-tion for control,” in Conference on Decision and Control . IEEE, 2020, pp. 1890–1895. [25] P. Bevanda, M. Beier, S. Kerz, A. Lederer, S. Sosnowski, and S. Hirche, “Koopmanizingflows: Diffeomorphically learning stable koopman opera-tors,” arXiv preprint arXiv:2112.04085 , 2021. [26] H. Zhang, C. W. Rowley, E. A. Deem, and L. N. Cattafesta, “Online dynamic mode decomposition for time-varying systems,” SIAM Journal on Applied Dynamical Systems , vol. 18, no. 3, pp. 1586–1609, 2019. [27] W. Hao, B. Huang, W. Pan, D. Wu, and S. Mou, “Deep koopman learning of nonlinear time-varying systems,” Automatica , vol. 159, p. 111372, 2024. [28] C. O’Neill, J. Terrones, and H. H. Asada, “Koopman global linearization of contact dynamics for robot locomotion and manipulation enables elaborate control,” arXiv preprint arXiv:2511.06515 , 2025. [29] M. Korda and I. Mezi ´c, “Linear predictors for nonlinear dynamical systems: Koopman operator meets model predictive control,” Automatica ,vol. 93, pp. 149–160, 2018. [30] V. R. Konda and V. S. Borkar, “Actor-critic–type learning algorithms for markov decision processes,” SIAM Journal on control and Optimization ,vol. 38, no. 1, pp. 94–123, 1999. [31] T. P. Lillicrap, J. J. Hunt, A. Pritzel, N. Heess, T. Erez, Y. Tassa, D. Silver, and D. Wierstra, “Continuous control with deep reinforcement learning,” 
+
+International Conference on Learning Representations , 2016. [32] G. E. Uhlenbeck and L. S. Ornstein, “On the theory of the brownian motion,” Physical review , vol. 36, no. 5, p. 823, 1930. [33] V. Mnih, K. Kavukcuoglu, D. Silver, A. Graves, I. Antonoglou, D. Wier-stra, and M. Riedmiller, “Playing atari with deep reinforcement learning,” 
+
+arXiv preprint arXiv:1312.5602 , 2013. [34] R. S. Sutton, “Learning to predict by the methods of temporal differences,” 
+
+Machine learning , vol. 3, pp. 9–44, 1988. [35] D. P. Kingma and J. Ba, “Adam: A method for stochastic optimization,” 
+
+arXiv preprint arXiv:1412.6980 , 2014. [36] T. Haarnoja, A. Zhou, P. Abbeel, and S. Levine, “Soft actor-critic: Off-policy maximum entropy deep reinforcement learning with a stochastic actor,” in International conference on machine learning . Pmlr, 2018, pp. 1861–1870. [37] G. Brockman, V. Cheung, L. Pettersson, J. Schneider, J. Schul-man, J. Tang, and W. Zaremba, “Openai gym,” arXiv preprint arXiv:1606.01540 , 2016. [38] Kinova Inc., KINOVA® GEN3 Ultra lightweight robot User Guide ,Kinova Inc., 2023. [Online]. Available: https://www.kinovarobotics.com [39] U. Robotics, “Unitree go1,” https://shop.unitree.com, 2021, accessed: 2026-04-11.

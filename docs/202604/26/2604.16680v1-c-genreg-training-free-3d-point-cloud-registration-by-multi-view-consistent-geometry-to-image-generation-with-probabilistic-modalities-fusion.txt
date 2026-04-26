@@ -1,0 +1,922 @@
+Title: C-GenReg: Training-Free 3D Point Cloud Registration by Multi-View-Consistent Geometry-to-Image Generation with Probabilistic Modalities Fusion
+
+URL Source: https://arxiv.org/pdf/2604.16680v1
+
+Published Time: Tue, 21 Apr 2026 00:17:49 GMT
+
+Number of Pages: 17
+
+Markdown Content:
+# C-GenReg : Training-Free 3D Point Cloud Registration by Multi-View-Consistent Geometry-to-Image Generation with Probabilistic Modalities Fusion 
+
+## Yuval Haitman * Amit Efraim Joseph M. Francos Ben-Gurion University, Beer-Sheva, Israel 
+
+## Abstract 
+
+We introduce C-GenReg, a training-free framework for 3D point cloud registration that leverages the complementary strengths of world-scale generative priors and registration-oriented Vision Foundation Models (VFMs). Current learning-based 3D point cloud registration methods struggle to generalize across sensing modalities, sampling differences, and environments. Hence, C-GenReg augments the geometric point cloud registration branch by transferring the matching problem into an auxiliary image domain, where VFMs excel, using a World Foundation Model to synthesize multi-view-consistent RGB representations from the input geometry. This generative transfer preserves spatial co-herence across source and target views without any fine-tuning. From these generated views, a VFM pretrained for finding dense correspondences extracts matches. The resulting pixel corre-spondences are lifted back to 3D via the original depth maps. To further enhance robustness, we introduce a “Match-then-Fuse” probabilistic cold-fusion scheme that combines two independent correspondence posteriors, that of the generated-RGB branch with that of the raw geometric branch. This principled fusion preserves each modality’s inductive bias and provides calibrated confidence without any additional learning. C-GenReg is zero-shot and plug-and-play: all modules are pretrained and operate without fine-tuning. Extensive experiments on indoor (3DMatch, ScanNet) and outdoor (Waymo) benchmarks demonstrate strong zero-shot performance and superior cross-domain generaliza-tion. For the first time, we demonstrate a generative regis-tration framework that operates successfully on real outdoor LiDAR data, where imagery is unavailable. Code is available at: https://github.com/yuvalH9/CGenReg 
+
+## 1. Introduction 
+
+Point cloud registration is the procedure of aligning multiple 3D scans into a single coordinate system by estimating a rigid trans-formation between source and target point clouds — a key step in many vision and robotics tasks. Standard point cloud registra-tion consists of feature extraction, feature matching, and robust pose estimation ( e.g . RANSAC [ 9]). Although learned 3D fea-ture extractors [ 4, 12 , 22 , 35 ] have replaced handcrafted descrip- 
+
+> *Corresponding author: haitman@post.bgu.ac.il
+
+Generated RGB Branch  
+
+> (𝑹 ∗,𝒕 ∗)
+> World Foundation Model
+
+Geometric Branch   
+
+> Visual Feature Matching
+> Vision Foundation Model
+> Geometric Feature Extractor
+> Geometric Feature Matching
+> Probabilistic Fusion
+
+Figure 1. C-GenReg : A training-free point cloud registration frame-work. The pipeline operates in two parallel branches: (1) Generated-RGB Branch - a World Foundation Model generates RGB views that are geometrically aligned with the input source and target point clouds and visually consistent across the two viewpoints; a task-specific Vision Foundation Model extracts dense image features and estimates RGB-based correspondences. (2) Geometric Branch - a geometric feature extractor encodes structural cues directly from the raw 3D point clouds and independently produces geometry-based correspondences. The two correspondence probability maps are then fused using our “Match-then-Fuse ” probabilistic fusion to yield the final correspondence set for estimating the rigid transformation aligning the two point clouds. 
+
+tors [25, 30], the pipeline itself remains unchanged, and perfor-mance is still limited primarily by imprecise feature matching. Despite recent progress, learned 3D feature extractors remain strongly domain-dependent: their performance varies signifi-cantly with sensing modality, point density, and acquisition set-tings. Methods that perform well in indoor RGB-D scenes often degrade on different sensors or outdoor LiDAR data, revealing limited cross-domain generalization. In contrast, the image do-main has largely overcome such generalization limits through Vision Foundation Models (VFMs), which achieve remarkable robustness by training on massive, heterogeneous datasets [ 1]. An analogous foundation model for 3D point clouds is still ab-sent [ 29 ]. A promising alternative is to transfer 3D geometry into the image modality, e.g . generating RGB views from depth or point clouds, so that registration can exploit the strong priors and semantically rich features of pretrained VFMs. 1
+
+> arXiv:2604.16680v1 [cs.CV] 17 Apr 2026
+
+A geometry-to-image transfer is effective for point cloud reg-istration only if the generated RGB views are both (i) multi-view consistent across source and target viewpoints and (ii) geomet-rically coherent with the underlying 3D structure. Without these properties, the generated images may diverge or introduce geometric distortions, leading to unreliable correspondences. Recent World Foundation Models (WFMs) [ 19 , 20 ] encode world-scale priors and multi-view geometric reasoning, enabling them to produce RGB views that remain structurally consistent across viewpoints, making them ideal generative backbones for registration. Importantly, the generated images need not match the true scene appearance, i.e . colors and textures may differ, as long as their geometry is preserved across different views. Existing generative approaches for point cloud registration [13 , 14 , 31 ] have recently demonstrated the potential of dif-fusion models for this task. However, these methods primar-ily rely on single-view generation and lack mechanisms for handling multiple geometrically related views. As a result, they typically require fine-tuning to enforce multi-view consis-tency; while they can operate without such adaptation, perfor-mance often degrades due to inconsistent cross-view geome-try. In contrast, our method, C-GenReg (stands for Consistent 
+
+Gen erative Reg istration), leverages WFMs to generate multi-view–consistent RGB views directly from geometry, eliminat-ing the need for any retraining. Crucially, C-GenReg applies a task-specific VFM, trained for dense geometric correspon-dence estimation [ 8, 16 , 32 ], to these WFM-generated images. This combination produces substantially stronger and more ge-ometrically meaningful correspondences than those obtained with general-purpose VFMs [ 21 ], whose representations are not aligned with the matching objective. The task-specific in-ductive bias reinforces correspondence quality precisely where registration needs it most. Although transferring 3D geometry to the image domain provides rich visual cues, it does not fully exploit the comple-mentary geometric information present in the original point cloud. To leverage both modalities, we incorporate a principled fusion strategy. Prior works typically use simple feature con-catenation [ 13 , 14 ], which we find suboptimal as it ignores each modality’s inductive bias and the probabilistic nature of their correspondence predictions. Instead, we introduce a “ Match-then-Fuse ” scheme that combines two independent correspon-dence posteriors, one from the WFM + VFM branch and one from the geometric branch, under a conditional-independence assumption. This posterior-level fusion preserves the pretrained structure of each modality, provides calibrated and robust cor-respondences, and remains fully training-free. Our approach is fully plug-and-play and operates without any fine-tuning, seamlessly pairing with a wide range of registration-oriented geometric feature extractors and generalizing across both indoor RGB-D and outdoor LiDAR settings. Notably, it is, to the best of our knowledge, the first generative registration framework to operate successfully on real LiDAR data. The main contributions of this paper are: 1. We introduce C-GenReg , a two-branch framework that (i) performs geometry-to-RGB transfer using a zero-shot, multi-view-consistent World Foundation Model (WFM) combined with a registration-oriented Vision Foundation Model (VFM), and (ii) extracts geometric features directly from the raw point clouds. These complementary branches provide sub-stantially stronger and more reliable correspondences than relying solely on general-purpose VFMs or geometry alone. 2. We introduce a probabilistic “ Match-then-Fuse ” scheme that combines independent correspondence posteriors from the WFM+VFM imagery and the geometric branches, yielding calibrated and robust matches without any learning. 3. Our pipeline operates fully zero-shot and requires no addi-tional training, including RGB generation, correspondence estimation, and fusion. It relies solely on off-the-shelf pre-trained models, making it a plug-and-play module that en-hances existing geometric registration pipelines. 4. We achieve SOTA zero-shot results across indoor RGB-D benchmarks (3DMatch, ScanNet) and, for the first time, demonstrate a generative registration framework that success-fully operates on real outdoor LiDAR data (Waymo). 
+
+## 2. Related Work 
+
+Hand-crafted Registration Methods. Early point cloud reg-istration pipelines relied on handcrafted local descriptors such as FPFH [ 25 ] and SHOT [ 30 ]. These descriptors encode neigh-borhood geometry through histograms of normals or curvature and are typically matched via RANSAC [ 9] and refined with ICP [ 2]. While effective for small-scale rigid alignment, such handcrafted features are highly sensitive to sampling density, noise, and partial overlap, limiting their robustness in complex real-world environments. 
+
+Learning-based Registration Methods. With the rise of deep learning, data-driven 3D feature extractors have replaced hand-crafted descriptors, providing stronger invariance and general-ization. FCGF [ 4] introduced fully convolutional geometric fea-tures trained with contrastive learning for dense correspondence. Predator [ 12 ] enhanced robustness under low overlap by com-bining overlap prediction and attentive feature refinement. Geo-Transformer [ 22 ] modeled spatial relations through geometric self-attention with relative positional encoding, achieving accu-rate alignment in cluttered scenes. RoITr [ 33 ] embedded Point-Pair-Feature coordinates into a transformer backbone to achieve rotation invariance and distinctive geometric correspondences. Beyond geometry-only networks, several learnable RGB-D approaches jointly utilize color and geometry to improve matching robustness. PointMBF [ 34 ] introduced a learnable dual-branch architecture that performs multi-scale bidirectional fusion between RGB and depth features through mutual atten-tion. Unsupervised R&R [ 17 ] trains an end-to-end RGB-D registration network without pose labels by enforcing photo-metric and geometric consistency using differentiable rendering. 2World 
+
+Foundation 
+
+Model 
+
+Task 
+
+Specific 
+
+VFM 
+
+Geometric 
+
+Feature Extractor 
+
+> Control Prompt
+
+Generated RGB Branch 
+
+> 2D→3D
+
+“Match -Then -Fuse ”
+
+> View
+> Selection
+> Compute
+> Similarity
+
+Probabilistic 
+
+Fusion 
+
+> (𝑹 ∗, 𝒕 ∗)
+> 𝑝 Geo
+> 𝑝 Img
+> 𝑝 Fuse
+> Compute
+> Similarity
+> Transformation Estimation
+
+Geometric Branch Figure 2. C-GenReg Overview : A training-free, zero-shot point cloud registration framework with two parallel branches. (1) Generated-RGB Branch - source and target point clouds are each represented as depth-frame sequences, temporally concatenated and processed by a frozen              
+
+> World Foundation Model to generate RGB views that are geometrically aligned and appearance-consistent across views. A subset of Kframes per domain is fed to a frozen, task-specific Vision Foundation Model (VFM) to extract dense pixel-level features, later lifted to 3D using the original depths. (2) Geometric Branch - extracts dense geometric features directly from the raw point clouds using a pretrained geometric feature extractor. Each modality yields a posterior correspondence map, pimg and pgeo , which are fused via the proposed “Match-then-Fuse” probabilistic module into a unified posterior pfuse , from which the final rigid transformation is estimated.
+
+ColorPCR [ 18 ] jointly learns color and geometry via a hierarchi-cal color-enhanced feature extractor and a geo-color superpoint matching module, demonstrating improved robustness in chal-lenging scenarios with limited geometric distinctiveness. While these RGB-D methods demonstrate the potential of multimodal learning, they all rely on real RGB inputs and task-specific training, restricting their applicability in scenarios where the observations are point clouds only. 
+
+Generative Based Registration Methods. Diffusion-based generative models, such as Stable Diffusion (SD) [ 24 ] and Con-trolNet [ 36 ], have shown that conditioning on structural cues, particularly depth maps, enables geometry-aligned and seman-tically consistent image generation. This capability has recently inspired works that exploit generative priors to improve geomet-ric alignment in registration tasks. GPCR [ 13 ] was the first to introduce the paradigm of leveraging geometry-to-image gener-ation for geometry-only point cloud registration. GPCR aligns depth-map-based point clouds by synthesizing RGB images from depth inputs through a diffusion-based generative model that is fine-tuned to enforce cross-view consistency. In con-trast, our method provides an alternative route for incorporating generative priors to point cloud registration. Rather than enforc-ing multi-view consistency through fine-tuning, we leverage a pretrained WFM that provides multi-view–consistent image generation out of the box, enabling a zero-shot operating regime with improved generalization across datasets and sensing modal-ities. In addition, our framework extracts correspondences from the generated images using a task-specific VFM designed for dense geometric matching. Crucially, we introduce a proba-bilistic match-then-fuse formulation that combines geometric and image-derived correspondences while preserving modality-specific inductive biases, in contrast to early feature fusion strategies such as those used in GPCR. ZeroMatch [ 14 ] and FreeReg [ 31 ] also explore the use of gen-erative models in registration, but under different formulations. ZeroMatch enhances real RGB inputs using SD and leverages diffusion-based features to perform RGB-D cross-view regis-tration. FreeReg tackles the RGB-to-depth registration problem by employing a generative model to bridge the modality gap between color and geometry. While both methods demonstrate the applicability of diffusion-based priors, they rely on real RGB observations and address tasks distinct from our geometry-only point cloud registration; nonetheless, they are noteworthy examples of generative approaches in this broader context. 
+
+## 3. Method 
+
+3.1. Problem Definition 
+
+Given a source point cloud P ∈ RN×3 and a target point cloud 
+
+Q ∈ RM×3, the goal of point cloud registration is to estimate a rigid transformation (R,t)∈SE(3) that aligns P to Q. If the ground-truth correspondences C∗ ={(p∗ 
+
+> i
+
+,q∗ 
+
+> i
+
+)|p∗ 
+
+> i
+
+∈P ,q∗ 
+
+> i
+
+∈Q} 
+
+were known, the optimal transformation is obtained by solving: 
+
+argmin 
+
+> (R,t)∈SE(3)
+
+X
+
+> (p∗,q∗)∈C ∗
+
+∥Rp ∗ 
+
+> i
+
++t−q∗ 
+
+> i
+
+∥22 (1) which has a closed form solution [ 11 ]. However, C∗ is un-known in practice, and the core challenge is to establish reliable correspondences between P and Q. Most learning-based meth-ods address this by extracting discriminative point-wise feature descriptors and match point pairs based on feature similarity. 
+
+3.2. C-GenReg - Overview 
+
+C-GenReg extracts complementary features for point cloud reg-istration through a dual-branch architecture followed by a prob-abilistic fusion stage (Fig. 2). From each input point cloud, we render a depth map and use the Cosmos-Transfer WFM [ 20 ]to generate multi-view-consistent RGB images that preserve 3Source  Target     
+
+> (a)
+> (b)
+> 𝑅𝑅𝐸 :0.68 ∘
+> 𝑅𝑇𝐸 :3.5𝑐𝑚 Figure 3. C-GenReg qualitative example on 3DMatch. Generated source and target images with a subset of matched points (color-coded correspondences), and the corresponding matches visualized on the input point clouds. The resulting rotation (RRE) and translation (RTE) errors are reported.
+
+# Scene-spec. 
+
+# General 
+
+# Minimal 
+
+# Wrong 
+
+# 0
+
+# 2
+
+# 4
+
+# 6
+
+# 8
+
+# 10 
+
+# 12 
+
+# 14 RRE  (°) 
+
+RRE (°) 
+
+RTE (cm) 
+
+# 0
+
+# 10 
+
+# 20 
+
+# 30 
+
+# 40 RTE  (cm)   
+
+> Figure 4. Prompt robustness on 3DMatch. Relative rotation (RRE, ◦)and translation (RTE, cm) errors under different prompt types.
+
+geometric coherence across viewpoints. A task-specific VFM pretrained for dense geometric matching then extracts 2D fea-tures from these synthesized views, which are lifted back to 3D using the original depth to obtain per-point descriptors. In par-allel, the geometric branch encodes the raw point clouds using a pretrained registration-oriented 3D feature extractor, yielding complementary geometric descriptors. To integrate the two modalities, we adopt a “ Match-then-Fuse ” probabilistic strategy. Each branch produces a point-wise similarity matrix that is converted into a correspondence poste-rior, and the two posteriors are fused through a joint probabilistic model to obtain a single calibrated correspondence distribution. Putative matches sampled from this fused posterior are finally used to estimate the rigid transformation (R,t) via Eq. (1). The following subsections detail each component of the pipeline. 
+
+3.3. Generated-RGB Branch 
+
+World Foundation Model Consistent Generation. To trans-fer the original point-cloud geometric representation to the visual domain, we employ a WFM to generate synthetic RGB images from depth inputs. These generated images must satisfy two key properties: (1) they should be geometrically coherent, i.e., con-sistent with the input depth geometry, and (2) cross-view consis-tent, such that images rendered from different viewpoints of the same scene exhibit mutually coherent appearance. To meet these requirements, we utilize Cosmos-Transfer [ 19 , 20 ], a WFM with strong world priors. Cosmos-Transfer supports controllable world generation from multiple modalities (e.g., segmentation, edges, depth) and is particularly effective in producing multi-view consistent RGB videos from depth control signals. In common 3D datasets such as 3DMatch and ScanNet [7, 35 ], point clouds are constructed by aggregating a temporal sequence of L depth frames {D}Ll=1 into a single voxel grid or TSDF volume [ 6]. We use this temporal depth sequence as the conditioning signal for Cosmos-Transfer. When the data is provided as LiDAR point clouds, we simulate the same input format by mounting a virtual camera and projecting the 3D points onto it to obtain depth maps (see Sec. 4.2 for details). Cosmos-Transfer expects a depth video input; therefore, we concatenate the source and target depth sequences temporally to form a single depth video. Additional details and analysis of this design choice are provided in Appendix B.1. 
+
+Prompt Guidance. To ensure coherent and controllable gener-ation, we use prompt-based text guidance with a fixed structure: a shared prefix that instructs the model to interpret the concate-nated input as two correlated sequences while enforcing photo-realism and multi-view consistency, followed by a short scene description that provides semantic context. We evaluate prompt robustness using four prompt categories that differ only in the scene description: (1) scene-specific : “modern home kitchen with red cabinets and a wooden dining table”, (2) general : “a kitchen”, (3) minimal : “indoor scene”, and (4) semantically wrong : “snowy forest”. As shown in Fig. 4, replacing a de-tailed scene description with a general one results in negligible degradation, while even a minimal prompt maintains reasonably strong performance; in contrast, a semantically incorrect prompt substantially degrades registration accuracy. These results in-dicate that detailed semantic information is not required for successful registration, as coarse or minimal scene descriptions already provide sufficient guidance. Importantly, the availability of such coarse scene context (e.g., indoor/outdoor, street, office, laboratory) is natural in most registration scenarios, where it can typically be inferred from metadata or the acquisition en-vironment. The prompt therefore mainly acts as a lightweight semantic stabilizer for the generative process while preserving geometric fidelity and cross-view coherence. 
+
+Task-Specific Vision Foundation Model. To extract discrim-inative features from the generated RGB images, we employ a task-specific VFM tailored for image matching and registra-tion. Specifically, we use MASt3R [ 16 ], a VFM trained to produce dense correspondence-aware features. This choice is motivated by the inductive bias and feature structure of task-oriented VFMs, which better aligns with the objectives of ge-4ometric registration compared to general-purpose vision models. We further validate this design in our ablation study (Sec. 4.3), where task-specific VFMs yield a clear performance gain over general-purpose alternatives. 
+
+View Selection. MASt3R operates on pairs of source and tar-get images through a cross-attention–based decoder, where the extracted features for each image are conditioned on the paired counterpart. Consequently, a given source image produces dif-ferent feature maps when evaluated with different target images. To exploit this property, we sample K views from each domain and evaluate all pairwise combinations, resulting in K2 condi-tioned feature maps per domain. While increasing K improves viewpoint coverage, it also increases computational cost. Since the original L frames within each sequence are highly corre-lated, we find that relatively small values of K provide sufficient representational diversity. In practice, we therefore set K ≪L
+
+to balance efficiency and performance. Additional analysis of the view selection strategy is provided in Appendix B.2. 
+
+2D to 3D Lifting. Since the generated RGB frames originate from depth inputs, we can lift the 2D image features back to 3D space using the known depth camera intrinsics (or virtual intrin-sics for LiDAR data). Each 3D point is thus assigned the feature of its corresponding image pixel. In practice, the dense image features (HW ) greatly exceed the number of points used in the geometric branch (Nsrc ,N tgt ), since the latter are typically voxel-downsampled. To align both modalities, we perform a nearest-neighbor query from the observed point clouds to the dense lifted points, assigning each point in the point cloud the fea-ture of its closest image-based neighbor. This produces feature representations of consistent size for both modalities, F img  
+
+> n
+
+∈
+
+RK2×Nn×dimg and F geo  
+
+> n
+
+∈RNn×dgeo , where n∈{ src ,tgt }.
+
+3.4. Geometric Branch 
+
+The parallel geometric branch directly processes the input point clouds. Its goal is to extract geometry-oriented features that may not be fully captured by the image-based representation. For this purpose, we employ a frozen point cloud feature extractor pretrained for matching and registration tasks. Multiple architec-tures can serve as the geometric backbone, as long as they pro-vide dense per-point feature representations for both source and target clouds, defined as F geo src ∈RNsrc ×dgeo and F geo tgt ∈RNtgt ×dgeo .In our ablation study (Sec. 4.3), we evaluate several candidates and find that GeoTransformer [ 22 ] yields the best performance results; therefore, we adopt it in our final design. 
+
+3.5. Match-then-Fuse Probabilistic Fusion 
+
+The fusion module is designed with two main objectives: (1) to preserve the inductive biases of the pretrained feature ex-tractors, which are optimized for point matching- each for its own domain, and (2) to remain entirely non-trainable, keeping the overall framework training-free. To meet these goals, we propose a “match-then-fuse” probabilistic strategy, where pu-tative correspondences are first established independently for each modality by computing feature similarity matrices between source and target points. Each similarity matrix is then converted into a posterior distribution using a row-wise softmax operation, and the resulting modality-specific posteriors are fused in a prob-abilistic manner to produce a unified correspondence matrix. This fused probability map serves as the basis for estimating the final point-to-point matches and the rigid transformation. 
+
+Modality Correspondence Posterior. Let Mij be a binary random variable indicating whether source point i corresponds to target point j and Sij their features similarity. To approximate the modality-specific correspondence posterior Pr( Mij |Smij ),where m ∈ { geo ,img }, we first compute the source-target fea-ture similarity matrices for each modality and then apply a row-wise softmax normalization. 
+
+Sgeo =F geo src (F geo tgt )⊤, (2) 
+
+Simg = max 
+
+> k∈{ 1,...,K 2}
+
+F img src ,k (F img tgt ,k )⊤. (3) The feature vectors are ℓ2-normalized, and for the image branch, the similarity is computed for all K2 view-pair combinations; for each point pair (i,j ), we retain the maximal similarity across the view dimension, capturing the best cross-view match. Fi-nally, the modality correspondence posterior is obtained as: 
+
+pmij ≜Pr( Mij =1 |Smij )=Softmax j
+
+ Smij /τ m
+
+, (4) where τm is a temperature parameter. 
+
+Joint Posterior Fusion (Noisy-AND) . We propose a Joint Posterior Fusion that combines the modality correspondence posteriors from the image and geometric branches: 
+
+pfuse  
+
+> ij
+
+≜Pr( Mij =1 |Simg ij ,S geo ij ) (5) The fused posterior favors correspondences jointly supported by both modalities and thus acts as a probabilistic Noisy-AND ,where mutual agreement increases confidence. Each branch operates independently using frozen pretrained models with distinct modality priors, WFM + VFM for texture and Geo-metric Feature Extractor for geometry. Although the RGB features originate from depth, the two branches process infor-mation in fundamentally different domains; conditioned on the true correspondence Mij , their remaining dependence is negligible. We therefore assume conditional independence: 
+
+Simg ij ⊥⊥ Sgeo ij | Mij , ∀(i,j ). Thus, the joint posterior fusion probability is given by 
+
+pfuse  
+
+> ij
+
+= pimg  
+
+> ij
+
+pgeo  
+
+> ij
+
+(1 −πij )
+
+pimg  
+
+> ij
+
+pgeo  
+
+> ij
+
+(1 −πij )+  1−pimg 
+
+> ij
+
+  1−pgeo 
+
+> ij
+
+πij 
+
+, (6) where πij ≜ Pr( Mij = 1) is the prior matching probability (derivation of Eq. (6) is provided in Appendix A.1). 
+
+Disjunctive Posterior Fusion (Noisy-OR) . The Joint Poste-rior Fusion (Noisy-AND) favors correspondences jointly sup-ported by both modalities but may overlook matches strongly indicated by only one. To address this, we introduce the Disjunc-tive Posterior Fusion (Noisy-OR) , which aggregates evidence 5Rotation [deg ] Translation [cm ]
+
+Accuracy ↑ Error ↓ Accuracy ↑ Error ↓
+
+Type Method 5 10 45 Mean Med. 5 10 25 Mean Med. Hand-Crafted FPFH [25] 41.4 56.7 73.3 39.2 7.1 17.5 35.1 50.9 79.5 23.5 Learned (PC Only) GeoTrans. [22] 88.9 91.8 93.3 12.0 1.4 59.8 81.0 90.1 24.6 4.0 
+
+FCGF [4] 90.4 93.7 94.8 9.4 1.4 53.4 79.3 91.0 19.2 4.7 Predator [12] 85.0 91.5 94.2 10.5 2.0 42.1 72.5 87.1 22.6 5.8 RoITr [33] 86.3 91.1 93.8 11.1 1.6 51.2 77.4 89.1 20.5 4.9 GPCR [13] 94.3 96.7 98.1 4.5 1.4 54.3 81.5 93.1 12.5 4.7 
+
+C-GenReg (Ours) 94.2 97.5 98.3 3.8 1.3 57.5 82.0 95.7 11.9 4.3 Learned (RGB-D) PointMBF [34] 80.9 86.4 92.4 12.1 1.6 52.2 73.6 85.1 24.5 4.7 ZeroMatch [14] 93.5 97.1 98.4 3.6 1.4 52.8 81.0 94.1 10.8 4.7 C-GenReg (Oracle) 95.1 99.6 99.8 2.1 1.4 62.2 84.1 98.3 7.3 3.8         
+
+> Table 1. 3DMatch Benchmark. Rotation and translation accuracy (% of pairs within RRE/RTE thresholds in deg and cm respectively) and mean/median error across different methods. RGB-D baselines are included as complementary reference. Best in bold , second-best in underlined .
+
+in a union-like manner, increasing correspondence confidence when either the image or geometric branch provides strong sup-port. Let Amij be a modality activation random variable indicat-ing whether modality m supports the correspondence (i,j ). We model Amij as a Bernoulli random variable depending only on its own similarity signal: Amij |Smij ∼Bernoulli  pmij 
+
+,Pr( Amij =1 |
+
+Smij )= pmij . Under the conditional independence of activations given their respective modality signals, the Noisy-OR fusion is given by (see Appendix A.2 for full derivation): 
+
+pNoisy-OR  
+
+> ij
+
+=1 −(1 −pimg  
+
+> ij
+
+)(1 −pgeo  
+
+> ij
+
+), (7) Ablation studies (Sec. 4.3) compare the two fusion paradigms, with the Noisy-AND ultimately selected as our design choice. 
+
+Transformation Estimation. To recover the rigid transforma-tion, we first derive the correspondence set C from the fused posterior matrix pfuse  
+
+> ij
+
+by applying a mutual nearest-neighbor matching strategy. Since no prior information about the corre-spondence distribution is available, we assume a uniform prior 
+
+πij = 1 
+
+> Nsrc Ntgt
+
+. The final transformation parameters are then estimated by solving Eq. (1). In line with common practice, we employ a robust estimator to reduce the influence of outliers, using SC2PCR [3] similarly to [13]. 
+
+## 4. Experiments 
+
+4.1. Experimental Settings 
+
+Datasets and Benchmarks. We evaluate our method on two benchmark types: indoor datasets captured by depth sensors and outdoor dataset acquired by LiDAR. For indoor evaluation, we adopt the widely used 3DMatch and ScanNet benchmarks [7, 35 ], where 3DMatch serves as the primary evaluation set and ScanNet as a cross-dataset generalization benchmark. For outdoor evaluation, we employ the Waymo Open Dataset [ 28 ], which contains large-scale LiDAR scans, and serves as a gen-eralization benchmark for outdoor registration tasks. Additional benchmarks, including low-overlap evaluation, are provided in Appendix E. 
+
+Implementation Details. For the C-GenReg pipeline, we employ Cosmos-Transfer-v1 (Depth) [ 20 ] as the WFM and MASt3R [ 16 ] as the VFM. The geometric feature extractor is based on GeoTransformer [ 22 ], while the probabilistic fusion module follows the Noisy-AND formulation. The feature di-mensions of the respective models are dimg =24 and dgeo =256 .For the VFM branch, we use K =4 input views from the L=50 
+
+views, and the probability temperature parameter is τm = 0 .1.All models in the pipeline are kept frozen with their publicly released pretrained weights, without any additional fine-tuning. Additional implementation details including runtime analysis are provided in Appendices C and D. 
+
+Metrics. We follow the standard evaluation protocol for point cloud registration [ 13 , 14 , 17 , 34 ], reporting the Relative Ro-tation Error (RRE) and Relative Translation Error (RTE). For each benchmark, we report both the mean and median values of these errors, as well as the registration accuracy - the percentage of registration problems with an error below a given threshold. 
+
+4.2. Method Evaluation 
+
+3DMatch Benchmark (Indoor). We begin by evaluating our method on the widely used 3DMatch benchmark (Tab. 1). C-GenReg is compared against both the hand-crafted descriptor FPFH [ 25 ] and several state-of-the-art (SOTA) learning-based baselines, including GeoTransformer [ 22 ], FCGF [ 4], Predator [12 ], RoITr [ 33 ], and GPCR [ 13 ]. All learning-based methods are trained on the official 3DMatch training split. Despite this, C-GenReg achieves the best overall performance across most ro-tation and translation metrics. It reduces the mean RTE by nearly 6ScanNet Hard ScanNet SuperGlue Split Method Rotation [deg ] Translation [cm ] Rotation [deg ] Translation [cm ]5 10 45 Mean Med. 5 10 25 Mean Med. 5 10 45 Mean Med. 5 10 25 Mean Med. GeoTrans. [22] 71.5 78.0 83.4 26.2 2.0 48.4 65.2 74.6 51.9 5.2 74.0 80.2 85.9 21.9 1.5 54.2 67.3 77.1 72.6 4.2 FCGF [4] 78.9 84.2 87.5 19.4 1.5 55.3 70.7 79.7 37.8 4.3 79.1 86.2 90.9 13.0 1.9 42.8 68.8 82.1 38.1 5.9 Predator [12] 64.3 75.2 82.6 26.3 3.2 30.1 54.8 69.2 48.7 8.4 82.0 88.7 92.2 12.5 1.8 47.5 71.6 85.9 41.9 5.2 RoITr [33] 70.0 77.5 83.7 24.1 2.3 40.3 62.3 75.1 45.6 6.5 88.4 91.2 93.2 11.1 1.2 64.8 83.0 89.1 33.8 3.4 GPCR [13] 82.9 90.0 94.4 8.4 1.6 56.4 73.0 82.7 21.7 4.1 No results reported                                                               
+
+> C-GenReg 88.7 92.9 94.9 7.8 1.7 61.8 79.8 88.1 23.0 3.3 89.5 92.0 94.6 8.4 1.3 64.8 83.2 89.6 32.2 3.0
+> Table 2. ScanNet Benchmarks. Rotation and translation accuracy (% of pairs within RRE/RTE thresholds in deg and cm respectively) and mean/median error on the ScanNet Hard and ScanNet SuperGlue Split benchmarks. Best results are in bold , second-best underlined.
+> Rotation [deg ]Translation [m]
+> Method Accuracy ↑Error ↓Accuracy ↑Error ↓
+> 125Mean Med. 0.612Mean Med. GeoTrans. 17.0 39.6 80.8 7.3 2.5 2.2 18.4 59.5 4.1 1.6 FCGF 14.7 27.7 55.5 15.4 4.4 2.2 5.1 26.6 7.4 10.1 Predator 21.0 49.0 65.1 10.0 2.0 1.4 13.3 61.9 4.9 1.3
+> C-GenReg 61.8 76.2 86.3 2.4 0.6 41.1 52.9 64.6 1.7 0.9
+> Table 3. Waymo Outdoor Registration Benchmark. Rotation ( deg )and translation ( m) accuracy/error. Best results are in bold .
+
+half compared to GeoTransformer and consistently achieves su-perior rotation accuracy, demonstrating the benefit of our prob-abilistic fusion. While GeoTransformer attains slightly higher translation accuracy at the strict 5cm threshold and a marginally lower median RTE, and GPCR reports a 0.1pp advantage in rota-tion accuracy at 5◦, C-GenReg surpasses both in the majority of metrics and achieves the lowest overall errors. A qualitative ex-ample of the correspondences produced by C-GenReg is shown in Fig. 3, with further examples available in Appendix E.3. As a reference, we also compare C-GenReg with RGB-D based registration methods ZeroMatch [ 14 ] and PointMBF [ 34 ]that use real RGB images as input. Although this comparison is not strictly fair, since C-GenReg relies solely on 3D point cloud inputs, it is noteworthy that C-GenReg achieves compara-ble results to ZeroMatch and even outperforms PointMBF. For reference, we additionally report C-GenReg-Oracle, which re-places the generated RGB with the real RGB input to provide an empirical upper bound on our pipeline’s potential performance. 
+
+ScanNet Benchmarks (Indoor). To evaluate cross-dataset generalization, we benchmark all methods on the ScanNet in-door registration benchmarks (Tab. 2). All learning-based ap-proaches are trained on 3DMatch, while evaluation is performed on unseen ScanNet data. We follow the ScanNet Hard protocol introduced in [ 13 , 14 ], where source and target frames are 50 frames apart, resulting in significantly lower overlap. As the original pairs were not released, we reconstructed the benchmark following the authors’ instructions. On this split, C-GenReg achieves the best overall performance across most metrics, demonstrating strong generalization to unseen environments. In particular, it ranks first or second on most of the metrics, with GPCR slightly outperforming in median RRE and mean RTE. For reproducibility, we also report results on the ScanNet Su-perGlue split [ 26 , 34 ], which provides official registration pairs and poses a more challenging setting than both the original and Hard splits. Since GPCR code is unavailable, it is excluded from this comparison. C-GenReg again attains the best or second-best results in nearly all metrics, while RoITr achieves a marginally lower median RRE. Results for the original ScanNet benchmark are given in Appendix E.1. 
+
+Waymo Benchmark (Outdoor). To assess cross-dataset gen-eralization on outdoor LiDAR data, we evaluate on the Waymo dataset [ 28 ] (Tab. 3). We sample 1,500 registration pairs from the validation split, selecting frame pairs at least 50 frames apart and within 30 m based on ground-truth ego motion. As described in Sec. 3, C-GenReg operates on depth maps; to adapt it for LiDAR, each scan is projected onto a virtual camera to generate a synthetic depth image, after which the same pipeline is applied. In this experiment, a single forward-facing virtual camera is used (details in Appendix B.3). We compare against learning-based registration methods trained on KITTI [ 10 ]. As shown in Tab. 3, these methods generalize poorly to Waymo due to sensor discrepancies (differ-ent beam patterns and densities), whereas C-GenReg achieves substantially better rotation and translation accuracy. Example generated images from the WFM are shown in Fig. 1, with additional qualitative results provided in Appendix E.3. 
+
+4.3. Ablation Studies 
+
+We perform an extensive ablation studies to analyze the con-tribution of each component in the C-GenReg pipeline. All experiments are conducted on the 3DMatch dataset, and the results are summarized in Tab. 4. 
+
+General Purpose vs. Task Specific VFM. We investigate the impact of using a general-purpose vs. a task-specific VFM. As a general model, we use DINOv2 [ 21 ], trained in a self-supervised manner on large-scale generic image data. For task-specific VFMs, we evaluate MASt3R [ 16 ], trained explicitly for image 7Rotation [deg ] Translation [cm ]                                                                                               
+
+> VFM Geo. Features Fusion Accuracy ↑Error ↓Accuracy ↑Error ↓
+> 510 45 Mean Med. 510 25 Mean Med.
+> VFM Ablation
+> DINOv2 [21] ––57.6 67.2 79.4 27.4 3.5 26.1 46.7 62.1 73.3 11.8 RoMa [8] 82.6 89.9 94.6 9.0 2.2 34.7 66.1 81.4 34.5 6.8 MASt3R [16] 82.7 87.2 91.1 11.7 2.4 38.9 66.3 82.9 32.5 6.4
+> Geo. Features and Fusion Ablation
+> MASt3R FCGF Concat. 85.2 91.3 94.6 9.3 1.7 37.3 69.6 88.1 26.2 6.4 Noisy OR 90.6 95.8 97.1 5.2 1.4 45.0 76.5 93.0 16.1 5.4 Noisy AND 91.2 96.0 97.1 5.1 1.5 55.0 80.4 93.1 16.2 4.6 MASt3R Predator Concat. 80.6 86.4 89.9 14.1 1.8 35.9 64.9 83.8 37.9 6.7 Noisy OR 88.1 92.7 94.9 8.9 1.6 40.0 70.8 90.8 22.0 5.9 Noisy AND 88.6 92.8 95.1 8.8 1.6 42.9 72.5 90.9 19.5 4.8 MASt3R GeoTrans. Concat. 79.4 83.4 86.1 21.9 1.6 46.5 70.1 81.2 60.1 5.5 Noisy OR 94.2 97.4 98.0 3.9 1.3 51.3 82.0 95.7 12.1 4.8 Noisy AND 94.2 97.5 98.3 3.8 1.3 57.5 82.1 95.7 11.9 4.3
+> Table 4. Ablation Study on the 3DMatch Benchmark. Top: impact of different Vision Foundation Models (no geometric features or fusion). Bottom: impact of geometric feature extractors and fusion operators (using MASt3R as the VFM). Best in bold .
+
+matching, and RoMa [ 8], a DINO-based model fine-tuned for image registration. In this ablation, the geometric branch is bypassed, and only the generated-image branch is used. As shown in Tab. 4, task-specific VFMs dramatically outperform the general-purpose one, achieving roughly 2× lower mean RTE and up to 3× lower mean RRE, highlighting the impor-tance of task alignment. Between the two task-specific models, MASt3R and RoMa achieve comparable results, with MASt3R yielding slightly better translation accuracy; however, we adopt MASt3R in our pipeline due to its denser feature outputs, which integrate more effectively with the probabilistic fusion stage. 
+
+Geometric Feature Extractor Ablation. We evaluate three geometric feature extractors: FCGF, Predator, and GeoTrans-former as candidates for our pipeline, using MASt3R as the VFM. As shown in Tab. 4, integrating our generated-RGB branch with each geometric backbone consistently improves performance compared to their original baselines in Tab. 1, demonstrating that C-GenReg serves as a general performance enhancer across geometric feature extractors. Among the tested options, GeoTransformer yields the best results and is therefore adopted as our default geometric feature extractor. 
+
+Fusion Method Ablation. To validate our proposed “ Match-then-Fuse ” paradigm, we compare it with the alternative “Fuse-then-Match” strategy, which concatenates features from both modalities before matching, as done in [ 13 , 14 ]. As shown in Tab. 4, our probabilistic fusion approach yields a clear perfor-mance gain over simple feature concatenation across all geomet-ric backbones, with up to 5× improvement in mean RRE and RTE when using GeoTransformer features. We further com-pare our two probabilistic variants: Noisy-AND and Noisy-OR. While both substantially outperform concatenation, Noisy-AND achieves slightly better registration accuracy and consistently produces higher-precision point matches. Since accurate reg-istration depends heavily on a small set of reliable correspon-dences, this higher precision motivates choosing Noisy-AND as the default fusion operator in C-GenReg. Additional ablations are provided in Appendix B.4. 
+
+## 5. Conclusions 
+
+We presented C-GenReg , a training-free framework for 3D point cloud registration that leverages the complementary strengths of world-scale generative priors and registration-oriented VFMs. Current learning-based 3D registration meth-ods struggle to generalize across sensing modalities, sam-pling differences, and environments. Hence, C-GenReg 
+
+generates an auxiliary image channel, where VFMs excel, by employing a WFM to synthesize auxiliary multi-view-consistent RGB representations from the input geometry. This generative transfer preserves spatial coherence across source and target views without any fine-tuning. From these generated views a VFM pretrained for dense corre-spondences extracts matches. The resulting pixel correspon-dences are lifted back to 3D via the original depth maps, pro-ducing a set of geometry-aware correspondences. We fur-ther introduce a “ Match-then-Fuse ” probabilistic cold-fusion scheme that combines independent correspondence posteri-ors from the generated-RGB and geometric branches. This procedure preserves each modality’s inductive bias and pro-vides calibrated confidence without any additional learning. 
+
+C-GenReg is fully zero-shot and plug-and-play: all mod-ules are pretrained and operate without fine-tuning. Ex-tensive experiments on indoor and outdoor benchmarks demonstrate strong zero-shot performance and superior cross-domain generalization. 8References 
+
+[1] Muhammad Awais, Muzammal Naseer, Salman Khan, Rao Muhammad Anwer, Hisham Cholakkal, Mubarak Shah, Ming-Hsuan Yang, and Fahad Shahbaz Khan. Foundation models defining a new era in vision: a survey and outlook. IEEE Trans-actions on Pattern Analysis and Machine Intelligence , 2025. 1 [2] Paul J Besl and Neil D McKay. Method for registration of 3-d shapes. In Sensor fusion IV: control paradigms and data structures , pages 586–606. Spie, 1992. 2 [3] Zhi Chen, Kun Sun, Fan Yang, and Wenbing Tao. Sc2-pcr: A sec-ond order spatial compatibility for efficient and robust point cloud registration. In Proceedings of the IEEE/CVF conference on com-puter vision and pattern recognition , pages 13221–13231, 2022. 6 [4] Christopher Choy, Jaesik Park, and Vladlen Koltun. Fully convolutional geometric features. In Proceedings of the IEEE/CVF international conference on computer vision , pages 8958–8966, 2019. 1, 2, 6, 7 [5] Jonathan Courbon, Youcef Mezouar, Laurent Eckt, and Philippe Martinet. A generic fisheye camera model for robotic applica-tions. In 2007 IEEE/RSJ International Conference on Intelligent Robots and Systems , pages 1683–1688. IEEE, 2007. 12 [6] Brian Curless and Marc Levoy. A volumetric method for building complex models from range images. In Proceedings of the 23rd annual conference on Computer graphics and interactive techniques , pages 303–312, 1996. 4 [7] Angela Dai, Angel X Chang, Manolis Savva, Maciej Halber, Thomas Funkhouser, and Matthias Nießner. Scannet: Richly-annotated 3d reconstructions of indoor scenes. In Proceedings of the IEEE conference on computer vision and pattern recognition ,pages 5828–5839, 2017. 4, 6 [8] Johan Edstedt, Qiyu Sun, Georg B ¨okman, M ˚arten Wadenb ¨ack, and Michael Felsberg. Roma: Robust dense feature matching. In 
+
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 19790–19800, 2024. 2, 8 [9] Martin A Fischler and Robert C Bolles. Random sample consensus: a paradigm for model fitting with applications to image analysis and automated cartography. Communications of the ACM , 24(6):381–395, 1981. 1, 2 [10] Andreas Geiger, Philip Lenz, Christoph Stiller, and Raquel Urtasun. Vision meets robotics: The kitti dataset. International Journal of Robotics Research (IJRR) , 2013. 7 [11] Berthold KP Horn. Closed-form solution of absolute orientation using unit quaternions. Journal of the optical society of America A, 4(4):629–642, 1987. 3 [12] Shengyu Huang, Zan Gojcic, Mikhail Usvyatsov, Andreas Wieser, and Konrad Schindler. Predator: Registration of 3d point clouds with low overlap. In Proceedings of the IEEE/CVF Conference on computer vision and pattern recognition , pages 4267–4276, 2021. 1, 2, 6, 7 [13] Haobo Jiang, Jin Xie, Jian Yang, Liang Yu, and Jianmin Zheng. Generative point cloud registration. In Forty-second International Conference on Machine Learning , 2025. 2, 3, 6, 7, 8 [14] Haobo Jiang, Jin Xie, Jian Yang, Liang Yu, and Jianmin Zheng. Zero-shot rgb-d point cloud registration with pre-trained large vision model. In Proceedings of the Computer Vision and Pattern Recognition Conference , pages 16943–16952, 2025. 2, 3, 6, 7, 8 [15] Grace Lam. Distilling cosmos transfer 1 models. https: //nvidia-cosmos.github.io/cosmos-cookbook/ core _ concepts / distillation / distilling _ transfer1.html , 2025. NVIDIA Cosmos Cookbook. 14 [16] Vincent Leroy, Yohann Cabon, and Jerome Revaud. Grounding image matching in 3d with mast3r, 2024. 2, 4, 6, 7, 8 [17] Guofeng Mei, Hao Tang, Xiaoshui Huang, Weijie Wang, Juan Liu, Jian Zhang, Luc Van Gool, and Qiang Wu. Unsupervised deep probabilistic approach for partial point cloud registration. In 
+
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 13611–13620, 2023. 2, 6 [18] Juncheng Mu, Lin Bie, Shaoyi Du, and Yue Gao. Colorpcr: Color point cloud registration with multi-stage geometric-color fusion. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 21061–21070, 2024. 3 [19] NVIDIA, :, Niket Agarwal, Arslan Ali, Maciej Bala, Yogesh Bal-aji, Erik Barker, Tiffany Cai, Prithvijit Chattopadhyay, Yongxin Chen, Yin Cui, Yifan Ding, Daniel Dworakowski, Jiaojiao Fan, Michele Fenzi, Francesco Ferroni, Sanja Fidler, Dieter Fox, Songwei Ge, Yunhao Ge, Jinwei Gu, Siddharth Gururani, Ethan He, Jiahui Huang, Jacob Huffman, Pooya Jannaty, Jingyi Jin, Seung Wook Kim, Gergely Kl ´ar, Grace Lam, Shiyi Lan, Laura Leal-Taixe, Anqi Li, Zhaoshuo Li, Chen-Hsuan Lin, Tsung-Yi Lin, Huan Ling, Ming-Yu Liu, Xian Liu, Alice Luo, Qianli Ma, Hanzi Mao, Kaichun Mo, Arsalan Mousavian, Seungjun Nah, Sriharsha Niverty, David Page, Despoina Paschalidou, Zeeshan Patel, Lindsey Pavao, Morteza Ramezanali, Fitsum Reda, Xiaowei Ren, Vasanth Rao Naik Sabavat, Ed Schmerling, Stella Shi, Bartosz Stefaniak, Shitao Tang, Lyne Tchapmi, Przemek Tredak, Wei-Cheng Tseng, Jibin Varghese, Hao Wang, Haoxiang Wang, Heng Wang, Ting-Chun Wang, Fangyin Wei, Xinyue Wei, Jay Zhangjie Wu, Jiashu Xu, Wei Yang, Lin Yen-Chen, Xiaohui Zeng, Yu Zeng, Jing Zhang, Qinsheng Zhang, Yuxuan Zhang, Qingqing Zhao, and Artur Zolkowski. Cosmos world foundation model platform for physical ai, 2025. 2, 4 [20] NVIDIA, :, Hassan Abu Alhaija, Jose Alvarez, Maciej Bala, Tiffany Cai, Tianshi Cao, Liz Cha, Joshua Chen, Mike Chen, Francesco Ferroni, Sanja Fidler, Dieter Fox, Yunhao Ge, Jinwei Gu, Ali Hassani, Michael Isaev, Pooya Jannaty, Shiyi Lan, Tobias Lasser, Huan Ling, Ming-Yu Liu, Xian Liu, Yifan Lu, Alice Luo, Qianli Ma, Hanzi Mao, Fabio Ramos, Xuanchi Ren, Tianchang Shen, Xinglong Sun, Shitao Tang, Ting-Chun Wang, Jay Wu, Jiashu Xu, Stella Xu, Kevin Xie, Yuchong Ye, Xiaodong Yang, Xi-aohui Zeng, and Yu Zeng. Cosmos-transfer1: Conditional world generation with adaptive multimodal control, 2025. 2, 3, 4, 6 [21] Maxime Oquab, Timoth ´ee Darcet, Th ´eo Moutakanni, Huy V. Vo, Marc Szafraniec, Vasil Khalidov, Pierre Fernandez, Daniel HAZIZA, Francisco Massa, Alaaeldin El-Nouby, Mido Assran, Nicolas Ballas, Wojciech Galuba, Russell Howes, Po-Yao Huang, Shang-Wen Li, Ishan Misra, Michael Rabbat, Vasu Sharma, Gabriel Synnaeve, Hu Xu, Herve Jegou, Julien Mairal, Patrick Labatut, Armand Joulin, and Piotr Bojanowski. DINOv2: Learning robust visual features without supervision. 
+
+Transactions on Machine Learning Research , 2024. 2, 7, 8 [22] Zheng Qin, Hao Yu, Changjian Wang, Yulan Guo, Yuxing Peng, and Kai Xu. Geometric transformer for fast and robust point cloud registration. In Proceedings of the IEEE/CVF conference 
+
+9on computer vision and pattern recognition , pages 11143–11152, 2022. 1, 2, 5, 6, 7 [23] Xuanchi Ren, Yifan Lu, Tianshi Cao, Ruiyuan Gao, Shengyu Huang, Amirmojtaba Sabour, Tianchang Shen, Tobias Pfaff, Jay Zhangjie Wu, Runjian Chen, Seung Wook Kim, Jun Gao, Laura Leal-Taixe, Mike Chen, Sanja Fidler, and Huan Ling. Cosmos-drive-dreams: Scalable synthetic driving data generation with world foundation models, 2025. 12 [24] Robin Rombach, Andreas Blattmann, Dominik Lorenz, Patrick Esser, and Bj ¨orn Ommer. High-resolution image synthesis with latent diffusion models. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 10684–10695, 2022. 3 [25] Radu Bogdan Rusu, Nico Blodow, and Michael Beetz. Fast point feature histograms (fpfh) for 3d registration. In 2009 IEEE international conference on robotics and automation , pages 3212–3217. IEEE, 2009. 1, 2, 6 [26] Paul-Edouard Sarlin, Daniel DeTone, Tomasz Malisiewicz, and Andrew Rabinovich. Superglue: Learning feature matching with graph neural networks. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 4938–4947, 2020. 7 [27] Davide Scaramuzza, Agostino Martinelli, and Roland Siegwart. A flexible technique for accurate omnidirectional camera cali-bration and structure from motion. In Fourth IEEE International Conference on Computer Vision Systems (ICVS’06) , pages 45–45. IEEE, 2006. 12 [28] Pei Sun, Henrik Kretzschmar, Xerxes Dotiwalla, Aurelien Chouard, Vijaysai Patnaik, Paul Tsui, James Guo, Yin Zhou, Yuning Chai, Benjamin Caine, Vijay Vasudevan, Wei Han, Jiquan Ngiam, Hang Zhao, Aleksei Timofeev, Scott Ettinger, Maxim Krivokon, Amy Gao, Aditya Joshi, Yu Zhang, Jonathon Shlens, Zhifeng Chen, and Dragomir Anguelov. Scalability in perception for autonomous driving: Waymo open dataset. In 
+
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2020. 6, 7 [29] Vishal Thengane, Xiatian Zhu, Salim Bouzerdoum, Son Lam Phung, and Yunpeng Li. Foundational models for 3d point clouds: A survey and outlook. arXiv preprint arXiv:2501.18594 , 2025. 1 [30] Federico Tombari, Samuele Salti, and Luigi Di Stefano. Unique signatures of histograms for local surface description. In 
+
+European conference on computer vision , pages 356–369. Springer, 2010. 1, 2 [31] Haiping Wang, Yuan Liu, Bing WANG, YUJING SUN, Zhen Dong, Wenping Wang, and Bisheng Yang. Freereg: Image-to-point cloud registration leveraging pretrained diffusion models and monocular depth estimators. In The Twelfth International Conference on Learning Representations , 2024. 2, 3 [32] Shuzhe Wang, Vincent Leroy, Yohann Cabon, Boris Chidlovskii, and Jerome Revaud. Dust3r: Geometric 3d vision made easy. In CVPR , 2024. 2 [33] Hao Yu, Zheng Qin, Ji Hou, Mahdi Saleh, Dongsheng Li, Ben-jamin Busam, and Slobodan Ilic. Rotation-invariant transformer for point cloud matching. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 5384–5393, 2023. 2, 6, 7 [34] Mingzhi Yuan, Kexue Fu, Zhihao Li, Yucong Meng, and Manning Wang. Pointmbf: A multi-scale bidirectional fusion network for unsupervised rgb-d point cloud registration. In 
+
+Proceedings of the IEEE/CVF International Conference on Computer Vision , pages 17694–17705, 2023. 2, 6, 7 [35] Andy Zeng, Shuran Song, Matthias Nießner, Matthew Fisher, Jianxiong Xiao, and Thomas Funkhouser. 3dmatch: Learning local geometric descriptors from rgb-d reconstructions. In 
+
+Proceedings of the IEEE conference on computer vision and pattern recognition , pages 1802–1811, 2017. 1, 4, 6 [36] Lvmin Zhang, Anyi Rao, and Maneesh Agrawala. Adding conditional control to text-to-image diffusion models. In 
+
+Proceedings of the IEEE/CVF international conference on computer vision , pages 3836–3847, 2023. 3 
+
+10 C-GenReg : Training-Free 3D Point Cloud Registration by Multi-View-Consistent Geometry-to-Image Generation with Probabilistic Modalities Fusion 
+
+# Supplementary Material 
+
+## A. Probabilistic Fusion Derivation 
+
+A.1. Noisy-AND Derivation (Eq. 6) 
+
+Proposition A.1 (Joint Posterior Fusion (Noisy-AND) ) Under the conditional independence assumption of the image and ge-ometric evidences given the match event, the Joint Posterior Fusion probability satisfies: 
+
+pfuse  
+
+> ij
+
+= pimg  
+
+> ij
+
+pgeo  
+
+> ij
+
+(1 −πij )
+
+pimg  
+
+> ij
+
+pgeo  
+
+> ij
+
+(1 −πij )+  1−pimg 
+
+> ij
+
+  1−pgeo 
+
+> ij
+
+πij 
+
+. (8) 
+
+Proof (Proposition A.1) Define the odds o(x)= x 
+
+> 1−x
+
+.By Bayes rule in odds form and conditional independence of Simg ij ⊥⊥ Sgeo ij |Mij ,
+
+Ofuse  
+
+> ij
+
+= Pr( Mij =1 |Simg ij ,S geo ij )Pr( Mij =0 |Simg ij ,S geo ij )=Oπij ·LR img  
+
+> ij
+
+·LR geo  
+
+> ij
+
+, (9) where Oπij =o(πij ) and LR mij = p(Smij |Mij =1)    
+
+> p(Smij |Mij =0)
+
+. Applying Bayes rule to each modality gives: 
+
+Oimg  
+
+> ij
+
+=o(pimg  
+
+> ij
+
+)= Oπij LR img  
+
+> ij
+
+, (10) 
+
+Ogeo  
+
+> ij
+
+=o(pgeo  
+
+> ij
+
+)= Oπij LR geo  
+
+> ij
+
+. (11) Hence: 
+
+LR img  
+
+> ij
+
+= o(pimg  
+
+> ij
+
+)
+
+o(πij ) , (12) 
+
+LR geo  
+
+> ij
+
+= o(pgeo  
+
+> ij
+
+)
+
+o(πij ) . (13) Substitute Eq. (12) and Eq. (13) into Eq. (9) to obtain 
+
+Ofuse  
+
+> ij
+
+= Oπij · o(pimg  
+
+> ij
+
+)
+
+o(πij ) · o(pgeo  
+
+> ij
+
+)
+
+o(πij ) = o(pimg  
+
+> ij
+
+)o(pgeo  
+
+> ij
+
+)
+
+o(πij ) . (14) Finally, writing odds in terms of probabilities and simplifying gives the closed form 
+
+pfuse  
+
+> ij
+
+= pimg  
+
+> ij
+
+pgeo  
+
+> ij
+
+(1 −πij )
+
+pimg  
+
+> ij
+
+pgeo  
+
+> ij
+
+(1 −πij )+  1−pimg 
+
+> ij
+
+  1−pgeo 
+
+> ij
+
+πij 
+
+.
+
+□
+
+A.2. Noisy-OR Derivation (Eq. 7) 
+
+Proposition A.2 (Disjunctive Posterior Fusion (Noisy-OR) )
+
+Let Amij be a modality activation random variable indicating whether modality m supports the correspondence (i,j ). We model Amij as a Bernoulli random variable depending only on its own similarity signal, 
+
+Amij |Smij ∼Bernoulli  pmij 
+
+, Pr( Amij =1 |Smij )= pmij . (15) 
+
+Then, under the conditional independence of activations given their respective modality signals, the Disjunctive Posterior Fu-sion ( Noisy-OR ) is given by: 
+
+pNoisy-OR  
+
+> ij
+
+=1 −(1 −pimg  
+
+> ij
+
+)(1 −pgeo  
+
+> ij
+
+). (16) 
+
+Proof (Proposition A.2) By construction, each activation de-pends only on its own signal and is therefore independent of the other modality’s evidence once that signal is known, 
+
+Aimg  
+
+> ij
+
+⊥⊥ Sgeo  
+
+> ij
+
+|Simg  
+
+> ij
+
+, Ageo  
+
+> ij
+
+⊥⊥ Simg  
+
+> ij
+
+|Sgeo  
+
+> ij
+
+. (17) As a result, the two activations are independent given both sim-ilarity signals, 
+
+Aimg  
+
+> ij
+
+⊥⊥ Ageo  
+
+> ij
+
+|(Simg  
+
+> ij
+
+,S geo  
+
+> ij
+
+). (18) The Disjunctive Posterior Fusion is defined as the probability that at least one modality supports the correspondence: 
+
+pNoisy-OR  
+
+> ij
+
+=Pr( Aimg  
+
+> ij
+
+=1 ∨Ageo  
+
+> ij
+
+=1 |Simg  
+
+> ij
+
+,S geo  
+
+> ij
+
+). (19) Using the complementary event and applying Eqs. (17) and (18) gives: 
+
+pNoisy-OR  
+
+> ij
+
+=1 −Pr( Aimg  
+
+> ij
+
+=0 ,A geo  
+
+> ij
+
+=0 |Simg  
+
+> ij
+
+,S geo  
+
+> ij
+
+)=1 −Pr( Aimg  
+
+> ij
+
+=0 |Simg  
+
+> ij
+
+)Pr( Ageo  
+
+> ij
+
+=0 |Sgeo  
+
+> ij
+
+). (20) Substituting the Bernoulli definition from (15) , Pr( Amij = 0 |
+
+Smij )=1 −pmij , into (20) yields (16). □
+
+## B. Methodological Details 
+
+B.1. Consistent Multi-View Generation: Horizon-tal vs. Temporal concatenation 
+
+Our method relies on Cosmos-Transfer, a World Foundation Model (WFM) capable of generating multi-view consistent RGB videos from depth inputs. Since Cosmos-Transfer is trained to operate on depth videos, it expects a temporally or-dered sequence of depth maps as input. To adapt this interface to the point cloud registration setting, we construct the WFM input by concatenating the source and target depth sequences along the temporal axis: 
+
+Din =Dsrc  
+
+> 1
+
+,...,D src  
+
+> L
+
+,D tgt  
+
+> 1
+
+,...,D tgt 
+
+> L
+
+. (21) 11 Source  Target      
+
+> (a)
+> Input Depth
+> (b)
+> Horizontal Concat.
+> (c)
+> Temporal Concat. Figure 5. WFM Input Formatting. (a) Input depth maps of the source and target views. (b) Feeding the pretrained WFM with horizontally concatenated depth inputs causes cross-view inconsistencies, e.g., the sofa is mistakenly replaced in the generated source image. (c) Using
+> temporal concatenation produces RGB outputs that are geometrically coherent and appearance-consistent between the two views.
+
+This temporal concatenation forms a single depth video con-taining the two fragments sequentially. While this configuration does not perfectly match the model’s original training distribu-tion, it remains physically plausible and statistically closer to natural camera motion than alternative layouts such as spatial horizontal concatenation. The key advantage of temporal concatenation is that it pre-serves the pretrained multi-view consistency priors of the WFM. Because the model was trained on temporally coherent video sequences, it naturally propagates geometric and semantic infor-mation across adjacent frames, including across the transition between the source and target segments. In contrast, horizontally concatenating the two fragments would introduce an artificial spatial discontinuity that is not present in the model’s training distribution, often resulting in weaker geometric coherence between the generated views. A qualitative comparison between the two strategies is illustrated in Fig. 5. Due to the autoregressive nature of video generation, minor visual transients may appear near the transition between the source and target segments. To mitigate this effect, we discard several “safeguard” frames around the midpoint of the generated video before extracting features for correspondence estimation. 
+
+B.2. View Selection Strategy 
+
+MASt3R extracts features using a cross-attention decoder that jointly processes pairs of images, meaning that the represen-tation of a given image depends on the image with which it is paired. Consequently, evaluating a source image against different target views produces distinct conditioned feature 1 2 4 8 16 32 
+
+# K
+
+## 3
+
+## 5
+
+## 7
+
+## 9
+
+## 11 
+
+> RRE  [°]
+
+## 12 
+
+## 15 
+
+## 19 
+
+## 22 
+
+## 26 
+
+> RTE  [cm]
+
+# RRE 
+
+# RTE       
+
+> Figure 6. Effect of View Selection ( K). Registration performance measured by Relative Rotation Error (RRE) and Relative Translation Error (RTE) as a function of the number of selected views K.Performance saturates for K≥4, indicating that only a few representative views are sufficient for stable registration.
+
+maps. To exploit this property, we sample K views uni-formly from the L frames of the generated source and target sequences and evaluate all pairwise combinations. This pro-duces K2 conditioned feature maps per domain, denoted as 
+
+F img src ,F img tgt ∈RK2×H×W ×dimg .While increasing K improves viewpoint coverage, it also leads to quadratic growth in the number of evaluated image pairs, motivating a careful view-selection strategy. As shown in Fig. 6, both RRE and RTE quickly saturate as K increases, reflecting the high correlation between frames in the generated sequences. This suggests that selecting K ≪L is sufficient to maintain view diversity while keeping the computational cost manageable. 
+
+B.3. C-GenReg for LiDAR Data 
+
+Since Cosmos-Transfer expects depth images as input, we intro-duce a preprocessing stage that converts raw 3D LiDAR scans into a depth-image representation. Following [ 23 ], we project each LiDAR point cloud onto a virtual camera . Choosing an appropriate virtual camera model is essential, as LiDAR sensors cover an extremely wide field of view (FOV). In line with Cosmos-Transfer, we use an f-θ virtual camera instead of a standard pinhole model. Wide-angle perception sys-tems, typical in autonomous driving, require ray–angle–based projection models that accurately handle 180 ◦+ FOV and avoid the extreme nonlinear distortions produced by perspective pro-jection at large incidence angles [ 5, 27 ]. The f-θ formulation also aligns well with the optics of wide-FOV imaging systems commonly used in robotics and AV platforms. Figure 7 shows the full conversion pipeline: attaching the virtual camera, rendering a depth map from the LiDAR scan, and passing the resulting depth image to the World Foundation Model to generate the corresponding RGB frame. For 360 ◦
+
+LiDAR, our approach can be naturally extended by deploying multiple virtual cameras with overlapping FOVs, leveraging the WFM’s multi-view consistency to produce a coherent full-view RGB generation. 
+
+B.4. Fusion Method - Point Matching Performance 
+
+Accurate registration relies heavily on producing reliable point-to-point correspondences. To evaluate the effect of our proba-bilistic fusion operators on this stage, we compare Noisy-AND 12 (a) Mounting Virtual Camera 
+
+# (b) Projected Depth Image  (c) Generated RGB Image Figure 7. C-GenReg LiDAR Input Pipeline: (a) A virtual camera is configured into the LiDAR scan. (b) The LiDAR points are projected into a depth image. (c) The resulting depth map is fed into the generative model to produce an aligned RGB image. 
+
+and Noisy-OR on the point-matching task. Fig. 8 shows the re-sulting precision–recall curves evluated on the 3DMatch dataset. A correspondence is counted as correct if, under the ground-truth transformation, the matched points lie within 5cm of each other. Across the entire recall range, Noisy-AND consistently at-tains higher precision than Noisy-OR. This behavior is expected: Noisy-AND emphasizes matches that are simultaneously con-fident in both modalities, whereas Noisy-OR tends to admit a larger set of correspondences, including lower-quality ones, which reduces precision. 
+
+## C. Additional Implementation Details 
+
+For RGB generation, we employ Cosmos-Transfer1-7B (Depth) 
+
+for indoor datasets and Cosmos-Transfer1-7B-Sample-AV (Li-DAR) for outdoor datasets. Input depth maps are resized to 
+
+960 ×704 for indoor data and 1280 ×640 for outdoor data to match the expected Cosmos input resolutions. Cosmos is run with the following parameters: CFG=7, σmax =80 , a spatiotem-poral control weight of 1, 35 denoising steps, and a target frame rate of 30 fps. The output resolution matches the input depth resolution, and all inference is performed on an NVIDIA RTX A6000 GPU. For the VFM pathway, we use MASt3R with an Encoder ViT-L and Decoder ViT-B configuration. Input RGB images are resized to 512 ×384 prior to feature extraction, and we use only                  
+
+> Method WFM (s) VFM (s) Geom. (s) Pose (s) Total (s)
+> GeoTransformer --0.075 1.558 1.633 Ours 507.0 0.973 0.075 0.066 508.1
+> Table 5. Runtime Analysis. Runtime per registration problem measured on a single NVIDIA RTX A6000 GPU.
+
+the descriptor head ( dimg =24 ). For the geometric branch, indoor point clouds are voxelized at 2.5 cm and outdoor point clouds at 5 cm. We extract geo-metric features using GeoTransformer, employing the official 3DMatch checkpoint for indoor scenes and the KITTI check-point for outdoor scenes, producing the geometric descriptors (dgeo =256 ). All components, Cosmos, MASt3R, and GeoTransformer, are used with their publicly released pretrained weights and remain completely frozen in our pipeline. 
+
+## D. Runtime Analysis 
+
+We report the runtime breakdown of C-GenReg and compare it with GeoTransformer in Tab. 5. Since GPCR code is not pub-licly available, a direct runtime comparison with that method cannot be provided. The runtime of C-GenReg is dominated by the World Foundation Model (WFM), which generates multi-view RGB videos from the input depth sequences. As shown in 13 Rotation [deg] Translation [cm]                                
+
+> Method Accuracy ↑Error ↓Accuracy ↑Error ↓
+> 510 45 Mean Med. 510 25 Mean Med. FCGF 70.2 87.7 96.2 9.5 3.3 27.5 58.3 82.9 23.6 8.3 GeoTransformer 94.0 96.8 98.1 4.3 1.0 79.2 92.0 96.7 8.2 2.5
+> C-GenReg (Ours) 99.4 99.8 99.9 1.1 0.9 87.5 97.1 99.3 3.0 1.9
+
+Table 6. ScanNet Original Benchmark. Rotation and translation accuracy (% of pairs within RRE/RTE thresholds in deg and cm 
+
+respectively) and mean/median error on the ScanNet original Split benchmark. Best results are in bold .0.0 0.2 0.4 0.6 0.8 1.0   
+
+> Recall
+> 0.3
+> 0.4
+> 0.5
+> 0.6
+> 0.7
+> 0.8
+> 0.9
+> 1.0
+> Precision
+> Noisy-AND
+> Noisy -OR
+
+Figure 8. Matching Performance Comparison of Noisy-AND vs. Noisy-OR. Precision–recall curves comparing the two probabilistic fusion operators on the point-matching task (a match is correct if within 5cm under the ground-truth transformation). Noisy-AND consistently achieves higher precision at similar recall rates. 
+
+Tab. 5, this stage accounts for almost the entire runtime ( 507 s), while the remaining components are lightweight: the Vision Foundation Model (VFM) used for correspondence extraction requires less than one second, and the geometric matching and pose estimation stages take only a fraction of a second. This cost reflects the use of a powerful pretrained genera-tive prior in a fully training-free pipeline. Importantly, recent work on distilling Cosmos Transfer models [ 15 ] reports up to a 72 × inference speedup, which would reduce the runtime of our pipeline to approximately ∼7s. Additional speedups may also be achieved by lowering the video generation rate. 
+
+## E. Additional Results 
+
+E.1. ScanNet Original Benchmark 
+
+In Tab. 6, we report registration performance on the original ScanNet benchmark, which consists of relatively easy pairs sampled 20 frames apart, resulting in modest motion between the source and target scans. C-GenReg achieves clear improve-ments across all metrics, with particularly strong gains in trans-lation accuracy compared to FCGF and GeoTransformer, thus demonstrating that augmenting geometric features with our RGB-generated branch provides a consistent performance boost and serves as an effective enhancement to existing registration pipelines.              
+
+> Lo3DMatch LoWaymo Method RRE RTE RRE RTE
+> GeoTransformer 21.10 53.46 19.72 9.04 Ours 14.57 45.49 4.95 1.66
+
+Table 7. Low-Overlap Results. Mean RRE (degrees) and mean RTE (cm for Lo3DMatch and m for LoWaymo). 
+
+E.2. Low-Overlap Benchmarks 
+
+To further evaluate the robustness of C-GenReg in challeng-ing scenarios, we conduct experiments on low-overlap registra-tion benchmarks. Specifically, we evaluate on the Lo3DMatch benchmark and on a low-overlap split of the Waymo dataset, where the overlap between point clouds is limited to be less than 
+
+30% (Tab. 7). As expected, performance degrades compared to high-overlap cases due to the reduced geometric overlap between scans. Nevertheless, C-GenReg consistently outper-forms the geometry-only baseline GeoTransformer across both datasets. On Lo3DMatch, C-GenReg reduces the rotation error from 21 .10 ◦ to 14 .57 ◦ and the translation error from 53 .46 cm to 45 .49 cm. A more substantial improvement is observed on the low-overlap Waymo benchmark, where C-GenReg reduces the rotation error from 19 .72 ◦ to 4.95 ◦ and the translation error from 9.04 m to 1.66 m. These results highlight the benefit of incorporating generative priors into the registration pipeline. Even when the geometric overlap between scans is limited, the WFM-based image gen-eration remains consistent in the shared regions of the scene. Combined with the probabilistic match-then-fuse formulation, this enables C-GenReg to recover reliable correspondences de-spite the sparsity of overlapping geometry, leading to improved registration accuracy. 
+
+E.3. Qualitative Examples 
+
+We present additional qualitative results of C-GenReg across both indoor and outdoor benchmarks. Fig. 9 and Fig. 10 il-lustrate registration outcomes on the 3DMatch and Waymo datasets, respectively. Each example shows the generated RGB views with a subset of color-coded correspondence matches, together with the same matches visualized directly on the 3D point clouds. Fig. 11, Fig. 12 and Fig. 13 highlight the generative capa-bilities of the employed World Foundation Model across the evaluated datasets, and especially the geometric coherence and multi-view consistency of the views generated by the C-GenReg pipeline, as these are the essential components towards the suc-cess of the C-GenReg registration. For each scene, we visualize the input depth maps and the generated RGB outputs, demon-strating strong multi-view consistency between source and target views as well as geometric coherence between the underlying depth structure and the synthesized images. 14 Source  Target 
+
+# (a) 
+
+# (b) 
+
+# 𝑅𝑅𝐸 : 1.71 ∘
+
+# 𝑅𝑇𝐸 : 3.5𝑐𝑚 Figure 9. Qualitative registration example from C-GenReg on the 3DMatch dataset. Generated source and target images with a subset of matched keypoints (same color indicates correspondence), and the same correspondences visualized on the source and target 3D point clouds. The resulting rotation error (RRE, °) and translation error (RTE, cm) are reported as well. 
+
+15 (a) 
+
+(b) 
+
+Source  Target 
+
+𝑅𝑅𝐸 : 0.21 ∘
+
+𝑅𝑇𝐸 : 0.75𝑚 Example 1 Source  Target 
+
+(a) 
+
+(b) 
+
+𝑅𝑅𝐸 : 0.50 ∘
+
+𝑅𝑇𝐸 : 0.23𝑚 
+
+> Example 2
+
+Figure 10. Qualitative registration examples of C-GenReg on the Waymo dataset. Row (a) shows generated source and target images with a subset of matched keypoints (same color indicates correspondence). Row (b) shows the same correspondences visualized on the source and target 3D point clouds. The resulting rotation error (RRE, °) and translation error (RTE, m) are also reported. 
+
+16 (a) Example 1  (b) Example 2  (c) Example 3 
+
+Figure 11. Multi-view consistent RGB generation from depth on 3DMatch. Three representative synthetic RGB examples generated from depth. The paired views remain geometrically and visually consistent.   
+
+> (a) Example 1 (b) Example 2 (c) Example 3
+
+Figure 12. Multi-view consistent RGB generation from depth on ScanNet. Three representative synthetic RGB examples from indoor depth scans. The synthesized frames preserve layout and structure across viewpoints.   
+
+> (a) Example 1 (b) Example 2
+> (c) Example 3 (d) Example 4
+
+Figure 13. Multi-view consistent RGB generation from depth on Waymo. Four representative synthetic RGB examples generated from LiDAR-projected depth. The synthesized frames preserve scene geometry across viewpoints. 
+
+17

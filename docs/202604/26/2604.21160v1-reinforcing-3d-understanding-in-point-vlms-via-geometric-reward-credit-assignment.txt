@@ -1,0 +1,834 @@
+Title: Reinforcing 3D Understanding in Point-VLMs via Geometric Reward Credit Assignment
+
+URL Source: https://arxiv.org/pdf/2604.21160v1
+
+Published Time: Fri, 24 Apr 2026 00:18:14 GMT
+
+Number of Pages: 10
+
+Markdown Content:
+# Reinforcing 3D Understanding in Point-VLMs via Geometric Reward Credit Assignment 
+
+## Jingkun Chen 
+
+Northwestern Polytechnical University China 
+
+## Ruoshi Xu 
+
+Southern University of Science and Technology China 
+
+## Mingqi Gao 
+
+The University of Sheffield United Kingdom 
+
+## Shengda Luo 
+
+Hengqin Laboratory China 
+
+## Jungong Han 
+
+Tsinghua University China 
+
+## Abstract 
+
+Point-Vision-Language Models promise to empower embodied agents with executable spatial reasoning, yet they frequently succumb to geometric hallucination where predicted 3D structures contradict the observed 2D reality. We identify a key cause of this failure not as a representation bottleneck but as a structural misalignment in rein-forcement learning, where sparse geometric tokens are drowned out by noisy and broadcasted sequence-level rewards. To resolve this causal dilution, we propose Geometric Reward Credit Assignment, a framework that disentangles holistic supervision into field-specific signals and routes them exclusively to their responsible token spans. This mechanism transforms vague feedback into precise gradient updates and effectively turns generic policy optimization into tar-geted structural alignment. Furthermore, we internalize physical constraints via a Reprojection-Consistency term which serves as a cross-modal verifier to penalize physically impossible geometries. Validated on a calibrated benchmark derived from ShapeNetCore, our approach bridges the reliability gap by boosting 3D KPA from 0.64 to 0.93, increasing 3D bounding box intersection over union to 0.686, and raising reprojection consistency scores to 0.852. Crucially, these gains are achieved while maintaining robust 2D localization performance, marking a meaningful step from plausible textual outputs toward physically verifiable spatial predictions. 
+
+## CCS Concepts 
+
+• Computing methodologies → Scene understanding ; Object detection ; Object recognition .
+
+## Keywords 
+
+point vision-language models, 3D grounding, credit assignment, spatial reasoning, geometry consistency 
+
+## 1 Introduction 
+
+Vision-Language Models have become strong at scene understand-ing, dialogue, and instruction following [ 3 , 30 , 49 ]. However, these abilities do not directly translate to embodied use. For a system to operate in the physical world, it is not enough to describe what is present or answer a question in natural language. The model must also recover spatial structure in a form that is metrically meaningful and grounded in the observation. This requirement is especially important for point-aware vision-language systems, where the out-put often contains structured geometric fields such as 2D boxes, 3D boxes, and keypoints together with text [ 8, 42 ]. In such settings, a RGB Image 3D Point Cloud            
+
+> Input
+> Prompt :“Ground the Seating
+> Apparatus with 2D Box and 3D
+> Structure”
+> Standard RLHF
+> Predicted 2D/ 3D
+> bounding box
+> View -Inconsistent 3D Hallucination
+> (Projection Mismatch)
+> Ours: GRCA+ Verifier
+> Predicted 2D/3D
+> bounding box
+> IoU
+> 2D/3D Verifier
+> Noisy gradient
+> signals affect all
+> tokens equally 3D Coordinate
+> Tokens
+> View -Consistent 3D Understanding
+> (Verifiable Geometry)
+
+Figure 1: Resolving geometric hallucination in point-based VLMs via GRCA. Compared with broadcasted-reward GRPO, GRCA with an RPC term provides targeted credit assignment to geometry tokens, improving view-consistent 3D ground-ing given an RGB image, a 3D point cloud, and a text prompt. 
+
+prediction is useful only when the geometric fields and the language refer to the same physical explanation of the scene. Point-Vision-Language Models move in this direction by com-bining image evidence, 3D geometry, and language generation in a single autoregressive model [ 7, 24 ]. This design provides a unified interface for grounded dialogue and spatial reasoning. In practice, however, these models exhibit a recurring failure mode. The model may produce a fluent answer and even a reasonable 2D localization, while the corresponding 3D prediction is not compatible with the same observation. When the predicted 3D structure is projected back to the image plane, its footprint often disagrees with the model’s own 2D output. We refer to this phenomenon as geometric hallucination. The issue is not limited to small perturbations in the 3D prediction. Rather, the full prediction becomes internally inconsistent, which makes it hard to trust in downstream tasks that require physically valid grounding, a concern closely related to recent analyses of grounding reliability and hallucination in 3D-LLMs [39]. A common explanation for this problem is that current mod-els do not represent 3D geometry well enough. We believe this is only part of the story. The problem also lies in how the model is optimized after supervised fine-tuning. In structured generation, geometric correctness depends on a small number of coordinate-bearing tokens inside a much longer output sequence that also contains descriptive text, formatting symbols, and contextual lan-guage. Standard reinforcement learning methods usually assign 
+
+> arXiv:2604.21160v1 [cs.CV] 23 Apr 2026 Jingkun Chen, Ruoshi Xu, Mingqi Gao, Shengda Luo, and Jungong Han
+
+a coarse sequence-level reward and apply it to all generated to-kens [ 27 ]. Such sequence-level supervision is poorly aligned with the requirements of structured spatial prediction. The tokens that actually determine whether a 3D prediction is correct receive su-pervision that is mixed with many unrelated tokens. In effect, the gradient signal that reaches the geometric fields becomes weak and noisy. This makes it difficult to correct small but important spatial errors, even when the overall response looks reasonable, which is consistent with recent work arguing for finer-grained reward assignment beyond sequence-level supervision [41, 47]. This observation suggests a simple principle. If a certain part of the output is responsible for a certain aspect of correctness, then the corresponding reward should be assigned to that part of the output rather than broadcast to the whole sequence. Based on this idea, we propose Geometric Reward Credit Assignment, or GRCA. GRCA treats the generated response as a structured JSON output, parses the geometric fields, evaluates each field with its own metric, and routes the resulting standardized reward only to the token span that produced that field. GRCA is applied during post-training without modifying the backbone architecture. The key change is in post-training, specifically in how reward is assigned. This yields an optimization objective that is better aligned with the structured nature of the task. It also concentrates supervision on sparse co-ordinate tokens while reducing interference with language-token optimization. Field-specific supervision helps, but it still does not ensure that the full prediction is geometrically coherent. A model can improve its 2D box and its 3D box separately while the two remain inconsis-tent with each other. We therefore add a Reprojection-Consistency term, or RPC, as a global verifier. RPC checks whether the predicted 3D box, after projection under known camera parameters, agrees with the predicted 2D grounding from the same output. We treat this term as a global consistency reward rather than attributing it to any single local field, since it reflects a property of the prediction as a whole. GRCA and RPC therefore play different roles. GRCA improves how local geometric errors are corrected during training, while RPC encourages the final prediction to remain consistent across 2D and 3D. We evaluate the proposed framework on a camera-calibrated benchmark derived from ShapeNetCore. The method substantially improves 3D grounding quality, boosting 3D KPA from 0.64 to 0.93, increasing 3D bounding box intersection over union to 0.686, and raising reprojection consistency to 0.852, while preserving strong 2D localization performance. These results suggest that the main obstacle to reliable 3D grounding in Point-VLMs is not representation alone, but how geometric supervision is delivered during post-training. Our main contributions are as follows. 
+
+• We identify geometric hallucination as a key reliability bottleneck in Point-VLMs, where predicted 3D structure is inconsistent with the model’s own 2D grounding, and trace this failure to misaligned reward delivery during post-training. 
+
+• We propose Geometric Reward Credit Assignment, a structure-aware reinforcement learning framework that aligns super-vision with the internal structure of the output by rout-ing field-specific rewards to the token spans that gener-ate the corresponding geometric fields, together with a Reprojection-Consistency term that promotes globally con-sistent 2D and 3D predictions. 
+
+• We demonstrate that the proposed framework substantially improves structured 3D grounding on a camera-calibrated benchmark derived from ShapeNetCore, boosting 3D relia-bility while maintaining strong 2D grounding performance. 
+
+## 2 Related Work 2.1 3D Vision-Language Modeling and Instruction Following 
+
+Early work on 3D vision-language modeling was largely centered on representation transfer from 2D foundation models. PointCLIP [ 45 ]and ULIP [ 38 ] align point cloud encoders with language-image embedding spaces, enabling zero-shot recognition and retrieval in 3D domains. OpenScene [ 21 ] and OpenMask3D [ 28 ] extend this line to dense scene understanding through open-vocabulary retrieval and segmentation. These methods greatly improve the semantic coverage of 3D perception, but their outputs remain fundamentally discriminative. They decide which concept best matches the scene or region, rather than producing a structured spatial hypothesis that must remain valid under scene geometry. Recent work has moved toward generative 3D vision-language models that connect scene representations with large language mod-els. Point-LLM [ 37 ], Point-Bind [ 11 ], LL3DA [ 7 ], Chat-3D [ 33 ], 3D-LLM [ 12 ], Grounded 3D-LLM [ 8 ], Chat-Scene [ 13 ], Scene-LLM [ 9], and Inst3D-LMM [ 42 ] show that 3D scenes can support open-ended dialogue, grounding, captioning, and reasoning in a unified genera-tive interface. SceneVerse [ 15 ] further scales grounded 3D vision-language learning with large-scale scene-language supervision. Our setting is closer to this generative line, but it is also more constrained. The target output is not free-form language alone. It contains geometric fields whose correctness depends on metric accuracy, camera consistency, and whether the prediction can be executed as a valid spatial explanation of the scene. This difference changes the optimization problem itself, since a response can be linguistically plausible while still failing as a geometric prediction. 
+
+## 2.2 Benchmarks for Grounded Spatial Reasoning 
+
+Grounded spatial reasoning in 3D has been studied through both question answering and referring expression benchmarks. ScanQA [ 2]and SQA3D [ 19 ] combine scene understanding with language rea-soning, while ScanRefer [ 6 ] and ReferIt3D [ 1] evaluate language-guided localization in real 3D scenes. These benchmarks establish the standard task formats for grounded perception and spatial rea-soning. Recent datasets broaden this landscape toward more realistic grounding regimes. Multi3DRefer [ 46 ] extends grounding beyond the single-target setting and requires predicting zero, one, or multi-ple valid referents. EmbodiedScan [ 31 ] introduces ego-centric scene Reinforcing 3D Understanding in Point-VLMs via Geometric Reward Credit Assignment W/O 
+
+GRCA 
+
+With 
+
+GRCA 
+
+> …
+
+bbox2d bbox3d kpts2d kpts3d background 
+
+bbox2d bbox3d kpts2d kpts3d background  
+
+> bbox2d
+> bbox3d
+> kpts2d
+> kpts3d
+> Geometric
+> Targets
+> Coordinate
+> Quantization
+> Object -scale
+> Normalization
+> Structured
+> JSON Targets
+> Geometric fields
+> location Description
+> Semantic fields
+
+PointVL -3D 
+
+Architecture 
+
+> Geometry -guided
+> Cross -Attention
+> Point -Bert
+> Geometry Encoder
+> Qwen2.5 -VL
+> Visual Encoder
+> Linear Projection
+
+{
+
+”answer’: “a sedan”, 
+
+”bbox2d”:[…], 
+
+“bbox3d”:[…], 
+
+“kpts2d”:[…], 
+
+“kpts3d”:[…], 
+
+“description”:[…] 
+
+}
+
+> Fused point tokens
+
+Grounding 
+
+Visualization 
+
+SFT(Stage 1) GRCA(Stage 2) 
+
+2A. Routed vs Broadcast Credit 2B.RPC Verifier    
+
+> Qwen2.5 -VL
+> Language Backbone
+> A sedan
+> A sedan x
+> y
+> z
+> Teacher -forced
+> supervision
+> Cross -Entropy Loss
+> Locate the object in
+> the image that
+> provides motorized
+> ground
+> transportation
+> Broadcast GRPO Proposed GRCA
+
+Sequence -level Broadcast Reward 
+
+(e.g., scalar = 0.6) 
+
+Coarse Supervision / Gradient Noise 
+
+Targeted Credit Assignment 
+
+> Step 1: Project
+
+Point Cloud (P) 
+
+Image (I) 
+
+Text (T) 
+
+> Step 2: Compare
+
+IOU 
+
+1 2  
+
+> Character To Span Masks
+
+Parser 
+
+> Project 3D box
+> corners to 2D
+
+router                                    
+
+> A!"
+> Iou =0.34 Iou =0.81
+> A#$ A%!$ A%#$ A&'
+> ℒGRCA 𝜃 =𝔼 𝑋 ∼𝒟 ,{𝑌 𝑖 }𝑖 =1
+> 𝐺 ∼𝜋 𝜃 old ⋅∣𝑋
+> 1
+> 𝐺 ∑1
+> 𝐿 𝑖
+> 𝐺
+> 𝑖 =1∑min
+> 𝐿 𝑖
+> 𝑡 =1𝑟 𝑡
+> 𝑖 𝜃 𝒜 𝑡
+> 𝑖 ,clip 𝑟 𝑡
+> 𝑖 𝜃 ,1−𝜀 ,1+𝜀 𝒜 𝑡
+> 𝑖
+
+Routed Advantages → GRPO Update 
+
+Figure 2: Overview of PointVL-3D. In Stage 1, a hybrid point-image architecture fuses Point-BERT geometry features with the Qwen2.5-VL backbone and is supervised to generate structured JSON outputs. In Stage 2, GRCA replaces sequence-level broadcast reward with field-specific routed credit assignment over geometric token spans, while an RPC verifier enforces global consistency by comparing the predicted 2D box with the reprojection of the predicted 3D box. 
+
+perception with language-grounded tasks for embodied agents. ScanReason [ 48 ] further shifts the task from direct description matching to reasoning-driven grounding under implicit instruc-tions. 3D-GRAND and its accompanying 3D-POPE benchmark [ 39 ]emphasize grounding quality and hallucination in 3D-LLMs at larger scale. These benchmarks make progress on task diversity, but most existing protocols still score the final answer and the localized target in separate spaces. As a result, a model can perform reason-ably in 2D or 3D when measured independently while still failing to produce one spatial hypothesis that is jointly compatible with the image evidence and the recovered 3D geometry. Our evaluation targets exactly this missing layer of supervision by testing whether the predicted 3D structure remains valid after calibrated reprojec-tion. The goal is not only to measure whether the answer is close to the annotation, but also whether it can stand as a geometrically coherent explanation across views and modalities. 
+
+## 2.3 Post-Training and Credit Assignment for Structured Outputs 
+
+Post-training methods such as RLHF [ 20 ], DPO [ 25 ], and GRPO [ 27 ]are now standard tools for aligning generative models with down-stream objectives. Their common assumption is that a training signal can be assigned to the generated sequence at a relatively coarse level. This is often sufficient when quality is judged by over-all preference or semantic adequacy. Structured geometric prediction makes this assumption less suitable. In our setting, only a small subset of tokens determines whether the final prediction is spatially correct, while the remaining tokens mainly carry instruction context, natural language scaffold-ing, or output formatting. Recent work on finer-grained supervision, including process reward models [ 10 ] and token-level value esti-mation [ 29 ], seeks to improve credit assignment granularity, but typically relies on additional decomposition, auxiliary estimation, or denser forms of supervision. Our setting admits a more direct solution because the output schema already reveals which fields are responsible for geometric validity. This allows us to assign re-ward to the exact token spans that encode the spatial prediction rather than spreading the same signal across the full sequence. The benefit is not only better efficiency. More importantly, it aligns optimization with the actual error surface of the task, where a small coordinate mistake should matter more than a large number of semantically harmless language tokens. 
+
+## 2.4 Geometric Consistency and Verifier-Guided 3D Grounding 
+
+Geometric consistency is a classical principle in multi-view geome-try, reconstruction, and SLAM, where reprojection agreement pro-vides a physically grounded test of correctness. In learning-based systems, related ideas are often used indirectly through fusion, filtering, or consistency checks over multi-view observations. Con-ceptFusion [ 14 ] is a representative example that uses multi-view fusion to build open-set multimodal 3D maps, showing the value of geometry-aware aggregation for downstream reasoning. Recent 3D grounding methods also make increasing use of ex-plicit view selection and geometric evidence at inference time. LLM-Grounder [ 40 ] uses an LLM to decompose complex grounding Jingkun Chen, Ruoshi Xu, Mingqi Gao, Shengda Luo, and Jungong Han 
+
+queries and reason over candidates proposed by external 3D ground-ing tools. SeeGround [ 18 ] converts 3D scenes into query-aligned rendered views and spatially enriched descriptions so that strong 2D vision-language models can be applied to zero-shot 3D grounding. These methods show that better use of geometry and viewpoint can substantially improve grounding, especially in open-vocabulary settings. However, geometry in these systems mainly acts after candidate generation as a mechanism for selection, ranking, or validation. Our work moves this signal into training itself. Instead of using geometric consistency only to filter or refine outputs after they are produced, we use it to shape the policy toward predictions that are already more likely to satisfy the scene geometry before any external correction is applied. In that sense, the verifier is not only an inference-time checker but part of the learning objective. 
+
+## 3 Method 
+
+We study structured spatial generation for point-aware vision-language models. Given an input 𝑋 = (𝑃, 𝐼,𝑇 ), where 𝑃 denotes a point cloud, 𝐼 an RGB image, and 𝑇 a text instruction, the model generates an autoregressive output sequence 𝑌 = (𝑦 1, . . . , 𝑦 𝐿 ) ∼ 
+
+𝜋 𝜃 (· | 𝑋 ) that follows a fixed JSON schema. The output contains four geometric fields, 
+
+F = {bbox2d , bbox3d , kpts2d , kpts3d }, (1) together with two semantic text fields, answer and description .Our goal is to improve geometric alignment during post-training by replacing sequence-level reward broadcasting with routed, field-specific credit assignment. 
+
+## 3.1 Hybrid Point-Image Policy 
+
+We construct a hybrid policy by combining a 3D geometry encoder with a 2D vision-language backbone. Let 𝐻 𝑃 ∈ R𝑀 ×𝑑 be the point tokens extracted by Point-BERT [ 43 ], and let 𝐻 𝐼 ∈ R𝐾 ×𝑑 be the image tokens produced by the visual encoder of Qwen2.5-VL [ 4]. To inject texture and appearance cues into the point representation, we apply geometry-guided cross-attention: 
+
+𝐻 cross = Softmax 
+
+ (𝐻 𝑃 𝑊 𝑄 )( 𝐻 𝐼 𝑊 𝐾 )⊤
+
+√𝑑 
+
+
+
+(𝐻 𝐼 𝑊 𝑉 ). (2) The fused representation is formed as 
+
+ˆ𝐻 𝑃 = 𝐻 𝑃 + 𝐻 cross , (3) and is then projected into the token space of the language backbone by a learnable linear map, 
+
+𝑍 𝑃 = ˆ𝐻 𝑃 𝑊 proj , (4) where 𝑊 proj ∈ R𝑑 ×𝑑 LM . The resulting visual tokens 𝑍 𝑃 are concate-nated with the instruction 𝑇 , and the whole sequence is decoded autoregressively by the policy 𝜋 𝜃 .
+
+## 3.2 Stage 1: Structural Warm-up 
+
+Before reinforcement learning, the model is first trained to obey the target schema and to produce coarse but executable geometric outputs. We enforce a fixed JSON template containing two semantic fields ( answer , description ) and four geometric fields ( bbox2d ,
+
+bbox3d , kpts2d , kpts3d ). We quantize continuous coordinates into discrete bins 𝑏 ∈ { 0, 1, . . . , 1000 } and serialize them into the output sequence. Given a ground-truth sequence 𝑌 ∗ = (𝑦 ∗
+
+> 1
+
+, . . . , 𝑦 ∗ 
+
+> 𝐿 ∗
+
+), we optimize the standard supervised objective 
+
+LSFT (𝜃 ) = −E(𝑋 ,𝑌 ∗ )∼D 
+
+" 𝐿 ∗∑︁  
+
+> 𝑡 =1
+
+log 𝜋 𝜃 (𝑦 ∗ 
+
+> 𝑡
+
+| 𝑦 ∗ 
+
+> <𝑡
+
+, 𝑋 )
+
+#
+
+. (5) This warm-up stage teaches the model the output format and a coarse input-output correspondence, but it does not explicitly dis-tinguish structurally important coordinate tokens from ordinary language tokens. 
+
+## 3.3 Stage 2: Geometric Reward Credit Assignment 
+
+The core difficulty in post-training is that geometric correctness depends on a small subset of coordinate tokens, whereas conven-tional RL methods typically broadcast a single scalar reward over the entire sequence. We address this mismatch with Geometric Reward Credit Assignment (GRCA), which parses the generated structure, computes field-specific rewards, and routes each reward only to the token span responsible for it. 
+
+Parsing and span masks. For a decoded sample 𝑌 , we parse the JSON structure and recover the character spans of each geometric field. These character spans are then mapped back to token indices using a robust character-to-token alignment procedure based on cumulative decoded offsets. For each parsed sample 𝑌 , this yields a disjoint partition 
+
+{I 𝑓 (𝑌 )} 𝑓 ∈ F and Ibg (𝑌 ), (6) where I𝑓 (𝑌 ) is the token span of geometric field 𝑓 , and Ibg (𝑌 )
+
+contains all remaining tokens, including semantic fields such as 
+
+answer and description , as well as formatting and structural tokens. In our routing scheme, all tokens in Ibg (𝑌 ) receive only the background advantage. 
+
+𝑚 𝑡,𝑓 (𝑌 ) = 1[𝑡 ∈ I 𝑓 (𝑌 )] , 𝑚 𝑡, bg (𝑌 ) = 1[𝑡 ∈ I bg (𝑌 )] . (7) 
+
+Field-specific rewards. Before reward computation, the gener-ated coordinate tokens are parsed from the JSON output and de-quantized from discrete bins back to continuous geometric values. Each geometric field is evaluated by a task-specific reward 𝑟 𝑓 (𝑌 ) ∈ [0, 1]. For bounding boxes, we use Intersection over Union (IoU). For keypoints, we use a containment-based reward. Let { ˆ𝑘 𝑚 }𝑀 𝑚 =1
+
+denote the predicted keypoints, and let 𝐵 ∗ 
+
+> 𝑓
+
+denote the corresponding ground-truth bounding box for the keypoint field 𝑓 ∈ { kpts2d , kpts3d }.We define 
+
+𝑟 kpt (𝑌 ) = 1
+
+𝑀 
+
+> 𝑀
+
+∑︁ 
+
+> 𝑚 =1
+
+1
+
+ ˆ𝑘 𝑚 ∈ 𝐵 ∗
+
+> 𝑓
+
+
+
+, (8) where 𝑀 is the number of predicted keypoints. For kpts2d , 𝐵 ∗
+
+> 𝑓
+
+denotes the ground-truth 2D bounding box and the containment test is performed on the image plane. For kpts3d , 𝐵 ∗ 
+
+> 𝑓
+
+denotes the ground-truth 3D bounding box and the containment test is per-formed in 3D space. This reward measures whether the predicted keypoints fall inside the target box rather than whether they match ground-truth keypoints one by one. In evaluation, we report Key-point Accuracy (KPA) under the same criterion in 2D and 3D. These rewards remain field-local, and each reward supervises only the token span that generated the corresponding field. Reinforcing 3D Understanding in Point-VLMs via Geometric Reward Credit Assignment 
+
+Group-relative standardization. Following GRPO [ 27 ], for each input 𝑋 we sample a group of 𝐺 candidate outputs {𝑌 (𝑖 ) }𝐺 𝑖 =1 ∼
+
+𝜋 𝜃 old (· | 𝑋 ). For field 𝑓 , let 𝜇 𝑓 and 𝜎 𝑓 denote the mean and stan-dard deviation of {𝑟 𝑓 (𝑌 (𝑖 ) )} 𝐺 𝑖 =1. We compute the standardized field advantage as 
+
+˜𝐴 (𝑖 ) 
+
+> 𝑓
+
+= 𝑟 𝑓 (𝑌 (𝑖 ) ) − 𝜇 𝑓 
+
+𝜎 𝑓 + 𝜖 . (9) This avoids training a separate value network and makes heteroge-neous reward scales comparable across fields. 
+
+Routed token-wise advantages. Instead of assigning one global advantage to all tokens, we construct a routed token-wise advantage for each sampled output: 
+
+A (𝑖 ) 
+
+> 𝑡
+
+=∑︁  
+
+> 𝑓 ∈ F
+
+𝑚 𝑡,𝑓 
+
+
+
+𝑌 (𝑖 )  ˜𝐴 (𝑖 ) 
+
+> 𝑓
+
++ 𝑚 𝑡, bg 
+
+
+
+𝑌 (𝑖 )  ˜𝐴 (𝑖 ) 
+
+> bg
+
+. (10) Thus, tokens belonging to bbox3d receive only the standardized reward of bbox3d , tokens belonging to kpts3d receive only the keypoint reward, and so on. This preserves field-relevant credit on geometric spans and reduces direct interference from unrelated reward components. 
+
+## 3.4 Reprojection Consistency as a Global Verifier 
+
+Field-wise rewards improve local accuracy, but they do not by them-selves guarantee that the predicted 3D geometry is consistent with the predicted 2D grounding. To encourage cross-modal consistency, we introduce a reprojection-consistency reward. The predicted field bbox3d is decoded into an axis-aligned 3D bounding box 𝐵 3D (𝑌 ). Let {𝑐 𝑗 }8 
+
+> 𝑗 =1
+
+denote its eight corners. Given camera intrinsics 𝐾 and extrinsics (𝑅, 𝑡 ), each corner is projected onto the image plane as 
+
+˜𝑢 𝑗 = 𝐾 (𝑅𝑐 𝑗 + 𝑡 ), 𝑢 𝑗 =
+
+ ˜𝑢 𝑗, 1
+
+˜𝑢 𝑗, 3
+
+, ˜𝑢 𝑗, 2
+
+˜𝑢 𝑗, 3
+
+
+
+, (11) where ˜𝑢 𝑗 is the homogeneous image coordinate and 𝑢 𝑗 ∈ R2 is the corresponding 2D point. We define the reprojection of 𝐵 3D (𝑌 ) as the smallest axis-aligned 2D box enclosing all projected corners, 
+
+𝐵 proj (𝑌 ) =
+
+h
+
+min  
+
+> 𝑗
+
+𝑢 𝑗,𝑥 , min  
+
+> 𝑗
+
+𝑢 𝑗,𝑦 , max  
+
+> 𝑗
+
+𝑢 𝑗,𝑥 , max  
+
+> 𝑗
+
+𝑢 𝑗,𝑦 
+
+i
+
+, (12) where 𝑢 𝑗,𝑥 and 𝑢 𝑗,𝑦 denote the horizontal and vertical coordinates of 𝑢 𝑗 , respectively. Let 𝐵 2D (𝑌 ) denote the predicted 2D bounding box in the same output. We then define the reprojection-consistency reward as 
+
+𝑟 rpc (𝑌 ) = IoU  𝐵 2D (𝑌 ), 𝐵 proj (𝑌 ) . (13) We standardize 𝑟 rpc within the group to obtain ˜𝐴 (𝑖 )
+
+> rpc
+
+. Since RPC depends jointly on multiple geometric fields and can be noisy near projection boundaries, we do not inject it directly into a single coordinate span. Instead, we use it to shape the background tokens: 
+
+˜𝐴 (𝑖 ) 
+
+> bg
+
+= (1 − 𝜆 ) ©«
+
+1
+
+|F | ∑︁ 𝑓 ∈ F 
+
+˜𝐴 (𝑖 )
+
+> 𝑓
+
+ª®¬
+
++ 𝜆 ˜𝐴 (𝑖 )
+
+> rpc
+
+. (14) This design treats RPC as a global preference for prediction-level 2D–3D consistency, rather than as a local reward on any single coordinate field. 
+
+## 3.5 Routed GRPO Objective 
+
+Our training objective follows the clipped policy-ratio form used in GRPO, but replaces the broadcast sequence-level advantage with the routed token-wise advantage in Eq. (10) . For token 𝑡 in sample 
+
+𝑌 (𝑖 ) , we define the policy ratio as 
+
+𝑟 (𝑖 ) 
+
+> 𝑡
+
+(𝜃 ) =
+
+𝜋 𝜃 
+
+
+
+𝑦 (𝑖 ) 
+
+> 𝑡
+
+| 𝑦 (𝑖 ) 
+
+> <𝑡
+
+, 𝑋 
+
+
+
+𝜋 𝜃 old 
+
+
+
+𝑦 (𝑖 ) 
+
+> 𝑡
+
+| 𝑦 (𝑖 ) 
+
+> <𝑡
+
+, 𝑋 
+
+ . (15) The routed surrogate objective is 
+
+LGRCA (𝜃 ) = E𝑋 ∼D , {𝑌 (𝑖 ) }𝐺 𝑖 =1∼𝜋 𝜃 old (· | 𝑋 )
+
+"
+
+1
+
+𝐺 
+
+> 𝐺
+
+∑︁ 
+
+> 𝑖 =1
+
+1
+
+𝐿 𝑖 𝐿 𝑖 ∑︁ 
+
+> 𝑡 =1
+
+min 
+
+
+
+𝑟 (𝑖 ) 
+
+> 𝑡
+
+(𝜃 )A (𝑖 ) 
+
+> 𝑡
+
+,
+
+clip (𝑟 (𝑖 ) 
+
+> 𝑡
+
+(𝜃 ), 1 − 𝜀, 1 + 𝜀 )A (𝑖 )
+
+> 𝑡
+
+#
+
+,
+
+(16) where 𝐿 𝑖 is the generated sequence length of sample 𝑌 (𝑖 ) , and 𝜀 
+
+is the clipping threshold. In implementation, we maximize this surrogate objective, or equivalently minimize its negative. Relative to vanilla GRPO, the optimization form remains un-changed, but the advantage is no longer broadcast uniformly across the full sequence. Instead, each token receives the routed advan-tage associated with its corresponding field or background role. This makes the credit assignment better matched to the structured output. Because the objective averages over tokens, longer fields contribute proportionally more updates; in our setting, we retain this behavior since fields with more coordinates naturally carry more geometric information. 
+
+## 3.6 Analysis of Routed Credit Assignment 
+
+We give a simple conditional moment analysis to illustrate how routing affects the direct gradient contribution on a field-specific span. The purpose is not to prove global convergence, but to com-pare the direct gradient contribution on a field-specific token span under broadcast versus routed credit assignment. Unless otherwise stated, all conditional moments in this subsection are taken with respect to the sampling distribution induced by the rollout policy for a fixed input 𝑋 .For a parsed sample 𝑌 , define the score restricted to field 𝑓 as 
+
+𝑆 𝑓 (𝑌 ) =∑︁    
+
+> 𝑡 ∈ I 𝑓 (𝑌 )
+
+∇𝜃 log 𝜋 𝜃 (𝑦 𝑡 | 𝑦 <𝑡 , 𝑋 ). (17) Let ¯𝐴 (𝑌 ) denote a sequence-level broadcast advantage, and let 
+
+˜𝐴 𝑓 (𝑌 ) be the field-specific routed advantage. Write 
+
+¯𝐴 (𝑌 ) = ˜𝐴 𝑓 (𝑌 ) + 𝜉 𝑓 (𝑌 ), (18) where 𝜉 𝑓 (𝑌 ) collects the residual contribution from other fields and background preferences. The direct gradient term on span I𝑓 (𝑌 ) is then 
+
+ˆ𝐺 broad  
+
+> 𝑓
+
+= ¯𝐴 (𝑌 )𝑆 𝑓 (𝑌 ),
+
+ˆ𝐺 route  
+
+> 𝑓
+
+= ˜𝐴 𝑓 (𝑌 )𝑆 𝑓 (𝑌 ). (19) Jingkun Chen, Ruoshi Xu, Mingqi Gao, Shengda Luo, and Jungong Han 
+
+Therefore, 
+
+ˆ𝐺 broad  
+
+> 𝑓
+
+= ˆ𝐺 route  
+
+> 𝑓
+
++ 𝜉 𝑓 (𝑌 )𝑆 𝑓 (𝑌 ). (20) If 
+
+E[𝜉 𝑓 (𝑌 )𝑆 𝑓 (𝑌 ) | 𝑋 ] = 0, (21) then broadcast and routed training have the same conditional mean direct contribution on field 𝑓 :
+
+E[ ˆ𝐺 broad  
+
+> 𝑓
+
+| 𝑋 ] = E[ ˆ𝐺 route  
+
+> 𝑓
+
+| 𝑋 ]. (22) To compare fluctuation magnitude for vector-valued gradients, we define 
+
+Var [𝑍 ] := tr (Cov [𝑍 ]) , SCov [𝑈 , 𝑉 ] := tr (Cov [𝑈 , 𝑉 ]) . (23) If 
+
+SCov 
+
+ ˜𝐴 𝑓 (𝑌 )𝑆 𝑓 (𝑌 ), 𝜉 𝑓 (𝑌 )𝑆 𝑓 (𝑌 ) | 𝑋 
+
+
+
+≥ 0, (24) then 
+
+Var 
+
+h ˆ𝐺 broad  
+
+> 𝑓
+
+| 𝑋 
+
+i
+
+≥ Var 
+
+h ˆ𝐺 route  
+
+> 𝑓
+
+| 𝑋 
+
+i
+
+. (25) Moreover, using Eq. (20), 
+
+Var 
+
+h ˆ𝐺 broad  
+
+> 𝑓
+
+| 𝑋 
+
+i
+
+= Var 
+
+h ˆ𝐺 route  
+
+> 𝑓
+
+| 𝑋 
+
+i
+
++ Var 𝜉 𝑓 (𝑌 )𝑆 𝑓 (𝑌 ) | 𝑋 
+
++ 2 SCov 
+
+ ˜𝐴 𝑓 (𝑌 )𝑆 𝑓 (𝑌 ), 𝜉 𝑓 (𝑌 )𝑆 𝑓 (𝑌 ) | 𝑋 
+
+
+
+.
+
+(26) Thus, for the direct contribution on a field-specific span, broadcast credit assignment carries an additional residual term from unrelated fields, whereas routed credit assignment removes that term by construction. This comparison is limited to the direct contribution on I𝑓 (𝑌 ). It does not imply full decoupling, since autoregressive dependencies and shared parameters can still couple different spans indirectly. 
+
+## 3.7 Robustness and Edge Cases 
+
+The routing mechanism depends on successful parsing. If a field is missing, duplicated, malformed, or unparsable, we set its span to the empty set and assign zero reward to that field. This discourages invalid outputs without introducing ambiguous supervision. The overall training pipeline is initialized from pre-trained Point-BERT and Qwen2.5-VL weights, followed by the SFT stage and then the routed GRPO stage. 
+
+## 4 Experiments and Results 4.1 Dataset Construction and Protocols 
+
+We evaluate on a synthetic, camera-calibrated benchmark derived from ShapeNetCore [ 5]. Unlike standard datasets that rely on low-fidelity raw renders, we construct a Generative-Refined 3D-VL Benchmark containing 12,347 high-quality instances across 51 ob-ject categories. The construction pipeline comprises three stages: 
+
+4.1.1 Point Cloud and Geometry Processing. We perform data clean-ing to merge semantically overlapping classes and remove cate-gories with insufficient generation quality. To convert meshes into high-quality point clouds 𝑃 ∈ R𝑁 ×3, we employ Poisson Disk Sam-pling ( 𝑁 =1024 , init factor 5) via Open3D. This ensures a uniform distribution of points on the manifold surface, preserving geometric topology better than random sampling. For models with missing normals, we perform KNN-based estimation ( 𝑘 =30 ).                       
+
+> Model IoU 2𝐷 ↑KPA-2D ↑
+> Qwen2.5-VL-3B [4] 0.791 0.657 Qwen2.5-VL-7B [4] 0.780 0.751 InternVL3_5-4B-Instruct [32] 0.772 0.727 InternVL3_5-8B-Instruct [32] 0.764 0.680 DeepSeek-VL2-Tiny [36] 0.692 0.182 MiMo-VL-7B-RL [17] 0.745 0.601 Qwen2.5-VL-3B(SFT) 0.891 0.882 MiMo-VL-7B-RL(SFT) 0.886 0.887 PointVL-3D (Ours) 0.894 0.890
+
+Table 1: Comparison with open-source 2D vision-language baselines on the test split. General-purpose VLMs are eval-uated only on 2D grounding metrics because they do not produce native 3D structured outputs.                         
+
+> Model IoU 3𝐷 ↑KPA-3D ↑RPC ↑
+> PointNet [22] 0.492 0.923 0.810 PointNet++ [23] 0.456 0.884 0.820 PointBert [43] 0.440 0.856 0.780 Point Transformer V3 [35] 0.238 0.885 0.521 Point-Language-3D 0.542 0.567 0.814 PointVL-3D (Ours) 0.686 0.930 0.852
+
+Table 2: Comparison with representative 3D-capable base-lines on structured spatial grounding over the test split. 
+
+4.1.2 Generative Visual Synthesis Pipeline. To bridge the domain gap between synthetic renders and real-world images, we imple-ment a tri-stage visual synthesis pipeline. First, we use PyTorch3D for adaptive rasterization. We design a Category-Adaptive View Sampling strategy where elevation is constrained to [15 ◦, 35 ◦] and azimuth is tailored to object semantics (e.g., side-view for cars) to prevent meaningless viewpoints. Second, we employ Qwen-Image-Edit [ 34 ] as a semantic low-pass filter. By prompting for anti-aliased and photorealistic surfaces, we reconstruct discrete jagged edges into continuous curves while maintaining geometric alignment. Finally, we generate photorealistic images using FLUX.1-Krea-dev [ 16 ] controlled by ControlNet-Union-Pro [ 44 ]. We implement a Control Guidance Termination strategy where spatial constraints are applied only during the first 80% of diffusion steps to balance structural fidelity with textural naturalness. Strict manual verifica-tion was performed on tri-stage visualizations to remove samples with geometric distortion or pose drift, resulting in a final split of 11,347 training and 1,000 testing samples. 
+
+4.1.3 Automated Multi-Modal Annotation. We establish a scalable annotation engine to generate dense supervision. We utilize GPT-5 to generate fine-grained attribute QA pairs and geometric descrip-tions. For 2D grounding, we deploy Qwen2.5-VL-30B-Instruct with temperature 0.0 to localize the most prominent instance. For 3D grounding, we compute axis-aligned bounding boxes (AABB) and employ Farthest Point Sampling (FPS) to select 16 topological key-points. 2D keypoints are generated via morphological foreground mask processing. These annotated keypoints are used to construct the structured supervision targets in Stage 1. In post-training and evaluation, the keypoint reward and KPA follow the containment criterion defined in Sec. 3.3. Reinforcing 3D Understanding in Point-VLMs via Geometric Reward Credit Assignment                                    
+
+> Method IoU 2𝐷 ↑IoU 3𝐷 ↑KPA-2D ↑KPA-3D ↑RPC ↑
+> SFT 0.890 0.663 0.890 0.640 0.836 SFT (budget-matched) 0.888 0.678 0.880 0.670 0.844 GRPO (broadcast reward) 0.886 0.684 0.890 0.890 0.841 GRCA 0.894 0.683 0.890 0.930 0.846 GRCA + RPC term 0.894 0.686 0.890 0.930 0.852
+
+Table 3: Main quantitative results under a fixed post-training budget, comparing supervised fine-tuning, broadcast-reward GRPO, and the proposed GRCA variants. 
+
+## 4.2 Implementation Details 
+
+Our model is built upon the pre-trained Qwen2.5-VL-3B-Instruct [ 4] backbone. The geometry encoder uses Point-BERT pre-trained on ShapeNet, freezing the original layers and training only the cross-attention layers. The input point cloud is downsampled to 
+
+𝑁 = 1024 points, and images are resized to 512 × 512 .We implement our framework using PyTorch and DeepSpeed Zero-3 [ 26 ]. In Stage 1 (SFT), we fine-tune for 2 epochs with a batch size of 128, using the AdamW optimizer with a cosine learning rate schedule ( 2𝑒 −5 to 2𝑒 −7). In Stage 2 (GRCA), we perform RL post-training for 1 epoch with a group size 𝐺 = 8 and a learning rate of 
+
+1𝑒 −5. The RPC mixing weight is set to 𝜆 = 0.15 . All experiments are conducted on 4 NVIDIA A800 (80GB) GPUs, taking approximately 48 hours. 
+
+## 4.3 Tasks and Evaluation Metrics 
+
+We evaluate the model along two primary tasks and one consistency metric. Structured Spatial Grounding: For geometric evaluation, we fo-cus on four predicted fields: bbox2d , bbox3d , kpts2d , and kpts3d .Performance is quantified by Intersection over Union (IoU) for bounding boxes and by Keypoint Accuracy (KPA) for keypoints. For both 2D and 3D keypoints, KPA is defined as the fraction of predicted keypoints that fall inside the corresponding ground-truth bounding box. Visual Question Answering (VQA): We evaluate multiple-choice category prediction and attribute-based QA accuracy to assess se-mantic understanding. Cross-Modal Consistency Metric: We report Reprojection Con-sistency (RPC), computed as the 2D IoU between the predicted 2D box and the projected footprint of the predicted 3D box. A high RPC score indicates that the model’s 3D spatial reasoning is causally aligned with its 2D visual perception. 
+
+## 4.4 Comparative Analysis 
+
+4.4.1 Performance vs. 2D VLMs. We first benchmark our approach against leading open-source VLMs on 2D grounding tasks in Table 1. General-purpose models like Qwen2.5-VL-3B achieve respectable zero-shot performance (0.791 IoU 2𝐷 ) but remain weaker under our structured 2D evaluation protocol, scoring only 0.657 on KPA-2D. Our PointVL-3D significantly outperforms this baseline, improving KPA-2D to 0.890 and IoU 2𝐷 to 0.894. Compared to the supervised fine-tuned baseline (Qwen2.5-VL-3B SFT), our method maintains comparable or slightly better 2D performance. This indicates that our RL-based alignment does not suffer from the "forgetting" phe-nomenon often observed in multi-objective optimization; instead, the geometric constraints likely reinforce the visual localization features. 
+
+4.4.2 Performance vs. 3D-Capable Models. Table 2 illustrates the fundamental limitations of existing 3D architectures. Pure point-cloud models like PointNet achieve strong KPA-3D under our eval-uation criterion, suggesting that they capture object geometry rea-sonably well, but they still lag behind in 3D box localization. Con-versely, multimodal baselines like Point-Language-3D leverage se-mantic priors to improve IoU 3𝐷 (0.542) but suffer from modality misalignment, as reflected by their lower KPA-3D and RPC scores. Our PointVL-3D framework effectively unifies these strengths. By achieving 0.686 IoU 3𝐷 and 0.930 KPA-3D, it surpasses the special-ized PointNet in its own domain while maintaining high semantic accuracy. The high RPC score (0.852) serves as strong evidence that our model has learned to align 3D predictions with 2D visual evidence, minimizing geometric hallucinations. 
+
+## 4.5 Ablation Studies 
+
+4.5.1 Mechanism of Improvement: Signal-to-Noise Ratio. Table 3 dissects the contribution of each component. SFT alone plateaus at 0.640 KPA-3D, suggesting that maximum likelihood estimation struggles to provide sufficiently direct supervision for keypoint placement. Standard GRPO (broadcast reward) improves this to 0.890 but is fundamentally limited by credit assignment ambiguity. By explicitly routing rewards via GRCA, we boost KPA-3D to 0.930. Although training uses a field-local geometric validity reward for keypoints, the resulting improvements consistently transfer to the evaluation-time KPA metric, indicating better keypoint placement under the containment criterion. The critical comparison is against the "SFT (budget-matched)" baseline, which only reaches 0.670. This large gap (0.260) confirms that the performance leap stems from the high signal-to-noise ratio of our targeted reinforcement signal, rather than merely extended computational budget. Finally, the RPC term acts as a verifier, lifting the consistency metric to 0.852. 
+
+4.5.2 Sensitivity and Over-Regularization. Table 5 analyzes the sen-sitivity to the consistency weight 𝜆 . We observe an optimal balance at 𝜆 = 0.15 , yielding the highest RPC (0.852). Notably, increasing 
+
+𝜆 beyond 0.175 causes a drop in KPA-3D and IoU 2𝐷 (e.g., KPA-3D drops to 0.910 at 𝜆 = 0.20 ). We attribute this to over-regularization: when the consistency constraint becomes dominant, the policy may prioritize generating 3D boxes that project perfectly into the 2D mask but deviate from the true 3D geometry, effectively "hacking" the projection reward at the expense of metric accuracy. 
+
+4.5.3 Zero Alignment Tax on Language. A common concern in RLHF is the "alignment tax," where optimizing for a specific reward degrades general capabilities. Table 4 shows that our method main-tains statistical parity with the SFT baseline across BLEU, ROUGE, and BERTScore metrics. This stability is consistent with our GRCA design, which localizes field-specific reward signals to their corre-sponding geometric spans while treating semantic tokens mainly through the background preference. This reduces unnecessary inter-ference with language generation and preserves linguistic fluency. Jingkun Chen, Ruoshi Xu, Mingqi Gao, Shengda Luo, and Jungong Han 
+
+Model BLEU ↑ ROUGE ↑ BERTScore ↑ QA Acc. ↑
+
+– B-1 B-2 B-3 B-4 R-1 R-2 R-L – –InternVL3_5-4B-Instruct[32] – – – – – – – 0.8230 0.850 Qwen2.5-VL-3B[4] – – – – – – – 0.8220 0.742 Qwen2.5-VL-3B[4] (SFT) 0.5418 0.3902 0.2706 0.1799 0.5249 0.2143 0.4051 0.9147 0.951 MiMo-VL-7B-RL[17] – – – – – – – 0.8209 0.876 MiMo-VL-7B-RL[17] (SFT) 0.5425 0.3933 0.2754 0.1837 0.5312 0.2148 0.4113 0.9162 0.953 SFT 0.5457 0.3917 0.2725 0.1819 0.5225 0.2171 0.4093 0.9154 0.953 GRCA 0.5436 0.3890 0.2685 0.1767 0.5300 0.2140 0.4075 0.9152 0.951 GRCA + RPC term 0.5483 0.3948 0.2737 0.1823 0.5335 0.2183 0.4122 0.9154 0.951 
+
+Table 4: Text generation metrics and question-answering accuracy on the test split, used to assess whether geometric post-training preserves language performance. Entries marked by “–” indicate that the corresponding model does not yield valid outputs for this evaluation unless it is fine-tuned on the task. We therefore do not report these metrics. Object -Level Q&A   
+
+> Instructions : Locate the object designed
+> to contain small portions of food or other
+> items… , and answer the questions
+> Desc : shallow concave interior, circular
+> rim, smooth curved sides, rounded base,
+> low profile, seamless one -piece
+> construction, stable and balanced form
+> Q: Super Category?
+> A: Container
+> Q: Power Source?
+> A: Unpowered
+> Q: Primary Material?
+> A: Wood
+
+3D Bbox & Key Points              
+
+> Instructions : Locate the object designed
+> for personal travel on roads, output the
+> bbox and keypoints coordinates in JSON
+> JSON Data
+> "bbox3d ": [
+> (-0.143, -0.212, -0.36 ), ( 0.144, 0.263, 0.46 )
+> ]，
+> »kpts3 d": [
+> (-0.021, -0.173, 0.222 ), ( -0.001, -0.027, -0.359 ),
+> (0.140, 0.223, -0.096 ), ( 0.009, 0.157, 0.303 ),
+> (0.096 ,-0.094 ,-0.059 ), ( -0.143 ,0.231 ,-0.136 )...
+> ]
+> 3D BBox 3D Key Points
+
+2D Bbox & Key Points   
+
+> Instructions : Locate the object designed
+> for personal travel on roads, output the
+> bbox and keypoints coordinates in JSON
+> JSON Data
+> "bbox2d ": [
+> (171, 211 ), ( 847, 873 )
+> ]，
+> »kpts2 d": [
+> (644, 607 ), ( 213, 623 ), ( 360, 307 ),
+> (675, 350 ), ( 420, 581 ), ( 512, 316 ),
+> (729, 509 ), ( 577, 442 ), ( 576, 705 )
+> ]
+> 2D BBox 2D Key Points
+
+RPC = IoU (𝐵 !" , 𝐵 #$%& )
+
+𝑢 
+
+𝑣 
+
+1
+
+= 𝐊 [𝐑 |𝐭 ]
+
+Reproj Consistency     
+
+> 𝑋
+> 𝑌
+> 𝑍
+> 1
+> Project_to_2d (pts_3d ,K,R,T):
+> pts_cam ← ToCamera(pts_3d, R, T)
+> pts_img ← Intrinsics(pts_cam, K)
+> uv ← NormalizeByDepth(pts_img)
+> return uv
+
+Figure 3: Visualization of structured outputs in our frame-work. The figure shows examples of object-level question answering, 3D bounding box and keypoint prediction, 2D bounding box and keypoint prediction, and the reprojection consistency computation. 
+
+## 4.6 Structured Output Visualization 
+
+Figure 3 shows examples of the structured outputs in our framework. The upper-left panel presents object-level question answering from a functional instruction together with semantic attributes and a geometric description. The upper-right and lower-left panels show 
+
+Setting IoU 2𝐷 ↑ IoU 3𝐷 ↑ KPA-2D ↑ KPA-3D ↑ RPC ↑
+
+GRCA (w/o RPC term) 0.894 0.683 0.890 0.930 0.846 GRCA + RPC term, 𝜆 =0.10 0.894 0.684 0.890 0.930 0.839 GRCA + RPC term, 𝜆 =0.125 0.893 0.683 0.890 0.930 0.847 GRCA + RPC term, 𝜆 =0.15 0.894 0.686 0.890 0.930 0.852 GRCA + RPC term, 𝜆 =0.175 0.893 0.677 0.890 0.930 0.845 GRCA + RPC term, 𝜆 =0.20 0.885 0.684 0.890 0.910 0.844 
+
+Table 5: Sensitivity analysis of the RPC mixing weight 𝜆 on grounding accuracy and reprojection consistency. 
+
+examples of the predicted 3D and 2D grounding outputs, including bounding boxes, keypoints, and their JSON representations. The lower-right panel illustrates the reprojection consistency computa-tion by projecting predicted 3D geometry into the image plane and comparing it with the predicted 2D box using IoU. 
+
+## 5 Conclusion 
+
+In this work, we presented PointVL-3D, a unified framework de-signed to bridge the gap between semantic understanding and geometric executability. Identifying the impedance mismatch be-tween sparse geometric tokens and dense reinforcement signals, we proposed Geometric Reward Credit Assignment (GRCA). This mech-anism routes precise metric feedback directly to the corresponding token spans, effectively transforming generic policy optimization into targeted structural alignment. Furthermore, we integrated a Reprojection-Consistency (RPC) verifier, enabling the model to internalize geometric constraints and reduce geometric hallucina-tions. Extensive experiments on our Generative-Refined benchmark demonstrate strong performance gains, boosting 3D KPA from 0.64 to 0.93 while maintaining 2D localization capabilities. These re-sults suggest that with precise credit assignment, Vision-Language Models can evolve from passive describers into verifiable spatial reasoners. Currently, the reliance on explicit camera parameters and syn-thetic data distributions limits immediate in-the-wild deployment. Future work will focus on learning joint camera estimation to relax calibration requirements, bridging the sim-to-real gap, and extend-ing GRCA to dynamic robotic manipulation tasks. Reinforcing 3D Understanding in Point-VLMs via Geometric Reward Credit Assignment 
+
+## References 
+
+[1] Panos Achlioptas, Ahmed Abdelreheem, Fei Xia, Mohamed Elhoseiny, and Leonidas Guibas. 2020. Referit3d: Neural listeners for fine-grained 3d object identification in real-world scenes. In European conference on computer vision .Springer, 422–440. [2] Daichi Azuma, Taiki Miyanishi, Shuhei Kurita, and Motoaki Kawanabe. 2022. Scanqa: 3d question answering for spatial scene understanding. In proceedings of the IEEE/CVF conference on computer vision and pattern recognition . 19129–19139. [3] Shuai Bai, Yuxuan Cai, Ruizhe Chen, Keqin Chen, Xionghui Chen, Zesen Cheng, Lianghao Deng, Wei Ding, Chang Gao, Chunjiang Ge, et al . 2025. Qwen3-vl technical report. arXiv preprint arXiv:2511.21631 (2025). [4] Shuai Bai, Keqin Chen, Xuejing Liu, Jialin Wang, Wenbin Ge, Sibo Song, Kai Dang, Peng Wang, Shijie Wang, Jun Tang, et al . 2025. Qwen2. 5-vl technical report. arXiv preprint arXiv:2502.13923 (2025). [5] Angel X Chang, Thomas Funkhouser, Leonidas Guibas, Pat Hanrahan, Qix-ing Huang, Zimo Li, Silvio Savarese, Manolis Savva, Shuran Song, Hao Su, et al . 2015. Shapenet: An information-rich 3d model repository. arXiv preprint arXiv:1512.03012 (2015). [6] Dave Zhenyu Chen, Angel X Chang, and Matthias Nießner. 2020. Scanrefer: 3d object localization in rgb-d scans using natural language. In European conference on computer vision . Springer, 202–221. [7] Sijin Chen, Xin Chen, Chi Zhang, Mingsheng Li, Gang Yu, Hao Fei, Hongyuan Zhu, Jiayuan Fan, and Tao Chen. 2024. Ll3da: Visual interactive instruction tuning for omni-3d understanding reasoning and planning. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition . 26428–26438. [8] Yilun Chen, Shuai Yang, Haifeng Huang, Tai Wang, Runsen Xu, Ruiyuan Lyu, Dahua Lin, and Jiangmiao Pang. 2024. Grounded 3d-llm with referent tokens. 
+
+arXiv preprint arXiv:2405.10370 (2024). [9] Rao Fu, Jingyu Liu, Xilun Chen, Yixin Nie, and Wenhan Xiong. 2024. Scene-llm: Extending language model for 3d visual understanding and reasoning. arXiv preprint arXiv:2403.11401 (2024). [10] Yiran Guo, Lijie Xu, Jie Liu, Dan Ye, and Shuang Qiu. 2025. Segment policy optimization: Effective segment-level credit assignment in rl for large language models. arXiv preprint arXiv:2505.23564 (2025). [11] Ziyu Guo, Renrui Zhang, Xiangyang Zhu, Yiwen Tang, Xianzheng Ma, Jiaming Han, Kexin Chen, Peng Gao, Xianzhi Li, Hongsheng Li, et al . 2023. Point-bind & point-llm: Aligning point cloud with multi-modality for 3d understanding, generation, and instruction following. arXiv preprint arXiv:2309.00615 (2023). [12] Yining Hong, Haoyu Zhen, Peihao Chen, Shuhong Zheng, Yilun Du, Zhenfang Chen, and Chuang Gan. 2023. 3d-llm: Injecting the 3d world into large language models. Advances in Neural Information Processing Systems 36 (2023), 20482– 20494. [13] Haifeng Huang, Yilun Chen, Zehan Wang, Rongjie Huang, Runsen Xu, Tai Wang, Luping Liu, Xize Cheng, Yang Zhao, Jiangmiao Pang, et al . 2024. Chat-scene: Bridging 3d scene and large language models with object identifiers. Advances in Neural Information Processing Systems 37 (2024), 113991–114017. [14] Krishna Murthy Jatavallabhula, Alihusein Kuwajerwala, Qiao Gu, Mohd Omama, Tao Chen, Alaa Maalouf, Shuang Li, Ganesh Iyer, Soroush Saryazdi, Nikhil Keetha, et al . 2023. Conceptfusion: Open-set multimodal 3d mapping. arXiv preprint arXiv:2302.07241 (2023). [15] Baoxiong Jia, Yixin Chen, Huangyue Yu, Yan Wang, Xuesong Niu, Tengyu Liu, Qing Li, and Siyuan Huang. 2024. Sceneverse: Scaling 3d vision-language learning for grounded scene understanding. In European Conference on Computer Vision .Springer, 289–310. [16] Sangwu Lee, Titus Ebbecke, Erwann Millon, Will Beddow, Le Zhuo, Iker García-Ferrero, Liam Esparraguera, Mihai Petrescu, Gian Sa, Gabriel Menezes, and Victor Perez. 2025. FLUX.1 Krea [dev]. https://github.com/krea-ai/flux-krea [17] Jiaze Li, Jingyang Chen, Yuxun Qu, Jianzhong Ju, Zhenbo Luo, Jian Luan, Shijie Xu, Zhenru Lin, Junyou Zhu, Boshen Xu, et al . 2025. Xiaomi MiMo-VL-Miloco Technical Report. arXiv preprint arXiv:2512.17436 (2025). [18] Rong Li, Shijie Li, Lingdong Kong, Xulei Yang, and Junwei Liang. 2025. See-ground: See and ground for zero-shot open-vocabulary 3d visual grounding. In 
+
+Proceedings of the Computer Vision and Pattern Recognition Conference . 3707– 3717. [19] Xiaojian Ma, Silong Yong, Zilong Zheng, Qing Li, Yitao Liang, Song-Chun Zhu, and Siyuan Huang. 2023. SQA3D: Situated Question Answering in 3D Scenes. In 
+
+The Eleventh International Conference on Learning Representations .[20] Long Ouyang, Jeffrey Wu, Xu Jiang, Diogo Almeida, Carroll Wainwright, Pamela Mishkin, Chong Zhang, Sandhini Agarwal, Katarina Slama, Alex Ray, et al . 2022. Training language models to follow instructions with human feedback. Advances in neural information processing systems 35 (2022), 27730–27744. [21] Songyou Peng, Kyle Genova, Chiyu Jiang, Andrea Tagliasacchi, Marc Pollefeys, Thomas Funkhouser, et al . 2023. Openscene: 3d scene understanding with open vocabularies. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition . 815–824. [22] Charles R Qi, Hao Su, Kaichun Mo, and Leonidas J Guibas. 2017. Pointnet: Deep learning on point sets for 3d classification and segmentation. In Proceedings of the IEEE conference on computer vision and pattern recognition . 652–660. [23] Charles Ruizhongtai Qi, Li Yi, Hao Su, and Leonidas J Guibas. 2017. Pointnet++: Deep hierarchical feature learning on point sets in a metric space. Advances in neural information processing systems 30 (2017). [24] Zhangyang Qi, Ye Fang, Zeyi Sun, Xiaoyang Wu, Tong Wu, Jiaqi Wang, Dahua Lin, and Hengshuang Zhao. 2024. Gpt4point: A unified framework for point-language understanding and generation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition . 26417–26427. [25] Rafael Rafailov, Archit Sharma, Eric Mitchell, Christopher D Manning, Stefano Ermon, and Chelsea Finn. 2023. Direct preference optimization: Your language model is secretly a reward model. Advances in neural information processing systems 36 (2023), 53728–53741. [26] Jeff Rasley, Samyam Rajbhandari, Olatunji Ruwase, and Yuxiong He. 2020. Deep-speed: System optimizations enable training deep learning models with over 100 billion parameters. In Proceedings of the 26th ACM SIGKDD international conference on knowledge discovery & data mining . 3505–3506. [27] Zhihong Shao, Peiyi Wang, Qihao Zhu, Runxin Xu, Junxiao Song, Xiao Bi, Haowei Zhang, Mingchuan Zhang, YK Li, Yang Wu, et al . 2024. Deepseekmath: Pushing the limits of mathematical reasoning in open language models. arXiv preprint arXiv:2402.03300 (2024). [28] Ayca Takmaz, Elisabetta Fedele, Robert Sumner, Marc Pollefeys, Federico Tombari, and Francis Engelmann. 2023. OpenMask3D: Open-Vocabulary 3D Instance Segmentation. Advances in Neural Information Processing Systems 36 (2023), 68367–68390. [29] Hieu Tran, Zonghai Yao, and Hong Yu. 2025. Exploiting Tree Structure for Credit Assignment in RL Training of LLMs. arXiv preprint arXiv:2509.18314 (2025). [30] Peng Wang, Shuai Bai, Sinan Tan, Shijie Wang, Zhihao Fan, Jinze Bai, Keqin Chen, Xuejing Liu, Jialin Wang, Wenbin Ge, et al . 2024. Qwen2-vl: Enhancing vision-language model’s perception of the world at any resolution. arXiv preprint arXiv:2409.12191 (2024). [31] Tai Wang, Xiaohan Mao, Chenming Zhu, Runsen Xu, Ruiyuan Lyu, Peisen Li, Xiao Chen, Wenwei Zhang, Kai Chen, Tianfan Xue, et al . 2024. Embodiedscan: A holistic multi-modal 3d perception suite towards embodied ai. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition . 19757– 19767. [32] Weiyun Wang, Zhangwei Gao, Lixin Gu, Hengjun Pu, Long Cui, Xingguang Wei, Zhaoyang Liu, Linglin Jing, Shenglong Ye, Jie Shao, et al . 2025. Internvl3. 5: Advancing open-source multimodal models in versatility, reasoning, and efficiency. arXiv preprint arXiv:2508.18265 (2025). [33] Zehan Wang, Haifeng Huang, Yang Zhao, Ziang Zhang, and Zhou Zhao. 2023. Chat-3d: Data-efficiently tuning large language model for universal dialogue of 3d scenes. arXiv preprint arXiv:2308.08769 (2023). [34] Chenfei Wu, Jiahao Li, Jingren Zhou, Junyang Lin, Kaiyuan Gao, Kun Yan, Sheng ming Yin, Shuai Bai, Xiao Xu, Yilei Chen, Yuxiang Chen, Zecheng Tang, Zekai Zhang, Zhengyi Wang, An Yang, Bowen Yu, Chen Cheng, Dayiheng Liu, Deqing Li, Hang Zhang, Hao Meng, Hu Wei, Jingyuan Ni, Kai Chen, Kuan Cao, Liang Peng, Lin Qu, Minggang Wu, Peng Wang, Shuting Yu, Tingkun Wen, Wensen Feng, Xiaoxiao Xu, Yi Wang, Yichang Zhang, Yongqiang Zhu, Yujia Wu, Yuxuan Cai, and Zenan Liu. 2025. Qwen-Image Technical Report. arXiv:2508.02324 [cs.CV] https://arxiv.org/abs/2508.02324 [35] Xiaoyang Wu, Li Jiang, Peng-Shuai Wang, Zhijian Liu, Xihui Liu, Yu Qiao, Wanli Ouyang, Tong He, and Hengshuang Zhao. 2024. Point transformer v3: Simpler faster stronger. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition . 4840–4851. [36] Zhiyu Wu, Xiaokang Chen, Zizheng Pan, Xingchao Liu, Wen Liu, Damai Dai, Huazuo Gao, Yiyang Ma, Chengyue Wu, Bingxuan Wang, et al . 2024. Deepseek-vl2: Mixture-of-experts vision-language models for advanced multimodal under-standing. arXiv preprint arXiv:2412.10302 (2024). [37] Runsen Xu, Xiaolong Wang, Tai Wang, Yilun Chen, Jiangmiao Pang, and Dahua Lin. 2024. Pointllm: Empowering large language models to understand point clouds. In European Conference on Computer Vision . Springer, 131–147. [38] Le Xue, Mingfei Gao, Chen Xing, Roberto Martín-Martín, Jiajun Wu, Caiming Xiong, Ran Xu, Juan Carlos Niebles, and Silvio Savarese. 2023. Ulip: Learning a unified representation of language, images, and point clouds for 3d understand-ing. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition . 1179–1189. [39] Jianing Yang, Xuweiyi Chen, Nikhil Madaan, Madhavan Iyengar, Shengyi Qian, David F Fouhey, and Joyce Chai. 2025. 3d-grand: A million-scale dataset for 3d-llms with better grounding and less hallucination. In Proceedings of the Computer Vision and Pattern Recognition Conference . 29501–29512. [40] Jianing Yang, Xuweiyi Chen, Shengyi Qian, Nikhil Madaan, Madhavan Iyengar, David F Fouhey, and Joyce Chai. 2024. Llm-grounder: Open-vocabulary 3d visual grounding with large language model as an agent. In 2024 IEEE International Conference on Robotics and Automation (ICRA) . IEEE, 7694–7701. [41] Yueqin Yin, Shentao Yang, Yujia Xie, Ziyi Yang, Yuting Sun, Hany Awadalla, Weizhu Chen, and Mingyuan Zhou. 2025. Segmenting text and learning their rewards for improved rlhf in language model. arXiv preprint arXiv:2501.02790 
+
+(2025). Jingkun Chen, Ruoshi Xu, Mingqi Gao, Shengda Luo, and Jungong Han 
+
+[42] Hanxun Yu, Wentong Li, Song Wang, Junbo Chen, and Jianke Zhu. 2025. Inst3d-lmm: Instance-aware 3d scene understanding with multi-modal instruction tun-ing. In Proceedings of the Computer Vision and Pattern Recognition Conference .14147–14157. [43] Xumin Yu, Lulu Tang, Yongming Rao, Tiejun Huang, Jie Zhou, and Jiwen Lu. 2022. Point-bert: Pre-training 3d point cloud transformers with masked point modeling. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition . 19313–19322. [44] Lvmin Zhang, Anyi Rao, and Maneesh Agrawala. 2023. Adding conditional control to text-to-image diffusion models. In Proceedings of the IEEE/CVF inter-national conference on computer vision . 3836–3847. [45] Renrui Zhang, Ziyu Guo, Wei Zhang, Kunchang Li, Xupeng Miao, Bin Cui, Yu Qiao, Peng Gao, and Hongsheng Li. 2022. Pointclip: Point cloud understanding by clip. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition . 8552–8562. [46] Yiming Zhang, ZeMing Gong, and Angel X Chang. 2023. Multi3drefer: Grounding text description to multiple 3d objects. In Proceedings of the IEEE/CVF International Conference on Computer Vision . 15225–15236. [47] Wenxuan Zhou, Shujian Zhang, Lingxiao Zhao, and Tao Meng. 2025. T-reg: Preference optimization with token-level reward regularization. In Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) . 27876–27889. [48] Chenming Zhu, Tai Wang, Wenwei Zhang, Kai Chen, and Xihui Liu. 2024. Scan-reason: Empowering 3d visual grounding with reasoning capabilities. In European Conference on Computer Vision . Springer, 151–168. [49] Jinguo Zhu, Weiyun Wang, Zhe Chen, Zhaoyang Liu, Shenglong Ye, Lixin Gu, Hao Tian, Yuchen Duan, Weijie Su, Jie Shao, et al . 2025. Internvl3: Exploring advanced training and test-time recipes for open-source multimodal models. 
+
+arXiv preprint arXiv:2504.10479 (2025).
