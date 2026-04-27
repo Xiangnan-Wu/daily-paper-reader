@@ -1,0 +1,976 @@
+Title: LookasideVLN: Direction-Aware Aerial Vision-and-Language Navigation
+
+URL Source: https://arxiv.org/pdf/2604.17190v1
+
+Published Time: Tue, 21 Apr 2026 01:02:35 GMT
+
+Number of Pages: 17
+
+Markdown Content:
+# LookasideVLN: Direction-Aware Aerial Vision-and-Language Navigation 
+
+Yuwei Ning 1,2† Ganlong Zhao 3,4† Yipeng Qin 5 Si Liu 6 Yang Liu 1 Liang Lin 1,2,7 Guanbin Li 1,2,7 ∗
+
+1Sun Yat-sen University 2Peng Cheng Laboratory 3The Chinese University of Hong Kong 
+
+4Centre for Perceptual and Interactive Intelligence 5Cardiff University 
+
+6Beihang University 7Guangdong Key Laboratory of Big Data Analysis and Processing 
+
+ningyw@mail2.sysu.edu.cn, glzhao@cpii.hk, qinyipeng1991@gmail.com, liusi@buaa.edu.cn, liuy856@mail.sysu.edu.cn, linliang@ieee.org, liguanbin@mail.sysu.edu.cn 
+
+Abstract 
+
+Aerial Vision-and-Language Navigation (Aerial VLN) en-ables unmanned aerial vehicles (UAVs) to follow natural language instructions and navigate complex urban envi-ronments. While recent advances have achieved progress through large-scale memory graphs and lookahead path planning, they remain limited by shallow instruction under-standing and high computational cost. In particular, exist-ing methods rely primarily on landmark descriptions, over-looking directional cues—a key source of spatial context in human navigation. In this work, we propose LookasideVLN, a new paradigm that exploits directional cues in natural language to achieve both more accurate spatial reasoning and greater computational efficiency. LookasideVLN com-prises three core components: (1) an Egocentric Looka-side Graph (ELG) that dynamically encodes instruction-relevant landmarks and their directional relationships, (2) a Spatial Landmark Knowledge Base (SLKB) that pro-vides lightweight memory retrieval from prior navigation experiences, and (3) a Lookaside MLLM Navigation Agent that aligns multimodal information from user instructions, visual observations, and landmark-direction information from ELG for path planning. Extensive experiments show that LookasideVLN significantly outperforms the state-of-the-art CityNavAgent, even with a single-level lookahead, demonstrating that leveraging directional cues is a power-ful yet efficient strategy for Aerial VLN. 
+
+1. Introduction 
+
+Aerial Vision-and-Language Navigation (Aerial VLN) [12, 15, 23, 29, 36] has emerged as a novel and challenging task that enables unmanned aerial vehicles (UAVs) to navigate complex aerial environments ( e.g ., urban scenes) based on 
+
+> †
+
+Equal Contribution. 
+
+> *
+
+Corresponding author is Guanbin Li. … … Keep right and follow the road , passing the             
+
+> red building until you reach the first bridge … …
+> Turn left
+> Turn right
+> Forward
+> 10m
+> Forward 15m
+> Forward 25m
+> Forward
+> 5m
+> Forward 15m
+> UAV Position
+> Forward 5m
+> road red building bridge
+> Extracted Long Landmark Sequence
+> Fails under Landmark
+> Reference Ambiguity
+> Succeeds with Instruction
+> Comprehension
+> (a). Lookahead Path Planning (b). Lookaside Path Planning
+> Long -Horizon Navigation Instruction
+> Road Red -building Bridge
+> Keep right and follow the road , passing the
+> red building until you reach the first bridge
+> Extracted Instruction Snippet
+
+Figure 1. Comparison of two path planning paradigms. (a) The existing lookahead paradigm performs path planning by aligning 
+
+long sequences of landmark descriptions with UAV observations, which is inefficient and fails to fully disambiguate the landmark descriptions. (b) Our lookaside paradigm leverages directional cues to enable more efficient and effective path planning. 
+
+natural language instructions, which offers great potential for real-world applications such as urban surveillance, traf-fic monitoring, disaster response, and aerial delivery. As a recent addition to the VLN family, Aerial VLN also aims to identify the most appropriate navigation path by aligning UAV’s visual observations with natural language instructions. However, large-scale urban environments im-pose unique challenges absent in small-scale indoor set-tings. Specifically, early ground-based VLN methods lever-age the uniqueness of landmarks (a.k.a. objects) to align observations with their textual descriptions [2, 8, 9, 25, 38]. For instance, a UAV can easily follow “go to the kitchen”, as most houses contain only one kitchen. In contrast, this prop-erty breaks down in urban environments, where landmark descriptions are often ambiguous and correspond to multi-ple instances, e.g., “tree”, “wall” or “traffic light”. Such am-biguity makes it difficult to infer the correct path by aligning 1
+
+> arXiv:2604.17190v1 [cs.CV] 19 Apr 2026
+
+visual inputs with individual landmark descriptions. Conse-quently, early Aerial VLN methods [29, 40] adapted from ground-based VLN exhibit limited performance. Recently, [33, 39] attempt to address this by assuming the unique-ness of landmark sequences and constructing a global scene graph for sequence-level alignment. While mitigating the issue to some extent, this approach is inefficient due to the heavy computational and memory costs of global graph maintenance in large-scale environments. In this work, we introduce LookasideVLN, a new looka-side paradigm that addresses the above limitations by lever-aging directional cues naturally embedded in user instruc-tions for path planning, in contrast to prior lookahead -based approaches that depend on long landmark-sequence align-ment. As illustrated in Fig. 1, our key insight is that such directional cues encode rich spatial information, enabling more effective and efficient disambiguation of landmark de-scriptions in natural language instructions . To realize this idea, we design a UAV navigation system that exploits directional cues through a modular architecture compris-ing three main components: (1) An Egocentric Looka-side Graph (ELG) . For the “egocentric” design, our ra-tionale stems from the fact that directional cues in natural language instructions (e.g., “turn left,” “fly straight ahead,” “go past the building on your right”) are inherently ego-centric, grounded in the navigator’s viewpoint rather than a global, map-based frame. Accordingly, we exploit these cues by dynamically constructing an egocentric lookaside graph (ELG) for each instruction. The ELG adopts a hierar-chical structure mirroring the sequential landmark descrip-tions, where each level corresponds to an extracted land-mark description and nodes within the same level represent candidate landmarks—visually similar locations retrieved from the UAV’s memory. Owing to this egocentric formu-lation, the ELG is significantly more efficient than a global scene graph, as it models only instruction-relevant land-marks. For the “lookaside” design, we further model direc-tional relationships along inter-hierarchy edges relative to the UAV’s egocentric orientation, enabling effective spatial reasoning and path planning within a compact graph struc-ture. (2) A Spatial Landmark Knowledge Base (SLKB) ,which serves as the UAV’s memory for constructing our ELG. Specifically, it stores descriptions and locations of previously visited landmarks extracted from past navigation experiences. Our SLKB is both lightweight, as it omits ex-plicit inter-landmark relationships, and efficient, as it en-ables fast retrieval via a hierarchical (description, location) structure. Moreover, inspired by Liebig’s Law of the Min-imum , we note that the linguistic modality of user instruc-tions inherently constrains the exploitable information for language-vision alignment, rendering detailed visual fea-tures used in previous methods [33, 39] unnecessary. (3) A Lookaside MLLM Navigation Agent , which employs a multimodal large language model (MLLM) to align the UAV’s current observation, user instruction, and the direc-tional landmark information provided by the ELG for navi-gation. This enables comprehensive multimodal alignment, leveraging both semantic and lookaside directional cues in the user instruction to guide navigation more effectively. Extensive experiments demonstrate the effectiveness of our lookaside paradigm. Specifically, our LookasideVLN, with only a single level of lookahead planning, surpasses the state-of-the-art CityNavAgent [39], despite the latter per-forming full landmark-sequence lookahead over the entire urban scene. In summary, our contributions include: • We introduce a novel paradigm, namely LookasideVLN, which leverages directional cues in natural language in-structions to enhance spatial reasoning and mitigate land-mark description ambiguity effectively. • To implement LookasideVLN, we develop a UAV navi-gation system consisting of three novel components: an Egocentric Lookaside Graph (ELG), a Spatial Landmark Knowledge Base (SLKB), and a Lookaside MLLM Nav-igation Agent. • Extensive experimental results show that our Lookaside-VLN achieves state-of-the-art performance, outperform-ing CityNavAgent [39] even with a single-level looka-head planning, highlighting the surprising effectiveness of lookaside directional cues. 
+
+2. Related Work 
+
+Vision-and-Language Navigation. Vision-and-Language Navigation (VLN) is a core task in embodied AI, first intro-duced by the Room-to-Room (R2R) benchmark [2], where agents navigate discrete indoor environments. R2R-CE [21] extends VLN to continuous settings, bridging the gap between simulation and real-world navigation. Early ap-proaches [8, 9, 13, 16, 18, 19, 25, 28] rely on end-to-end trained models that align language instructions with visual observations to predict actions. However, these approaches often suffer from error accumulation during sequential ac-tion prediction, causing the agent’s trajectory to gradually drift away from the intended route. Liu et al. [29] introduce Aerial VLN, a more challeng-ing benchmark that requires agents to navigate in continu-ous aerial environments. They adapt the cross-modal atten-tion mechanism from ground-based VLN and employ the look-ahead training paradigm [32], in place of the previ-ously used student-forcing strategy [2]. Subsequent efforts have been made toward Aerial VLN. For instance, Zhao et al. [40] introduce a grid-based view selection mecha-nism and a top-down map representation to facilitate effec-tive aerial navigation. Nonetheless, these methods inherit the limitation of error accumulation from ground-based VLN, limiting their effectiveness in long-horizon naviga-2tion scenarios. Other works explore zero-shot LLM-based approaches for Aerial VLN by decomposing long-horizon navigation tasks into sequential subgoals, and developing specialized scene modeling techniques. STMR [14] intro-duces an LLM-readable semantic top-down map by pro-jecting semantically segmented point clouds into a textual matrix, serving as the agent’s scene perception. However, this top-down representation compresses vertical (height) information, which is crucial for effective aerial naviga-tion. CityNavAgent [39], inspired by LM-Nav [33], adopts lookahead path planning by incorporating a graph search algorithm over a city-scale scene graph, allowing for more holistic reasoning. Nevertheless, it primarily relies on the semantic similarity between landmark descriptions and vi-sual observations, while ignoring directional cues and lack-ing a thorough understanding of the instructions. In this work, we address this with a novel lookaside paradigm. 
+
+LLM for Embodied Planning. Recently, Large Language Models (LLMs) [1, 17, 31, 34, 35, 41] have demonstrated remarkable capabilities in language understanding and rea-soning, attracting widespread interest in their application to robotics. In particular, LLMs have been employed for embodied task planning and motion planning. Some stud-ies leverage the zero-shot or few-shot prediction capabili-ties of LLMs to generate static plans for embodied agents [6, 11, 20], while others enable agents to adapt their plans or actions in response to environmental feedback [10, 42]. More recent work has explored memory-augmented ap-proaches for embodied planning. EmbodiedRAG [5] is the first to integrate Retrieval-Augmented Generation (RAG) [24] into embodied planning, leveraging subgraphs re-trieved from scene graphs to reduce run-time computa-tional overhead. RAG-Driver [37] enhances explainable autonomous driving by retrieving driving experiences sim-ilar to the current scenario from a memory database. In the context of indoor VLN, KERM [25] and Bao et al. [4] adopt RAG by retrieving textual descriptions relevant to the agent’s observations from an external image caption dataset [22]. However, relying on external datasets intro-duces domain gaps, which can hinder robust navigation per-formance. In this work, we construct a Spatial Landmark Knowledge Base comprising landmark descriptions and po-sitions, serving as a spatial memory module for the agent. 
+
+3. Method 
+
+In this section, we introduce LookasideVLN , a systematic navigation framework which leverages directional cues nat-urally embedded in natural language instructions for path planning, implementing a novel lookaside paradigm. As illustrated in Fig. 2, LookasideVLN first queries the Spa-tial Landmark Knowledge Base (SLKB) using landmarks extracted from navigation instructions to retrieve locations for each candidate landmark (Sec. 3.1). It then constructs the Egocentric Lookaside Graph (ELG) to model both land-marks and their directional relationships (Sec. 3.2.1). Next, directional paths on the ELG are converted into instruction-like descriptions, enabling the agent to evaluate their align-ment with user instructions (Sec. 3.2.2). Finally, to support effective path planning, we introduce a Lookaside MLLM Navigation Agent, which makes path decisions in a robust and explainable manner by jointly reasoning over the scene understanding and navigation instructions (Sec. 3.3). 
+
+3.1. Spatial Landmark Knowledge Base 
+
+Our Spatial Landmark Knowledge Base (SLKB) is an ef-ficient, lightweight, and scalable memory module built from both scene observations and historical navigation records, enables the agent to recall previously observed landmarks and progressively accumulate scene knowledge over time. 
+
+3.1.1. Lightweight and Scalable Design 
+
+To reduce redundancy and achieve efficient retrieval, we de-sign our SLKB K hierarchically as: 
+
+K = lkb i : {pkb i, 0, p kb i, 1, . . . , p kb i,j } , (1) where lkb i is the i-th landmark description, pkb i,j denotes the 
+
+j-th candidate location for lkb i . Since our SLKB is a dynam-ically updated memory, we show below how a new entry is inserted or merged (Fig. 3). Historical navigation records are incorporated in the same way. 
+
+Extraction of Newly-observed lkb and pkb . Given an RGB observation Irgb from the scene, we use a MLLM-driven 
+
+Landmark Recognizer LR( ·) to generate descriptions lkb i for each landmark in Irgb . Next, we use a Landmark Detec-tor LD( ·), empowered by GroundingDINO [30], to predict bounding boxes B = {b1, b 2, . . . } for lkb i , i.e ., 
+
+B = LD( lkb i ). (2) We then filter redundant, overlapping bounding boxes us-ing Non-Maximum Suppression (NMS) to obtain the final bounding box b and compute its 3D location from the cor-responding depth observation Idepth of Irgb . Given the cen-ter pixel coordinate (u, v ) of bounding box b and the mean depth value ¯d within the box (computed after removing out-liers beyond 2σ from the depth distribution), the landmark location pkb i ∈ R3 in world coordinates is calculated as: 
+
+pkb i = ¯di
+
+∥K−1ppixel i ∥2
+
+· RK −1ppixel i + T, ppixel i =[ u, v, 1] ⊤
+
+(3) where R ∈ SO (3) and T ∈ R3 are the camera’s rotation matrix and translation vector, while K ∈ R3×3 is the cam-era intrinsic matrix. Note that we omit landmark descrip-tions from user instructions, as they are already covered by 3Navigation Instruction : … …Keep right and follow the road , passing the red building until you reach the first bridge …. …                                
+
+> Plan 1: Turn right , move forward 5m to reach the road , then move
+> forward 10m to reach the red -building , then move forward 5m to
+> reach the bridge .
+> Plan 2: Turn left , move forward 5m to reach the road , then move
+> forward 5m to reach the red -building , then move forward 25m to
+> reach the bridge .
+> Plan 3: ……
+> Panorama Observation
+> ELG Construction Agent Inputs Agent’s Reasoning
+> Describe the Observation
+> Action
+> Spatial Landmark
+> Knowledge Base
+> Instruction -Like Path Descriptions
+> Summarize Navigation
+> Progress
+> Action Reasoning
+> Road ,Red -Building ,Bridge
+> Red -building_1 Red -building_2
+> Road_1
+> Road_2
+> Bridge_1
+> Bridge_2
+> UAV Position
+> Extract Landmark
+> Descriptions
+> Convert to Textual
+> Descriptions
+
+(a). Landmark Retrieval with SLKB (b). Scene Perception with ELG and Panorama Observation (c). Path Selection with MLLM Agent  
+
+> Query
+> Retrieve
+> Candidates
+> Turn left
+> Turn right
+> Forward
+> 10m
+> Forward 5m
+> Forward 15m
+> Forward 25m
+> Forward
+> 5m
+> Forward 15m
+> Egocentric Lookaside Graph
+> Turn left
+> Turn right
+> Forward
+> 10m
+> Forward 5m
+> Forward 15m
+> Forward 25m
+> Forward
+> 5m
+> Forward 15m
+> Direction -aware Path Selection
+> Lookaside
+> MLLM agent
+
+Figure 2. Overall framework of LookasideVLN. The agent queries the Spatial Landmark Knowledge Base to construct an Egocentric Lookaside Graph, which is then converted into instruction-like, direction-aware path descriptions. A Lookaside MLLM agent selects the final path based on the alignment among the directional path, instruction snippet, and current observation. Landmark        
+
+> Localization
+> 3D Aerial Scene
+> RGB Observations
+> Red Building :
+> [(p_1, c_1), ...]
+> Tree :
+> [(p_1, c_1), ...]
+> Road :
+> [(p_1, c_1), ...] …
+> Depth Observations
+> p: position
+> c: confidence
+> Road ,Red -Building ,
+> tree, ……
+> Landmark
+> Recognizer Bounding Boxes
+> Landmark
+> Recognizer
+> Spatial Landmark
+> Knowledge Base
+> Landmark Descriptions
+> New Records
+
+Figure 3. Spatial Landmark Knowledge Base Construction. 
+
+those extracted from RGB observations, which also provide the corresponding landmark positions. Further implemen-tation details are provided in the supplementary materials. 
+
+Insertion or Merging of ( lkb , pkb ). Following the stan-dard database operations, given a new landmark–position pair ( lkb , pkb ), our SLKB K determines whether lkb corre-sponds to an existing entry. If a similar landmark already exists, the new pkb is merged to update the existing entry of 
+
+lkb . Otherwise, a new record is inserted into the SLKB. This strategy ensures that the knowledge base remains compact and up to date while avoiding redundant entries and pre-serving spatial consistency across navigation experiences. 
+
+Remark on Compact Landmark Description lkb . Note that, inspired by Liebig’s Law of the Minimum (a.k.a., the barrel theory), we argue that the linguistic modality of user instructions inherently limits the exploitable information for language–vision alignment, making the detailed visual fea-tures used in prior methods [33, 39] unnecessary. Accord-ingly, we represent each landmark lkb i textually, reducing memory and computational overhead. 
+
+3.1.2. Efficient Data Retrieval 
+
+As shown in Fig. 2, given our hierarchical SLKB K, for each landmark description extracted from the user instruc-tion {linstr i }Ni=1 , we compute its word embedding [26] and compare it with the embeddings of all landmark descrip-tions lkb j in K using cosine similarity sim (·), retrieving the one with maximum similarity: 
+
+lret i = argmax lkb j ∈K sim   emb( linstr i ), emb( lkb j ), (4) where emb( ·) is the word embedding model. Then, we can efficiently retrieve all positions of each landmark satisfying the description lret i as: 
+
+Lret = lret i : {pret i, 0 , p ret i, 1 , . . . } Ni=1 . (5) 
+
+3.2. Egocentric Lookaside Graph 
+
+Navigation instructions typically adopt an egocentric per-spective — such as “turn left and go to the intersection, then turn right and go to the bridge” — where directional cues are essential for disambiguating between multiple candidate landmarks of the same category (e.g., multiple bridges in the environment). In such instructions, directional cues like 
+
+“turn right” are defined relative to the agent’s orientation upon reaching the preceding key landmark (i.e. the in-tersection in this case). We refer to these as egocentric 
+
+4lookaside directional relationships , since they depend on the agent’s future orientation after passing key landmarks in the instruction. To effectively leverage directional cues in navigation instructions, we propose the Egocentric Looka-side Graph (ELG) , where nodes represent candidate loca-tions of unvisited landmarks mentioned in the instruction, and edges contain egocentric lookaside directional relation-ships between them. Unlike previous works [33, 39] that rely solely on proximity in large-scale scene graphs, our ELG dynamically captures instruction-relevant landmarks and directions to construct small egocentric graphs, where paths can be seamlessly translated into instruction-like de-scriptions, facilitating semantic scene understanding and ef-fective path planning. 
+
+3.2.1. Egocentric Lookaside Graph (ELG) Construction 
+
+Starting from the UAV’s current position, we construct the ELG G(N , E) by selecting the next Nahead unvisited land-marks from Lret (Eq. 5) to form: 
+
+Lunvis = lunvis i : {punvis i, 0 , p unvis i, 1 , . . . } Nahead  
+
+> i=1
+
+, (6) where lunvis i is the i-th unvisited landmark and punvis i,j is the j-th candidate location of lunvis i . We then construct the ELG hierarchically, where each layer corresponds to a land-mark description lunvis i in sequence, and each node within a layer represents a unique location punvis i,j . The collection of all nodes forms N . For each pair of successive unvis-ited landmark layers ( lunvis i−1 and lunvis i ) in the sequence, we create edges between every candidate location punvis i−1,j of the preceding landmark and every candidate location punvis i,k of the subsequent landmark. These edges are then assigned their corresponding egocentric lookaside directional rela-tionships as follows. 
+
+Egocentric Direction Estimation from Location. Con-sidering the candidate locations of three consecutive land-marks (punvis i−1,j , p unvis i,k , p unvis i+1 ,m ), we first estimate the agent’s orientation by computing the direction from punvis i−1,j to 
+
+punvis i,k . This estimated orientation is then used to deter-mine the egocentric lookaside directional relationship be-tween punvis i,k and punvis i+1 ,m . Specifically, the agent’s orienta-tion upon reaching punvis i,k is estimated as the unit vector: 
+
+pi,k i−1,j = punvis i,k − punvis i−1,j 
+
+∥punvis i,k − punvis i−1,j ∥2
+
+, (7) where pi,k i−1,j ∈ R3 represents the agent’s viewing direction after transitioning from punvis i−1,j to punvis i,k . Then we com-pute the agent’s horizontal deflection angle θi+1 ,m i,k , eleva-tion gain ei+1 ,m i,k , and relative horizontal distance di+1 ,m i,k 
+
+from candidate location punvis i,k to punvis i+1 ,m as follows: 
+
+θi+1 ,m i,k = hangle( pi,k i−1,j , pi+1 ,m i,k )
+
+ei+1 ,m i,k = |(punvis i+1 ,m − punvis i,k )z |
+
+di+1 ,m i,k = ∥(punvis i+1 ,m − punvis i,k )xy ∥2,
+
+(8) where hangle( v1, v2) * computes the horizontal deflection angle (in the xy -plane) from v1 to v2, (·)z extracts the ver-tical component and (·)xy denotes the horizontal projection of a vector. We utilize the variables defined in Eq. 8 to rep-resent the egocentric lookaside directional relationships be-tween candidate landmarks, enabling the ELG to be seam-lessly translated into instruction-like path descriptions for downstream MLLM-based semantic-level path planning. 
+
+3.2.2. Generating Path Descriptions from ELG 
+
+To enable the agent to better align instruction understanding with scene comprehension, we convert each possible path in the ELG into an instruction-like description. These descrip-tions, combined with the navigation instruction, allow the agent to reason and perform path planning in a more intu-itive and language-aligned manner. Given θi+1 ,m i,k , ei+1 ,m i,k 
+
+and di+1 ,m i,k defined in Eq. 8, we describe the motion from 
+
+punvis i,k to punvis i+1 ,m of the unvisited landmark lunvis i+1 as: “Turn left/right |θi+1 ,m i,k | degrees, move forward 
+
+di+1 ,m i,k meters and ascend/descend ei+1 ,m i,k meters to reach lunvis i+1 .” This detailed form is used for the first unvisited landmark. For later steps, we use a coarser description: “Turn left/right |θi+1 ,m i,k | degrees and move to-ward the lunvis i+1 .” By traversing all possible paths in the ELG, we generate a set of full path descriptions P, where each entry describes a candidate path. An example from P is as follows: “Turn left 30 degrees, move forward 10 meters and descend 4 meters to reach the intersection, then turn right 45 degrees and proceed toward the bridge, ...” All such descriptions are compiled into a prompt to sup-port semantic-level path planning. We also apply a distance-based pruning strategy to improve reasoning efficiency. The details are provided in the supplementary materials. 
+
+3.3. Lookaside MLLM Navigation Agent 
+
+We introduce a Lookaside MLLM Navigation Agent that achieves robust and interpretable path planning. As illus-trated in Fig. 2, our MLLM agent processes the naviga-tion instruction I, the path descriptions P derived from           
+
+> *hangle( v1,v2) = atan2 (( v1×v2)z,v1·v2−v1xv2x)
+
+5the ELG, and the current panoramic observation Ot =
+
+{ot,i }6 
+
+> i=1
+
+— comprising front, left, right, back, top, and bot-tom view images — to sequentially: 1) generate an Obser-vation Description, 2) summarize the Navigation Progress, 3) perform Direction-aware Path Planning, and 4) conduct Action Reasoning to determine the next action at.
+
+3.3.1. Observation Description and Navigation Progress 
+
+At the start of the chain-of-thought reasoning, we prompt the agent to generate an Observation Description, which helps it understand its surroundings by producing a textual summary of the input observation images. In addition, fol-lowing the approach of prior works [14, 43], we also require the agent to summarize its navigation progress, enabling it to assess and track the current stage of the task. 
+
+3.3.2. Direction-aware Path Planning 
+
+To align the agent’s navigation decisions with natural lan-guage instructions, we propose a Direction-aware Path Planning strategy. The objective is to select an appropriate direction-aware path description from the candidate set P
+
+on the ELG, guided by the navigation instruction I. Specif-ically, the agent is instructed to: 1) identify the unvisited landmarks within the candidate paths P; 2) extract the cor-responding snippets from I that describe how to reach these landmarks; and 3) select the most suitable path from P
+
+based on the grounded instruction segments. 
+
+3.3.3. Action Reasoning 
+
+After selecting a path from the ELG, the agent performs an Action Reasoning process to determine the next action at.This process is guided by the next unvisited landmark on the selected path and further refined using the instruction 
+
+I and current visual observation Ot. Detailed prompts are provided in the supplementary materials. 
+
+4. Experiment 
+
+Dataset We evaluate our LookasideVLN on the challeng-ing AerialVLN benchmark [29], which comprises 8,446 flight trajectories collected from experienced UAV pilots across 25 diverse city-scale environments in Unreal Engine 4. AerialVLN emphasizes long-horizon navigation, with an average path length of 661.8 meters. Each episode consists of an aerial trajectory with a corresponding natural language navigation instruction. The validation set is partitioned into “Seen” and “Unseen” splits according to the presence of each scene in the training set. AerialVLN-S is a small-scale variant of AerialVLN, consisting of 17 compact scenes. 
+
+Metrics Following the evaluation metrics of AerialVLN, we assess LookasideVLN’s performance using four stan-dard metrics: Success Rate (SR) , which counts a naviga-tion as successful if the agent stops within 20 meters of the destination; Oracle Success Rate (OSR) , which considers a navigation as oracle success if any point on the trajectory is within 20 meters of the destination; Navigation Error (NE) , defined as the distance between the agent’s stopping point and the destination; and Success Rate weighted by Normalized Dynamic Time Warping (SDTW) , which ac-counts for both task success and the similarity between pre-dicted and ground-truth trajectories. 
+
+Baselines We compare LookasideVLN with a range of baselines across four categories. Statistical methods , in-cluding Random and Action Sampling [29], serve to il-lustrate the size of the solution space and the similarity in action distributions between the training and evaluation splits. Learning-based methods cover traditional end-to-end action prediction models such as Seq2Seq [2], CMA [21], 
+
+LAG [29], and the method of Zhao et al. [40] (denoted as zhao’25 in the tables). To assess generalization from in-door domains, we also include zero-shot indoor VLN meth-ods such as NavGPT [43] and MapGPT [7]. Finally, we compare with zero-shot Aerial VLN methods , including the state-of-the-art STMR [14] and CityNavAgent [39]. Note that, due to the challenging nature of the AerialVLN dataset, existing zero-shot baselines cannot be directly ap-plied. Thus, we primarily compare against learning-based methods on AerialVLN and include zero-shot baselines in the evaluation on AerialVLN-S. 
+
+Implementation Details We implement LookasideVLN based on Qwen2.5-VL-72B [3], which is accessed through its online API. To construct the Spatial Landmark Knowl-edge Base (Sec. 3.1), we randomly sample 50 trajectories from the training set for each seen scene. For the unseen split, we pre-render images across the environment to serve as scene observations. The Landmark Recognizer is built upon Qwen-VL-Max [3] and accessed via online APIs. Un-less otherwise specified, we set the lookahead parameter 
+
+Nahead in the ELG to 2. For validation, the agent is initial-ized at the starting point of each episode. At each step, it se-lects one of six discrete actions: Move Forward , Turn Left ,
+
+Turn Right , Ascend , Descend , or Stop , along with the num-ber of times the selected action should be executed. Each action moves or rotates the agent as follows: Turn Left/Right 
+
+15 degrees, Ascend/Descend 2 meters vertically, and Move Forward 5 meters. Navigation ends when the agent chooses the Stop action or reaches the maximum number of steps. 
+
+4.1. Experimental Results 
+
+4.1.1. Quantitative Evaluation 
+
+Table 1 presents the comparative results on the AerialVLN benchmark. Our training-free LookasideVLN surpasses traditional learning-based methods such as Seq2Seq and CMA by a clear margin and achieves performance com-parable to Zhao’25 on the “Seen” split. Notably, unlike Zhao’25 and other learning-based approaches, our method exhibits strong generalization capability, achieving higher performance on the “Unseen” split. This underscores the ro-6Category Method Validataion Seen Validation Unseen SR ↑ OSR ↑ SDTW ↑ NE ↓ SR ↑ OSR ↑ SDTW ↑ NE ↓
+
+Statistical Random 0.0 0.0 0.0 300.8 0.0 0.0 0.0 351.0 Action Sampling 0.1 2.1 0.1 383.1 0.2 2.1 0.1 434.9 Learning-Based Seq2Seq 2.9 10.2 1.0 480.4 1.1 5.6 0.3 551.8 CMA 2.3 6.5 0.8 293.5 1.6 4.4 0.5 360.7 Zhao’25 7.5 12.6 3.3 271.1 3.2 8.1 1.3 333.5 
+
+Zero-Shot LookasideVLN (Ours) 5.7 26.1 1.2 278.6 6.4 21.3 1.2 487.0 
+
+Table 1. Overall performance comparison on the AerialVLN benchmark. Bold and underline indicate the first and second best results. 
+
+Category Method LLM Validataion Seen Validation Unseen SR ↑ OSR ↑ SDTW ↑ NE ↓ SR ↑ OSR ↑ SDTW ↑ NE ↓
+
+Statistical Random - 0.0 0.0 0.0 109.6 0.0 0.0 0.0 149.7 Action Sampling - 0.9 5.7 0.3 213.8 0.2 1.1 0.1 237.6 Learning-Based Seq2Seq - 4.8 19.8 1.6 146.0 2.3 11.7 0.7 218.9 CMA - 3.0 23.2 0.6 121.0 3.2 16.0 1.1 172.1 LAG - 7.2 15.7 2.4 90.2 5.1 10.5 1.4 127.9 Zero-Shot Indoor NavGPT GPT-4 0.0 0.0 0.0 163.5 0.0 0.0 0.0 82.1 MapGPT GPT-4V 2.1 4.7 0.8 124.9 0.0 0.0 0.0 107.0 Aerial STMR GPT-4o 12.6 31.6 - 96.3 10.8 23.0 - 119.5 CityNavAgent GPT-4V 13.9 30.2 5.1 80.8 11.7 35.2 5.0 60.2 
+
+LookasideVLN (Ours) Qwen2.5-VL-72B 14.7 31.2 5.4 77.1 12.6 36.0 3.6 100.9 
+
+Table 2. Overall performance comparison on the AerialVLN-S benchmark. Bold and underline indicate the first and second best results. 
+
+bustness and generalizability of our zero-shot formulation. Table 2 shows the comparison results on the AerialVLN-S benchmark. LookasideVLN, based on the relatively small Qwen2.5-VL-72B model, outperforms prior methods in terms of success rate (SR) on both “Seen” and “Unseen” splits. Several observations can be drawn from the results: 1) Statistical methods like Random and Action Sampling perform worst, highlighting the large solution space and ac-tion distribution mismatch between training and validation. 2) Learning-based methods perform poorly in this challeng-ing setting. Most of them suffer a substantial performance drop in the “Unseen” set, suggesting limited generalizabil-ity, which is likely due to insufficient training data. 3) Zero-shot indoor VLN methods perform poorly in the Aerial VLN task, emphasizing the greater complexity and distinct challenges of outdoor aerial environments compared to in-door scenes. 4) Despite using a smaller MLLM, Lookaside-VLN surpasses previous state-of-the-art Aerial VLN meth-ods on most key metrics. This demonstrates the effective-ness of the Egocentric Lookaside Graph and the path plan-ning strategy based on the Lookaside MLLM Agent. Instruction : … Turn back and fly up above the                                    
+
+> building and fly forward . Fly down after
+> passing the white building …
+> Path Descriptions :
+> [Plan id:0] Turn right 156.6 degrees , move
+> forward 6.1 meters and descend 5.2 meters to
+> reach the “ building ”. Then turn right 18.7
+> degrees and move towards the “ white building ”.
+> …
+> [Plan id:4] Turn right 173.1 degrees , move
+> forward 40.2 meters and descend 5.3 meters to
+> reach the “ building ”. Then move forward
+> towards the “ white building ”.
+> …
+> Chain -of -Thought :
+> 1. Next Two Landmarks : “ building ” and
+> “white building ”
+> 2. Instruction Snippet : …
+> 3. Path Selection : [Plan id:4] involves turning
+> right 173.1 degrees , which aligns with turning
+> back as mentioned in the instruction, and then
+> moving forward towards the building.
+> Action : Turn right 12 times (12x15=180
+> degrees).
+> (a) The agent selects a candidate path and
+> determines an action based on the chosen path.
+> Instruction :Elevate your drone... move
+> forward until you reach the third building with
+> flex ... Go straight until you reach the three
+> way ...
+> Observation Description : …A large building
+> directly ahead with a clear sky above… The
+> ground appears wet …
+> Navigation Progress : The drone has not yet
+> started moving.
+> Path Descriptions : …
+> Chain -of -Thought :
+> 1. Next Two Landmarks : “ third building with
+> flex” and “ three way ”.
+> 2. Instruction Snippet : “move forward until
+> you reach the third building with flex ... Go
+> straight until you reach the three way ...”.
+> 3. Path Selection :None of the provided path
+> candidates match the required actions as
+> described in the instruction. Therefore, we
+> need to create our own plan .
+> Action Reasoning : Based on the instruction ,
+> the drone should first elevate from the ground .
+> Action : Ascend 5 times (2x5=10 meters).
+> (b) The agent refines its selected action by
+> incorporating both the instruction and observation.
+
+这个是 修改 
+
+Figure 4. Examples of the agent’s action selection process. 
+
+4.1.2. Qualitative Evaluation 
+
+Fig. 4 presents two examples of the MLLM Agent planning results. In Fig. 4 (a), the agent selects the candidate path 7ELG MLLM Agent SR ↑ SDTW ↑ NE ↓
+
+× × 2.4 1.0 405.5 
+
+✓ × 13.8 4.6 81.6 
+
+✓ ✓ 14.7 5.4 77.1 
+
+> Table 3. Ablation study on the Egocentric Lookaside Graph (ELG) and the Lookaside MLLM Navigation Agent.
+
+Nahead SR ↑ SDTW ↑ NE ↓
+
+1 9.9 3.4 84.9 2 14.7 5.4 77.1 3 11.7 3.9 83.9  
+
+> Table 4. Ablation study on lookahead horizon Nahead .
+
+with a relatively large turning angle, aligning with the in-struction “turn back.” In Fig. 4 (b), the agent attempts to find a matching path, but none of the candidates align with the instruction. Recognizing the cue “elevate” and observing that it is on the ground, the agent chooses the Ascend action instead. These examples demonstrate that our Lookaside-VLN can determine actions either through path selection or by aligning with the instruction and current observations. 
+
+4.2. Ablation Study 
+
+To comprehensively analyze the performance of Lookaside-VLN, we conduct ablation studies on its key components, critical hyperparameters, and the choice of MLLM used in our method. All ablation experiments are performed on the validation “Seen” split of the AerialVLN-S benchmark. 
+
+4.2.1. Effect of Egocentric Lookaside Planning 
+
+Table 3 presents an ablation study that evaluates the effec-tiveness of our proposed modules, including the Egocentric Lookaside Graph (ELG) and the Lookaside MLLM Nav-igation Agent. We observe that removing the ELG and replacing the agent’s reasoning with direct action predic-tion results in the lowest performance, indicating the signif-icance of both modules. Adding ELG alone improves per-formance, suggesting that the incorporation of lookaside di-rectional cues significantly benefits long-horizon planning. When both ELG and the agent are included, LookasideVLN achieves the best overall performance, suggesting that in-corporating ELG and the agent’s reasoning for path plan-ning better support decision-making in Aerial VLN tasks. 
+
+4.2.2. Impact of Lookahead Horizon Nahead 
+
+We further investigate the effect of the lookahead horizon 
+
+Nahead , which determines the number of future subgoals are considered when constructing the ELG. As shown in MLLM SR ↑ SDTW ↑ NE ↓
+
+LLaVA-7B N/A N/A N/A Qwen2.5-VL-7B 9.0 1.7 306.6 Qwen2.5-VL-32B 14.1 4.9 94.3 Qwen2.5-VL-72B (ours) 14.7 5.4 77.1 
+
+> Table 5. Ablation study on different MLLMs.
+
+Table 4, setting Nahead = 2 yields the best overall perfor-mance. When Nahead = 1 , the agent does not incorporate future subgoal information and behaves similarly to a step-by-step planning method with no explicit lookahead, limit-ing its ability to make effective path planning. In contrast, when Nahead = 3 , the resulting path descriptions become longer and more complex, placing a greater burden on the model’s reasoning capability. This suggests that a moder-ate lookahead horizon strikes a balance between enhanced spatial modeling and reduced reasoning complexity. Nev-ertheless, it is worth noting that our LookasideVLN outper-forms the state-of-the-art CityNavAgent [39] even with a small Nahead = 2 , highlighting the surprising effectiveness of the proposed lookaside directional cues. 
+
+4.2.3. Effect of Different MLLMs 
+
+We evaluate the impact of different MLLMs on overall performance, as shown in Table 5. LLaVA-7B [27] fails to follow prompts and consistently outputs only obser-vation descriptions, likely due to its limited instruction-following capabilities in long-horizon navigation settings. Qwen2.5-VL-7B, though lightweight, exhibits limited abil-ity to handle the complex long-horizon reasoning required for Aerial VLN. In contrast, both the 32B and 72B versions of Qwen2.5-VL achieve significantly stronger performance. These results suggest that more capable MLLMs provide better support for effective path reasoning. 
+
+5. Conclusion 
+
+In this work, we introduced LookasideVLN, a new Aerial VLN paradigm that leverages directional cues in natural language to enhance spatial reasoning and efficiency. Un-like prior lookahead-based approaches that rely heavily on costly landmark sequence alignment, LookasideVLN in-tegrates an Egocentric Lookaside Graph, a Spatial Land-mark Knowledge Base, and a Lookaside MLLM Navigation Agent to achieve lightweight yet context-aware path plan-ning. Through extensive experiments, we demonstrated that LookasideVLN substantially outperforms the state-of-the-art CityNavAgent, despite using only single-level looka-head planning. These results highlight the value of incor-porating directional semantics as a complementary spatial cue in Vision-and-Language Navigation. 8Acknowledgments 
+
+This work is supported in part by the National Key R&D Program of China (NO. 2024YFB3908503 and 2024YFB3908500), and in part by the National Natural Sci-ence Foundation of China (NO. 62322608). 
+
+References 
+
+[1] Josh Achiam, Steven Adler, Sandhini Agarwal, Lama Ah-mad, Ilge Akkaya, Florencia Leoni Aleman, Diogo Almeida, Janko Altenschmidt, Sam Altman, Shyamal Anadkat, et al. Gpt-4 technical report. arXiv preprint arXiv:2303.08774 ,2023. 3 [2] Peter Anderson, Qi Wu, Damien Teney, Jake Bruce, Mark Johnson, Niko S¨ underhauf, Ian Reid, Stephen Gould, and Anton Van Den Hengel. Vision-and-language navigation: In-terpreting visually-grounded navigation instructions in real environments. In Proceedings of the IEEE conference on computer vision and pattern recognition , pages 3674–3683, 2018. 1, 2, 6 [3] Shuai Bai, Keqin Chen, Xuejing Liu, Jialin Wang, Wenbin Ge, Sibo Song, Kai Dang, Peng Wang, Shijie Wang, Jun Tang, Humen Zhong, Yuanzhi Zhu, Mingkun Yang, Zhao-hai Li, Jianqiang Wan, Pengfei Wang, Wei Ding, Zheren Fu, Yiheng Xu, Jiabo Ye, Xi Zhang, Tianbao Xie, Zesen Cheng, Hang Zhang, Zhibo Yang, Haiyang Xu, and Jun-yang Lin. Qwen2.5-vl technical report. arXiv preprint arXiv:2502.13923 , 2025. 6, 1 [4] Xiaoan Bao, Zhiqiang Lv, and Biao Wu. Enhancing large language models with rag for visual language navigation in continuous environments. Electronics , 14(5):909, 2025. 3 [5] Meghan Booker, Grayson Byrd, Bethany Kemp, Aurora Schmidt, and Corban Rivera. Embodiedrag: Dynamic 3d scene graph retrieval for efficient and scalable robot task planning. arXiv preprint arXiv:2410.23968 , 2024. 3 [6] Yue Cao and CS Lee. Robot behavior-tree-based task generation with large language models. arXiv preprint arXiv:2302.12927 , 2023. 3 [7] Jiaqi Chen, Bingqian Lin, Ran Xu, Zhenhua Chai, Xi-aodan Liang, and Kwan-Yee K. Wong. Mapgpt: Map-guided prompting with adaptive path planning for vision-and-language navigation. In Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics ,2024. 6 [8] Shizhe Chen, Pierre-Louis Guhur, Cordelia Schmid, and Ivan Laptev. History aware multimodal transformer for vision-and-language navigation. Advances in neural infor-mation processing systems , 34:5834–5847, 2021. 1, 2 [9] Shizhe Chen, Pierre-Louis Guhur, Makarand Tapaswi, Cordelia Schmid, and Ivan Laptev. Think global, act lo-cal: Dual-scale graph transformer for vision-and-language navigation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 16537– 16547, 2022. 1, 2 [10] Yongchao Chen, Jacob Arkin, Yang Zhang, Nicholas Roy, and Chuchu Fan. Scalable multi-robot collaboration with large language models: Centralized or decentralized sys-tems? In 2024 IEEE International Conference on Robotics and Automation (ICRA) , pages 4311–4317. IEEE, 2024. 3 [11] Norman Di Palo, Arunkumar Byravan, Leonard Hasenclever, Markus Wulfmeier, Nicolas Heess, and Martin Riedmiller. Towards a unified agent with foundation models. arXiv preprint arXiv:2307.09668 , 2023. 3 [12] Yue Fan, Winson Chen, Tongzhou Jiang, Chun Zhou, Yi Zhang, and Xin Eric Wang. Aerial vision-and-dialog nav-igation. arXiv preprint arXiv:2205.12219 , 2022. 1 [13] Daniel Fried, Ronghang Hu, Volkan Cirik, Anna Rohrbach, Jacob Andreas, Louis-Philippe Morency, Taylor Berg-Kirkpatrick, Kate Saenko, Dan Klein, and Trevor Darrell. Speaker-follower models for vision-and-language naviga-tion. Advances in neural information processing systems ,31, 2018. 2 [14] Yunpeng Gao, Zhigang Wang, Linglin Jing, Dong Wang, Xuelong Li, and Bin Zhao. Aerial vision-and-language nav-igation via semantic-topo-metric representation guided llm reasoning. arXiv preprint arXiv:2410.08500 , 2024. 3, 6 [15] Yunpeng Gao, Chenhui Li, Zhongrui You, Junli Liu, Zhen Li, Pengan Chen, Qizhi Chen, Zhonghan Tang, Liansheng Wang, Penghui Yang, et al. Openfly: A versatile toolchain and large-scale benchmark for aerial vision-language navi-gation. arXiv e-prints , pages arXiv–2502, 2025. 1 [16] Pierre-Louis Guhur, Makarand Tapaswi, Shizhe Chen, Ivan Laptev, and Cordelia Schmid. Airbert: In-domain pretrain-ing for vision-and-language navigation. In Proceedings of the IEEE/CVF international conference on computer vision ,pages 1634–1643, 2021. 2 [17] Daya Guo, Dejian Yang, Haowei Zhang, Junxiao Song, Ruoyu Zhang, Runxin Xu, Qihao Zhu, Shirong Ma, Peiyi Wang, Xiao Bi, et al. Deepseek-r1: Incentivizing reasoning capability in llms via reinforcement learning. arXiv preprint arXiv:2501.12948 , 2025. 3 [18] Yicong Hong, Qi Wu, Yuankai Qi, Cristian Rodriguez-Opazo, and Stephen Gould. Vln bert: A recurrent vision-and-language bert for navigation. In Proceedings of the IEEE/CVF conference on Computer Vision and Pattern Recognition , pages 1643–1653, 2021. 2 [19] Aishwarya Kamath, Peter Anderson, Su Wang, Jing Yu Koh, Alexander Ku, Austin Waters, Yinfei Yang, Jason Baldridge, and Zarana Parekh. A new path: Scaling vision-and-language navigation with synthetic instructions and imi-tation learning. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 10813– 10823, 2023. 2 [20] Shyam Sundar Kannan, Vishnunandan LN Venkatesh, and Byung-Cheol Min. Smart-llm: Smart multi-agent robot task planning using large language models. In 2024 IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS) , pages 12140–12147. IEEE, 2024. 3 [21] Jacob Krantz, Erik Wijmans, Arjun Majumdar, Dhruv Batra, and Stefan Lee. Beyond the nav-graph: Vision-and-language navigation in continuous environments. In European Confer-ence on Computer Vision , pages 104–120. Springer, 2020. 2, 6
+
+9[22] Ranjay Krishna, Yuke Zhu, Oliver Groth, Justin Johnson, Kenji Hata, Joshua Kravitz, Stephanie Chen, Yannis Kalan-tidis, Li-Jia Li, David A Shamma, et al. Visual genome: Connecting language and vision using crowdsourced dense image annotations. International journal of computer vision ,123(1):32–73, 2017. 3 [23] Jungdae Lee, Taiki Miyanishi, Shuhei Kurita, Koya Sakamoto, Daichi Azuma, Yutaka Matsuo, and Naka-masa Inoue. Citynav: Language-goal aerial naviga-tion dataset with geographic information. arXiv preprint arXiv:2406.14240 , 2024. 1 [24] Patrick Lewis, Ethan Perez, Aleksandra Piktus, Fabio Petroni, Vladimir Karpukhin, Naman Goyal, Heinrich K¨ uttler, Mike Lewis, Wen-tau Yih, Tim Rockt¨ aschel, et al. Retrieval-augmented generation for knowledge-intensive nlp tasks. Advances in neural information processing systems ,33:9459–9474, 2020. 3 [25] Xiangyang Li, Zihan Wang, Jiahao Yang, Yaowei Wang, and Shuqiang Jiang. Kerm: Knowledge enhanced reason-ing for vision-and-language navigation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pages 2583–2592, 2023. 1, 2, 3 [26] Zehan Li, Xin Zhang, Yanzhao Zhang, Dingkun Long, Pengjun Xie, and Meishan Zhang. Towards general text embeddings with multi-stage contrastive learning. arXiv preprint arXiv:2308.03281 , 2023. 4 [27] Haotian Liu, Chunyuan Li, Yuheng Li, and Yong Jae Lee. Improved baselines with visual instruction tuning. In Pro-ceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 26296–26306, 2024. 8 [28] Rui Liu, Wenguan Wang, and Yi Yang. Volumetric environ-ment representation for vision-language navigation. In Pro-ceedings of the IEEE/CVF conference on computer vision and pattern recognition , pages 16317–16328, 2024. 2 [29] Shubo Liu, Hongsheng Zhang, Yuankai Qi, Peng Wang, Yan-ning Zhang, and Qi Wu. Aerialvln: Vision-and-language navigation for uavs. In Proceedings of the IEEE/CVF In-ternational Conference on Computer Vision , pages 15384– 15394, 2023. 1, 2, 6 [30] Shilong Liu, Zhaoyang Zeng, Tianhe Ren, Feng Li, Hao Zhang, Jie Yang, Qing Jiang, Chunyuan Li, Jianwei Yang, Hang Su, et al. Grounding dino: Marrying dino with grounded pre-training for open-set object detection. In 
+
+European Conference on Computer Vision , pages 38–55. Springer, 2024. 3 [31] Qwen, :, An Yang, Baosong Yang, Beichen Zhang, Binyuan Hui, Bo Zheng, Bowen Yu, Chengyuan Li, Dayiheng Liu, Fei Huang, Haoran Wei, Huan Lin, Jian Yang, Jianhong Tu, Jianwei Zhang, Jianxin Yang, Jiaxi Yang, Jingren Zhou, Jun-yang Lin, Kai Dang, Keming Lu, Keqin Bao, Kexin Yang, Le Yu, Mei Li, Mingfeng Xue, Pei Zhang, Qin Zhu, Rui Men, Runji Lin, Tianhao Li, Tianyi Tang, Tingyu Xia, Xingzhang Ren, Xuancheng Ren, Yang Fan, Yang Su, Yichang Zhang, Yu Wan, Yuqiong Liu, Zeyu Cui, Zhenru Zhang, and Zihan Qiu. Qwen2.5 technical report, 2025. 3, 1 [32] Sonia Raychaudhuri, Saim Wani, Shivansh Patel, Unnat Jain, and Angel X Chang. Language-aligned waypoint (law) su-pervision for vision-and-language navigation in continuous environments. arXiv preprint arXiv:2109.15207 , 2021. 2 [33] Dhruv Shah, Bła˙ zej Osi´ nski, Sergey Levine, et al. Lm-nav: Robotic navigation with large pre-trained models of lan-guage, vision, and action. In Conference on robot learning ,pages 492–504. PMLR, 2023. 2, 3, 4, 5 [34] Xinshuai Song, Weixing Chen, Yang Liu, Weikai Chen, Guanbin Li, and Liang Lin. Towards long-horizon vision-language navigation: Platform, benchmark and method. In 
+
+Proceedings of the IEEE/CVF Conference on Computer Vi-sion and Pattern Recognition , pages 12078–12088, 2025. 3 [35] Hugo Touvron, Thibaut Lavril, Gautier Izacard, Xavier Martinet, Marie-Anne Lachaux, Timoth´ ee Lacroix, Baptiste Rozi` ere, Naman Goyal, Eric Hambro, Faisal Azhar, et al. Llama: Open and efficient foundation language models. 
+
+arXiv preprint arXiv:2302.13971 , 2023. 3 [36] Xiangyu Wang, Donglin Yang, Ziqin Wang, Hohin Kwan, Jinyu Chen, Wenjun Wu, Hongsheng Li, Yue Liao, and Si Liu. Towards realistic uav vision-language navigation: Platform, benchmark, and methodology. arXiv preprint arXiv:2410.07087 , 2024. 1 [37] Jianhao Yuan, Shuyang Sun, Daniel Omeiza, Bo Zhao, Paul Newman, Lars Kunze, and Matthew Gadd. Rag-driver: Generalisable driving explanations with retrieval-augmented in-context multi-modal large language model learning. In 
+
+Robotics: Science and Systems , 2024. 3 [38] Junbo Zhang and Kaisheng Ma. Mg-vln: Benchmarking multi-goal and long-horizon vision-language navigation with language enhanced memory map. In 2024 IEEE/RSJ In-ternational Conference on Intelligent Robots and Systems (IROS) , pages 7750–7757. IEEE, 2024. 1 [39] Weichen Zhang, Chen Gao, Shiquan Yu, Ruiying Peng, Baining Zhao, Qian Zhang, Jinqiang Cui, Xinlei Chen, and Yong Li. CityNavAgent: Aerial vision-and-language naviga-tion with hierarchical semantic planning and global memory. In Proceedings of the 63rd Annual Meeting of the Associa-tion for Computational Linguistics (Volume 1: Long Papers) ,pages 31292–31309, Vienna, Austria, 2025. Association for Computational Linguistics. 2, 3, 4, 5, 6, 8 [40] Ganlong Zhao, Guanbin Li, Jia Pan, and Yizhou Yu. Aerial vision-and-language navigation with grid-based view selec-tion and map construction. arXiv preprint arXiv:2503.11091 ,2025. 2, 6 [41] Ganlong Zhao, Guanbin Li, and Yizhou Yu. Navgemini: a multi-modal llm agent for vision-and-language navigation. 
+
+Visual Intelligence , 4(1):1, 2026. 3 [42] Xufeng Zhao, Mengdi Li, Cornelius Weber, Muham-mad Burhan Hafez, and Stefan Wermter. Chat with the envi-ronment: Interactive multimodal perception using large lan-guage models. In 2023 IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS) , pages 3590–3596. IEEE, 2023. 3 [43] Gengze Zhou, Yicong Hong, and Qi Wu. Navgpt: Explicit reasoning in vision-and-language navigation with large lan-guage models. In Proceedings of the AAAI Conference on Artificial Intelligence , pages 7641–7649, 2024. 6 
+
+10 LookasideVLN: Direction-Aware Aerial Vision-and-Language Navigation 
+
+# Supplementary Material 
+
+1. Spatial Landmark Knowledge Base 
+
+1.1. Landmark Recognizer 
+
+The Landmark Recognizer aims to identify visible land-marks present in historical observations. To this end, we leverage the strong image captioning capabilities of mul-timodal large language models to generate landmark de-scriptions from RGB observations. Specifically, we use Qwen-VL-Max [3] to extract landmark descriptions from each panoramic observation O = {oi}5 
+
+> i=1
+
+(without the up-ward view). The prompt used for the Landmark Recognizer is as follows: 
+
+Prompt for Landmark Recognizer 
+
+Task 
+
+Analyze the drone’s multi-view images and list dis-tinctive static landmarks using concise natural lan-guage descriptions. Follow these guidelines: 1. Key Focus :• Describe landmarks in several word phrases using this pattern (not strictly): 
+
+[Color] [Material] [Type] [Distinctive Feature] 
+
+(e.g., “red brick water tower” , “blue ladder” )2. View Processing :For each view (‘front/bottom/left/right/back‘): • List navigation-critical objects, empty if none. • Use comparative references when helpful: (e.g., “taller than surrounding buildings” )
+
+Example Output (JSON) 
+
+“front”: [ “gray metal tower” , “blue bridge” ], “bottom”: [ “red-roofed circular building” ], “left”: [ “green glass skyscraper” ], “right”: [ “gray dome-shaped observatory” ], “back”: [] 
+
+Input 
+
+The drone’s multi-view images are: • Front View: o1,• Bottom View: o2,• Left View: o3,• Right View: o4,• Back View: o5
+
+1.2. Extracting Landmark Descriptions 
+
+To obtain the landmark descriptions {linstr i }Ni=1 used in Sec. 3.1.2 of the main paper, we develop a Landmark Parser that directly extracts landmark descriptions from the in-struction I while preserving their original order. We imple-ment the Landmark Parser using the large language model Qwen-Max [31]. The prompt used for the Landmark Parser is as follows: 
+
+Prompt for Landmark Parser 
+
+Task 
+
+You are a Navigation Landmark Parser . Your job is to: 1. Identify every landmark reference in the in-struction, including: • Street names 
+
+(e.g., “Main Street” , “5th Avenue” )• Road types 
+
+(e.g., “highway” , “dirt road” )• Intersections 
+
+(e.g., “the corner of Park and Elm” )• Points of interest 
+
+(e.g., “gas station” , “red mailbox” )2. List them EXACTLY in order 
+
+including all prefixes/suffixes. 
+
+Output Format (JSON List) 
+
+[“landmark name 1”, “landmark name 2”, ...] 
+
+Examples 
+
+• Instruction: “Turn left on Maple Street, then right at the bank.” 
+
+Output: [ “Maple Street” , “bank” ]• Instruction: “Follow Highway 1 until the second traffic light.” 
+
+Output: [ “Highway 1” , “traffic light” ]
+
+Input 
+
+The navigation instruction to process is “ I ”. 
+
+1.3. Landmark Localization with Bounding Box 
+
+In Eq. 3, we use the center pixel coordinates (ui, v i) of the bounding box bi, along with the estimated depth ¯di,to compute the 3D position of the landmark li. We apply perspective projection to our depth observations to ensure consistency with the RGB inputs. In the following para-graphs, we detail the transformation from pixel coordinates 1Pixel Coordinate   
+
+> Plane
+> Normalized
+> Plane
+> 𝑝 !
+> "!#$%
+> 𝑝 !
+> &'() 𝑝 !
+> *+)$(+ ̅
+> 𝑑 !
+> I. Transformation
+> via intrinsic matrix II. Transformation
+> by scaling
+> Camera’s optical axis
+> World Coordinate
+> System
+> 𝑝 !
+> III. Transformation
+> via extrinsic params
+
+Figure 5. Illustration of the transformation from pixel coordinates to world coordinates under perspective projection 
+
+to world coordinates under perspective projection, as it in-volves more complex computations than those under ortho-graphic projection. As shown in Fig. 5, given the homogeneous pixel coor-dinate ppixel i = [ ui, v i, 1] ⊤, the corresponding position in normalized plane * is computed as: 
+
+pnorm i = K−1ppixel i , (9) where K ∈ R3×3 denotes the camera’s intrinsic matrix. The depth value ¯di of the target landmark is defined as the Euclidean distance from the camera center to the object un-der perspective projection. Accordingly, the landmark’s 3D position in camera coordinates can be represented as: 
+
+pcamera i = ¯di · pnorm i
+
+|| pnorm i || 2
+
+. (10) To transform this point into world coordinates, the camera’s extrinsic parameters are applied: 
+
+pi = Rp camera i + T
+
+= ¯di
+
+∥K−1ppixel i ∥2
+
+· RK −1ppixel i + T,  (11) where R ∈ SO (3) and T ∈ R3 are the camera’s rotation matrix and translation vector, respectively. 
+
+1.4. Pruning Strategy for SLKB 
+
+Since the agent may revisit the same location multiple times throughout its navigation history, the recorded observations can be overlapped. Thus, multiple detection results of the same landmark in nearby locations may appear in the Spa-tial Landmark Knowledge Base (SLKB)— i.e ., several loca-tions in {pkb i, 0, p kb i, 1, . . . } corresponding to the landmark de-scription lkb i may refer to the same physical instance in the scene. To reduce redundancy, we apply a non-maximum 
+
+> *The normalized image plane is a virtual plane placed at a unit distance in front of the camera and perpendicular to its optical axis.
+
+suppression (NMS)-like pruning strategy based on the Eu-clidean distances between candidate locations. Specifically, for the candidate location list {pkb i, 0, p kb i, 1, . . . } of each land-mark description lkb i in the SLKB, we first sort the candi-dates by their associated confidence scores in descending order. Starting from the highest-scoring location, we select it as a representative detection and remove all other candi-dates within a predefined Euclidean distance threshold of 20 units, as these are considered duplicates. This process is repeated iteratively on the remaining candidates until no overlapping locations remain. The result is a refined set of landmark positions with minimal spatial redundancy, im-proving the accuracy and efficiency of the knowledge base. 
+
+2. Pruning Strategy for ELG 
+
+Since large-scale urban scenes often contain many visu-ally similar landmark instances that can be grounded by the same landmark description, traversing the entire graph can lead to redundancy. To address this, we adopt a prun-ing strategy to eliminate redundant nodes and edges in the ELG. Specifically, given the ordered set of unvisited land-marks and their candidate positions, Lunvis = lunvis i :
+
+{punvis i, 0 , p unvis i, 1 , . . . } Nahead  
+
+> i=1
+
+, we retain the top Nnext = 6 
+
+candidate positions closest to the agent’s current location for the first unvisited landmark lunvis  
+
+> 1
+
+. For each candidate position punvis i,j of the i-th unvisited landmark lunvis i , we connect it to the Nsubseq = 2 nearest candidate positions of the subsequent landmark lunvis i+1 , i.e., nearest positions se-lected from {punvis i+1 ,m }... m=1 .
+
+3. Implementation of the Lookaside MLLM Navigation Agent 
+
+We build the agent with a chain-of-thought mechanism for robust and explainable path planning. Specifically, we de-sign three types of prompts to handle different situations the agent may encounter during navigation: 1) When the Egocentric Lookaside Graph (ELG) is available , the agent selects a navigation path by reasoning over future subgoals and their spatial relationships. 2) When a path has been se-lected and the next candidate landmark is known , the agent determines the next action based on the landmark’s loca-tion. This action is further refined using the current obser-vation and the navigation instruction. 3) In rare cases where the instruction contains no identifiable landmark , the agent navigates by relying solely on visual observations and the navigation instruction. For each of these situations, we craft dedicated prompts for the agent to enable effective and ro-bust reasoning. Moreover, the agent maintains a record of visited landmarks and summarizes its navigation history in text to support contextual reasoning. Below, we outline the prompt strategies for each scenario. When the ELG is available, the agent is guided to reason 2over candidate paths and predict the next action accordingly. The prompt used at this stage is as follows: 
+
+Prompt with ELG 
+
+System Message 
+
+You are a visual-and-language navigation agent that follows navigation instructions to move to each spe-cific landmark and finally reach the destination. 
+
+Input Description 
+
+• Instruction : A natural language navigation in-struction that guides the agent to reach some spe-cific landmarks. • History : A record of the landmarks that the agent has visited with a brief trajectory description. • Visited Landmark : A list of landmarks that the agent has visited. • Candidate Paths : A set of candidate navigation paths. • Current Views : Six views observed at the current time step: front, bird’s-eye, left, right, back, and upward views. 
+
+Output Description 
+
+• Observation Description : The current observa-tion and the landmark you seem based on the cur-rent views. • Navigation Progress : Describe the current nav-igation progress based on the instruction and the history. • Reasoning for Path Selection : Identify unvisited landmarks in the Candidate Paths to visit next. Give a description on how to reach the unvisited landmarks based on the instruction step by step with the relevant instruction snippets. For exam-ple, “Next Two Landmarks: A and B. Instruction Snippet: Turn left at A, then move forward to B .” • Selected Path ID : Based on the reasoning above, select one of the candidate paths to follow by pro-viding its ID. If you choose to create your own plan, respond with -1. • Action Reasoning : Given the selected path, de-termine the next action toward the next landmark. Refine your decision using the navigation instruc-tion and current visual observation. • Action : Choose the next action from {forward ,
+
+turn left , turn right , ascend , descend , stop } The 
+
+forward action will let you move 5 meters in cur-rent direction; A turning action will result in a 15 degree turning; The ascend / descend action will cause an altitude change of 2 meters ; The stop ac-tion should be triggered when the final landmark is reached. • Calculation for Number of Executions : For ex-ample, executing a turning action six times at 15 degrees per turn will result in a total rotation of 15 x 6 = 90 degrees. • Number of Executions : The number of times this action should be executed. • Updated History : Update the history according to the landmark you see and the action you take. After selecting a path, the agent determines the next ac-tion based on the spatial relationship to the upcoming land-mark, further refined using current observations and instruc-tions. The prompt at this stage is adapted from the previ-ous version by replacing “Candidate Paths” with “The Next Landmark” in the input. Correspondingly, the path selec-tion reasoning is replaced with landmark-based reasoning. The prompt used at this stage is as follows: 
+
+Prompt with the next landmark 
+
+System Message ... 
+
+Input Description 
+
+... • The Next Landmark : The upcoming landmark the agent needs to reach, along with its relative location. ... 
+
+Output Description 
+
+... • Reasoning for Landmark to Follow : Reason whether to proceed toward the next landmark by considering the given instruction, current obser-vation, and the landmark’s relative position. • Whether to Follow the Next Landmark : Select whether to follow the next landmark or not. Re-spond with follow or not follow .... In rare cases where instructions lack identifiable land-marks, the agent relies on general spatial understanding to determine navigation direction. Unlike previous prompts, information about candidate paths and landmark locations is excluded from the input. 
+
+4. More Experiment Results 
+
+4.1. Additional MLLM ablations. 
+
+We add GPT-series and Qwen3VL as MLLM backbones in Tab. 6. We note that Qwen2.5VL-32B is specifically 3Table 6. Additional ablation study on different MLLMs.                        
+
+> Category Method SR ↑SDTW ↑NE ↓
+> Qwens Qwen-2.5-VL-7B 9.0 1.7 306.6 Qwen-3-VL-8B 11.7 3.8 114.1 Qwen-2.5-VL-32B 14.1 4.9 94.3 Qwen-3-VL-32B 11.7 5.1 84.8 GPTs GPT-4V 15.0 6.6 80.8 GPT-4o 15.3 6.3 83.5
+
+optimized with RL *, which explains its stronger perfor-mance compared to Qwen3VL-32B, while GPTs achieve the best overall results, further validating the effectiveness of LookasideVLN. 
+
+4.2. Sensitivity analysis on depth noise. 
+
+We conduct a sensitivity analysis in Tab. 7 by adding Gaus-sian noise to the depth ¯di in Eq. 3. LookasideVLN remains robust under large noise (up to σ = 5 meters), as the agent can still infer landmark directions from its observations.                   
+
+> Table 7. Sensitivity analysis on the seen split of AerialVLN-S.
+> Depth Noise Std. ( σ)SR ↑SDTW ↑NE ↓
+> σ= 0 meters 14.7 5.4 77.1
+> σ= 5 meters 13.2 4.7 83.5
+> σ= 20 meters 11.1 3.5 84.4
+
+4.3. Qualitative Examples of Reasoning Process 
+
+Fig. 6 shows more examples of the chain-of-thought reason-ing. The agent successfully grounds instructions with path descriptions derived from the ELG and leverages the ego-centric lookaside directional relationships for robust path selections. Fig. 7 shows key steps of a navigation episode where LookasideVLN follows complex instructions through an ur-ban environment. Starting with textual instructions, the agent successfully navigates through multiple waypoints, maintaining correct visual perceptions. The sequence demonstrates the agent’s ability to interpret visual scenes and make appropriate navigation decisions to reach the tar-get destination. 
+
+4.4. Failure Cases 
+
+Fig. 8 presents a failure case in the reasoning process. The instruction includes two consecutive directional cues— “turn slightly left ” and “ turn around ”. The agent is misled 
+
+> *Refer to https://qwen.ai/blog?id=qwen2.5-vl-32b
+
+by the former and fails to attend to the latter, resulting in an incorrect path selection. 
+
+5. Limitations and Future Work 
+
+Although LookasideVLN achieves state-of-the-art perfor-mance in the simulated environment, it has not yet been deployed in the real world. Future work may focus on bridging the sim-to-real gap and evaluating the system on real UAVs. Additionally, improving robustness under real-world conditions will be an important direction. A detailed discussion of the limitations and future work is provided below. 
+
+5.1. Limitation Discussion 
+
+Although LookasideVLN outperforms most prior state-of-the-art baselines on the challenging AerialVLN benchmark, the overall performance remains limited. The reasons are twofold: 1. Learning-based baselines are constrained by the scarcity of annotated trajectories and the limited scale of training scenes. While they can perform accurate action selection (at each step) during end-to-end training, they tend to accumulate errors (over the entire navigation process) in evaluation and struggle to generalize to unseen environ-ments. This issue may be alleviated through more cost-efficient data collection strategies and dedicated error-correction mechanisms. 2. Zero-shot LLM-based approaches are strong in under-standing natural language instructions and visual obser-vations. However, they struggle to comprehend struc-tured 3D scenes when relying solely on language and RGB inputs, lacking access to fine-grained 3D infor-mation such as depth cues. They also face chal-lenges in ego-motion understanding—often misinter-preting ego-trajectories when processing egocentric nav-igation videos. These limitations may be mitigated by leveraging more advanced MLLMs specialized in 3D scene comprehension and ego-motion modeling. 
+
+5.2. Future Work 
+
+We validate LookasideVLN in simulated environments but have not yet conducted real-world evaluations. In the Aeri-alVLN benchmark, the agent is instructed to output a single action at each step to align with the benchmark’s evalua-tion settings. However, invoking the MLLM-based agent for reasoning at every step is computationally expensive and cannot be directly deployed on real-world UAVs. In prac-tical deployment, prompting the agent to generate planned waypoints along the selected landmark-level path within the ELG—and executing these waypoints using low-level mo-tion planners—could reduce reasoning time while enabling safety checks and occlusion avoidance. 4Instruction : Take off and turn left to the stairs 
+
+and turn left at them. Go over wires… 
+
+Path Descriptions :
+
+[Plan id:0] Move forward 17.4 meters to 
+
+reach stairs. Then turn left 15.1 degrees and 
+
+move towards wires. 
+
+[Plan id:1] Move forward 17.4 meters to 
+
+reach stairs. Then turn back and move towards 
+
+wires. 
+
+[Plan id:2] Turn left 87.7 degrees, move 
+
+forward 17.8 meters and ascend 5.2 meters to 
+
+reach stairs. Then turn left 133.2 degrees and 
+
+move towards wires. 
+
+[Plan id:3] Turn left 87.7 degrees, move 
+
+forward 17.8 meters and ascend 5.2 meters to 
+
+reach stairs. Then turn right 119.4 degrees and 
+
+move towards wires. 
+
+[Plan id:4] Turn right 109.1 degrees, move 
+
+forward 20.7 meters and ascend 6.5 meters to 
+
+reach stairs. Then turn right 85.0 degrees and 
+
+move towards wires. 
+
+Chain -of -Thought :
+
+1. Next Two Landmarks : stairs and wires 
+
+2. Instruction Snippet : … 
+
+3. Path Selection : Plan id:2 involves turning 
+
+left, moving forward, and ascending to reach 
+
+the stairs, which aligns with the instruction. 
+
+Instruction : Take off rising the height turn around 
+
+and proceed forward towards near the bicycle. 
+
+Rising the height and move forward towards above 
+
+the railway track and platform… 
+
+Path Descriptions :
+
+[Plan id:0] Turn left 173.0 degrees , move forward 
+
+50.2 meters to reach bicycle. Then turn left 45.1 
+
+degrees and move towards railway platform. 
+
+[Plan id:1] Turn left 173.0 degrees , move forward 
+
+50.2 meters to reach bicycle. Then move forward 
+
+towards railway platform. 
+
+[Plan id:2] Turn right 166.9 degrees , move 
+
+forward 67.7 meters to reach bicycle. Then turn right 
+
+87.5 degrees and move towards railway platform. 
+
+[Plan id:3] Turn right 144.9 degrees , move 
+
+forward 71.7 meters to reach bicycle. Then turn right 
+
+135.0 degrees and move towards railway platform. 
+
+Chain -of -Thought :
+
+1. Next Two Landmarks : bicycle and railway 
+
+platform 
+
+2. Instruction Snippet : … 
+
+3. Path Selection : Plan id:1 involves turning 
+
+around (left 173.0 degrees) and moving forward to 
+
+reach the bicycle, then continuing forward towards 
+
+the railway platform, which aligns with the 
+
+instruction 
+
+Instruction : Take off and turn left and move 
+
+forward and over the subway and turn left and 
+
+towards the bike… 
+
+Path Descriptions :
+
+[Plan id:0] Turn right 80.9 degrees, move 
+
+forward 6.9 meters and ascend 6.8 meters to 
+
+reach subway. Then turn back and move 
+
+towards bike. 
+
+[Plan id:1] Turn right 80.9 degrees, move 
+
+forward 6.9 meters and ascend 6.8 meters to 
+
+reach subway. Then turn left 107.8 degrees and 
+
+move towards bike. 
+
+[Plan id:2] Turn left 100.0 degrees, move 
+
+forward 28.6 meters and ascend 5.4 meters to 
+
+reach subway. Then turn left 24.4 degrees and 
+
+move towards bike. 
+
+[Plan id:3] Turn right 169.0 degrees, move 
+
+forward 38.2 meters and ascend 3.0 meters to 
+
+reach subway. Then turn right 60.5 degrees and 
+
+move towards bike. 
+
+Chain -of -Thought :
+
+1. Next Two Landmarks : subway and bike 
+
+2. Instruction Snippet : … 
+
+3. Path Selection : Plan id:2 seems to align 
+
+well with this requirement as it involves 
+
+turning left and moving forward to reach the 
+
+subway. 
+
+ethod_v2 Figure 6. Examples of the agent’s reasoning. The agent selects optimal paths using descriptions derived from the Egocentric Lookaside Graph. Highlighted words indicate successful path decisions that align with directional cues in the instructions. 
+
+5[Instruction ] Take off and turn left towards a tall wide 
+
+brown building . Fly forward and fly down near a small 
+
+tower . Turn left towards a short white building when 
+
+near the small tower and fly forward . Turn right towards 
+
+a white and light brown building when near many black 
+
+umbrellas. Fly forward and land in front of the white and 
+
+light brown building and near a red car .
+
+Planning Step 1 
+
+Turn Left 
+
+Planning Step 2 
+
+Turn Left 
+
+Planning Step 5 
+
+Descend 
+
+Planning Step 6 
+
+Forward 
+
+Planning Step 9 
+
+Turn Left 
+
+Planning Step 13 
+
+Stop 
+
+[Observation Description ] The 
+
+current view shows a flat ground 
+
+with a clear sky above. There are 
+
+no immediate landmarks visible in 
+
+the front view. 
+
+[Observation Description ] The 
+
+current view shows a large brown 
+
+building ahead in the front view .
+
+[Observation Description ] The 
+
+current observation shows a tall 
+
+wide brown building in the front 
+
+view and a small tower nearby .
+
+The bird's eye view indicates the 
+
+agent is above the area with the 
+
+small tower. 
+
+[Observation Description ] The 
+
+current view shows a street scene 
+
+with various buildings, including a 
+
+tall glass building on the left and a 
+
+shorter brick building on the right. 
+
+The small tower is in front. 
+
+[Observation Description ] The 
+
+current view shows a small tower 
+
+in the center, surrounded by trees 
+
+and benches. There are several 
+
+buildings around, including a 
+
+white building to the left and a 
+
+taller building to the right. 
+
+[Observation Description ] The 
+
+current view shows a large brown 
+
+building with a red car parked 
+
+nearby. There are trees and a 
+
+sidewalk in the foreground. The 
+
+bird's eye view indicates the agent 
+
+is close to the ground. Figure 7. Visualization of key steps in a navigation episode. LookasideVLN provides accurate observation descriptions and makes appro-priate action decisions. 
+
+6Instruction : Take off and fly straight toward 
+
+the blue roof with wood boards laying on top of 
+
+it. Turn slightly left and turn around facing a
+
+large tree… 
+
+Path Descriptions :
+
+[Plan id:0] Turn left 58.2 degrees, move 
+
+forward 56.6 meters and ascend 13.0 meters to 
+
+reach roof with blue. Then turn back and move 
+
+towards large tree. 
+
+[Plan id:1] Turn left 58.2 degrees, move 
+
+forward 56.6 meters and ascend 13.0 meters to 
+
+reach roof with blue. Then turn left 34.4 
+
+degrees and move towards large tree. 
+
+Chain -of -Thought :
+
+1. Next Two Landmarks : blue roof and large 
+
+tree 
+
+2. Instruction Snippet : … 
+
+3. Path Selection : Plan 1 aligns better with the 
+
+instruction as it involves turning left after 
+
+reaching the blue roof, which matches the 
+
+instruction to 'turn slightly left '. Figure 8. An example of failure cases where the agent’s reasoning process fails due to hallucinations. The agent correctly identifies the directional cue “slightly left” but fails to recognize the subse-quent “turn around” instruction, leading to failed path planning. 
+
+7

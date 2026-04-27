@@ -1,0 +1,650 @@
+Title: CodeGraphVLP: Code-as-Planner Meets Semantic-Graph State for Non-Markovian Vision-Language-Action Models
+
+URL Source: https://arxiv.org/pdf/2604.22238v1
+
+Published Time: Mon, 27 Apr 2026 00:23:35 GMT
+
+Number of Pages: 8
+
+Markdown Content:
+# CodeGraphVLP: Code-as-Planner Meets Semantic-Graph State for Non-Markovian Vision-Language-Action Models 
+
+Khoa Vo †,1, Sieu Tran †,1, Taisei Hanyu 1, Yuki Ikebe 1, Duy Nguyen 2, Bui Duy Quoc Nghi 3, Minh Vu 4
+
+Anthony Gunderman 1, Chase Rainwater 1, Anh Nguyen 5, and Ngan Le 1(a) Memory-Augmented VLA  (b) Hierarchical VLM-VLA Systems  (c) CodeGraphVLP (Ours)                       
+
+> Effi cient progress checks: Medium
+> Clutter-robust action reasoning: Low
+> Effi cient progress checks: Low
+> Clutter-robust action reasoning: Medium
+> Effi cient progress checks: High
+> Clutter-robust action reasoning: High
+> Visual Observations
+> VLA Policy Proprioception
+> Action
+> update next observations
+> Memory Module
+> Limited
+> Memory Tokens
+> update
+> Visual Observations
+> VLM
+> (High-Level Planner)
+> VLA
+> (Low-Level Policy) Proprioception
+> Action
+> update next observations
+> Visual Observations
+> VLA
+> (Low-Level Policy) Proprioception
+> Action
+> update next observations
+> Code-as-Planner
+> (High-Level Planner)
+> Current Subtask Relevant Objects
+> Semantic-Graph
+> Clutter-Free Observations
+> Only at initial step
+> Long-Horizon Task
+> “Move cube to other plate
+> and return to original plate. ”
+> LLM
+> (Program Planner Construction)
+> Long-Horizon Task
+> “Move cube to other plate
+> and return to original plate. ”
+> Long-Horizon Task
+> “Move cube to other plate
+> and return to original plate. ”
+> cube
+> plate
+> gripper
+> purple
+> plate
+> contains
+> blue open “pick cube” [“robot”, “cube”]
+> Current Subtask
+> “pick cube”
+> VLM queried after
+> every robot move
+> Repeated VLM Replanning Lightweight Code-Based Replanning
+
+Fig. 1. Architectures for non-Markovian long-horizon manipulation. (a) Memory-augmented VLA equips a short-horizon policy with memory context, offering moderately efficient progress checks and limited robustness for action reasoning in clutter. (b) Hierarchical VLM–VLA uses a VLM planner to reason about subtasks and guide a VLA policy with subtask-level cues, improving clutter robustness but incurring highlatency due to repeated VLM inference online. (c) CodeGraphVLP (Ours) performs fast progress checks by synthesizing Code-as-Planner just once at initial step and executes it over a persistent semantic graph to produce clutter-free visual–language prompts to the VLA. Together, this enables efficient progress checks and reliable action reasoning in cluttered scenes. 
+
+Abstract — Vision-Language-Action (VLA) models promise generalist robot manipulation, but are typically trained and deployed as short-horizon policies that assume the latest ob-servation is sufficient for action reasoning. This assumption breaks in non-Markovian long-horizon tasks, where task-relevant evidence can be occluded or appear only earlier in the trajectory, and where clutter and distractors make fine-grained visual grounding brittle. We present CodeGraphVLP, a hierarchical framework that enables reliable long-horizon manipulation by combining a persistent semantic-graph state with an executable code-based planner and progress-guided visual–language prompting. The semantic-graph maintains task-relevant entities and relations under partial observability. The synthesized planner executes over this semantic-graph to perform efficient progress checks and outputs a subtask instruction together with subtask-relevant objects. We use these outputs to construct clutter-suppressed observations that focus the VLA executor on critical evidence. On real-world non-Markovian tasks, CodeGraphVLP improves task completion over strong VLA baselines and history-enabled variants while substantially lowering planning latency compared to VLM-in-the-loop planning. We also conduct extensive ablation studies to confirm the contributions of each component. 
+
+†Authors marked with this symbol contributed equally. 1University of Arkansas, Fayetteville, AR, USA. 2Max Planck Research School for Intelligent Systems and the University of Stuttgart, Stuttgart, Germany. 
+
+3Google Research. 4TU Wien, Vienna, Austria. 5University of Liverpool, Liverpool, U.K. 
+
+I. I NTRODUCTION 
+
+Vision-Language-Action (VLA) models [1]–[9] have rapidly advanced generalist robot control by post-training Vision-Language Models (VLMs) backbone for action pre-diction on large-scale robotic manipulation data [10]–[12]. Most VLAs are trained and deployed as short-horizon poli-cies that map the latest sensory input and instruction to the next action chunk, implicitly assuming that the current observation is sufficient for action reasoning. However, this assumption is fragile and limits real-world deployment, where long-horizon embodied tasks are intrinsically non-Markovian : the information required to choose the next action may not be contained in the latest observation due to partial observability, occlusions, and evolving task context. In other words, the correct next action can depend on task context and past observations. Two strategies have emerged to extend VLAs to long-horizon tasks. Memory-augmented VLAs [13]–[16] (Fig-ure 1(a)) support temporally referential grounding by inte-grating temporal context via step-wise histories, condensed memory tokens, or retrieval of task-relevant past expe-rience. In parallel, hierarchical VLM–VLA [8], [17]–[20] (Figure 1(b)) place a VLM planner above a VLA executor, 
+
+> arXiv:2604.22238v1 [cs.RO] 24 Apr 2026
+
+repeatedly selecting a subtask and conditioning the VLA to execute it as a short closed-loop segment. This hierarchy is appealing because it reuses VLAs as generalist controllers while leveraging a general-purpose VLM for long-horizon reasoning and progress estimation. Despite these advances, key non-Markovian challenges remain. Memory-augmented VLAs trade off capacity against efficiency, since scaling history (or retrieval) increases com-pute and latency, while bounded memory can miss the sparse past evidence needed for correct action selection. Hierarchical VLM–VLA systems reduce the burden on the executor by letting a VLM carry long-horizon reasoning and progress estimation, but they typically do not maintain a persistent grounded task state. Decisions therefore still rely heavily on the latest observation and language prompts, and the language-only interface can make the VLA brittle to clutter and distractors. Furthermore, keeping a VLM in the loop also adds substantial inference latency, undermining real-time manipulation feasibility. These limitations motivate a central question: How to maintain a compact, explicit task state that preserves task-relevant evidence across time and supports reliable long-horizon control, while keeping inference practical for closed-loop robotics? 
+
+To this end, we propose CodeGraphVLP ( CodeGraph 
+
+with Visual– Language Prompting) (Figure 1(c)), a hierar-chical framework for non-Markovian long-horizon manipu-lation. Our approach integrates: (i) an executable code-based planner for efficient long-horizon progress estimation, (ii) a persistent semantic graph state that encodes task-relevant entities, attributes, and relations under partial observability, and (iii) progress-guided visual–textual prompting for attentive VLA execution in cluttered scenes. CodeGraphVLP maintains a compact semantic-graph that persists across time and is updated online from observations to explicitly capture the evolving task context. Inspired by embodied programmatic control [21], we synthesize a task-specific code planner that queries this graph to check task progress through state-transition constraints and produce the next subtask instruction along with subtask-relevant objects. This programmatic reasoning provides a lightweight mecha-nism for reasoning about task configurations while avoiding repeated VLM calls for progress checks. We use these outputs to form progress-guided visual–textual prompts that suppress clutter and steer the VLA policy toward task-critical evidence for reliable action reasoning. We evaluate CodeGraphVLP on three real-world tabletop manipulation tasks with non-Markovian dependencies, in-cluding one task that additionally emphasizes clutter-robust action reasoning. CodeGraphVLP achieves more reliable task completion than strong VLA baselines, memory-augmented variants, and VLM-in-the-loop alternatives, while substan-tially reducing planning latency compared to VLM-in-the-loop planning (Section IV-C). Overall, our key contributions are summarized as follows:  
+
+> •
+
+We introduce CodeGraphVLP, which combines a code-based planner, a persistent semantic-graph that explicitly captures the scene, and progress-guided visual–language prompting to enable clutter-robust non-Markovian long-horizon manipulation.  
+
+> •
+
+We show how executable code over the semantic graph can track progress and select subtasks efficiently while produc-ing subtask-relevant entities for downstream execution.  
+
+> •
+
+We design three real-world tabletop tasks with non-Markovian dependencies and clutter, and show that Code-GraphVLP improves task success while reducing planning latency compared to other history-enabled variants. Abla-tion studies further quantify the benefit of each component in the proposed CodeGraphVLP. II. R ELATED WORK 
+
+A. Vision–Language–Action Models 
+
+Short-horizon VLAs. Vision–Language–Action (VLA) models [1], [3]–[7], [9] build generalist visuomotor policies by adapting pretrained vision–language backbones [22]–[26] on action prediction with large-scale robot demonstrations. Architecturally, autoregressive VLAs [5], [7] discretize ac-tions into tokens and formulate control as next-token predic-tion, leveraging sequence modeling advances from language models, while flow-based VLAs [6], [8], [9] generate continu-ous trajectories through noise-to-action transformations (e.g., flow matching [27]), enabling smoother and higher-frequency control. Despite recent progress, most VLAs remain largely reactive, conditioning action generation on the latest obser-vation while focusing primarily on low-level control. As a result, long-horizon task progress and persistent context are often left unmodeled, which becomes a bottleneck in non-Markovian settings where decisions depend on past observations that may be occluded or no longer visible. To relax the short-horizon assumption, memory-augmented VLAs incorporate temporal context for history-dependent grounding, using mechanisms such as step-wise memories for temporally referential instructions [13], learned memory tokens [15], [16], or retrieval from external experience buffers [14]. However, these approaches typically maintain context as unstructured histories, bounded tokens, or retrieved snippets, limiting their ability to explicitly track long-horizon task progress. 
+
+In contrast, our method externalizes task context into a persistent semantic graph and an code-based planner that queries this structured state to track non-Markovian progress and generate grounded subtask instructions with relevant objects. B. Non-Markovian Long-Horizon Reasoning 
+
+VLM-based Reasoning. A common approach to non-Markovian manipulation uses a pretrained VLM as a high-level reasoning module that converts visual observations and task descriptions into a global plan executed by adownstream controller. Methods in this category explore different prompting and feedback strategies to guide VLM reasoning, including visual prompt signals to highlight task-relevant regions [28], feedback from auxiliary modules such as scene description or success detection [29], and visual chain-of-thought reasoning that produces intermediate plans Segmentation                                                             
+
+> Model VLM Multi-View
+> Associate
+> Relation
+> Induction LLM
+> Initial Observations Observations w/ Set-of-Marks Task-Relevant Objects Initial Semantic-Graph State
+> “Swap two cups , start with
+> black cup. ”
+> cup
+> gripper
+> purple
+> plate
+> on
+> dark blue
+> open
+> cup
+> black
+> blue
+> plate
+> light blue
+> on
+> def policy(graph):
+> mem =graph.task_memory.setdefault (
+> “swap_cups”,
+> {})
+> #one-time role binding (persisted across calls)
+> if "swap_plan" not in mem:
+> black_cup, other_cup =identify_cups (graph)
+> plate_black_cup_started_on =plate_containing (
+> graph,
+> black_cup)
+> plate_other_cup_started_on =plate_containing (
+> graph,
+> other_cup)
+> buffer_plate =empty_plate (
+> graph,
+> exclude=[
+> plate_black_cup_started_on,
+> plate_other_cup_started_on],
+> )
+> mem["swap_plan"] =[
+> (black_cup, buffer_plate),
+> (other_cup, plate_black_cup_started_on),
+> (black_cup, plate_other_cup_started_on),
+> ]
+> #emit the first unfinished transfer
+> for cup, dst_plate in mem["swap_plan"]:
+> if inside (graph, cup, dst_plate):
+> continue
+> if not holding (graph, cup):
+> return Subtask (f"pick up {cup}", [cup])
+> return Subtask (
+> f"put {cup} inside {dst_plate}", [cup, dst_plate])
+> return None
+
+Code-as-Planner (High-Level Planner)  
+
+> Visual
+> Observations
+
+… … 
+
+> Semantic-Graph
+> States
+
+… …
+
+VLA (Low-Level Policy)  
+
+> Action Action Action
+> Clutter-Free
+> Visual-Language
+> Prompt
+
+… …      
+
+> “Put black cup inside
+> light blue plate .”
+> “Put blue cup inside
+> dark blue plate .”
+> “Put black cup inside
+> purple plate .”
+> (a) Graph State Initialization (c) End-to-End Inference Pipeline
+
+(b) Programmatic Planner Construction       
+
+> plate
+> hold on hold
+> on
+> cup
+> cup cup
+> cup
+> plate plate
+> plate
+> gripper plate plate
+> plate
+> gripper
+> hold on cup cup
+> plate plate
+> plate
+> gripper
+
+Fig. 2. Overview of CodeGraphVLP. (a) Graph state initialization : from the first multi-view observation, we segment objects, identify task-relevant entities, associate them across views, and induce relations to build a compact semantic graph. (b) Programmatic planner construction : given the task and a graph API, an LLM synthesizes an executable policy(graph) that performs progress checks over the graph and maintains lightweight task memory. 
+
+(c) End-to-end inference : as new observations arrive, we update the semantic graph, execute the planner to produce the next subtask and relevant objects, construct clutter-free visual–language cues, and run a VLA policy for action prediction. 
+
+or rationales before action generation [30]. While effective for generating high-level task guidance, these approaches typically reason from a snapshot of the scene and may struggle to adapt when the environment changes or task progress becomes partially observable. Another line of work performs closed-loop VLM reason-ing , repeatedly querying the model after executing action chunks to update the plan from new observations. These approaches leverage structured representations and interac-tive feedback to enable iterative replanning under partial observability [8], [17], [31]. While this improves robustness in cluttered and dynamic environments, frequent VLM/LLM queries introduce significant computational overhead. More-over, the planner typically communicates with the controller through language-only subtask instructions, leaving fine-grained visual grounding to the VLA, which can lead to mis-grounded actions in cluttered scenes. We overcome such barriers by maintaining a persistent semantic graph state that is updated online and queried by an code-based planner to estimate task progress and generate subtasks, without repeatedly invoking a VLM . The plan-ner also outputs subtask-relevant objects , enabling clutter-suppressing visual cues that guide the downstream VLA toward grounded action execution. 
+
+LLM-generated code for policy control. Recent work uses LLMs to synthesize executable programs that interface with perception and robot skills. [21] generates programs that compose APIs and control primitives to produce reactive policies from language instructions, while [32] generates constraint-based code that solves keypoint-level motion op-timization over 3D observations. Rather than generating code to directly control actions or solve motion constraints, we formulate LLM-generated code as a task-level planner operating over a persistent semantic-graph state that is updated online. This structured and queryable state enables explicit reasoning about task progress and produces grounded subtasks, allowing the downstream VLA to focus on task-relevant entities and remain robust in cluttered scenes. III. M ETHOD 
+
+A. Overview of CodeGraphVLP 
+
+Problem formulation. Formally, a VLA model is for-mulated under a Markovian assumption. At each timestep 
+
+t, it conditions action generation on the latest observation and the task instruction, without any explicit mechanism to maintain a history-conditioned state. The robot observes a multi-view RGB observation ot = [ I1
+
+t , . . . , I nt ] together with proprioception st and receives a natural-language instruction 
+
+l. Typically, a VLA uses a vision-language backbone to fuse 
+
+(ot, l ) into a latent representation, followed by an action head that predicts a sequence of k future control actions (action chunking) [33], [34]: 
+
+τt = ( at, . . . , a t+k−1) = πθ (ot, s t, l ), (1) and re-query the model in closed loop as new observations arrive. This Markovian assumption becomes unreliable in long-horizon tasks with non-Markovian dependencies, where the correct next action can depend on past evidence that may be occluded or absent from ot. We capture this by defining the interaction history ht = ( o0: t, s 0: t, τ 0: t−1) and writing the optimal policy as 
+
+τt = π⋆(ht, l ). (2) However, directly modeling ht with longer observation win-dows, generic memory modules, or iterative VLM-in-the-loop planning is often impractical. Relevant evidence may be sparse or temporally distant and easily confounded by clutter, while memory and compute costs grow poorly with task horizon. 
+
+Overview of CodeGraphVLP. Our goal is to enable efficient long-horizon manipulation with VLAs under non-Markovian and cluttered conditions. We introduce Code-GraphVLP, which combines a Code-as-Planner with a per-sistent semantic-graph state that tracks task-relevant objects and relations over time. The code-based planner queries this structured state to estimate task progress and generate grounded subtasks without repeated VLM calls. We further design clutter-free visual–language prompting that exposes the VLA only to subtask-relevant context, improving vi-sual grounding and reducing distractor-induced errors. An overview is shown in Figure 2. 
+
+B. Persistent Progress State via Semantic-Graph 
+
+At the core of our code planner is a persistent semantic-graph state Gt that summarizes task-relevant objects and relations, making scene context explicit and queryable. By filtering out irrelevant clutter, Gt remains compact under partial observability. 
+
+Semantic-graph state. We define Gt = (Vt, Et), where 
+
+Vt is the set of entity nodes and Et is the set of typed relation edges. Each node vi ∈ V t represents an entity with a semantic name, per-view mask/box grounding, and task-relevant attributes. Each edge eij = ( vi, v j , r ) ∈ E t connects 
+
+vi, v j ∈ V t with relation type r (e.g., in , on , and near ). 
+
+Semantic-graph state initialization. Given the first obser-vation o0 and instruction l, we initialize G0 in four steps. 
+
+a) Object segmentation: For each view v, we use an off-the-shelf YOLOE [35] instance segmenter to extract a set of masks Mv = {mvj }j . We fine-tuned the segmenter with annotated robot arm masks from 10 videos in our teleoperated demonstrations to reliably segment its masks. 
+
+b) Identify task-relevant objects and their attributes: 
+
+We overlay each segmented object with an outline and a nu-meric ID, following Set-of-Mark prompting [36], and query a VLM with the marked frames and instruction l to identify which objects are relevant to the task and their corresponding attributes. We then remove all irrelevant objects. 
+
+c) Multi-view association: Due to occlusion, each view may contain only a subset of task-relevant objects. We therefore link masks across views into view-consistent graph nodes. We first match objects by semantic distance : CLIP visual features [37] are extracted from each masked region, and we match cross-view pairs whose cosine distance is below a threshold τvis . Afterwards, we resolve the remaining cross-view associations using a geometric distance based on relative spatial layout. Let A denote the set of anchors (nodes already matched by semantic distance), and let c(mv ) = (xvm, y vm) ∈ R2 be the center-of-mass of mask mv of an unmatched object in view v. We compute distance of mv to every anchor a ∈ A in the same view as follows: 
+
+d(mv , a v ) = ∥c(mv ) − c(av )∥2 (3) forming a distance signature dv (m) = [ d(mv , a v )] a∈A . We further normalize it by the maximum anchor distance in the view, ˜dv (m) = dv (m) max a∈A d(mv , a v ), to account for scale differences between views. Finally, we match the re-maining objects across views by comparing their normalized signatures ˜d and accepting nearest-neighbor matches under a threshold τgeo .
+
+d) Relation induction: With view-consistent nodes in place, relation edges E0 are induced with lightweight geo-metric rules on the segmentation masks. Proximity ( near )thresholds the normalized center-distance between objects, containment (in ) checks whether one mask substantially encloses another, and support ( on ) uses consistent vertical ordering and boundary contact in image space. 
+
+Online semantic-graph state update. At each timestep 
+
+t > 0, we track task-relevant objects from Gt−1 to the new observation ot using Cutie [38], which updates the per-view mask groundings of existing nodes. To recover from tracker drift and to discover new objects, we additionally run the instance segmenter on ot and pass candidate masks through the same relevance filtering and multi-view association pro-cedure as described in semantic-graph state initialization phase. When a candidate region corresponds to an existing node, we merge it as a correction; otherwise, we add it as a new node only if it is deemed task-relevant and then refresh edges using relation induction rules. 
+
+C. Code-as-Planner 
+
+Constructing programmatic planner. We represent the planner as an executable Python program P that is repeatedly invoked online during manipulation deployment. Given the current semantic-graph, it outputs the next subtask instruction and the subtask-relevant objects that should be grounded for action reasoning: 
+
+ lsub  
+
+> t
+
+, Orel 
+
+> t
+
+ = P(Gt). (4) To instantiate P for a long-horizon instruction l, we follow programmatic embodied control [21], [29], [39] and prompt an LLM once at task initialization with l, the graph schema, and the initial graph G0. The LLM synthesizes a task-specific Python planner with three components. First, it generates helper routines that implement common graph queries (e.g., filtering objects by class and attributes, locating the container an object is currently in , checking whether the robot is 
+
+holding an object, and selecting an empty buffer container). Second, it defines lightweight boolean predicates that encode task constraints and progress conditions over Gt (e.g., single-object holding, exclusivity constraints for containers, and relation checks for in /on /holding ). Third, it implements a main policy(graph) function that uses these primitives to select the next subtask and returns  lsub  
+
+> t
+
+, Orel 
+
+> t
+
+.We instruct the LLM to first identify task roles and ordering constraints from G0, and then implement a reac-tive program that grounds roles from semantic fields (class names, attributes, relations). Crucially, the code maintains a lightweight persistent list graph.task memory that records which subtasks have already been completed, pre-venting redundant execution across repeated replanning calls. This one-time synthesis amortizes LLM/VLM inference cost and yields a planner that can be executed cheaply without keeping a large LLM/VLM in the loop. 
+
+Planner structure and task memory maintenance. During deployment, P is called after each executed action chunk with the latest graph Gt. At each call, the synthesized 
+
+policy(graph) queries Gt and uses simple graph pred-icates (e.g., holding and in ) to check whether the current subtask has already been satisfied. If so, it appends the subtask to graph.task memory and advances to the next unfinished subtask; otherwise, it re-issues the same instruction. It then returns  lsub  
+
+> t
+
+, Orel 
+
+> t
+
+, where Orel  
+
+> t
+
+contains only the objects needed to ground the immediate decision. 
+
+Example (swap cups). Consider swapping two cups, start-ing with the black cup (Figure 2(b)). The synthesized 
+
+policy(graph) performs one-time role binding, identi-fying black cup , other cup , their start plates, and an empty buffer plate for temporary storage, and caches a three-step swap plan (respecting container exclusivity) in 
+
+graph.task memory . At runtime, it scans swap plan 
+
+and emits the first unfinished transfer, choosing between pick up and put . . . inside . . . based on holding /in predicates and returning only the subtask-relevant objects for grounding. We use Orel  
+
+> t
+
+to construct the clutter-free visual–textual cues for the VLA policy described next. Note that the planner only reads Gt; graph construction and online updates are handled by Section III-B. Overall, we alternate between updating Gt, invoking P,and executing one action chunk with the VLA, which keeps planning reactive while avoiding VLM-in-the-loop inference. Expressing planning as executable code over Gt enables effi-cient and interpretable long-horizon subtask reasoning, while the explicit Orel  
+
+> t
+
+provides grounded context that improves robustness under clutter. 
+
+D. Clutter-Free Visual-Language Prompting 
+
+Long-horizon tasks are often executed in cluttered workspaces, where many visible objects are irrelevant to the current decision and can distract a VLA from correct ground-ing. We therefore convert the planner output  lsub  
+
+> t
+
+, Orel 
+
+> t
+
+
+
+together with the semantic-graph state Gt into a progress-guided visual–language prompt for the VLA executor. 
+
+Subtask language cue. Following hierarchical long-horizon systems that guide low-level execution with subtask-level language [17], [20], we condition the VLA executor on the planner-produced instruction lsub  
+
+> t
+
+instead of the long-horizon task description l. Keeping lsub  
+
+> t
+
+short and imperative focuses the language context on the immediate decision and aligns it with the subtask-relevant object set Orel  
+
+> t
+
+, improving action reasoning in cluttered scenes. 
+
+Clutter-free visual cue. Subtask-level language reduces lin-guistic ambiguity, but the VLA executor still has to perform fine-grained visual grounding from raw RGB observations, which has been shown to be brittle under clutter and dis-tractors [40]. We address this brittleness by constructing a clutter-free observation that retains only the subtask-relevant objects Orel  
+
+> t
+
+. For each view v, let mvi,t denote the binary segmentation mask of object i rendered in that view by Gt.We define the view-specific retention mask as: 
+
+M vt = max 
+
+> i∈O rel
+> t
+
+mvi,t , (5) which keeps only the subtask-relevant objects. We then form a clutter-free image by blacking out all other pixels: 
+
+˜Ivt = Ivt ⊙ M vt , (6) and define the clutter-free multi-view observation as ˜ot =[ ˜I1 
+
+> t
+
+, . . . , ˜Int ].
+
+VLA execution. The executor VLA predicts the next action chunk from (˜ ot, s t, l sub  
+
+> t
+
+), and we apply the same prompting during fine-tuning to match the training and deployment inputs. By exposing only subtask-critical visual evidence and suppressing distractors, the prompting improves clutter-robust action reasoning of downstream VLA policies. 
+
+Training objective. We fine-tune the VLA via imitation learning using training inputs that match the progress-guided executor inputs used at test time. For each teleoperated trajectory paired with a long-horizon instruction l, we first build the semantic-graph Gt from the recorded observations using our semantic-graph construction and online update pipeline. We then execute the synthesized code planner 
+
+P(Gt) at each timestep to produce  lsub  
+
+> t
+
+, Orel 
+
+> t
+
+, and mask the multi-view images to form the clutter-free observation ˜ot.This converts each long-horizon demonstration into a set of subtask-conditioned, object-focused training tuples. We op-timize the VLA parameters θ on D = {(˜ oi, s i, τ i, l sub  
+
+> i
+
+)}Ni=1 
+
+via maximum-likelihood estimation: 
+
+max  
+
+> θ
+
+E(˜ o,s,τ,l sub )∼D 
+
+log πθ (τ |˜o, s, l sub ) . (7) IV. E XPERIMENTS 
+
+To comprehensively evaluate CodeGraphVLP, we design our experiments to answer three questions: 
+
+Q1. Can CodeGraphVLP complete non-Markovian long-horizon tasks more reliably than strong VLA baselines, especially in cluttered scenes? 
+
+Q2. Does programmatic planning over a persistent semantic-graph enable more efficient progress estimation than history-enabled VLAs or VLM-in-the-loop hierarchies? 
+
+Q3. How much does progress-guided visual–textual prompt-ing improve clutter-robust action reasoning during execution? 
+
+A. Experimental Setups 
+
+Tasks. We evaluate CodeGraphVLP on a suite of three real-world tabletop manipulation tasks that require reasoning over past observations and clutter-robust action reasoning, “Move the cube to the                                             
+
+> other plate , then return
+> it to the original plate .”
+> Clutter-Free Visual Cue
+> Semantic-Graph State
+> Subtask Language Cue “Pick orange cube .” “Put orange cube inside
+> blue plate .” “Pick orange cube .” “Put orange cube inside
+> purple plate .”
+> Clutter-Free Visual Cue
+> Semantic-Graph State
+> Subtask Language Cue “Pick orange cube .” “Put orange cube inside
+> blue cup .” “Pick black cup .” “Put black cup inside
+> blue cup .”
+> “Put the cube into the
+> nearest cup , then stack
+> the other cup on top.”
+> Clutter-Free Visual Cue
+> Semantic-Graph State
+> Subtask Language Cue “Pick blue cup .” “Put blue cup inside
+> light blue plate .”
+> “Put blue cup inside
+> dark blue plate .”
+> “Swap two cups , start
+> with blue cup .”
+> “Put black cup inside
+> purple plate .”
+> in
+> plate
+> gripper
+> plate
+> cube
+> purple blue
+> orange
+> hold
+> plate
+> gripper
+> plate
+> cube
+> purple
+> blue
+> orange in plate
+> gripper
+> plate
+> cube
+> purple
+> blue
+> orange
+> hold
+> plate
+> gripper
+> plate
+> cube
+> purple
+> blue
+> orange
+> near
+> cup
+> gripper
+> cup
+> cube
+> blue black
+> orange
+> hold cup
+> gripper
+> cup
+> cube
+> blue black
+> orange in
+> cup
+> gripper
+> cup
+> cube
+> blue black
+> orange in
+> cup
+> gripper
+> cup
+> cube
+> blue black
+> orange
+> hold
+> on cup
+> gripper
+> plate
+> cup
+> blue
+> dark blue
+> black
+> plate
+> purple
+> on
+> plate
+> light blue
+> on cup
+> gripper
+> plate
+> cup
+> blue
+> dark blue
+> black
+> plate
+> purple
+> hold
+> plate
+> light blue
+> hold cup
+> gripper
+> plate
+> cup
+> blue
+> dark blue
+> black
+> plate
+> purple
+> on
+> plate
+> light blue
+> hold
+> cup
+> gripper
+> plate
+> cup
+> blue
+> dark blue
+> black
+> plate
+> purple
+> plate
+> light blue
+> on
+
+Fig. 3. Qualitative rollouts of CodeGraphVLP on our three real-world tasks (Pick-and-Place Twice, Place-and-Stack, and Swap Cups). For each task, we show multi-view RGB inputs with the overall instruction, the semantic-graph state Gt, and the progress-guided prompts used by the VLA policy: clutter-free visual cues that retain only subtask-relevant objects and the planner-produced subtask language cues. 
+
+inspired by non-Markovian long-horizon benchmarks [15]: 
+
+(i) Pick-and-Place Twice. Two plates are placed on the tabletop, and a cube is initialized on a randomly chosen plate. The robot must pick the cube and place it onto the other plate, then pick it again and return it to the original plate. This task is history-dependent because both the initial and terminal configurations are visually similar, so a policy can prematurely predict that it is already done. 
+
+(ii) Place-and-Stack. Two cups are placed on opposite sides of the workspace, and a cube is initialized near one of the cups. The robot must first place the cube into the nearest cup, then pick up the other cup and stack it onto the cup that contains the cube. After the cube is inserted, it is completely occluded, so selecting the empty cup to stack depends on past observations rather than the latest RGB input alone. 
+
+(iii) Swap Cups. Three plates are placed on the tabletop, and two cups (black and blue) are randomly placed on two of them, leaving one plate empty as a temporary buffer. The goal is to swap the positions of the two cups, with the additional constraint that the policy must start by moving either the black cup or the blue cup (two task variants). This requires memorizing the initial cup–plate assignments and executing multi-step swaps without reverting completed steps. 
+
+Demonstrations. We collect teleoperated demonstrations for fine-tuning all VLA models: 100 for Pick-and-Place Twice, 100 for Place-and-Stack, and 200 for Swap Cups, with 100 episodes that start with the blue cup and 100 that start with the black cup. 
+
+Baselines. We compare CodeGraphVLP against strong open VLA baselines, including π0 [6], π0 FAST [7], π0.5 [8], and Gr00T N1.5 [9]. These baselines operate directly on raw multi-view RGB observations without progress-guided prompting. To probe the benefit of raw temporal context, we also evaluate a history-enabled Gr00T N1.5 variant that receives four past frames sampled at 1 s intervals. We fine-tune and evaluate all baselines under the same protocol as CodeGraphVLP, using identical task prompts and replanning cadence. 
+
+Implementation details. We instantiate the VLA executor in CodeGraphVLP with π0 [6] and fine-tune all VLA models (ours and baselines) from their public checkpoints for 50K iterations using low-rank adaptation [41] (learning rate 1 ×
+
+10 −5, batch size 128) on four NVIDIA A6000 GPUs. At test time, inference runs on a single GPU and we execute a cut-off horizon of H = 10 actions per forward pass before TABLE I COMPARISON OF METHODS ON REAL -WORLD NON -M ARKOVIAN LONG -HORIZON TASKS . A LL REPORTED VALUES ARE SUCCESS RATES (%). 
+
+Method Pick-and-Place Twice Place-and-Stack Swap Cups Avg. PnP Once Success Rate Drop Cube Success Rate Stage Cup Success Rate 
+
+π0 FAST [7] 0 0 0 0 0 0 0.0 
+
+π0 [6] 0 0 60 40 55 50 30.0 
+
+π0.5 [8] 5 0 35 5 25 10 5.0 Gr00T N1.5 [9] 50 35 40 40 70 20 31.7 Gr00T N1.5 + Multi-frame 100 75 50 50 90 45 56.7 
+
+CodeGraphVLP (ours) 100 80 95 80 100 85 81.7 Base Camera  
+
+> (Realsense D455)
+> Wrist Camera
+> (Realsense D405)
+> Robotiq 2F-85
+> UR10e
+> Fig. 4. Robot experimental setup on a UR10e manipulator with a parallel gripper. The system receives both a global scene observation and a wrist-view observation near the end-effector.
+
+replanning. We use GPT-5 [42] to synthesize the executable planning program once at the beginning of each task. 
+
+Hardware setup. All experiments are conducted on the UR10e robotic arm with a Robotiq 2F-85 parallel-jaw gripper (Figure 4). We capture RGB observations from two synced camera streams, including a fixed camera placed in an over-shoulder viewpoint of the robot, and a wrist-mounted camera placed at the wrist–gripper interface. During teleoperation, we record demonstrations and log observations at 10 Hz. 
+
+B. Main Results 
+
+Table I reports success rates across three real-world non-Markovian tasks, including intermediate milestones that cap-ture partial progress. CodeGraphVLP consistently achieves the highest performance, significantly outperforming all baselines, including the strongest history-augmented VLA. Improvements in both full-task and partial completion met-rics suggest that CodeGraphVLP not only executes subtasks more reliably in clutter but also maintains more consistent long-horizon progress. Representative rollouts are shown in Figure 3. Among the baselines, π0 FAST fails on all tasks, sug-gesting that autoregressive action decoding may be brittle for long-horizon closed-loop control, where greedy pre-dictions can collapse to inert behaviors under ambiguous observations. In contrast, VLAs with diffusion or flow-based decoders appear more stable, and conditioning on temporal context further improves performance. However, even the strongest history-augmented baseline remains substantially below CodeGraphVLP, indicating that unstructured temporal context alone is insufficient to resolve non-Markovian depen-dencies or clutter-induced grounding errors without explicit   
+
+> TABLE II ABLATION ON SUBTASK PLANNING EFFICIENCY ON SWAP CUPS .
+
+Code-as- Semantic Success Latency Planner Graph Rate (sec/step) 
+
+✗ ✗ 25 2.967 
+
+✗ ✓ 55 3.142 
+
+✓ ✓ 85 0.328     
+
+> TABLE III ABLATION ON CLUTTER -F REE VISUAL –L ANGUAGE PROMPTING ON
+> SWAP CUPS .
+
+Method Success rate CodeGraphVLP w/o clutter-free visual 40 CodeGraphVLP 85 
+
+progress reasoning and structured visual cues. 
+
+C. Ablation Analysis 
+
+Unless otherwise stated, we conduct all ablation studies on the Swap Cups task, which requires both non-Markovian reasoning and clutter-robust execution. 
+
+Efficiency benefits of Code-as-Planner. To evaluate the effi-ciency and reliability of Code-as-Planner, we compare it with two VLM-based planners that infer the next subtask online at each replanning step. Both use the latest multi-view RGB observation, while one additionally receives our semantic-graph progress state. As shown in Table II, the progress state improves VLM planning, but RGB-only reasoning remains insufficient in non-Markovian settings. Even so, VLM-in-the-loop planning remains slower and less reliable, whereas Code-as-Planner achieves higher success with substantially lower latency through one-time synthesis and lightweight graph queries. 
+
+How effective is visual–textual prompting for VLA exe-cution? We isolate the effect of the clutter-free visual cue by removing the subtask-relevant object set while keeping the subtask language cue unchanged. Concretely, we train and deploy the VLA policy on the original multi-view RGB observations instead of masking to the subtask-relevant re-gions. As shown in Table III, this reduces success from 85% to 40%, indicating that progress-guided perceptual inputs are important for clutter-robust action reasoning. V. C ONCLUSION 
+
+We introduced CodeGraphVLP, a framework that en-ables long-horizon manipulation by combining structured scene memory with programmatic planning and grounded visual–language prompting. Experiments on real-world tasks show that this design improves task success while reduc-ing planning latency compared to VLM-in-the-loop and memory-augmented VLA baselines. 
+
+Limitations. Our pipeline relies on foundation models for both semantic-graph construction and program synthesis, so performance depends on their capabilities and failure modes. In particular, the attributes and relations inferred by the VLM can be sensitive to camera viewpoints and visual quality, and the generated Code-as-Planner requires careful prompt design to ensure reliable, executable logic. Future work includes developing an open-world semantic-graph generation module that streamlines the construction of persistent semantic-graph state, and automated verification and self-checks for synthesized code-based planners. REFERENCES [1] A. Brohan, N. Brown, J. Carbajal, Y. Chebotar, J. Dabis, C. Finn et al. ,“Rt-1: Robotics transformer for real-world control at scale,” in arXiv preprint arXiv:2212.06817 , 2022. [2] B. Zitkovich, T. Yu, S. Xu, P. Xu, T. Xiao, F. Xia et al. , “Rt-2: Vision-language-action models transfer web knowledge to robotic control,” in 
+
+CoRL , 2023, pp. 2165–2183. [3] Octo Model Team, D. Ghosh, H. Walke, K. Pertsch, K. Black, O. Mees 
+
+et al. , “Octo: An open-source generalist robot policy,” in Proceedings of Robotics: Science and Systems , Delft, Netherlands, 2024. [4] X. Li, M. Liu, H. Zhang, C. Yu, J. Xu, H. Wu et al. , “Vision-language foundation models as effective robot imitators,” in ICLR , 2024. [5] M. J. Kim, K. Pertsch, S. Karamcheti, T. Xiao, A. Balakrishna, S. Nair 
+
+et al. , “OpenVLA: An open-source vision-language-action model,” in 
+
+CoRL , 2024. [6] K. Black, N. Brown, D. Driess, A. Esmail, M. Equi, C. Finn et al. ,“π0: A vision-language-action flow model for general robot control,” 
+
+arXiv preprint arXiv:2410.24164 , 2024. [7] K. Pertsch, K. Stachowicz, B. Ichter, D. Driess, S. Nair, Q. Vuong 
+
+et al. , “Fast: Efficient action tokenization for vision-language-action models,” arXiv preprint arXiv:2501.09747 , 2025. [8] P. Intelligence, K. Black, N. Brown, J. Darpinian, K. Dhabalia, D. Driess et al. , “ π0.5: a vision-language-action model with open-world generalization,” arXiv preprint arXiv:2504.16054 , 2025. [9] J. Bjorck, F. Casta˜ neda, N. Cherniadev, X. Da, R. Ding, L. Fan et al. ,“Gr00t n1: An open foundation model for generalist humanoid robots,” 
+
+arXiv preprint arXiv:2503.14734 , 2025. [10] H. R. Walke, K. Black, T. Z. Zhao, Q. Vuong, C. Zheng, P. Hansen-Estruch et al. , “Bridgedata v2: A dataset for robot learning at scale,” in CoRL . PMLR, 2023, pp. 1723–1736. [11] A. O’Neill, A. Rehman, A. Maddukuri, A. Gupta, A. Padalkar, A. Lee et al. , “Open x-embodiment: Robotic learning datasets and rt-x models: Open x-embodiment collaboration 0,” in ICRA . IEEE, 2024, pp. 6892–6903. [12] A. Khazatsky, K. Pertsch, S. Nair, A. Balakrishna, S. Dasari, S. Karam-cheti et al. , “Droid: A large-scale in-the-wild robot manipulation dataset,” arXiv preprint arXiv:2403.12945 , 2024. [13] H. Ahn, O. Kwon, K. Kim, J. Jeong, H. Jun, H. Lee et al. , “Visually grounding lanuage instruction for history-dependent manipulation,” in 
+
+ICRA , May 2022. [14] A. Sridhar, J. Pan, S. Sharma, and C. Finn, “Memer: Scaling up memory for robot control via experience retrieval,” 2025. [15] M. Koo, D. Choi, T. Kim, K. Lee, C. Kim, Y. Seo et al. , “HAMLET: Switch your vision-language-action model into a history-aware policy,” in ICLR , 2026. [16] H. Shi, B. Xie, Y. Liu, L. Sun, F. Liu, T. Wang et al. , “MemoryVLA: Perceptual-cognitive memory in vision-language-action models for robotic manipulation,” in ICLR , 2026. [17] L. X. Shi, brian ichter, M. R. Equi, L. Ke, K. Pertsch, Q. Vuong 
+
+et al. , “Hi robot: Open-ended instruction following with hierarchical vision-language-action models,” in ICML , 2025. [18] C.-P. Huang, Y.-H. Wu, M.-H. Chen, Y.-C. F. Wang, and F.-E. Yang, “Thinkact: Vision-language-action reasoning via reinforced visual la-tent planning,” in NeurIPS , 2025. [19] C.-P. Huang, Y. Man, Z. Yu, M.-H. Chen, J. Kautz, Y.-C. F. Wang 
+
+et al. , “Fast-thinkact: Efficient vision-language-action reasoning via verbalizable latent planning,” arXiv preprint arXiv:2601.09708 , 2026. [20] D. Li, Y. Zhang, M. Cao, D. Liu, W. Xie, T. Hui et al. , “Towards long-horizon vision-language-action system: Reasoning, acting and memory,” in ICCV , 2025, pp. 6839–6848. [21] J. Liang, W. Huang, F. Xia, P. Xu, K. Hausman, B. Ichter et al. ,“Code as policies: Language model programs for embodied control,” in ICRA , 2023, pp. 9493–9500. [22] J.-B. Alayrac, J. Donahue, P. Luc, A. Miech, I. Barr, Y. Hasson 
+
+et al. , “Flamingo: a visual language model for few-shot learning,” in NeurIPS , vol. 35, 2022. [23] D. Driess, F. Xia, M. S. M. Sajjadi, C. Lynch, A. Chowdhery, B. Ichter 
+
+et al. , “Palm-e: an embodied multimodal language model,” in ICML ,ser. ICML’23. JMLR.org, 2023. [24] X. Chen, J. Djolonga, P. Padlewski, B. Mustafa, S. Changpinyo, J. Wu 
+
+et al. , “On scaling up a multilingual vision and language model,” in 
+
+CVPR , June 2024, pp. 14 432–14 444. [25] S. Karamcheti, S. Nair, A. Balakrishna, P. Liang, T. Kollar, and D. Sadigh, “Prismatic vlms: Investigating the design space of visually-conditioned language models,” in ICML , 2024. [26] L. Beyer, A. Steiner, A. S. Pinto, A. Kolesnikov, X. Wang, D. Salz 
+
+et al. , “Paligemma: A versatile 3b vlm for transfer,” arXiv preprint arXiv:2407.07726 , 2024. [27] Y. Lipman, R. T. Q. Chen, H. Ben-Hamu, M. Nickel, and M. Le, “Flow matching for generative modeling,” in ICLR , 2023. [28] K. Fang, F. Liu, P. Abbeel, and S. Levine, “Moka: Open-world robotic manipulation through mark-based visual prompting,” Robotics: Science and Systems (RSS) , 2024. [29] W. Huang, F. Xia, T. Xiao, H. Chan, J. Liang, P. Florence et al. , “Inner monologue: Embodied reasoning through planning with language models,” in CoRL , 2022. [30] M. Zawalski, W. Chen, K. Pertsch, O. Mees, C. Finn, and S. Levine, “Robotic control via embodied chain-of-thought reasoning,” arXiv preprint arXiv:2407.08693 , 2024. [31] K. Rana, J. Haviland, S. Garg, J. Abou-Chakra, I. Reid, and N. Suen-derhauf, “Sayplan: Grounding large language models using 3d scene graphs for scalable task planning,” in CoRL , 2023. [32] W. Huang, C. Wang, Y. Li, R. Zhang, and L. Fei-Fei, “Rekep: Spatio-temporal reasoning of relational keypoint constraints for robotic manipulation,” in CoRL . PMLR, 2025. [33] T. Z. Zhao, V. Kumar, S. Levine, and C. Finn, “Learning fine-grained bimanual manipulation with low-cost hardware,” in Robotics: Science and Systems XIX, Daegu, Republic of Korea, July 10-14, 2023 , 2023. [34] C. Chi, Z. Xu, S. Feng, E. Cousineau, Y. Du, B. Burchfiel et al. ,“Diffusion policy: Visuomotor policy learning via action diffusion,” 
+
+The International Journal of Robotics Research , vol. 44, no. 10-11, pp. 1684–1704, 2025. [35] A. Wang, L. Liu, H. Chen, Z. Lin, J. Han, and G. Ding, “Yoloe: Real-time seeing anything,” in ICCV , October 2025, pp. 24 591–24 602. [36] J. Yang, H. Zhang, F. Li, X. Zou, C. Li, and J. Gao, “Set-of-mark prompting unleashes extraordinary visual grounding in gpt-4v,” arXiv preprint arXiv:2310.11441 , 2023. [37] A. Radford, J. W. Kim, C. Hallacy, A. Ramesh, G. Goh, S. Agarwal 
+
+et al. , “Learning transferable visual models from natural language supervision,” in ICML . PMLR, 2021. [38] H. K. Cheng, S. W. Oh, B. Price, J.-Y. Lee, and A. Schwing, “Putting the object back into video object segmentation,” in CVPR , 2024, pp. 3151–3161. [39] I. Singh, V. Blukis, A. Mousavian, A. Goyal, D. Xu, J. Tremblay 
+
+et al. , “Progprompt: Generating situated robot task plans using large language models,” in ICRA , 2023, pp. 11 523–11 530. [40] A. J. Hancock, A. Z. Ren, and A. Majumdar, “Run-time observation interventions make vision-language-action models more visually ro-bust,” in ICRA , 2025, pp. 9499–9506. [41] E. J. Hu, yelong shen, P. Wallis, Z. Allen-Zhu, Y. Li, S. Wang et al. ,“LoRA: Low-rank adaptation of large language models,” in ICLR ,2022. [42] OpenAI, “Gpt-4 technical report,” 2024.

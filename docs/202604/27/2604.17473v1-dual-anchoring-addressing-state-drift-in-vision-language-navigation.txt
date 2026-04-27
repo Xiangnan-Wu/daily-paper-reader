@@ -1,0 +1,690 @@
+Title: Dual-Anchoring: Addressing State Drift in Vision-Language Navigation
+
+URL Source: https://arxiv.org/pdf/2604.17473v1
+
+Published Time: Tue, 21 Apr 2026 01:37:39 GMT
+
+Number of Pages: 32
+
+Markdown Content:
+# Dual-Anchoring: Addressing State Drift in Vision-Language Navigation 
+
+Kangyi Wu 1†, Pengna Li 1†, Kailin Lyu 2, Xi Lin 3, Lin Zhao 4‡, Qingrong He 4,Jinjun Wang 1, and Jianyi Liu 1∗ 
+
+> 1
+
+National Key Laboratory of Human-Machine Hybrid Augmented Intelligence, National Engineering Research Center for Visual Information and Applications, Institute of Artificial Intelligence and Robotics, Xi’an Jiaotong University  
+
+> 2
+
+Institute of Automation, Chinese Academy of Sciences, School of Artificial Intelligence, University of Chinese Academy of Sciences  
+
+> 3
+
+Johns Hopkins University  
+
+> 4
+
+Joy Future Academy, JD 
+
+Abstract. Vision-Language Navigation (VLN) requires an agent to nav-igate through 3D environments by following natural language instruc-tions. While recent Video Large Language Models (Video-LLMs) have largely advanced VLN, they remain highly susceptible to State Drift in long scenarios. In these cases, the agent’s internal state drifts away from the true task execution state, leading to aimless wandering and failure to execute essential maneuvers in the instruction. We attribute this failure to two distinct cognitive deficits: Progress Drift , where the agent fails to distinguish completed sub-goals from remaining ones, and Memory Drift , where the agent’s history representations degrade, making it lose track of visited landmarks. In this paper, we propose a Dual-Anchoring Framework that explicitly anchors the instruction progress and history representations. First, to address progress drift, we introduce Instruc-tion Progress Anchoring, which supervises the agent to generate struc-tured text tokens that delineate completed versus remaining sub-goals. Second, to mitigate memory drift, we propose Memory Landmark An-choring, which utilizes a Landmark-Centric World Model to retrospec-tively predict object-centric embeddings extracted by the Segment Any-thing Model, compelling the agent to explicitly verify past observations and preserve distinct representations of visited landmarks. Facilitating this framework, we curate two extensive datasets: 3.6 million samples with explicit progress descriptions, and 937k grounded landmark data for retrospective verification. Extensive experiments in both simulation and real-world environments demonstrate the superiority of our method, achieving a 15.2% improvement in Success Rate and a remarkable 24.7% gain on long-horizon trajectories. To facilitate further research, we will release our code, data generation pipelines, and the collected datasets. 
+
+Keywords: Vision-Language Navigation · Video-LLMs · World Model  
+
+> †
+
+Equal contribution.  
+
+> ‡
+
+Project Leader.  
+
+> ∗
+
+Corresponding author. 
+
+> arXiv:2604.17473v1 [cs.CV] 19 Apr 2026
+
+2 K. Wu et al. Instru ction s       
+
+> S1 : Go past the white chair and turn
+> right into the hallway .
+> S2 : Go straight to the end by the door .
+> S3 : Turn left and walk down the hallway .
+> S4 : Take the first right and stop by the
+> dining table .
+> Progress
+> Drift
+> Memory
+> Drift S1
+> S1 S2
+> S3
+> S4
+> Which step
+> am I on?
+> Where did I
+> come from?
+> History
+> Drift
+> GT History Fading
+> Did I pass the door?
+> Am I done
+> with S2?
+
+Fig. 1: The Challenge of State Drift . As the trajectory extends, the agent’s pre-dicted path deviates from the ground truth due to internal state decoupling. This manifests as the Progress Drift (confusion about which instruction step is active) and Memory Drift (failure to remember visited landmarks). 
+
+## 1 Introduction 
+
+Vision-Language Navigation (VLN) has emerged as a central challenge in em-bodied artificial intelligence [14,27], requiring an agent to follow natural language instructions to navigate in a previously unseen environment. Due to its profound potential for real-world applications in domestic service [15, 44], intelligent per-sonal assistants [36, 37], etc, this task has garnered significant attention and witnessed rapid development in recent years. Most VLN works follow a perception-to-action pipeline: the agent conditions on egocentric observations and the instruction to predict an action, iterating un-til reaching the goal. While effective for short instructions, this stepwise policy is brittle under long, compositional instructions. As navigation proceeds, agents may exhibit severe State Drift : their task state becomes progressively unreli-able, and the agent gradually loses a consistent sense of (i) where it is in the instruction and (ii) where it has been in the environment. In other words, the internal state increasingly drifts away from the true task state, leading to erratic behaviors. As illustrated in Fig. 1, we attribute State Drift to two coupled fail-ure modes: (1) Progress Drift , where instruction stage is mis-tracked and the boundary between completed and remaining sub-goals becomes blurred; and (2) 
+
+Memory Drift , where history representations degrade over long trajectories, causing the agent to lose track of visited landmarks. Recent Video-LLMs [17, 30] have advanced VLN [13, 31, 35, 43, 50] by lever-aging powerful pre-trained representations. However, they remain prone to state drift in long-horizon scenarios. Fundamentally, these models rely on next-action prediction, a result-oriented objective that enforces correct local moves but ne-Abbreviated paper title 3
+
+glects the agent’s internal cognitive process. This supervision allows the agent to “guess" the right action based on shallow local cues. However, without explicit constraints on the internal states, they will inevitably decouple from physical reality as navigation proceeds. To address these challenges, we argue that robust navigation needs explicit state anchoring for instruction progress and visual history. For the former, we use structured language as a compact representation of instruction execution sta-tus. Instead of relying on implicit attention to infer progress, the agent explicitly maintains a “mental checklist”, structurally delineating completed sub-goals from remaining ones. For the latter, we introduce a retrospective constraint: robust state grounding requires not only forward-looking control but also explicit verifi-cation of past observations. We therefore compel the model to preserve distinct, landmark-centric history representations to firmly anchor its current position. In this paper, we propose the Dual-Anchoring Framework, which regularizes the Video-LLM’s internal state through two complementary branches. First, to explicitly track instruction progress, we introduce Instruction Progress An-choring . By designing a Progress Annotation Generation pipeline, we curate 3.6 million navigation samples where each action is prefixed with a structured progress description, explicitly delineating completed versus remaining sub-goals. Then, we utilize Instruction-Aware Co-training to force the model to articulate a concrete linguistic state before executing any control. Second, to enforce histor-ical verification, we propose Memory Landmark Anchoring . To realize this, we devise a Landmark Frame Mining method to collect 937k grounded land-mark data. Then, we design a Landmark-Centric World Model that operates retrospectively: it reconstructs the high-level semantic features of the most re-cently passed landmark from output tokens of history frames. This module acts as a "rear-view mirror," compelling the model to preserve distinct, grounded representations of its history. Our main contributions are summarized as follows: 
+
+– We identify State Drift as a critical bottleneck in VLN and propose the Dual-Anchoring Framework, a unified solution that explicitly regularizes the agent’s internal state, greatly eliminating erratic behaviors. 
+
+– We introduce Instruction Progress Anchoring, backed by a scalable pipeline that synthesizes 3.6 million structured samples to enforce explicit instruction state tracking. Complementarily, we design a Memory Landmark Anchoring that collects 937k grounded landmark data and leverages SAM-based retro-spective prediction to anchor the agent’s visual memory. 
+
+– We conduct extensive experiments on VLN-CE benchmarks, where our method achieves state-of-the-art (SOTA) performance. Furthermore, real-world de-ployment demonstrates the framework’s superior robustness and generaliza-tion in complex, unseen environments. 4 K. Wu et al. 
+
+## 2 Related Works 
+
+2.1 Vision Language Navigation. 
+
+Vision-Language Navigation in Continuous Environments (VLN-CE) [25] re-quires agents to interpret instructions and execute low-level actions in physics-realistic 3D spaces. Unlike graph-based settings [10,11,19,53], VLN-CE presents significant challenges in aligning continuous perception with long-term planning. The emergence of Video Large Language Models (VideoLLM) [4,5,17,30] has bi-furcated recent solutions into Hierarchical Planners and End-to-End Navigators. Hierarchical methods [13] decouple reasoning and control, treating the VLM as a "slow system" for mid-level plans. Conversely, End-to-End models [43,50] fine-tune Video-LLMs to map streaming observations directly to actions, leveraging the base model’s strong generalization. However, both approaches remain sus-ceptible to state drift during extended trajectories. Without explicit state man-agement, the agent’s internal representation tends to decouple from the physical reality. In this work, we mitigate this drift by enforcing explicit regularization on the decision process: we supervise the agent to articulate structured progress descriptions for semantic alignment, and leverage an object-centric objective to predict historical features for visual grounding. 
+
+2.2 Multi-task Training for VLN. 
+
+Standard VLN training relies on human-annotated navigation datasets like R2R [3] and RxR [26]. However, the scarcity of such high-quality trajectory data limits the agent’s ability to generalize across diverse unseen environments. To address this, the community has embraced Multi-task Training, broadly categorized into two paradigms. The first focuses on Broad Visual Generalization, where agents are co-trained on massive synthetic environments [13] or real-world hu-man videos [12] to master diverse visual distributions. The second emphasizes Reasoning Alignment, employing auxiliary tasks like Hierarchical Planning [31] or Chain-of-Thought (CoT) generation [21] to rationalize the perception-action loop. However, these auxiliary tasks remain predominantly action-centric or in-stantaneous, focusing primarily on interpreting the current scene for immediate decision-making. Consequently, they often neglect the explicit alignment be-tween the accumulated history and the instruction, leaving agents vulnerable to Progress Drift. Our Instruction Progress Anchoring shifts focus from local perception to global status tracking, strictly enforcing a structural distinction between “Done” and “Remaining” parts to lock the decision process. Similar auxiliary supervision strategies have been explored more broadly in multimodal learning, aiming to stabilize optimization and improve robustness beyond direct end-task prediction [28, 29, 32, 33, 45, 46]. 
+
+2.3 World Model for VLN. 
+
+World models serve as internal representations of the environment, enabling agents to perform mental simulation by predicting future states. Early approaches, Abbreviated paper title 5
+
+such as NWM [6] and AstraNav-World [20], operate as Generative Simula-tors, synthesizing high-fidelity future video streams to learn general physical priors. However, pixel-level generation is computationally prohibited for real-time onboard inference. To address this efficiency bottleneck, recent works like LS-NWM [52], NavMorph [47], and NavForesee [31] shift towards Feature-level Prediction, forecasting compact latent dynamics or semantic features instead of raw images. However, these methods remain fundamentally future-centric. They prioritize foresight—anticipating what will happen next—while neglecting the explicit maintenance of what has already happened. In long trajectories, this lack of historical grounding leaves agents vulnerable to Memory Drift, where the history representation fades. Diverging from this foresight-dominant paradigm, we propose a Landmark-Centric World Model that prioritizes hindsight. Instead of hallucinating uncertain futures, we leverage the Segment Anything Model to reconstruct the object-centric features of previously visited landmarks. This ret-rospective objective compels the agent to anchor its internal state to the concrete visual history, effectively mitigating perceptual aliasing. 
+
+## 3 Method Large Language Model            
+
+> Instruction
+> Veer to the left and go
+> past the bed. Wait at
+> the doorway.
+> < A n s w e r > ”T h e c o m p l e t e d
+> instructions is ... ”</Answer>
+> History + Curent Observations
+> Vision Encoder Tokenizer
+> System Message
+> You are an autonom ou s n avig ation assistan t. You r task is to
+> <instruction>. Now you need find out which part you have completed and
+> devise an action sequence to follow the instruction.
+> <Action> ”The next action sequence is move forward 25cm,
+> turn left 30 , turn left 30 , move forward ... ”</Action>
+> ACTION
+> Text Decoder Landmark-Centric World Model
+> Landmark
+> Features
+> SAM
+> Features
+> Ground truth
+> Actions
+> Ground truth
+> Progress
+> <Answer> ”The completed
+> instructions is ... ”</Answer>
+> ℒ푊  ℒ푝푟   ℒ푛� 
+> Observation
+> Token
+> Text
+> Token
+> Output Image
+> Token
+> Out put Text
+> Token
+> for train and
+> inference
+> only for
+> train
+
+Fig. 2: Overview of the Dual-Anchoring Framework. The model processes nat-ural language instructions and streaming egocentric observations through a unified Video-LLM backbone. Beyond standard action prediction, the framework incorporates two auxiliary tasks: generating structured progress descriptions to ensure semantic alignment, and reconstructing dense SAM features to anchor the visual memory. 
+
+3.1 Problem Formulation and Overall Architecture 
+
+Problem Formulation. We formulate the Vision-Language Navigation (VLN) task as a sequential decision-making process in a continuous 3D environment. 6 K. Wu et al. Imagine you are a vision-and-language navigation                            
+
+> analyzer. Your navigation instruction: Veer to the
+> left and go past the bed. Wait at the doorway.
+> Instruction Part
+> <Analysis> Briefly compare the instruction vs.
+> visible evidence (landmarks/actions). </Analysis>
+> <Answer> State the completed sub-goals using the
+> SAME wording as the instruction. </Answer>
+> Output Format
+> You are given the first t frames
+> of the trajectory
+> Vision Part
+> Qwen3-VL
+> Large
+> Vision
+> Language
+> Model
+> Dual Step Reasoning Part
+> <Analysis> The frames show movement
+> forward, align with “go past the bed. ”The
+> visual evidence confirm reaching a hallway,
+> a bed. The action of "move forward 25cm ”
+> is repeated, but the final stop in the
+> doorway is not visible. </Analysis>
+> <Answer> ”Veer to the left and go past
+> the bed .”has been completed. The rest of
+> the instruction cannot be confirmed from
+> the frames. </Answer>
+> ACTION
+> Qwen3
+> Instruction
+> Aligned
+> Refinement
+> <> Completed: ”Vee
+> r to the left and
+> go past the bed ”<>
+> Instruction: Veer to the left and go past the
+> bed. Wait at the doorway.
+> Instruction: Veer to the left and go past the
+> bed. Wait at the doorway.
+> Instruction: Veer to the left and go past the
+> bed. Wait at the doorway.
+> Qwen3
+> Large Language Model
+> Veer to the left. Go past the bed. Wait at the doorway.
+> Sub Instructions
+> Qwen3-VL
+> Large Vision Language Model
+> Full Video Frames
+> Landmark Identification
+> Veer to the left and go past the bed .
+> Wait at the doorway .
+> “Bed ”“Doorway ”
+> ��frame ��frame
+> ��<��
+> SAM
+> Segment
+> Anything Model
+> Feature Map s
+> ����
+
+(b) Landmark Frame Mining 
+
+(a) Progress Annotation Generation 
+
+Fig. 3: Overview of the data generation pipeline. (a) A multimodal LLM per-forms dual-step reasoning to generate 3.6 million progress descriptions that are strictly aligned with instruction wording. (b) A hierarchical approach decomposes instructions into atomic sub-instructions and identifies temporal landmarks. The Segment Anything Model then extracts 937k object-centric features to serve as retrospective ground truth. 
+
+The agent is initialized at a starting position and provided with a natural lan-guage instruction I = {w1, w 2, . . . , w L}. At each time step t, the agent perceives the environment via a monocular RGB observation ot. Based on the instruction 
+
+I and the history of observations, the agent predicts a low-level navigational action at ∈ A (e.g., move_forward , turn_left , turn_right ,stop ). Success is measured by whether the agent stops within a threshold distance of the target. We adopt the architecture of StreamVLN [43] as our backbone. This frame-work extends standard Video-LLMs to support streaming input by maintaining a history context Ht that aggregates history information. The agent predicts the next action at autoregressively by conditioning on the instruction and this history context: 
+
+P (at|I , Ht) = VideoLLM θ (I, Ht), (1) where θ is the trainable parameter. Despite the efficiency of this streaming ar-chitecture, relying solely on implicit hidden states of Ht to track long-horizon progress remains challenging, motivating the need for explicit state anchoring. 
+
+Overall Architecture. The framework is illustrated in Fig. 2. To explicitly combat the State Drift dilemma in VLN, we propose the Dual-Anchoring Framework . While maintaining the efficient streaming backbone of StreamVLN for low-latency action generation, we augment the training architecture with Instruction Progress Anchoring and Memory Landmark Anchoring to prevent the agent’s mental state from decoupling from the physical reality. The former is designed as a Co-Training Task while the latter as auxiliary head, thus incurring no additional computation for deployment. Abbreviated paper title 7
+
+3.2 Instruction Progress Anchoring 
+
+To mitigate Progress Drift, the agent must explicitly maintain a mental checklist of its execution status. However, standard VLN datasets only provide coarse-grained trajectory-level instructions, lacking step-by-step state annotations. To bridge this gap, we introduce an automated pipeline to synthesize fine-grained progress description data at scale. 
+
+Progress Annotation Generation. We leverage a powerful Multimodal LLM ( Qwen3-VL) as an offline annotator to generate textual progress summaries yprog t
+
+given a ground-truth trajectory τ = {(ot, a t)}Tt=0 and its instruction I. As illus-trated in Fig. 3, the pipeline operates in four sequential steps. 1) Visual Kinemat-ics Prompting: To bridge the gap between static frames and dynamic navigation, we explicitly overlay the frame index and executed action text (e.g., “Turn Left 15 ◦”) onto the top-left corner of each image frame. This explicitly informs the annotator of the agent’s kinematics between timestamps. 2) Interval Sampling: 
+
+We perform interval sampling along the trajectory with a stride of n. For each sampled step t, the annotator receives the instruction I and the processed visual history sequence o0: t. 3) Dual-Step Reasoning: To ensure high-quality annota-tion, we prompt the model to perform a chain-of-thought process: first analyzing the visual evidence against the instruction , and then generating a concise sum-mary of Completed Sub-goals using the original wording. 4) Instruction-Aligned Refinement: Finally, to eliminate intermediate reasoning and possible hallucina-tions, we prompt the LLM to distill the analysis into a single, concise sentence. This step strictly constrains the output to be a verbatim prefix of the instruc-tion. In this way, we collect a large-scale dataset comprising 3.6 million progress description samples. 
+
+Instruction-Aware Co-training. During training, we treat this as a co-training task, where the ground-truth action is prefixed with the synthesized progress descriptions. In this case, we add “find out which part you have com-pleted” in the Prompt. The generation objective at step t is modified to maximize 
+
+P (yprog t , a t|I , Ht), forcing the agent to articulate its status before action. 
+
+3.3 Memory Landmark Anchoring 
+
+While Instruction-Aware Co-training explicitly track instruction progress, the agent still suffers from Memory Drift—forgetting distinct landmarks and falling into perceptual aliasing. Therefore, we propose Memory Landmark Anchoring that enforces Retrospective Grounding .
+
+Landmark Frame Mining. Constructing supervision for this objective re-quires identifying when specific landmarks mentioned in the instruction appear in the video. To realize this, we design a two-stage extraction process. The pipeline is illustrated in Fig 3 (b). First , in the Decomposition stage, we prompt the LLM (Qwen3) to decompose the complex instruction I into a sequence of atomic 8 K. Wu et al. 
+
+sub-goals S = {s1, s 2, . . . , s K }, where each sk contains a specific action or land-mark. Second , during Temporal Grounding, we feed the full video and S to the MLLM (Qwen3-VL) to identify the first appearance frame t(k) 
+
+> lm
+
+for the landmark in each sk. To eliminate hallucination, we enforce a strict ordering constraint: the appearance times must be strictly increasing ( t(i) 
+
+> lm
+
+< t (j) 
+
+> lm
+
+for i < j ), and any annotation violating this temporal logic is filtered out. For any given time step 
+
+t during navigation, this process allows us to retrieve the most recently passed landmark frame index t∗ (where t∗ ≤ t). To construct the dense supervisory signal, we extract the high-resolution spatial feature map FSAM (ot∗ ) from this identified frame using the Segment Anything Model (SAM) [22]. This object-centric feature serves as the retrospective ground truth for our world model. 
+
+Landmark-Centric World Model. To effectively mitigate Memory Drift, the agent must maintain a continuous awareness of where it has been. Our World Model achieves this by compelling the agent to reconstruct the dense spatial features of the most recently passed landmark. To realize that, we utilize a Learnable Spatial Query Decoder . Let 
+
+Xt ∈ RN ×dllm denote the output sequence of the VideoLLM at step t, which encapsulates both historical and current visual semantics. To reduce computa-tional overhead, we first project Xt into a compact latent space via a linear layer with LayerNorm: 
+
+ˆXt = LayerNorm (XtWin ) ∈ RN ×dattn . (2) Next, a set of learnable spatial queries Qspa ∈ R(H×W )×dattn is initialized, where each query acts as a pixel-wise anchor corresponding to the target spatial resolution H × W . These queries retrieve highly relevant local spatial cues from 
+
+ˆXt via cross-attention: 
+
+Z = Softmax Qspa ˆXTt
+
+√dattn 
+
+!
+
+ˆXt ∈ R(H×W )×dattn , (3) where Z adaptively aggregates the required spatial information while preserving semantic heterogeneity. Subsequently, Z is linearly projected to the target chan-nel dimension dsam and reshaped into a 2D spatial format Ft ∈ Rdsam ×H×W .Finally, the objective is to minimize the Mean Squared Error (MSE) between the predicted feature map ˆFt and the frozen SAM feature FSAM (ot∗ ):
+
+LW M = || Ft − FSAM (ot∗ )|| 22. (4) This objective acts as a “rear-view mirror”, compelling the agent’s internal state to retain dense and distinct object information from its past trajectory, effec-tively preventing the memory from decaying. 
+
+3.4 Data Composition and Training Strategy 
+
+To ensure both the robustness and generalizability of our model, we compile a comprehensive training set combining standard navigation benchmarks, our synthesized anchoring data, and general vision-language data. Abbreviated paper title 9
+
+Data Composition. As summarized in Table 1, our training mixture consists of four main categories. The Base Navigation data includes 180K trajectories from R2R, RxR, and EnvDrop, alongside 155K ones from a ScaleVLN subset. To explicitly enforce state anchoring, we augment these trajectories with our self-collected State Anchoring data, comprising 3.6M progress descriptions and 937K grounded landmark SAM features. Finally, the dataset is supplemented with 240K DAgger rollouts for robust policy learning, as well as 400K VideoQA pairs and 230K image-text pairs to preserve general vision-language capabilities. 
+
+> Table 1: Overview of Training Data Composition and Utilization.
+
+Dual Category Source / Dataset Scale Objective Stage 
+
+Base Navigation R2R, RxR, EnvDrop 180K Lnav 1, 2 ScaleVLN (HM3D Subset) 155K Lnav 1, 2 
+
+Progress Description Data 3.6M Lprog 1, 2 State Anchoring Grounded Landmark Data 937K LW M 1, 2 
+
+Expert Correction DAgger Rollouts 240K Lnav 2Generalist VL VideoQA (LLaVA-Video, ScanQA) 400K Next-Token 2Interleaved Image-Text (MMC4) 230K Next-Token 2
+
+Two-Stage Training Pipeline. We adopt a two-stage training paradigm to enhance the agent’s capabilities progressively: 
+
+Stage 1: Navigation Data Pre-training. The model is first trained on the aggre-gated navigation datasets augmented with our Dual-Anchoring objectives. The overall loss function is a weighted sum of the standard navigation action loss 
+
+Lnav , the progress generation loss Lprog , and the world model MSE loss LW M :
+
+LStage 1 = Lnav + λprog Lprog + λW M LW M . (5) 
+
+Stage 2: DAgger and Generalist Fine-tuning. To mitigate exposure bias and enhance robustness, we employ Data Aggregation (DAgger). We sample tra-jectories using the Stage 1 policy, collecting corrective expert actions to form a DAgger dataset of approximately 240K samples. In this stage, we co-train the model on a mixture of the navigation data from Stage 1, the newly col-lected DAgger data, and General Vision-Language Data to prevent catastrophic forgetting of pre-trained knowledge. The general data includes VideoQA sam-ples (LLaVA-Video-178K, ScanQA) and interleaved image-text data (MMC4). The Dual-Anchoring objectives ( Lprog and LW M ) remain strictly active for all navigation-related batches during this final fine-tuning stage. 10 K. Wu et al. 
+
+## 4 Experiments 
+
+4.1 Experimental Setup 
+
+Datasets and Evaluation Metrics. We evaluate our proposed method on two continuous VLN benchmarks: R2R-CE [25] and RxR-CE [26]. R2R-CE is based on the Matterport3D simulator and contains 90 scenes with 5.6k tra-jectories. RxR-CE is a larger dataset with more complex paths and fine-grained instructions, which is particularly suitable for evaluating the agent’s ability to handle long-horizon navigation and instruction following. We report standard metrics for VLN-CE: Success Rate ( SR ), Success weighted by Path Length (SPL ), Oracle Success Rate ( OSR ), and Navigation Error ( NE ). 
+
+Implementation Details. Our model is built upon StreamVLN [43] with LLaVA-Video [51] as the backbone. We use the AdamW optimizer with a learning rate of 1e-5. All experiments are conducted on 32 NVIDIA H200 GPUs. Detailed dataset statistics and training hyperparameters are provided in the Appendix. 
+
+Table 2: Comparison with state-of-the-art methods on R2R-CE and RxR-CE validation unseen splits. * indicates methods using the waypoint predictor from [19]. The best and second-best results are highlighted.                                                                                                                                                                                                                                             
+
+> Method Sensors R2R-CE RxR-CE Pano. Odo. Depth S-RGB NE ↓OSR ↑SR ↑SPL ↑NE ↓SR ↑SPL ↑
+> HPN+DN* [23] ✓✓✓6.31 40.0 36.0 34.0 –––CMA* [18] ✓✓✓6.20 52.0 41.0 36.0 8.76 26.5 22.1 Sim2Sim* [24] ✓✓✓6.07 52.0 43.0 36.0 8.76 26.5 22.1 GridMM* [41] ✓✓✓5.11 61.0 49.0 41.0 –––DreamWalker* [39] ✓✓✓5.53 59.0 49.0 44.0 –––Reborn* [2] ✓✓✓5.40 57.0 50.0 46.0 5.98 48.6 42.0 ETPNav* [1] ✓✓✓4.71 65.0 57.0 49.0 5.64 54.7 44.8 HNR* [40] ✓✓✓4.42 67.0 61.0 51.0 5.50 56.3 46.7 AG-CMTP [8] ✓✓✓7.90 39.0 23.0 19.0 –––R2R-CMTP [8] ✓✓✓7.90 38.0 26.0 22.0 –––Instruc-Nav [34] ✓✓✓6.89 –31.0 24.0 –––LAW [38] ✓✓✓6.83 44.0 35.0 31.0 10.90 8.0 8.0 CM2 [16] ✓✓✓7.02 41.0 34.0 27.0 –––WS-MGMap [9] ✓✓✓6.28 47.0 38.0 34.0 –––AO-Planner [7] ✓✓5.55 59.0 47.0 33.0 –––Seq2Seq [25] ✓✓7.77 37.0 25.0 22.0 12.10 13.9 11.9 CMA [25] ✓✓7.37 40.0 32.0 30.0 –––NaVID [50] ✓5.47 49.0 37.0 35.0 –––Uni-NaVID [49] ✓5.58 53.5 47.0 42.7 6.24 48.7 40.9 NaVILA [12] ✓5.22 62.5 54.0 49.0 6.77 49.3 44.0 NavFoM [48] ✓5.01 64.9 56.2 51.2 5.51 57.4 49.4 StreamVLN [43] ✓4.98 64.2 56.9 51.9 6.22 52.9 46.0 DualVLN [42] ✓4.05 70.7 64.3 58.5 4.58 61.4 51.8
+> Ours ✓4.15 69.2 65.6 62.1 4.42 61.7 53.3
+
+4.2 Experiments on Simulated Environments 
+
+Comparison with State-of-the-Arts. As summarized in Table 2, our Dual-Anchoring Framework establishes a new state-of-the-art on both benchmarks. Abbreviated paper title 11  
+
+> Fig. 4: Qualitative Visualization in Simulated Environment. We compare the navigation trajectories of the Baseline and our model on an R2R-CE unseen episode. While the baseline turns prematurely due to state drift, our model maintains the cor-rect heading. The right panel showcases the internal states of our agent: the Instruction Progress Anchoring correctly identifies the current sub-goal as only "partially com-pleted" , and the Memory Landmark Anchoring successfully reconstructs the visual features of the previously passed "bathroom" to ground the current spatial context.
+
+On R2R-CE, our method significantly outperforms the strong StreamVLN [43] baseline, improving Success Rate (SR) from 56 .9% to 65 .6% and SPL from 51 .9% 
+
+to 62 .1% . This demonstrates that while implicit hidden states in prior Video-LLMs tend to decouple from physical reality, our explicit regularization effec-tively synchronizes the agent’s cognitive process with the environment. For the more challenging RxR-CE dataset, which features longer trajectories and com-plex instructions, the benefits of our approach are even more pronounced. While long horizons typically exacerbate State Drift, our framework maintains robust-ness, achieving an 8.8% absolute gain in SR ( 52 .9% → 61 .7% ) over StreamVLN. These results confirm that anchoring internal states to both instruction progress and visual landmarks is crucial in long-horizon navigation. 
+
+Visualization. To demonstrate how our framework mitigates State Drift, we visualize a challenging R2R-CE episode in Fig. 4. The instruction requires the agent to " exit the bathroom, go straight to the end of the hallway, and turn left. "At Step 17, when encountering a deceptive opening before the hallway’s true end, the baseline suffers from Progress Drift, which assumes the navigation has reached the turning point, leading to a premature turn left and ultimate failure. In contrast, our Dual-Anchoring agent maintains a synchronized internal state. Although the auxiliary heads are typically discarded during inference to mini-mize latency, we employ them here as probes to decode and visualize the agent’s latent consistency. The Instruction Progress Anchoring acts as a semantic stabi-lizer, explicitly signaling that the "go straight" phase is still in progress, which effectively suppresses the distractor action. Simultaneously, the Memory Land-mark Anchoring provides a "rear-view mirror" effect, retrospectively grounding the agent by retrieving the starting bathroom’s features. This suggests that ex-12 K. Wu et al. 
+
+plicit state anchoring could prevent the decision-making process from decoupling from physical reality, ensuring robust long-horizon execution.  
+
+> Table 3: Ablation study of key components on R2R-CE Val Unseen. We evaluate the Instruction Progress Anchoring (short for IPA) and Memory Landmark Anchoring (short for MLA) under two training data scales. To ensure fairness, the number of navigation samples remains identical across variants within the same setting.
+
+Components R2R+RxR+EnvDrop All Datasets IPA MLA NE ↓ OS ↑ SR ↑ SPL ↑ NE ↓ OS ↑ SR ↑ SPL ↑
+
+6.49 46.9 40.8 37.4 4.98 64.2 56.9 51.9 
+
+✓ 6.27 51.9 45.4 41.1 4.72 66.5 60.8 55.1 
+
+✓ 6.01 53.6 47.7 43.3 4.51 67.0 62.5 57.3 
+
+✓ ✓ 5.73 55.8 49.5 44.9 4.15 69.2 65.6 62.1 
+
+Ablation Study of Components. To investigate the effect of our proposal, we conduct ablation studies on the R2R-CE validation unseen split under two training settings: 1) Standard Mixture (w/o dagger and VL data) to isolate methodological gains, and 2) All Datasets to validate robustness at scale. In Standard Mixture setting, we make the total number of training samples strictly identical. For example, if Instruction Progress Anchoring is added, we replace half of the base nav data in the baseline with our augmented Progress Description Data, adding no additional samples. In All Datasets setting, we don’t control the number of training samples. Therefore, if Instruction Progress Anchoring is added, we add all Progress Description Data to the original training dataset. As shown in Table 3, the baseline yields the worst results due to State Drift. Incorporating the Instruction Progress Anchoring significantly improves Success Rate (e.g., from 40.8% to 45.4%), confirming that explicit sub-goal prediction maintains semantic alignment. Meanwhile, the Memory Landmark Anchoring notably boosts SPL and reduces Navigation Error (6.49 → 6.01), validating that retrospective landmark reconstruction effectively prevents trajectory drift. Fi-nally, the Dual-Anchoring configuration achieves the best performance across both settings, demonstrating that our explicit state regularizations offer funda-mental, complementary benefits that persist even with scaled-up data. 
+
+Analysis across Trajectory Lengths. We further analyze the performance across different trajectory lengths. The R2R-CE validation unseen set is divided into three subsets based on the trajectory geodesic distance: Short (∈ [3 .85 , 7.55) 
+
+meters), Medium (∈ [7 .55 , 9.81) meters), and Long (∈ [9 .81 , 21 .04] meters). As illustrated in Fig. 5, the baseline exhibits sharp degradation as navigation dis-tance increases due to unmitigated drift. In contrast, our Dual-Anchoring agent Abbreviated paper title 13 Short     
+
+> (3.8-7.6m)
+> Medium
+> (7.6-9.8m)
+> Long
+> (9.8-21.0m)
+> 40
+> 50
+> 60
+> 70
+> 80
+> SR (%)
+> (a) SR
+> Baseline Ours Rel. Improv.
+> Short
+> (3.8-7.6m)
+> Medium
+> (7.6-9.8m)
+> Long
+> (9.8-21.0m)
+> 40
+> 50
+> 60
+> 70
+> 80
+> SPL (%)
+> (b) SPL
+> Baseline Ours Rel. Improv.
+> 0
+> 10
+> 20
+> 30
+> 40
+> Rel. Improv. (%)
+> +10.7%
+> +18.8%
+> +24.7%
+> 0
+> 10
+> 20
+> 30
+> 40
+> Rel. Improv. (%)
+> +12.6%
+> +20.0%
+> +33.2%
+
+Fig. 5: Performance across different trajectory lengths. We report (a) SR and (b) SPL across Short, Medium, and Long episodes on R2R-CE validation unseen set. As trajectories become longer, our method provides increasingly substantial gains. 
+
+maintains superior stability, with the performance gap widening significantly on longer trajectories. Especially for the relative improvement in SPL, which esca-lates from +12.6% in Short episodes to a remarkable +33.2% in Long episodes. This trend confirms that explicit state anchoring—via both Instruction Progress and Memory Landmark modules—effectively counteracts the decoupling of in-ternal states from physical reality, a benefit that becomes increasingly critical n long-horizon navigation scenarios. 
+
+Table 4: Quantitative Assessment of Selected Datasets. We evaluate the quality of auto-generated data using reference-free metrics. The “Baseline” column denotes the control settings: raw image inputs (w/o Visual Prompting) for Progress Description Data, and Random Sampling for Grounded Landmark Data.                 
+
+> Datasets Baseline Metric Baseline Ours ∆
+> Progress Description w/o Visual Prompting Hallucination Rate (HR) (%) ↓8.13 6.04 -25.7%
+> Logical Consistency Score (LCS) (1-5) ↑1.71 4.26 +149% Grounded Landmark Random Sampling Landmark Presence Rate (LPR) (%) ↑13.9 75.6 +444%
+
+4.3 Quality Assessment of Self-Collected Dataset. 
+
+Since our framework relies on self-collected datasets, ensuring their reliability is paramount. We establish a rigorous evaluation protocol to quantify the quality of Progress Description Data and Grounded Landmark Data. 
+
+Progress Description Data. We employ an LLM-as-a-Judge paradigm to evaluate generated progress descriptions using two key metrics: 1) Hallucination Rate (HR): The percentage of descriptions containing entities not present in the original instruction. 2) Logical Consistency Score (LCS): A 1-5 Likert scale mea-suring whether the generated progress represents a logically contiguous prefix of the instruction without skipping steps. We calculate these under two distinct set-tings: feeding raw image inputs VS employing our Visual Kinematics Prompting 
+
+(Sec. 3.2). As shown in Table 4, the setting without visual prompting struggles 14 K. Wu et al.        
+
+> Fig. 6: Qualitative Visualization of Real-World Deployment. Top: Third-person perspective of the robot’s trajectory. Bottom: First-person RGB stream. The
+> dashed boxes display the real-time progress descriptions explicitly generated by our model, corresponding to the frames bordered in the same color.
+
+to track the agent’s dynamic movement, resulting in a low LCS of 1.71. In con-trast, our method achieves a high LCS of 4.26 and a significantly reduced HR from 8.13% to 6.04%. This improvement confirms that overlaying explicit action history is critical for the annotator to align visual changes with instruction steps, thereby yielding high-quality, coherent, and faithful training data. 
+
+Grounded Landmark Data. To evaluate the temporal precision of the grounded landmark, we propose the Landmark Presence Rate (LPR), which extracts the landmark entity from the sub-instruction and prompts Qwen3-VL to verify whether the object is visually recognizable. We compare our mined frames against a Random Sampling baseline. As reported in Table 4, random frames contain the target landmark only 13.9% of the time. Conversely, our method achieves an LPR of 75.6%. This substantial gap confirms that our pipeline effectively localizes the semantic “high-light” moments of landmarks, thus providing valid retrospective signals. 
+
+4.4 Real-World Deployment. Experimental Settings. Our real-world experiments are conducted on a Uni-tree Go2 quadruped robot equipped with a front-facing Intel RealSense D435i Abbreviated paper title 15 
+
+RGB-D camera. The navigation system operates in a client-server architecture: RGB observations are continuously streamed from the D435i camera to a re-mote server powered by NVIDIA H20 GPUs. Upon receiving a natural language instruction, our model processes the streaming observations to predict the next low-level navigational action in real-time. The predicted action is then trans-mitted back to the Go2 robot, which executes it by calling the robot motion API. Note that the model is trained entirely in the Matterport3D simulator and deployed directly to the real world without any fine-tuning. 
+
+Qualitative Results. As illustrated in Fig. 6, our agent successfully anchors its visual observations to linguistic sub-goals despite the significant domain gap. The model explicitly generates progress descriptions (shown in dashed boxes) that accurately reflect its current status. For instance, in the intermediate stage (orange box), the agent correctly identifies that it has completed the “turn left” action but still needs to “enter the pantry”. Similarly, in the near-goal stage (green box), it precisely recognizes the completion of the full instruction. This capability to distinguish between completed and remaining segments effectively mitigates progress drift in long-horizon tasks. 
+
+## 5 Conclusion 
+
+In this paper, we address State Drift in Vision-Language Navigation by proposing the Dual-Anchoring Framework, which explicitly anchors the agent’s internal state to instruction progress and visual landmarks. To support this, we introduce Instruction Progress Anchoring and Memory Landmark Anchoring, backed by automated pipelines that generate 4.5 million synthesized samples. Extensive experiments show our method achieves state-of-the-art performance on R2R-CE and RxR-CE, with remarkable robustness in long-horizon trajectories and successful real-world deployment. 16 K. Wu et al. 
+
+## References 
+
+1. An, D., Wang, H., Wang, W., Wang, Z., Huang, Y., He, K., Wang, L.: Etpnav: Evolving topological planning for vision-language navigation in continuous envi-ronments. IEEE Transactions on Pattern Analysis and Machine Intelligence (2024) 2. An, D., Wang, Z., Li, Y., Wang, Y., Hong, Y., Huang, Y., Wang, L., Shao, J.: 1st place solutions for rxr-habitat vision-and-language navigation competition (cvpr 2022). arXiv preprint arXiv:2206.11610 (2022) 3. Anderson, P., Wu, Q., Teney, D., Bruce, J., Johnson, M., Sünderhauf, N., Reid, I., Gould, S., Van Den Hengel, A.: Vision-and-language navigation: Interpreting visually-grounded navigation instructions in real environments. In: Proceedings of the IEEE conference on computer vision and pattern recognition. pp. 3674–3683 (2018) 4. Bai, S., Cai, Y., Chen, R., Chen, K., Chen, X., Cheng, Z., Deng, L., Ding, W., Gao, C., Ge, C., et al.: Qwen3-vl technical report. arXiv preprint arXiv:2511.21631 (2025) 5. Bai, S., Chen, K., Liu, X., Wang, J., Ge, W., Song, S., Dang, K., Wang, P., Wang, S., Tang, J., et al.: Qwen2. 5-vl technical report. arXiv preprint arXiv:2502.13923 (2025) 6. Bar, A., Zhou, G., Tran, D., Darrell, T., LeCun, Y.: Navigation world models. In: Proceedings of the Computer Vision and Pattern Recognition Conference. pp. 15791–15801 (2025) 7. Chen, J., Lin, B., Liu, X., Ma, L., Liang, X., Wong, K.Y.K.: Affordances-oriented planning using foundation models for continuous vision-language navigation. In: Proceedings of the AAAI Conference on Artificial Intelligence. vol. 39, pp. 23568– 23576 (2025) 8. Chen, K., Chen, J.K., Chuang, J., Vázquez, M., Savarese, S.: Topological plan-ning with transformers for vision-and-language navigation. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 11276– 11286 (2021) 9. Chen, P., Ji, D., Lin, K., Zeng, R., Li, T., Tan, M., Gan, C.: Weakly-supervised multi-granularity map learning for vision-and-language navigation. Advances in Neural Information Processing Systems 35 , 38149–38161 (2022) 10. Chen, S., Guhur, P.L., Schmid, C., Laptev, I.: History aware multimodal trans-former for vision-and-language navigation. Advances in neural information pro-cessing systems 34 , 5834–5847 (2021) 11. Chen, S., Guhur, P.L., Tapaswi, M., Schmid, C., Laptev, I.: Think global, act local: Dual-scale graph transformer for vision-and-language navigation. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 16537–16547 (2022) 12. Cheng, A.C., Ji, Y., Yang, Z., Gongye, Z., Zou, X., Kautz, J., Bıyık, E., Yin, H., Liu, S., Wang, X.: Navila: Legged robot vision-language-action model for navigation. arXiv preprint arXiv:2412.04453 (2024) 13. Contributors, I.: InternNav: InternRobotics’ open platform for building generalized navigation foundation models. https://github.com/InternRobotics/InternNav 
+
+(2025) 14. Duan, J., Yu, S., Tan, H.L., Zhu, H., Tan, C.: A survey of embodied ai: From simu-lators to research tasks. IEEE Transactions on Emerging Topics in Computational Intelligence 6(2), 230–244 (2022) Abbreviated paper title 17 15. Forlizzi, J., DiSalvo, C.: Service robots in the domestic environment: a study of the roomba vacuum in the home. In: Proceedings of the 1st ACM SIGCHI/SIGART conference on Human-robot interaction. pp. 258–265 (2006) 16. Georgakis, G., Schmeckpeper, K., Wanchoo, K., Dan, S., Miltsakaki, E., Roth, D., Daniilidis, K.: Cross-modal map learning for vision and language navigation. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recog-nition. pp. 15460–15470 (2022) 17. Guo, X., Chai, W., Li, S.Y., Wang, G.: Llava-ultra: Large chinese language and vision assistant for ultrasound. In: Proceedings of the 32nd ACM international conference on multimedia. pp. 8845–8854 (2024) 18. Hong, Y., Wang, Z., Wu, Q., Gould, S.: Bridging the gap between learning in discrete and continuous environments for vision-and-language navigation. In: Pro-ceedings of the IEEE/CVF conference on computer vision and pattern recognition. pp. 15439–15449 (2022) 19. Hong, Y., Wu, Q., Qi, Y., Rodriguez-Opazo, C., Gould, S.: A recurrent vision-and-language bert for navigation. arXiv preprint arXiv:2011.13922 (2020) 20. Hu, J., Chen, J., Bai, H., Luo, M., Xie, S., Chen, Z., Liu, F., Chu, Z., Xue, X., Ren, B., et al.: Astranav-world: World model for foresight control and consistency. arXiv preprint arXiv:2512.21714 (2025) 21. Huang, T., Li, D., Yang, R., Zhang, Z., Yang, Z., Tang, H.: Mobilevla-r1: Rein-forcing vision-language-action for mobile robots. arXiv preprint arXiv:2511.17889 (2025) 22. Kirillov, A., Mintun, E., Ravi, N., Mao, H., Rolland, C., Gustafson, L., Xiao, T., Whitehead, S., Berg, A.C., Lo, W.Y., et al.: Segment anything. In: Proceedings of the IEEE/CVF International Conference on Computer Vision. pp. 4015–4026 (2023) 23. Krantz, J., Gokaslan, A., Batra, D., Lee, S., Maksymets, O.: Waypoint models for instruction-guided navigation in continuous environments. In: Proceedings of the IEEE/CVF International Conference on Computer Vision. pp. 15162–15171 (2021) 24. Krantz, J., Lee, S.: Sim-2-sim transfer for vision-and-language navigation in con-tinuous environments. In: European conference on computer vision. pp. 588–603. Springer (2022) 25. Krantz, J., Wijmans, E., Majumdar, A., Batra, D., Lee, S.: Beyond the nav-graph: Vision-and-language navigation in continuous environments. In: European Confer-ence on Computer Vision. pp. 104–120. Springer (2020) 26. Ku, A., Anderson, P., Patel, R., Ie, E., Baldridge, J.: Room-across-room: Multilin-gual vision-and-language navigation with dense spatiotemporal grounding. arXiv preprint arXiv:2010.07954 (2020) 27. Li, P., Wu, K., Fu, J., Zhou, S.: Regnav: Room expert guided image-goal navigation. In: Proceedings of the AAAI Conference on Artificial Intelligence. vol. 39, pp. 4860– 4868 (2025) 28. Li, P., Wu, K., Huang, W., Zhou, S., Wang, J.: Camera-aware label refinement for unsupervised person re-identification. arXiv preprint arXiv:2403.16450 (2024) 29. Li, P., Wu, K., Zhou, S., Huang, Q., Wang, J.: Pseudo labels refinement with intra-camera similarity for unsupervised person re-identification. In: 2023 IEEE International Conference on Image Processing (ICIP). pp. 366–370. IEEE (2023) 30. Lin, J., Yin, H., Ping, W., Molchanov, P., Shoeybi, M., Han, S.: Vila: On pre-training for visual language models. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. pp. 26689–26699 (2024) 18 K. Wu et al. 31. Liu, F., Xie, S., Luo, M., Chu, Z., Hu, J., Wu, X., Xu, M.: Navforesee: A unified vision-language world model for hierarchical planning and dual-horizon navigation prediction (2025), https://arxiv.org/abs/2512.01550 
+
+32. Liu, Y., Fu, J., Wu, Y., Wu, K., Li, P., Wu, J., Zhou, S., Xin, J.: Mind the gap: Aligning vision foundation models to image feature matching. In: Proceedings of the IEEE/CVF International Conference on Computer Vision. pp. 20313–20323 (2025) 33. Liu, Y., Huang, Q., Hui, S., Fu, J., Zhou, S., Wu, K., Li, P., Wang, J.: Semantic-aware representation learning for homography estimation. In: Proceedings of the 32nd ACM International Conference on Multimedia. pp. 2506–2514 (2024) 34. Long, Y., Cai, W., Wang, H., Zhan, G., Dong, H.: Instructnav: Zero-shot sys-tem for generic instruction navigation in unexplored environment. arXiv preprint arXiv:2406.04882 (2024) 35. Lyu, K., Wu, K., Li, P., Hu, X., Si, Q., Miao, C., Yang, N., Wang, Z., Xiao, L., Hu, L., et al.: Himemvln: Enhancing reliability of open-source zero-shot vision-and-language navigation with hierarchical memory system. arXiv preprint arXiv:2603.14807 (2026) 36. Martinez-Martin, E., del Pobil, A.P.: Personal robot assistants for elderly care: an overview. Personal assistants: Emerging computational technologies pp. 77–91 (2017) 37. Mišeikis, J., Caroni, P., Duchamp, P., Gasser, A., Marko, R., Mišeikien˙ e, N., Zwill-ing, F., De Castelbajac, C., Eicher, L., Früh, M., et al.: Lio-a personal robot assis-tant for human-robot interaction and care applications. IEEE Robotics and Au-tomation Letters 5(4), 5339–5346 (2020) 38. Raychaudhuri, S., Wani, S., Patel, S., Jain, U., Chang, A.: Language-aligned way-point (law) supervision for vision-and-language navigation in continuous environ-ments. In: Proceedings of the 2021 conference on empirical methods in natural language processing. pp. 4018–4028 (2021) 39. Wang, H., Liang, W., Van Gool, L., Wang, W.: Dreamwalker: Mental planning for continuous vision-language navigation. In: Proceedings of the IEEE/CVF interna-tional conference on computer vision. pp. 10873–10883 (2023) 40. Wang, Z., Li, X., Yang, J., Liu, Y., Hu, J., Jiang, M., Jiang, S.: Lookahead explo-ration with neural radiance representation for continuous vision-language naviga-tion. In: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition. pp. 13753–13762 (2024) 41. Wang, Z., Li, X., Yang, J., Liu, Y., Jiang, S.: Gridmm: Grid memory map for vision-and-language navigation. In: Proceedings of the IEEE/CVF International conference on computer vision. pp. 15625–15636 (2023) 42. Wei, M., Wan, C., Peng, J., Yu, X., Yang, Y., Feng, D., Cai, W., Zhu, C., Wang, T., Pang, J., et al.: Ground slow, move fast: A dual-system foundation model for generalizable vision-and-language navigation. arXiv preprint arXiv:2512.08186 (2025) 43. Wei, M., Wan, C., Yu, X., Wang, T., Yang, Y., Mao, X., Zhu, C., Cai, W., Wang, H., Chen, Y., et al.: Streamvln: Streaming vision-and-language navigation via slowfast context modeling. arXiv preprint arXiv:2507.05240 (2025) 44. Wisspeintner, T., Van Der Zant, T., Iocchi, L., Schiffer, S.: Robocup@ home: Scien-tific competition and benchmarking for domestic service robots. Interaction Studies 
+
+10 (3), 392–426 (2009) 45. Wu, K., Li, P., Fu, J., Li, Y., Wu, Y., Liu, Y., Wang, J., Zhou, S.: Event-equalized dense video captioning. In: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition. pp. 8417–8427 (2025) Abbreviated paper title 19 46. Wu, K., Li, P., Fu, J., Wu, Y., Liu, Y., Zhou, S., Wang, J.: Cem-net: Cross-emotion memory network for emotional talking face generation. arXiv preprint arXiv:2508.12368 (2025) 47. Yao, X., Gao, J., Xu, C.: Navmorph: A self-evolving world model for vision-and-language navigation in continuous environments. arXiv preprint arXiv:2506.23468 (2025) 48. Zhang, J., Li, A., Qi, Y., Li, M., Liu, J., Wang, S., Liu, H., Zhou, G., Wu, Y., Li, X., et al.: Embodied navigation foundation model. arXiv preprint arXiv:2509.12129 (2025) 49. Zhang, J., Wang, K., Wang, S., Li, M., Liu, H., Wei, S., Wang, Z., Zhang, Z., Wang, H.: Uni-navid: A video-based vision-language-action model for unifying embodied navigation tasks. arXiv preprint arXiv:2412.06224 (2024) 50. Zhang, J., Wang, K., Xu, R., Zhou, G., Hong, Y., Fang, X., Wu, Q., Zhang, Z., Wang, H.: Navid: Video-based vlm plans the next step for vision-and-language navigation. arXiv preprint arXiv:2402.15852 (2024) 51. Zhang, Y., Wu, J., Li, W., Li, B., Ma, Z., Liu, Z., Li, C.: Video instruction tuning with synthetic data. arXiv preprint arXiv:2410.02713 (2024) 52. Zhang, Z., Zhang, H., Chen, X., Huang, K., Shi, C., Lu, H.: Latent-space autore-gressive world model for efficient and robust image-goal navigation. arXiv e-prints pp. arXiv–2511 (2025) 53. Zhou, G., Hong, Y., Wu, Q.: Navgpt: Explicit reasoning in vision-and-language navigation with large language models. In: Proceedings of the AAAI Conference on Artificial Intelligence. vol. 38, pp. 7641–7649 (2024) Supplementary Material for: Dual-Anchoring: Addressing State Drift in Vision-Language Navigation 
+
+Kangyi Wu 1⋆, Pengna Li 1†, Kailin Lyu 2, Xi Lin 3, Lin Zhao 4⋆⋆ , Qingrong He 4,Jinjun Wang 1, and Jianyi Liu 1⋆ ⋆ ⋆  
+
+> 1
+
+National Key Laboratory of Human-Machine Hybrid Augmented Intelligence, National Engineering Research Center for Visual Information and Applications, Institute of Artificial Intelligence and Robotics, Xi’an Jiaotong University  
+
+> 2
+
+Institute of Automation, Chinese Academy of Sciences, School of Artificial Intelligence, University of Chinese Academy of Sciences  
+
+> 3
+
+Johns Hopkins University  
+
+> 4
+
+Joy Future Academy, JD 
+
+## A Implementation Details 
+
+A.1 Training Details 
+
+Our model is implemented based on the LLaVA-Video [2] architecture, utilizing Qwen-1.5 as the large language model and SigLIP-2 (SO400M-Patch14-384) as the vision encoder. To capture multi-scale visual details, we extract features from the penultimate layer (Layer -2) of the vision encoder and process them using an any-resolution grid configuration (supporting up to 9 grids) before passing them through an MLP2x_GELU projector. The training process is conducted on 32 NVIDIA H200 GPUs. To ensure efficient memory utilization and stable scaling across multiple nodes, we employ DeepSpeed ZeRO-2 optimization, Gradient Checkpointing, and BF16 mixed pre-cision with TF32 enabled. For the temporal dimension, we uniformly sample 32 frames from the streaming video and strictly append 8 history frames to maintain the context, supporting a maximum sequence length of up to 32,768 tokens. For our proposed Dual-Anchoring mechanism, both the Instruction Progress Anchoring (formulated as Chain-of-Thought intermediate steps) and the Mem-ory Landmark Anchoring (formulated as the World Model retrospective predic-tion) are activated with a 50% probability during the training batches. Specifi-cally, the Landmark-Centric World Model leverages the last-layer hidden states of the language model to reconstruct the target SAM feature map, which has a spatial dimension of 256 × 64 × 64 . We summarize the detailed hyperparame-ters for both Stage 1 (Navigation Data Pre-training) and Stage 2 (DAgger and Generalist Fine-tuning) in Tab. S1.  
+
+> ⋆
+
+Equal contribution.  
+
+> ⋆⋆
+
+Project Leader.  
+
+> ⋆ ⋆ ⋆
+
+Corresponding author. 2 K. Wu et al.                             
+
+> Table S1: Training Hyperparameters. Detailed configurations for both stages. Hyperparameter Stage 1 Stage 2 Base Model Qwen-1.5 + SigLIP-2 (SO400M) Optimizer AdamW AdamW Base Learning Rate 1e-5 1e-5 Vision Tower Learning Rate 5e-6 5e-6 LR Scheduler Cosine with 0.03 Warmup Batch Size (Global) 64 32 Weight Decay 0.0 0.0 Epochs 11Max Sequence Length 32768 32768 Input Frames 32 32 History Frames 88
+> λW M (World Model Loss Weight) 0.1 0.1 Dual-Anchoring Probability 50% 50%
+
+A.2 DAgger Algorithm Details 
+
+To address the distribution shift between training (teacher-forcing) and inference (student-forcing) in continuous environments, we employ a modified Dataset Aggregation (DAgger) algorithm for robust data collection. Our implementation details are as follows: 
+
+– Rollout Strategy: We execute the policy trained in Stage 1 across the training environments. To fully expose the model to its own induced state distribution, we set the mixed policy probability to 0, meaning the agent relies entirely on its own visual observations and historical context to predict actions autoregressively without initial expert guidance. 
+
+– Expert Intervention: Instead of a simple distance threshold, we utilize a dynamic intervention mechanism monitored by a shortest-path expert. The expert forcefully takes over control if any of the following critical errors occur: (1) The model outputs an empty action sequence; (2) The model predicts a STOP action prematurely while the distance to the goal is ≥ 3.0 meters; (3) The accumulated action errors exceed a predefined tolerance threshold, indicating severe deviation from the reference path. Once triggered, the ex-pert executes optimal actions to guide the agent back to the next reference waypoint before returning control to the student model. 
+
+– Data Filtering and Aggregation: To ensure the high quality and ped-agogical value of the collected dataset, we apply strict filtering criteria. An episode is only aggregated if the agent successfully reaches the vicinity of the goal (distance < 0.5 meters). Furthermore, it must meet one of the follow-ing efficiency criteria: (1) For corrected trajectories (where the expert inter-vened), the relative path length (PL) must be < 0.93 ; (2) For autonomous trajectories (no expert intervention), the PL must be < 0.85 . This strictly Title Suppressed Due to Excessive Length 3
+
+filters for high-quality error-recovery demonstrations and highly efficient au-tonomous navigations. 
+
+– Co-Training Strategy: In Stage 2, we integrate the newly collected DAg-ger samples (approximately 240K) into a unified co-training dataset. This dataset combines the oracle VLN trajectories, our collected dataset, the DAgger-collected corrective demonstrations, and general vision-language (VL) data (e.g., VideoQA and MMC4) to simultaneously enhance navigation ro-bustness and maintain general multimodal reasoning capabilities. 
+
+A.3 Data Generation and Training Prompts 
+
+This section provides the complete prompts used across different stages of our Dual-Anchoring Framework, including data generation, quality assessment, and model training. 
+
+Progress Annotation Generation Prompts These prompts are utilized in the automated pipeline to synthesize 3.6 million fine-grained progress description data (as detailed in Section 3.2 of the main paper). 
+
+Prompt 1: Dual-Step Reasoning Prompt 
+
+Description: This prompt is fed to the Multimodal LLM (Qwen3-VL) to perform a Chain-of-Thought (CoT) reasoning process. It aligns the agent’s visual kinematics with the navigation instruction to deduce the completed sub-goals. 
+
+Prompt Text: 
+
+You are a vision-and-language navigation analyzer. Navigation instruction: {instruction} You will see ONLY the FIRST {t} observation frames of the trajectory (one frame per step). Task: 1) Determine which part(s) of the instruction have ALREADY been completed from step 0 to step {t}. 2) Do NOT describe every step/frame. Do NOT list step numbers. 3) Do NOT speculate about future actions. Output format (MUST follow exactly): 
+
+<Analysis >
+
+- Briefly compare the instruction vs. visible evidence (landmarks/actions). Use at most 3 bullet points. 
+
+</Analysis >4 K. Wu et al. 
+
+<Answer >
+
+Write 1–2 short sentences ONLY: state the completed sub-goals using the SAME wording as the instruction (quote key phrases if needed). If progress is unclear, say "Unclear" and give the most likely completed part. 
+
+</Answer >
+
+Important constraints: - <Answer > must be ≤ 35 words. - No markdown headings, no numbered lists, no extra text outside the tags. 
+
+Prompt 2: Instruction-Aligned Refinement Prompt 
+
+Description: This prompt is used by the LLM (Qwen3) to distill the inter-mediate reasoning from the previous step into a concise, verbatim prefix of the original instruction, eliminating potential hallucinations. 
+
+Prompt Text: 
+
+You are a navigation progress summarizer. Input: - Navigation instruction - A previous model’s analysis and answer describing progress from step 0 to step t Your task: Rewrite the progress into ONE concise sentence that states ONLY which part(s) of the instruction have already been completed. Rules: 1) Use ONLY information that is explicitly stated in the previous output. 2) Do NOT add new actions, landmarks, or interpretations. 3) Do NOT speculate about future steps. 4) Do NOT describe observations or reasoning. 5) Use the SAME wording or quoted phrases from the instruction whenever possible. 6) If multiple sub-goals are mentioned, merge them into a single sentence. 7) If the completed part is ambiguous, choose the most conservative interpretation. Output format (MUST follow exactly): 
+
+<Answer >Title Suppressed Due to Excessive Length 5
+
+One single sentence describing the completed part of the instruction. 
+
+</Answer >
+
+–-Navigation instruction: {instruction} Previous model output: {orig_answer} 
+
+Landmark Frame Mining Prompts These prompts are employed to con-struct the retrospective supervision signals by extracting 937k grounded land-mark data (as detailed in Section 3.3). 
+
+Prompt 3: Instruction Decomposition Prompt 
+
+Description: This prompt guides the LLM (Qwen3) to break down complex, long-horizon navigation instructions into a sequence of atomic sub-goals con-taining specific actions or landmarks. 
+
+Prompt Text: 
+
+You are a Visual-Language Navigator. Your task is to break down the given instruction into multiple sub-instructions. Each sub-instruction should contain a simple and specific action or a target to reach. Here is the instruction provided by the user: 
+
+<instruction >
+
+{} 
+
+</instruction >
+
+When breaking down the instruction, please follow these rules: - Each sub-instruction should have a single, clear action or a clear target. - Sub-instructions should be non-overlapping and as simple as possible. Please put your breakdown results below: 
+
+Prompt 4: Temporal Grounding / Landmark Identification Prompt 
+
+Description: Provided to the MLLM (Qwen3-VL), this prompt identifies the exact timestamp (first appearance frame) of each decomposed landmark within the full video trajectory. 6 K. Wu et al. 
+
+Prompt Text: 
+
+The first-person video is captured by a robot completing a series of instructions in chronological order. The instructions are {sub_instruction_prompt}. The robot finishes them one-by-one. We put the frame number at the top left of the video. First, you need to describe how the robot moves in the video. You should specify the frame number in this part. Finally, You need to do temporal grounding for each of the instruction. The output format is : 
+
+<Description ></Description ><Temporal Grounding >
+
+# Instruction1: from frame ? to frame ?; # Instruction2: from frame ? to frame ?; ........ 
+
+</Temporal Grounding >
+
+Quality Assessment Prompts (LLM-as-a-Judge) To ensure the reliabil-ity of our self-collected datasets, we utilize the following prompts to compute reference-free metrics (as evaluated in Section 4.3). 
+
+Prompt 5: Progress Description Evaluation Prompt 
+
+Description: This prompt instructs the LLM to evaluate the generated progress descriptions, calculating the Hallucination Rate (HR) and Logical Consistency Score (LCS). 
+
+Prompt Text: 
+
+You are a strict evaluator for VLN. Input: Full Instruction and Generated Progress. Task 1 (Hallucination): Return true if the progress mentions objects/actions NOT in the instruction. Task 2 (Logical Consistency): Return a score (1-5). 5 means the progress is a perfect contiguous prefix of the instruction. 1 means it skips steps or contradicts order. Output Format: JSON { "is_hallucinated": boolean, "consistency_score": int } Title Suppressed Due to Excessive Length 7
+
+Prompt 6: Landmark Verification Prompt 
+
+Description: This prompt is used to evaluate the Landmark Presence Rate (LPR). It prompts Qwen3-VL to verify whether the target landmark entity is visually recognizable in the mined frames. 
+
+Prompt Text: 
+
+Determine if the target landmark entity ’{entity}’ is clearly and unambiguously identifiable in the image, meaning the entity can be visually recognized with no ambiguity. Output only 1 or 0, with no additional explanation whatsoever. 
+
+Navigation Agent Training Prompt This prompt is applied during the actual training and deployment phases of the navigation agent. 
+
+Prompt 7: System/Task Prompt for Instruction-Aware Co-training 
+
+Description: Used during the co-training phase (Section 3.2), this system prompt forces the agent to explicitly articulate its instruction progress (the mental checklist) before predicting the next navigational action. 
+
+Prompt Text (w/o progress): 
+
+You are an autonomous navigation assistant. Your task is to <instruction >. Devise an action sequence to follow the instruction using the four actions: TURN LEFT ( ←) or TURN RIGHT ( →) by 15 degrees, MOVE FORWARD ( ↑) by 25 centimeters, or STOP. 
+
+Prompt Text (w/ progress): 
+
+You are an autonomous navigation assistant. Your task is to 
+
+<instruction >. Now you have to find out which part of the task you have completed and devise an action sequence to follow the instruction using the four actions: TURN LEFT ( ←) or TURN RIGHT ( →) by 15 degrees, MOVE FORWARD ( ↑) by 25 centimeters, or STOP. 
+
+A.4 Robot Control Details 
+
+To facilitate the real-world deployment on the Unitree Go2 robot, we utilize a client-server architecture. The robot acts as the physical client for perception and execution, while the compute-heavy Vision-Language Navigation (VLN) model is hosted on a remote server equipped with NVIDIA H20 GPUs. 
+
+Perception and Communication. The robot’s front-facing Intel RealSense D435i camera captures RGB observations at a resolution of 640 × 480 and a framerate of 30 FPS. The onboard environment is managed via ROS2 with CycloneDDS middleware, which ensures robust message passing and initializes 8 K. Wu et al.       
+
+> Robot Client (ROS2 / CycloneDDS) Remote Server
+> RealSense D435i
+> RGB ( 640 ×480 )
+> Action Mapping
+> Target Pose Gen.
+> PD Controller
+> Kp= 2 .0, K d= 0 .0
+> Unitree Go2 SDK
+> Execute Command
+> HTTP Endpoint
+> /eval_vln
+> VLN Model
+> (NVIDIA H20 GPUs)
+> Data Logger
+> RGB, Pose, Act. HTTP Post (Image)
+> ∼200 ms delay HTTP Response Discrete Action [1,2,3...] Target Pose
+> Twist Cmd (10 Hz) Images Actions/Pose Physical Execution Environment Update
+
+Fig. S1: Real-World Deployment Architecture. The client-server control loop illustrates the communication between the Unitree Go2 robot (operating on ROS2) and the remote server. The streaming observations are processed by the VLN model via HTTP API, and the returned discrete actions are converted and executed continuously via an onboard PD controller. 
+
+the Unitree Go2 SDK. The captured RGB frames are transmitted to the server via an HTTP API endpoint ( /eval_vln ), with an average network transmission delay of ∼200 ms depending on network conditions. 
+
+Action Mapping and Low-Level Control. Upon receiving the streaming observations, the remote model processes them to predict the next discrete nav-igational action in real-time. These discrete outputs are mapped to physical spatial shifts: move forward 25 cm, turn left 15 ◦, turn right 15 ◦, or stop. The predicted action is transmitted back to the Go2 robot, which executes it by call-ing the robot motion API. To execute these discrete waypoint shifts smoothly in a continuous environment, we implement a Proportional-Derivative (PD) con-troller onboard. The controller converts the target pose into continuous velocity commands ( Twist messages) by publishing to the /cmd_vel_bridge topic. For translation control, we set the proportional gain Kp = 2 .0 and derivative gain 
+
+Kd = 0 .0, capping the maximum linear velocity at 0.6 m/s. For yaw (rotation) control, we set Kp = 1 .5 and Kd = 0 .0, with a maximum angular velocity of 0.5 rad/s. 
+
+System Performance and Data Collection. The entire control loop operates reliably at a frequency of 10 Hz (100 ms cycle time). This low-level setup achieves high-precision execution, maintaining a position error of < 0.1 m and an angular error of < 0.1 rad, which limits the overall trajectory tracking error to less than 5%. Concurrently, a data collection node securely records the synchronized RGB images, global pose matrices, action commands, and timestamps to the local directory for offline analysis and evaluation. Title Suppressed Due to Excessive Length 9
+
+## B Additional Experiments 
+
+B.1 Evaluation of Generated Progress 
+
+To evaluate the quality of the generated progress during inference and its di-rect impact on downstream tasks, we conduct additional experiments on the R2R-CE [1] dataset. The evaluation is formulated as follows: at any given time step t, the model is provided with the history sequence o0: t alongside the natu-ral language instruction I, and is tasked with describing the current execution progress. We compare our approach against two references: a Baseline model trained without our Instruction Progress Anchoring, and the offline Progress Annotation Generation (PAG) pipeline (utilizing Qwen3-VL) detailed in Sec. 3.2, which serves as the theoretical upper bound for this task. Following our data assessment protocol, we initially employ an LLM-as-a-Judge to calculate two automated metrics: Hallucination Rate (HR) and Logical Consistency Score (LCS). However, while these reference-free metrics effectively penalize fabricated entities and verify structural contiguity, they cannot defini-tively determine whether the generated progress accurately grounds to the true physical state. To address this, we conducted a supplementary user study to eval-uate User Study Correctness (USC), where 10 AI researchers provided a strict binary judgment ( 1 or 0) on whether the generated progress matches the visual history o0: t. Furthermore, to reveal the correlation between internal progress tracking and final task execution, we concurrently report the downstream navi-gation metrics: Success Rate (SR) and Success weighted by Path Length (SPL). As shown in Table S2, the Baseline model struggles significantly to track its status, exhibiting a high Hallucination Rate (19.2%) and failing to maintain logical contiguity (LCS of 1.45). Most strikingly, its extremely low USC score of 29.3% indicates that without explicit anchoring, the model’s internal state almost completely decouples from physical reality. This severe cognitive deficit directly translates to inferior downstream execution, yielding a navigation SR of only 56.9% and an SPL of 51.9%. In contrast, our proposed method effectively mitigates these deficits, drastically reducing the HR to 7.62% and boosting the USC to 86.7%, closely approaching the offline PAG upper bound (USC 93.2%). Crucially, this massive improvement in absolute physical grounding directly cor-relates with superior navigation performance, boosting the SR to 65.6% and SPL to 62.1%. These aligned results compellingly validate that accurate progress ver-ification is a fundamental prerequisite for successful long-horizon navigation. 
+
+B.2 Additional Visualization in Simulated Environment 
+
+In Fig. S2, we present another challenging comparative episode from the R2R-CE unseen validation set. The instruction requires the agent to execute a long-horizon navigation: “Walk through the living room around the backside of the couches. Walk into the kitchen area and walk along the barstools and counter-top. Continue ahead towards the arched entryway that leads to a hall beside the stairs.” 10 K. Wu et al. 
+
+Table S2: Evaluation results on the R2R-CE val unseen split, demonstrating the correlation between progress generation quality and final navigation performance. We report Hallucination Rate (HR), Logical Consistency Score (LCS), User Study Cor-rectness (USC), alongside navigation Success Rate (SR) and Success weighted by Path Length (SPL). Navigation metrics for the offline PAG pipeline are omitted (-) as it serves strictly as a theoretical upper bound for progress annotation. 
+
+Method HR (%) (↓) LCS (↑) USC (%) (↑) SR (%) (↑) SPL (%) (↑)Baseline 19.2 1.45 29.3 56.9 51.9 
+
+Ours 7.62 3.89 86.7 65.6 62.1 
+
+PAG (Upper Bound) 6.87 4.12 93.2 - -
+
+Fig. S2: Additional Qualitative Visualization in R2R-CE. The Baseline agent fails due to Progress Drift (prematurely hallucinating sub-goal completion). Our Dual-Anchoring agent avoids this by explicitly maintaining an accurate progress description and retrospectively anchoring its visual memory to the previously visited “kitchen area” landmark, thereby ensuring robust execution in long-horizon scenarios. 
+
+As shown in the left panel, the Baseline model suffers from severe Progress Drift. Around Step 17, when encountering a visual environment that partially matches the instruction, the baseline agent prematurely assumes it has pro-gressed further than it actually has. This internal state decoupling leads to a misguided turn, ultimately resulting in a navigation failure by Step 55. In contrast, our Dual-Anchoring Framework (middle and right panels) suc-cessfully maintains a synchronized internal state with the physical environment. Even though our agent’s trajectory slightly deviates from the ground truth around Step 34, its cognitive process remains robust: 
+
+– Instruction Progress Anchoring: At Step 34, the agent explicitly gener-ates the semantic state: “The agent has walked through the living room into the kitchen area, and is now walking along the barstools and countertop.” .This accurate mental checklist prevents the agent from losing track of its progress in the complex instruction. Title Suppressed Due to Excessive Length 11 
+
+– Memory Landmark Anchoring: Simultaneously, the Landmark-Centric World Model acts as a “rear-view mirror” to mitigate perceptual aliasing. By retrospectively reconstructing the SAM features of the previously visited 
+
+“kitchen area” (visualized in the right-bottom probe), the agent maintains a firm spatial grounding of its history, enabling it to successfully reach the final target at Step 81. 
+
+B.3 Visualization of Retrospective Grounding  
+
+> Fig. S3: Visualization of Retrospective Landmark Anchoring at Step 34. We plot the cosine similarity between the World Model’s predicted feature at Step 34 and all SAM features within the trajectory. The top panel shows the similarity distribution, which peaks significantly at frames 15 through 19. The bottom panel visualizes the top 5 most similar frames, which precisely align with the agent’s observation of the “kitchen area” (the true last landmark passed). This confirms that the agent successfully maintains specific, grounded visual memories to support robust navigation.
+
+To qualitatively validate that our Landmark-Centric World Model effectively mitigates Memory Drift via retrospective grounding, we visualize the semantic alignment between its intermediate predictions and the agent’s actual visual his-tory. Specifically, at a given navigation step t, the World Model predicts a dense spatial feature map ˆFt. We then compute the spatial-averaged cosine similarity between this predicted feature ˆFt and the actual ground-truth SAM features 
+
+FSAM (oi) across all history frames i ∈ { 0, . . . , t }.As illustrated in Fig. S3, we present the similarity distribution specifically for Step 34 of the challenging navigation episode previously introduced in Fig. S2. 12 K. Wu et al. 
+
+At Step 34, the agent’s internal progress explicitly registers that it has passed through the living room and is currently in the “kitchen area”. The similarity score remains relatively low across irrelevant segments of the trajectory but exhibits a sharp, prominent peak around frames 15 to 19. Furthermore, as shown in the bottom panel, the top 5 most similar history frames distinctly capture the “kitchen area”, which perfectly aligns with the true last landmark the agent passed. These visualizations compellingly confirm that our World Model acts as a robust “rear-view mirror”: it explicitly “looks back” and retains a distinct, grounded visual memory of critical waypoints, thereby successfully preventing perceptual aliasing during complex, long-horizon navigation. 
+
+B.4 Additional Real-World Deployment Results  
+
+> Fig. S4: Additional Real-World Deployment Trajectory. The agent navigates an office hallway, makes a left turn, and passes through glass doors. The dashed boxes display the agent’s internal progress state, decoded by probing the progress generation head at different timestamps. The precise alignment between the agent’s physical lo-cation and its probed linguistic progress state highlights the framework’s robustness in complex real-world scenarios.
+
+To validate the generalization of our framework beyond simulation, we present an additional real-world deployment trajectory in Fig. S4. The experiment was Title Suppressed Due to Excessive Length 13 
+
+conducted in an unseen office environment using the Unitree Go2 quadruped robot. The instruction is highly compositional: “Walk straight down the hallway and make the first left. Continue through the glass doors and stop at the wall.” 
+
+As depicted in the first-person RGB stream, the agent faces a feature-sparse hallway, a classic scenario that typically exacerbates State Drift. To reveal how our Dual-Anchoring framework maintains a synchronized internal state during this long-horizon execution, we employ the progress generation head as a probe to decode the agent’s latent representations. For instance, before making the turn, the decoded progress state (orange box) accurately reflects: “The sub-goal ‘Walk straight down the hallway’ has been completed. The instruction to ‘make the first left’ has not been completed.” Once the left turn is executed and the agent approaches the next sub-goal (green box), the probed internal state up-dates perfectly: “The agent has completed ‘Walk straight down the hallway and make the first left’. ‘Continue through the glass doors’ is not yet complete.” This visualization confirms that our explicit state regularization effectively prevents the decision-making process from decoupling from physical reality, demonstrat-ing the robust Sim-to-Real transferability of our framework. 
+
+## References

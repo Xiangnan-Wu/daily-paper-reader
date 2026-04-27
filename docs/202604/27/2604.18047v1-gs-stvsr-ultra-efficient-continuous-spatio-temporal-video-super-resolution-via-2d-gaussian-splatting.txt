@@ -1,0 +1,614 @@
+Title: GS-STVSR: Ultra-Efficient Continuous Spatio-Temporal Video Super-Resolution via 2D Gaussian Splatting
+
+URL Source: https://arxiv.org/pdf/2604.18047v1
+
+Published Time: Tue, 21 Apr 2026 02:37:56 GMT
+
+Number of Pages: 18
+
+Markdown Content:
+# GS-STVSR: Ultra-Efficient Continuous Spatio-Temporal Video Super-Resolution via 2D Gaussian Splatting 
+
+# Mingyu Shi 1†, Xin Di 1†,‡, Long Peng 1, Boxiang Cao 1, Anran Wu 1, Zhanfeng Feng 1,Jiaming Guo 2, Renjing Pei 2, Xueyang Fu 1, Yang Cao 1∗, Zhengjun Zha 1∗
+
+1University of Science and Technology of China 2Huawei Noah’s Ark Lab 
+
+{shimy2003, dx9826}@mail.ustc.edu.cn, forrest@ustc.edu.cn, zhazj@ustc.edu.cn GS-STVSR(Ours) Overlap               
+
+> Bicubic VideoINR MoTIF GT BF-STVSR GS-STVSR(Ours) GS-STVSR(Ours) BF-STVSR MoTIF VideoINR VRAM(GiB)
+> Faster Lighter 15 10 5
+> Encoder Decoder
+> （𝑥 0,𝑦 0,𝑡 𝑘 ）（𝑥 𝑁 ,𝑦 𝑁 ,𝑡 𝑘 ）（𝑥 1,𝑦 1,𝑡 𝑘 ）
+> .
+> ..
+> INR-based
+> Encoder
+> GS-STVSR
+> Rendering
+> I𝑡 𝑘 𝐻
+> I𝑡 𝑘 𝐻 I0
+> 𝐿 I1
+> 𝐿
+> I0
+> 𝐿 I1
+> 𝐿
+> 𝑥 𝑦 𝑡 Σ𝑡 𝑘 𝐶 𝑟𝑔𝑏 ,𝑡 𝑘 ∆𝜇 𝑡 𝑘 𝑥 𝑦 𝑡
+
+Figure 1: Comprehensive comparison between GS-STVSR and existing C-STVSR methods. (Top Left) Comparison of computational efficiency. By comprehensively evaluating computational complexity, inference time, and memory footprint, GS-STVSR significantly outperforms existing methods. (Top Right) Comparison of rendering mechanisms. Previous methods heavily rely on dense pixel-wise queries of INRs. Our method bypasses this bottleneck; once the Gaussian parameters are derived, intermediate frames at arbitrary scales can be rendered with near-zero time cost. (Bottom) Visual comparison among multiple methods under large-scale motion. The figure illustrates the performance of various models in a scenario involving a fast-moving car. Even in such challenging cases, GS-STVSR robustly restores the text on the vehicle. Overall, GS-STVSR maintains extremely high rendering efficiency while delivering highly competitive performance. 
+
+## Abstract 
+
+Continuous Spatio-Temporal Video Super-Resolution (C-STVSR) aims to simultaneously enhance the spatial resolution and frame rate of videos by arbitrary scale factors, offering greater flexibility than fixed-scale methods that are constrained by predefined up-sampling ratios. In recent years, methods based on Implicit Neural Representations (INR) have made significant progress in C-STVSR by learning continuous mappings from spatio-temporal coordinates to pixel values. However, these methods fundamentally rely on dense pixel-wise grid queries, causing computational cost to scale linearly with the number of interpolated frames and severely limit-ing inference efficiency. We propose GS-STVSR, an ultra-efficient C-STVSR framework based on 2D Gaussian Splatting (2D-GS) that drives the spatiotemporal evolution of Gaussian kernels through continuous motion modeling, bypassing dense grid queries entirely. We exploit the strong temporal stability of covariance parameters for lightweight intermediate fitting, design an optical flow-guided motion module to derive Gaussian position and color at arbitrary 
+
+> arXiv:2604.18047v1 [cs.CV] 20 Apr 2026
+
+time steps, introduce a Covariance resampling alignment module to prevent covariance drift, and propose an adaptive offset window for large-scale motion. Extensive experiments on Vid4, GoPro, and Adobe240 show that GS-STVSR achieves state-of-the-art quality across all benchmarks. Moreover, its inference time remains nearly constant at conventional temporal scales ( ×2–×8) and delivers over 
+
+3× speedup at extreme scales ( ×32 ), demonstrating strong practical applicability. 
+
+## CCS Concepts 
+
+• Computing methodologies → Image processing ; Computer vision ; Reconstruction .
+
+## Keywords 
+
+Low-Level Vision, Video Restoration 
+
+## 1 Introduction 
+
+Upgrading low-resolution, low-frame-rate videos to high-fidelity quality is crucial for delivering seamless visual experiences. While traditional Video Super-Resolution (VSR)[ 4 , 6 , 7, 11 , 13 , 20 , 72 ,88 , 91 – 96 , 102 , 111 , 121 , 145 , 159 ] and Video Frame Interpolation (VFI)[ 14 , 26 – 31 , 47 , 71 , 86 , 90 , 100 , 103 , 122 , 133 , 140 ] separately address spatial and temporal enhancement, Spatial-Temporal Video Super-Resolution (STVSR)[ 25 , 32 , 124 ] aims to accomplish both within a single model. However, most existing STVSR methods operate at fixed scaling factors determined during training (F-STVSR), making them ill-suited for the diverse magnification de-mands of real-world applications[ 33 – 37 , 39 , 41 , 42 , 50 , 54 , 112 –118 , 127 , 130 , 135 – 137 ]. To overcome this rigidity, Continuous STVSR (C-STVSR)[ 9, 10 , 52 ] has emerged as a more flexible para-digm that enables arbitrary spatio-temporal upsampling. Realizing such seamless cross-dimensional rendering calls for breaking be-yond discrete pixel grids toward truly continuous signal represen-tations. Driven by this need, Implicit Neural Representation (INR) based methods[ 8] have made notable progress in C-STVSR. VideoINR[ 10 ]first represented video as a continuous implicit field, learning map-pings from spatio-temporal coordinates (𝑥, 𝑦, 𝑡 ) to pixel values via MLPs. Subsequent works such as MoTIF[ 9] and BF-STVSR[ 52 ] fur-ther improved quality through better motion modeling and fre-quency decomposition. Despite these advances, INR methods suffer from two fundamental limitations: (1) dense pixel-wise grid queries whose computational cost grows linearly with the number of in-terpolated frames, and (2) the spectral bias of MLPs[ 98 ], which hampers the recovery of high-frequency dynamic details. These bottlenecks severely constrain inference efficiency and hinder prac-tical deployment. Meanwhile, 2D Gaussian Splatting (2D-GS)[ 15 , 44 , 45 , 51 , 97 , 141 ]has demonstrated remarkable potential in image super-resolution. PTG[ 97 ] models each pixel as a 2D Gaussian kernel and leverages the ultra-fast rasterization pipeline to achieve real-time arbitrary-scale super-resolution. Notably, 2D-GS offers two properties that naturally align with C-STVSR: first, its continuous analytic formu-lation inherently bypasses the dense grid queries required by INR;   
+
+> ∗Yang Cao and Zhengjun Zha are the corresponding authors. †These authors con-tributed equally to this work. ‡Xin Di is the project leader.
+
+second, the covariance matrix Σ decomposes into scale and rotation components, where the scale directly corresponds to the spatial magnification factor, enabling seamless joint modeling of spatial and temporal dimensions within a unified Gaussian framework. Building on these insights, we propose GS-STVSR, the first 2D-GS-based framework for C-STVSR. Our framework parameterizes 2D Gaussians as continuous functions of time and drives their spa-tiotemporal evolution through explicit motion modeling. A key empirical finding underpinning our design is that the covariance parameters of 2D Gaussians exhibit remarkably strong temporal stability (correlation ∼0.99 between adjacent frames), far exceeding that of the pixel domain. This allows us to model covariance tran-sitions with ultra-lightweight convolutions while focusing model capacity on the more challenging position and color estimation. Specifically, GS-STVSR introduces three core components: (1) a Covariance Resampling Alignment module that predicts intermedi-ate covariance and re-samples from a pre-defined CPB to prevent covariance drift; (2) an Optical Flow-Guided Continuous Gauss-ian Motion Learning module that derives Gaussian positions and colors at arbitrary time steps via linear motion interpolation and adaptive feature fusion; and (3) a Motion-Aware Adaptive Offset Window that dynamically adjusts offset ranges based on local mo-tion intensity, enabling accurate trajectory tracking under large displacements. Our main contributions are summarized as follows: 
+
+• We propose GS-STVSR, the first framework that extends 2D Gaussian Splatting to C-STVSR, fundamentally bypassing the dense grid query bottleneck of INR-based methods. 
+
+• We reveal the strong temporal stability of Gaussian covari-ance parameters and design a Covariance Resampling Align-ment module for efficient and stable covariance prediction across time. 
+
+• We design an optical flow-guided motion learning module coupled with an adaptive offset window to handle continu-ous Gaussian evolution under diverse motion scales. 
+
+• Extensive experiments on Vid4, GoPro, and Adobe240 demon-strate that GS-STVSR achieves state-of-the-art performance while delivering over 3× inference speedup at challenging spatiotemporal scales. 
+
+## 2 Related Work 2.1 Spatial-Temporal Video Super-Resolution 
+
+Spatial-Temporal Video Super-Resolution (STVSR)[ 9 , 10 , 25 , 52 ,82 , 119 , 120 , 124 , 129 ] aims to simultaneously enhance the spa-tial resolution and temporal frame rate of videos. Early efforts typically adopt a two-stage pipeline that cascades Video Frame Interpolation (VFI) models[ 16 –18 , 38 , 40 , 125 , 126 , 151 –155 ] such as SuperSloMo[ 48 ], DAIN[ 3 ], and QVI[ 132 ] with Video Super-Resolution (VSR) models[ 1, 2 , 69 , 70 , 109 , 128 , 142 –144 , 147 , 149 , 150 ] such as EDVR[ 110 ] and BasicVSR[ 6, 7 ]. However, such cascaded pipelines suffer from error accumulation between stages and lack joint spatio-temporal optimization, leading to suboptimal results. To address this, one-stage Fixed-scale STVSR (F-STVSR) methods have been proposed to jointly model both dimensions: Haris et al. [32 ] have introduced a unified framework for addressing STVSR. Xiang et al. 
+
+[ 124 ] have proposed to use bidirectional deformable ConvLSTM. 
+
+> 2
+
+Temporal Hyper-para 
+
+t
+
+Encoder 
+
+Input Feat Flow CRA CGM 
+
+Gaussian Splatting 
+
+(a) Covariance Resampling Alignment (b) Con �nuous Gaussian Mo �on 
+
+Covariance Prior Bank 
+
+Kernel 0.41 0 0      
+
+> 0-0.86 0000.33 2.36 2.54 2.23
+> 012N
+
+Covariance Prior Bank 
+
+MLP 
+
+> Kernel Weight ss
+> Weight Fusion
+
+Covariance Sample 
+
+> Conact Projection Low Dim Covariance Sample
+
+Temporal 
+
+t 
+
+> element-wise multiplication
+> ssoftmax
+> Gaussian Paras
+
+Temporal t 
+
+> Linear
+> Backward Warping
+> Conv
+> offset
+> AOW Siren
+> Initial Offset Drifting Offset
+> =3 =1 =N
+
+Adap �ve Off set Window Temporal tFigure 2: Overview of the GS-STVSR framework. Given two input low-resolution frames, we first extract their features and bidirectional optical flows. Based on temporal characteristics, the estimation of 2D Gaussian parameters is decoupled into two branches: (a) The Covariance Resampling Alignment Module predicts the intermediate covariance by resampling from a pre-defined Covariance Prior Bank (CPB), which ensures temporal stability and prevents covariance drift. (b) The Continuous Gaussian Motion Learning Module utilizes intermediate optical flows for feature backward warping to estimate color and position information. Meanwhile, a Motion-Aware Adaptive Offset Window (AOW) dynamically adjusts the position offset range based on local motion intensity to accurately track large-scale motions. Finally, the complete Gaussian parameters are combined with the target spatial scale for fast rendering via 2D Gaussian Splatting rasterization. RSTT[25] integrates spatial and temporal super-resolution within a unified Transformer, and TMNet[ 129 ] further exploits temporal modulation for improved multi-frame reconstruction. Despite their improved performance, these F-STVSR methods are inherently con-strained by fixed scaling factors set during training. To overcome this rigidity, Continuous STVSR (C-STVSR) has emerged to support arbitrary spatio-temporal scaling factors within a single model. VideoINR[ 10 ] pioneered this direction by map-ping coordinates (𝑥, 𝑦, 𝑡 ) to RGB values via MLPs, enabling con-tinuous signal representation. However, its vanilla MLP decoder suffers from spectral bias, limiting its ability to reconstruct high-frequency details. MoTIF[ 9 ] further replaces backward warping with forward warping using softmax splatting[ 86 ] and incorpo-rates a pre-trained optical flow network[ 108 ] to provide explicit motion context, improving temporal alignment but at the cost of additional computational overhead from the auxiliary flow network. BF-STVSR[ 52 ] decouples spatial and temporal modeling through a B-spline mapper[ 87 ] and a Fourier mapper[ 107 ], alleviating the spectral bias of vanilla MLPs and achieving state-of-the-art quality among INR-based approaches. However, all these INR-based meth-ods fundamentally rely on dense pixel-wise grid queries, where each output pixel requires an independent forward pass through the MLP decoder. This causes computational overhead to scale linearly with the number of interpolated frames, posing a critical efficiency bottleneck that limits practical deployment. In contrast, our method leverages 2D Gaussian Splatting to drive spatio-temporal Gaussian dynamics, completely bypassing dense grid queries and achieving near-constant inference latency regardless of the temporal scale. 
+
+## 2.2 Gaussian Splatting 
+
+3D Gaussian Splatting (3D-GS)[ 51 ] has emerged as a powerful alternative to NeRF[ 84 ] for real-time scene rendering, represent-ing scenes as collections of anisotropic 3D Gaussians that support efficient rasterization and direct scene manipulation. 2D-GS[ 45 ]further adapts this paradigm to planar representations, improving 
+
+> 3
+
+geometric accuracy through precise 2D Gaussian projection. In the domain of dynamic scene modeling, works such as Dynamic 3D Gaussians[ 83 ] and 4D Gaussian Splatting[ 19 , 46 , 56 , 68 , 89 , 123 ]track and deform Gaussian primitives over time for dynamic view synthesis, demonstrating the inherent potential of Gaussian rep-resentations for temporal modeling, though they primarily tar-get 3D reconstruction and have not been explored for 2D video enhancement tasks. More recently, 2D-GS has been applied to image-level tasks: Zhang et al. [ 141 ] performs image compression and reconstruction via long-term optimization of Gaussian pa-rameters, while Hu et al. [ 44 ] operates in the feature space to im-prove visual quality and speed. However, these methods either require lengthy per-image optimization or still rely on cumber-some upsampling and decoding pipelines[ 5, 21 – 24 , 49 , 57 – 67 , 74 –81 , 101 , 106 , 131 , 134 , 138 , 139 , 146 , 148 , 156 – 158 ], struggling to reconstruct continuous high-resolution signals efficiently. Peng 
+
+et al. [97 ] breaks this limitation by revealing the Covariance Prior Bank(CPB)—the finding that covariance parameters of natural im-ages follow a low-dimensional smooth distribution—and proposes CPB-Driven Covariance Weighting to achieve ultra-fast arbitrary-scale image super-resolution via efficient 2D-GS rasterization, com-pletely discarding traditional upsampling decoders. Inspired by PTG, our work extends 2D-GS to the substantially more challeng-ing C-STVSR task, where the key difficulty lies in modeling how each Gaussian kernel’s position, color, and covariance evolve con-tinuously over time while preserving the efficiency of Gaussian rasterization. 
+
+## 3 Method 3.1 Overview 
+
+The overall pipeline of GS-STVSR is illustrated in Fig. 2. Given two low-resolution frames 𝐼 𝐿  
+
+> 0
+
+, 𝐼 𝐿  
+
+> 1
+
+∈ R3×𝐻 ×𝑊 , our goal is to generate a high-resolution intermediate frame 𝐼 𝐻 𝑡 ∈ R3×𝑠𝐻 ×𝑠𝑊 at arbitrary time 𝑡 ∈ [ 0, 1] with arbitrary spatial scale 𝑠 . Unlike INR-based methods that query a dense coordinate grid to reconstruct each output pixel, we adopt 2D Gaussian Splatting as our rendering primitive, representing each frame as a collection of 2D Gaussian kernels whose parameters evolve continuously over time. Follow-ing PTG[ 97 ], we reconstruct the continuous signal 𝑓 𝑐 (𝑥, 𝑦, 𝑡 ) as a superposition of 𝑁 Gaussian kernels: 
+
+𝑓 𝑐 (𝑥, 𝑦, 𝑡 ) =
+
+> 𝑁
+
+∑︁ 
+
+> 𝑖 =1
+
+𝐺 𝑖 (𝑥, 𝑦, 𝑡 ). (1) Each Gaussian kernel 𝐺 𝑖 is parameterized by eight degrees of free-dom: a 2 × 2 covariance matrix Σ𝑡 that encodes the spatial extent and orientation, a 2D position vector 𝜇 𝑡 indicating the kernel center, and a 3D RGB color vector 𝐶 𝑟𝑔𝑏,𝑡 :
+
+Σ𝑡 =
+
+ 𝜎 2 
+
+> 𝑥,𝑡
+
+𝜌 𝑡 𝜎 𝑥,𝑡 𝜎 𝑦,𝑡 
+
+𝜌 𝑡 𝜎 𝑥,𝑡 𝜎 𝑦,𝑡 𝜎 2
+
+> 𝑦,𝑡
+
+
+
+, 𝜇 𝑡 =
+
+𝜇 𝑥,𝑡 
+
+𝜇 𝑦,𝑡 
+
+
+
+, 𝐶 𝑟𝑔𝑏,𝑡 =
+
+
+
+𝐶 𝑟,𝑡 
+
+𝐶 𝑔,𝑡 
+
+𝐶 𝑏,𝑡 
+
+
+
+.
+
+(2) The value of 𝐺 𝑖 at position (𝑥, 𝑦 ) and time 𝑡 is given by: 
+
+𝐺 𝑖 (𝑥, 𝑦, 𝑡 ) = 𝐶 𝑟𝑔𝑏,𝑡 · 12𝜋 |Σ𝑖,𝑡 | exp 
+
+
+
+− 12𝑑 ⊤ 
+
+> 𝑡
+
+Σ−1 
+
+> 𝑖,𝑡
+
+𝑑 𝑡 
+
+
+
+, (3) where 𝑑 𝑡 = (𝑥, 𝑦 )⊤ − 𝜇 𝑡 is the displacement from the kernel center. A key advantage of this formulation is that the covariance matrix 
+
+Σ𝑡 can be decomposed into scale and rotation components, where the scale directly corresponds to the spatial magnification factor. This means that once the Gaussian parameters are predicted at the LR resolution, rendering at any HR scale 𝑠 is achieved simply by adjusting the scale component of Σ𝑡 during rasterization, without re-running the network. Following PTG, the position 𝜇 is fixed at the LR pixel center and a learnable offset Δ𝜇 is predicted via Adaptive Position Drifting. Our goal thus reduces to estimating 
+
+{Δ𝜇 𝑡 , Σ𝑡 , 𝐶 𝑟𝑔𝑏,𝑡 } for arbitrary 𝑡 ∈ [ 0, 1].We employ an encoder 𝐸 to extract latent features 𝐹 𝐿  
+
+> 0
+
+, 𝐹 𝐿  
+
+> 1
+
+∈
+
+R𝐶 ×𝐻 ×𝑊 from the input LR frames, and a pre-trained optical flow extractor to obtain bidirectional motion vectors 𝑀 𝐿 
+
+> 0→1
+
+, 𝑀 𝐿  
+
+> 1→0
+
+∈
+
+R2×𝐻 ×𝑊 . The Gaussian parameter estimation is then decoupled into two branches based on distinct temporal characteristics: (1) the covariance Σ𝑡 , which exhibits strong temporal stability, is derived from endpoint covariances Σ0, Σ1 via a lightweight CPB re-sampling alignment module (Sec. 3.2); (2) the position offset Δ𝜇 𝑡 and color 
+
+𝐶 𝑟𝑔𝑏,𝑡 , which are more sensitive to motion, are generated through an optical flow-guided motion learning module (Sec. 3.3). An adaptive offset window (Sec. 3.4) further adjusts Δ𝜇 𝑡 to handle large-scale motion. Finally, the complete Gaussian parameters are combined with the target spatial scale 𝑠 for fast 2D-GS rasterization. 
+
+## 3.2 Covariance Resampling Alignment Module 
+
+We obtain the endpoint covariance parameters Σ0 and Σ1 by map-ping the deep features 𝐹 𝐿  
+
+> 0
+
+and 𝐹 𝐿  
+
+> 1
+
+to sample from a pre-defined Covariance Prior Bank (CPB), following the methodology in [ 97 ]. The Covariance prior reveals that the covariance parameters of nat-ural images follow a traceable, low-dimensional smooth probability space distribution. Building on this prior, a key observation motivat-ing our design is the remarkably strong temporal stability of covari-ance parameters. We conduct experiments to measure the temporal correlation of covariance parameters and pixel-domain values at varying time intervals using both Pearson Correlation Coefficient and Cosine Similarity. As the time interval increases, the pixel-domain similarity drops sharply, while the covariance parameters remain remarkably stable across both metrics. Detailed experimen-tal data and analysis are provided in the supplementary material. We attribute this stability to the fact that the macroscopic geo-metric structure captured by 2D Gaussian covariance is inherently dominated by low-frequency information, whose evolution along the time axis is smooth and predictable. This important insight implies that characterizing the temporal transition of covariance does not require complex non-linear transformations; lightweight operations are theoretically sufficient. Based on this insight, we predict the intermediate covariance Σ𝑡 
+
+via a single-layer convolution on the concatenation of Σ0, Σ1, and the target time 𝑡 along the channel dimension. However, directly outputting high-dimensional covariance parameters may cause co-variance drift, where unconstrained convolution operations perturb the original covariance features, causing the predicted Σ𝑡 to deviate from the low-dimensional smooth manifold strictly defined by the CPB K. To strike a balance between computational efficiency and optimization stability, we instead compress the convolution output 
+
+> 4
+
+into a low-dimensional fusion feature 𝐸 𝑡 :
+
+𝐸 𝑡 = Conv (Concat [Σ0, Σ1, 𝑡 ]) , (4) and treat 𝐸 𝑡 as adaptive sampling weights over the CPB. Following PTG[ 97 ], the intermediate covariance is obtained via weighted re-combination: 
+
+Σ𝑡 =
+
+> 𝑁
+
+∑︁ 
+
+> 𝑖 =1
+
+𝑤 𝑖,𝑡 𝐺 𝑖 , 𝑊 𝑡 = Softmax (𝐸 𝑡 ), (5) where 𝐺 𝑖 ∈ K is a predefined Gaussian kernel and 𝑊 𝑡 the corre-sponding weight. This re-sampling operation anchors Σ𝑡 within the CPB manifold, eliminating covariance drift while preserving ultra-low computational overhead. 
+
+## 3.3 Optical Flow-Guided Continuous Gaussian Motion Learning 
+
+To generate the position and color parameters Δ𝜇 𝑡 , 𝐶 𝑟𝑔𝑏,𝑡 at arbi-trary time 𝑡 , we design an optical flow-guided motion learning mod-ule that replaces the MLP-based parameter generation in PTG[ 97 ]. Directly reusing PTG’s MLP for temporal extension would lack explicit motion awareness and require completely passing through the massive MLP network for every new time step, contradicting our efficiency goal. Instead, we leverage pre-extracted bidirectional optical flows 𝑀 𝐿 
+
+> 0→1
+
+, 𝑀 𝐿  
+
+> 1→0
+
+∈ R2×𝐻 ×𝑊 to provide explicit motion guidance. Under the linear motion assumption within short inter-frame intervals, the intermediate optical flows pointing from time 
+
+𝑡 to the endpoint frames are obtained by simple scaling: 
+
+𝑀 𝐿 𝑡 →1 = 𝑡 · 𝑀 𝐿 
+
+> 1→0
+
+, 𝑀 𝐿 𝑡 →0 = (1 − 𝑡 ) · 𝑀 𝐿 
+
+> 0→1
+
+. (6) With the estimated intermediate flows, the endpoint deep features 
+
+𝐹 𝐿  
+
+> 0
+
+, 𝐹 𝐿  
+
+> 1
+
+are temporally aligned to the target moment 𝑡 via backward warping: 
+
+𝐹 𝐿  
+
+> 0,𝑡
+
+= W ( 𝐹 𝐿  
+
+> 0
+
+, 𝑀 𝐿 𝑡 →0), 𝐹 𝐿  
+
+> 1,𝑡
+
+= W ( 𝐹 𝐿  
+
+> 1
+
+, 𝑀 𝐿 𝑡 →1), (7) where W (· , ·) denotes the backward warping operator. Since the linear motion assumption may introduce minor alignment errors, particularly around occlusion boundaries, we feed the warped fea-tures into a lightweight convolution module that jointly predicts an adaptive spatio-temporal fusion mask 𝑀 ∈ [ 0, 1] and a feature residual Δ𝐹 to compensate for these inaccuracies[ 43 ]. The fused intermediate feature is computed as: 
+
+𝐹 𝐿 𝑡 = 𝑀 ⊙ 𝐹 𝐿  
+
+> 0,𝑡
+
++ ( 1 − 𝑀 ) ⊙ 𝐹 𝐿  
+
+> 1,𝑡
+
++ Δ𝐹, (8) where ⊙ denotes element-wise multiplication. The mask 𝑀 adap-tively balances the contribution of the two warped features at each spatial location, while Δ𝐹 captures residual details that cannot be recovered by warping alone. Finally, the fused feature 𝐹 𝐿 𝑡 is decoded by a lightweight convolutional head to produce the Gaussian pa-rameters Δ𝜇 𝑡 and 𝐶 𝑟𝑔𝑏,𝑡 . This design avoids the heavy per-frame MLP inference required by INR methods, as the optical flow com-putation is shared across all time steps and only the lightweight fusion and decoding stages are time-dependent. 
+
+## 3.4 Motion-Aware Adaptive Offset Window 
+
+PTG[ 97 ] restricts the position offset to Δ𝜇 ∈ [ 0, 1], confining each Gaussian kernel to its local pixel grid for training stability. While ef-fective for static images, this constraint creates a critical bottleneck 
+
+> (a) Initial and final states
+> (b) Interpolated state with small offset
+> (c) Interpolated state with large offset
+
+Figure 3: Illustration of the Motion-Aware Adaptive Offset Window under large-scale motion. (a) Possible trajectories be-tween endpoint frames. (b) A small offset window provides insuf-ficient range to reach the actual trajectory. (c) An appropriately large offset window ensures accurate trajectory targeting. when extended to video: large inter-frame motion requires Gaussian kernels to shift substantially along their trajectories, far exceed-ing the single-pixel range. With the introduction of the temporal axis, the positional offset should inherently carry a strong temporal motion correlation and be responsible for guiding the continuous movement of the Gaussian kernels. When the offset window is strictly constrained to a minimal range, this hard truncation se-verely disrupts the temporal correlation of the offsets, making it difficult for the model to guide the Gaussian kernels in tracking large-scale local motion. As illustrated in Fig. 3, when the offset window is too narrow, the model cannot guide Gaussian kernels to track objects undergoing large displacements, resulting in severe multi-frame overlapping artifacts. A naive global relaxation of the window, however, does not solve the problem—our preliminary ex-periments show that uniformly enlarging the offset range actually hurts performance by excessively expanding the Gaussian degrees of freedom in static regions, leading to unstable optimization. We observe that the required offset range is inherently tied to local motion intensity: regions with significant motion demand wider windows, while static or slowly-moving regions benefit from tight constraints. This motion prior can be readily estimated from the input endpoint frames. Accordingly, we propose a Motion-Aware Adaptive Offset Window that spatially varies the offset range. Specifically, we learn a weight map 𝑉 𝑚𝑎𝑝 from the endpoint features 
+
+𝐹 𝐿  
+
+> 0
+
+, 𝐹 𝐿  
+
+> 1
+
+through Sirens [ 104 ] and combine it with a set of predefined base windows 𝑆 𝑤𝑖𝑛 = {𝑠 1, 𝑠 2, . . . , 𝑠 𝐾 } to produce a spatially-varying window map: 
+
+𝑊 𝑚𝑎𝑝 =
+
+> 𝐾
+
+∑︁ 
+
+> 𝑖 =1
+
+𝑉 𝑚𝑎𝑝,𝑖 · 𝑠 𝑖 , (9) where 𝑆 𝑤𝑖𝑛 = {1, 2, . . . , 10 } in our experiments. Note that 𝑊 𝑚𝑎𝑝 
+
+is computed once per input pair and shared across all intermedi-ate time steps, introducing negligible overhead. The final offset is obtained by scaling the initial prediction: 
+
+Δ𝜇 𝑡 ← Δ𝜇 𝑡 ⊙ 𝑊 𝑚𝑎𝑝 , (10) where ⊙ denotes element-wise multiplication. This mechanism adaptively grants each spatial location an offset range propor-tional to its local motion magnitude, enabling accurate trajectory 
+
+> 5
+
+tracking for large-scale motion while maintaining tight regular-ization in static regions. The complete set of Gaussian parameters 
+
+{Δ𝜇 𝑡 , Σ𝑡 , 𝐶 𝑟𝑔𝑏,𝑡 } at arbitrary time 𝑡 is then combined with the target spatial scale 𝑠 for fast rendering via 2D-GS rasterization. 
+
+## 4 Experiments 4.1 Experiments Setup 
+
+4.1.1 Implementation and Training Details. We adopt a single-stage training strategy, uniformly sampling the spatial scale from [4, 8]
+
+and fixing the temporal scale to ×8 with 3 randomly sampled inter-mediate time steps. The model is trained for 600K iterations on 8 NVIDIA Tesla V100 GPUs using the Adam[ 53 ] optimizer ( 𝛽 1 = 0.9,
+
+𝛽 2 = 0.999 ) with cosine annealing that decays the learning rate from 10 −4 to 10 −7 every 100K iterations; the learning rate is fur-ther scaled by 0.75 and 0.5 for the last 200K iterations. We employ RVRT[ 72 ] as the feature encoder and reuse its internal SpyNet[ 99 ]as the optical flow extractor to minimize additional parameters. The batch size is 32 with a patch size of 256 × 256 , and standard data augmentation (random rotation and horizontal flipping) is applied. The training loss combines L1 loss[ 8 ] and frequency loss[ 12 ] with a weight of 0.05. 
+
+4.1.2 Datasets. We train on the Adobe240 dataset[ 105 ], which contains 133 videos at 720P resolution. During training, nine con-secutive frames are selected, with the 1st and 9th frames as inputs and three randomly sampled intermediate frames as ground truth. For evaluation, we use the Vid4[ 73 ], Adobe240[ 105 ], and GoPro datasets[ 85 ]. The default spatial scale is ×4. Unless otherwise speci-fied, for Vid4, the temporal scale is ×2 (center-frame interpolation). For GoPro-Average and Adobe-Average, the temporal scale is ×8
+
+(multi-frame interpolation). For GoPro-Center and Adobe-Center, only the 1st, 4th, and 9th frames are evaluated. 
+
+4.1.3 Baselines and Metrics. We compare against two categories of baselines. For F-STVSR, we include two-stage methods combining VFI models (SuperSloMo[ 48 ], QVI[ 132 ], DAIN[ 3 ]) with VSR mod-els (Bicubic, EDVR[ 110 ], BasicVSR[ 6, 7 ]), and one-stage methods (ZoomingSloMo[ 124 ], TMNet[ 129 ]). For C-STVSR, we include two-stage methods combining AISR models (LIIF[ 8 ], LTE[ 55 ]) with VFI models (RIFE[ 47 ], EMA-VFI[ 140 ]), and one-stage methods (VideoINR[ 10 ], MoTIF[ 9 ], BF-STVSR[ 52 ]). All methods are evaluated using PSNR and SSIM on the Y channel. 
+
+## 4.2 Quantitative Results 
+
+Table 1 presents quantitative comparisons under the F-STVSR evalu-ation protocol on Vid4[ 73 ], GoPro[ 85 ], and Adobe240[ 105 ]. Among all methods, VideoINR[ 10 ], MoTIF[ 9], BF-STVSR[ 52 ], and our GS-STVSR are trained for C-STVSR, while the remaining methods are trained specifically for F-STVSR (results reproduced from BF-STVSR). Vid4, GoPro-Center, and Adobe-Center correspond to center-frame interpolation, whereas GoPro-Average and Adobe-Average evaluate multi-frame interpolation across all 8 intermediate frames. Our method achieves the best PSNR and SSIM across all five evaluation settings, consistently surpassing the previous state-of-the-art BF-STVSR. It is worth noting that our model also uses fewer parameters (12.67 M vs. 13.47 M) while delivering superior performance. Table 2 further evaluates C-STVSR performance un-der out-of-distribution spatiotemporal scales on the GoPro dataset. All one-stage C-STVSR methods are re-evaluated with identical set-tings, while two-stage results are reproduced from BF-STVSR. Our model attains the highest PSNR/SSIM in nearly all configurations, with the sole exception of the ×16 temporal / ×4 spatial setting where EMA-VFI+LIIF performs marginally better. Notably, the per-formance advantage of our method becomes more pronounced as the spatiotemporal scales increase, indicating strong generaliza-tion capability to challenging continuous upsampling scenarios not encountered during training. 
+
+## 4.3 Qualitative Results 
+
+Fig. 4 presents visual comparisons with VideoINR[ 10 ], MoTIF[ 9], and BF-STVSR[ 52 ] at both in-distribution ( ×8) and out-of-distribution (×6) temporal scales. For the in-distribution scale ( ×8), we present a scenario featuring a fast-moving motorcycle. Our model success-fully and accurately predicts the position of the motorcycle rider in any intermediate frame; although minor local deformations ex-ist, the majority of the information is well-preserved. In contrast, competing methods fail to accurately reconstruct the content and produce noticeable dot-matrix-like artifacts, which severely de-grade the visual quality. Consequently, our method yields much cleaner temporal transitions. For the out-of-distribution scale ( ×6), we present a scene involving mutually moving and occluding ob-jects. As highlighted in the edge regions adjacent to the house and utility pole, our model remains stable without distorting foreground and background information due to occlusion. In comparison, other models exhibit distortion phenomena with obvious dot-matrix-like pixel artifacts in the overlapping areas, impairing visual percep-tion, whereas our method produces significantly more natural and coherent interpolation. These visual comparisons confirm that GS-STVSR is capable of delivering natural motion interpolation and effectively preserving fine-grained textures across diverse temporal scales. 
+
+## 4.4 Computational Cost and Latency 
+
+Fig. 5 compares FLOPs and inference time across temporal scales from ×2 to ×32 , measured on an NVIDIA Tesla V100 GPU at 1280 ×
+
+720 resolution with ×4 spatial upsampling (inference time averaged over 100 runs). We use the fvcore library 0 to measure FLOPs. Our method consistently achieves the lowest computational cost and fastest inference across all temporal scales. At conventional scales (×2–×8), our model substantially outperforms BF-STVSR in both FLOPs and wall-clock time, with inference latency remaining nearly constant at a very low level. Remarkably, our inference time at the 
+
+×16 temporal scale is even comparable to that of BF-STVSR at 
+
+×2. Even at the extreme ×32 scale, our method maintains over 3×
+
+speedup compared to BF-STVSR. This near-constant latency arises from our architecture design: the encoder features and optical flows are extracted once and shared across all intermediate time steps, while the subsequent Gaussian parameter prediction and 2D-GS rasterization per frame incur only minimal overhead, demonstrating strong practical applicability for real-time video processing. 
+
+> 0https://github.com/facebookresearch/fvcore
+> 6
+
+Table 1: Performance comparison on the F-STVSR baselines on Vid4, GoPro[ 85 ], and Adobe240[ 105 ] datasets. Results are evaluated using PSNR (dB) and SSIM metrics in Y channels. All frames are interpolated by a factor of ×4 in the spatial axis and ×8 in the temporal axis. “Average” refers to metrics calculated across all 8 interpolated frames, while “Center” refers to metrics measured using 1𝑠𝑡 , 4𝑡ℎ and 9𝑡ℎ (that is the center-frame interpolation) frames of the interpolated sequence. "AT" represents the average time consumed for a single inference on Adobe240. Red and blue indicate the best and the second best performance, respectively. VFI Method VSR Method Vid4 GoPro-Center GoPro-Average Adobe-Center Adobe-Average Parameters (M) AT (s) SuperSloMo[48] Bicubic 22.42 / 0.5645 27.04 / 0.7937 26.06 / 0.7720 26.09 / 0.7435 25.29 / 0.7279 19.8 -SuperSloMo[48] EDVR[110] 23.01 / 0.6136 28.24 / 0.8322 26.30 / 0.7960 27.25 / 0.7972 25.90 / 0.7682 19.8+20.7 -SuperSloMo[48] BasicVSR[6] 23.17 / 0.6159 28.23 / 0.8308 26.36 / 0.7977 27.28 / 0.7961 25.94 / 0.7679 19.8+6.3 -QVI[132] Bicubic 22.11 / 0.5498 26.50 / 0.7791 25.41 / 0.7554 25.57 / 0.7324 24.72 / 0.7114 29.2 -QVI[132] EDVR[110] 23.48 / 0.6547 28.60 / 0.8417 26.64 / 0.7977 27.45 / 0.8087 25.64 / 0.7590 29.2+20.7 -QVI[132] BasicVSR[6] 23.15 / 0.6428 28.55 / 0.8400 26.27 / 0.7955 26.43 / 0.7682 25.20 / 0.7421 29.2+6.3 -DAIN[3] Bicubic 22.57 / 0.5732 26.92 / 0.7911 26.11 / 0.7740 26.01 / 0.7461 25.40 / 0.7321 24.0 -DAIN[3] EDVR[110] 23.48 / 0.6547 28.58 / 0.8417 26.64 / 0.7977 27.45 / 0.8087 25.64 / 0.7590 24.0+20.7 -DAIN[3] BasicVSR[6] 23.43 / 0.6514 28.46 / 0.7966 26.43 / 0.7966 26.23 / 0.7725 25.23 / 0.7725 24.0+6.3 -ZoomingSloMo[124] 25.72 / 0.7717 30.69 / 0.8847 - / - 30.26 / 0.8821 - / - 11.10 -TMNet[129] 25.96 / 0.7803 30.14 / 0.8696 28.83 / 0.8514 29.41 / 0.8524 28.30 / 0.8354 12.26 5.67 VideoINR[10] 25.61 / 0.7709 30.26 / 0.8792 29.41 / 0.8669 29.92 / 0.8746 29.27 / 0.8651 11.31 3.34 MoTIF[9] 25.79 / 0.7745 31.04 / 0.8877 30.04 / 0.8773 30.63 / 0.8839 29.82 / 0.8750 12.55 1.77 BF-STVSR[52] 25.85 / 0.7772 31.17 / 0.8898 30.22 / 0.8802 30.83 / 0.8880 30.12 / 0.8808 13.47 1.27 Ours 26.04 / 0.7822 31.33 / 0.8918 30.35 / 0.8817 31.13 / 0.8907 30.35 / 0.8827 12.67 0.64 
+
+Table 2: Performance comparison on the C-STVSR baselines for out-of-distribution scale on GoPro[ 85 ] dataset. Results are evaluated using PSNR (dB) and SSIM metrics in Y channels. All frames are interpolated by a scaling factor specified on the table and metrics calculated across all interpolated frames. Red and blue indicate the best and the second best performance, respectively. Temporal Spatial RIFE[47] EMA-VFI[140] VideoINR[10] MoTIF[9] BF-STVSR[52] Ours Scale Scale LIIF[8] LTE[55] LIIF[8] LTE[55]                                                                                  
+
+> ×8×429.14 / 0.8524 29.14 / 0.8524 29.68 / 0.8671 29.68 / 0.8667 29.41 / 0.8669 30.04 / 0.8773 30.22 / 0.8802 30.33 / 0.8815
+> ×6
+> ×430.16 / 0.8738 30.16 / 0.8737 30.64 / 0.8850 30.64 / 0.8848 30.75 / 0.8978 31.53 / 0.9060 31.71 / 0.9082 31.83 / 0.9092
+> ×627.87 / 0.8038 27.86 / 0.8031 28.17 / 0.8126 28.17 / 0.8117 28.37 / 0.8368 29.25 / 0.8499 29.33 / 0.8514 29.39 / 0.8517
+> ×12 24.74 / 0.7019 24.70 / 0.6994 24.85 / 0.7052 24.82 / 0.7028 24.55 / 0.7126 25.62 / 0.7310 25.56 / 0.7276 25.74 / 0.7341
+> ×12
+> ×427.43 / 0.8102 27.42 / 0.8100 27.90 / 0.8263 27.90 / 0.8260 27.36 / 0.8174 27.73 / 0.8222 28.08 / 0.8287 28.18 / 0.8303
+> ×626.19 / 0.7640 26.19 / 0.7636 26.49 / 0.7748 26.49 / 0.7743 26.14 / 0.7795 26.68 / 0.7897 26.96 / 0.7955 27.10 / 0.7979
+> ×12 24.03 / 0.6869 24.00 / 0.6853 24.16 / 0.6918 24.15 / 0.6902 23.58 / 0.6902 24.56 / 0.7088 24.68 / 0.7084 24.88 / 0.7155
+> ×16
+> ×426.08 / 0.7735 26.08 / 0.7733 26.56 / 0.7904 26.56 / 0.7902 25.76 / 0.7738 25.93 / 0.7745 26.40 / 0.7839 26.53 / 0.7866
+> ×625.24 / 0.7394 25.24 / 0.7391 25.54 / 0.7503 25.55 / 0.7499 25.01 / 0.7473 25.24 / 0.7513 25.71 / 0.7611 25.85 / 0.7642
+> ×12 23.57 / 0.6781 23.56 / 0.6769 23.68 / 0.6828 23.69 / 0.6816 23.00 / 0.6762 23.73 / 0.6903 24.04 / 0.6936 24.23 / 0.7009
+
+Table 3: Ablation study of key modules. CRA: Covariance Resampling Alignment, AOW: Adaptive Offset Window. Best results are bolded. Index CRA AOW GoPro-Average ↑ Adobe-Average ↑
+
+(a) ✓ ✓ 30.35 / 0.8817 30.35 / 0.8827 
+
+(b) ✓ ✗ 30.26 / 0.8808 30.29 / 0.8821 (c) ✗ ✓ 30.28 / 0.8808 30.23 / 0.8818 (d) ✗ ✗ 30.17 / 0.8801 30.15 / 0.8809 
+
+## 4.5 Ablation Study 
+
+Table 3 reports ablation results for the two proposed modules: The full model, equipped with both the CPA and AOW modules, achieves the best performance across both benchmarks. Remov-ing either module individually or both simultaneously leads to a noticeable degradation in performance. It is worth noting that, un-der identical training configurations, both model variants lacking the CPA module exhibit a performance drop after 400 K iterations. Notably, the variant with only the CPA module removed suffers from severe training collapse. Consequently, we report the optimal metrics obtained at the 400 K -iteration mark for these specific mod-els. This phenomenon validates our hypothesis: while inter-frame covariance exhibits exceptionally strong temporal correlation and   
+
+> 7t = 0.25 t = 0.5 t = 0.75 GT  VideoINR MoTIF BF-STVSR Ours
+
+(a) In Distribution t = 0.13 t = 0.67 t = 0.83 GT  VideoINR MoTIF BF-STVSR Ours (b) Out of Distribution 
+
+Figure 4: Qualitative comparison on arbitrary-scale temporal interpolation. (a) shows the visualization results on in-distribution temporal scale ( ×8), used during training. (b) shows the visualization results on out-of-distribution temporal scale ( ×6), not used during training. 1.33 1.44 1.55 1.65 1.87 2.09 1.83 2.95 2.92 2.64 2.36 2.21 2.07 2.22 2.00 1.93 1.86 2.69 2.36 2.61 2.52 3.78 3.00 2.86 3.19 3.52 4.17 4.83 4.57 0.52 0.75 0.85 1.06 0.56 0.93 1.13 1.82 0.60 0.70 0.64 0.77 0.91 1.05 1.09 1.27 1.58 1.93 2.63 3.30 2.37 1.45 1.77 2.96 3.34 2.58 2.52 
+
+Figure 5: Computational cost (FLOPs, left) and inference time (right) comparison at 1280 × 720 resolution with ×4 spatial upsampling across varying temporal scales ( ×2–×32 ). 
+
+can be easily captured by a lightweight module, the unconstrained transition of these parameters is highly susceptible to covariance drift, which severely destabilizes the training process. To further illustrate the practical effect of AOW, we visualize a representative scene from the GoPro test set characterized by signif-icant camera shake in Fig. 6. Without AOW, the constrained offset range results in severe multi-frame overlapping artifacts, which are effectively eliminated upon enabling AOW. Furthermore, we com-pare our proposed method with other C-STVSR approaches in the same scene. Under such large-scale motions, competing methods tend to suffer from pronounced aliasing effects and fail to faith-fully reconstruct the high-frequency textures present in the ground truth. In contrast, our approach maintains robust performance and delivers sharper visual results. w/o Adaptive Offset Window w/ Adaptive Offset Window   
+
+> VideoINR MoTIF BFSTVSR
+> GT
+
+Figure 6: Visual comparison at 𝑡 = 0.5 on a GoPro test scene with large camera shake ( ×4 spatial, ×8 temporal). 
+
+## 5 Limitations and Future Work 
+
+While GS-STVSR achieves strong efficiency and reconstruction quality, several limitations remain. First, the linear motion assump-tion for optical flow interpolation may introduce alignment errors under complex non-linear motions (e.g., rotation or acceleration). Second, our framework’s performance is upper-bounded by the pre-trained optical flow extractor, making it susceptible to errors in challenging scenarios like motion boundaries or textureless regions. Third, the pre-defined and fixed CPB may restrict representational capacity for diverse video content. Future work will explore learned non-linear motion models, end-to-end joint optimization of optical flow and Gaussian parameters, and scene-adaptive CPBs. 
+
+> 8
+
+## 6 Conclusion 
+
+We propose GS-STVSR, the first 2D Gaussian Splatting framework for continuous space-time video super-resolution. By representing frames as continuously evolving 2D Gaussians, it bypasses the com-putational bottlenecks of INR-based methods. Based on the strong temporal stability of covariance, we design an ultra-lightweight prediction module. Together with optical flow guidance and adap-tive offset windows (AOW), this ensures accurate Gaussian evo-lution under varying motions, while our Covariance Resampling Alignment (CRA) prevents covariance drift. Experiments show that GS-STVSR achieves state-of-the-art reconstruction quality with fewer parameters and over 3× inference speedup at extreme tempo-ral scales, proving Gaussian representations are a highly efficient paradigm for video enhancement. 
+
+> 9
+
+## References 
+
+[1] Haowen Bai, Jiangshe Zhang, Zixiang Zhao, Yichen Wu, Lilun Deng, Yukun Cui, Tao Feng, and Shuang Xu. 2025. Task-driven image fusion with learnable fusion loss. In Proceedings of the Computer Vision and Pattern Recognition Conference .7457–7468. [2] Haowen Bai, Zixiang Zhao, Jiangshe Zhang, Yichen Wu, Lilun Deng, Yukun Cui, Baisong Jiang, and Shuang Xu. 2025. Refusion: Learning image fusion from reconstruction with learnable loss via meta-learning. International Journal of Computer Vision 133, 5 (2025), 2547–2567. [3] Wenbo Bao, Wei-Sheng Lai, Chao Ma, Xiaoyun Zhang, Zhiyong Gao, and Ming-Hsuan Yang. 2019. Depth-Aware Video Frame Interpolation. In IEEE Conferene on Computer Vision and Pattern Recognition .[4] Jose Caballero, Christian Ledig, Andrew Aitken, Alejandro Acosta, Johannes Totz, Zehan Wang, and Wenzhe Shi. 2017. Real-time video super-resolution with spatio-temporal networks and motion compensation. In Proceedings of the IEEE conference on computer vision and pattern recognition . 4778–4787. [5] Chengzhi Cao, Xueyang Fu, Senyan Xu, Chengjie Ge, Kunyu Wang, and Zheng-Jun Zha. 2026. Learning Robust Event-Guided Representations for Person Re-Identification: Cao et al. International Journal of Computer Vision 134, 2 (2026), 82. [6] Kelvin C.K. Chan, Xintao Wang, Ke Yu, Chao Dong, and Chen Change Loy. 2021. BasicVSR: The Search for Essential Components in Video Super-Resolution and Beyond. In Proceedings of the IEEE conference on computer vision and pattern recognition .[7] Kelvin C.K. Chan, Shangchen Zhou, Xiangyu Xu, and Chen Change Loy. 2022. BasicVSR++: Improving video super-resolution with enhanced propagation and alignment. In IEEE Conference on Computer Vision and Pattern Recognition .[8] Yinbo Chen, Sifei Liu, and Xiaolong Wang. 2021. Learning continuous image representation with local implicit image function. 8628–8638. [9] Yi-Hsin Chen, Si-Cun Chen, Yen-Yu Lin, and Wen-Hsiao Peng. 2023. MoTIF: Learning motion trajectories with local implicit neural functions for continuous space-time video super-resolution. In Proceedings of the IEEE/CVF International Conference on Computer Vision . 23131–23141. [10] Zeyuan Chen, Yinbo Chen, Jingwen Liu, Xingqian Xu, Vidit Goel, Zhangyang Wang, Humphrey Shi, and Xiaolong Wang. 2022. VideoINR: Learning Video Implicit Neural Representation for Continuous Space-Time Super-Resolution. 
+
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recogni-tion (2022). [11] Zheng Chen, Zichen Zou, Kewei Zhang, Xiongfei Su, Xin Yuan, Yong Guo, and Yulun Zhang. 2025. DOVE: Efficient One-Step Diffusion Model for Real-World Video Super-Resolution. In NeurIPS .[12] Yuning Cui, Wenqi Ren, Xiaochun Cao, and Alois Knoll. 2023. Focal Network for Image Restoration. In Proceedings of the IEEE/CVF International Conference on Computer Vision . 13001–13011. [13] Xin Di, Long Peng, Peizhe Xia, Wenbo Li, Renjing Pei, Yang Cao, Yang Wang, and Zheng-Jun Zha. 2025. Qmambabsr: Burst image super-resolution with query state space model. In Proceedings of the Computer Vision and Pattern Recognition Conference . 23080–23090. [14] Yan Ding, Shuang Li, Huafeng Li, Guanqiu Qi, Baisen Cong, Yunpeng Gong, and Zhiqin Zhu. 2026. Physical Regularization Loss: Integrating Physical Knowledge to Image Segmentation. International Journal of Computer Vision 134, 3 (2026), 137. [15] Jiajun Dong, Chengkun Wang, Wenzhao Zheng, Lei Chen, Jiwen Lu, and Yan-song Tang. 2025. GaussianToken: An Effective Image Tokenizer with 2D Gauss-ian Splatting. ArXiv abs/2501.15619 (2025). https://api.semanticscholar.org/ CorpusID:275920953 [16] Zheng-Peng Duan, Jiawei Zhang, Xin Jin, Ziheng Zhang, Zheng Xiong, Dongqing Zou, Jimmy S Ren, Chunle Guo, and Chongyi Li. 2025. Dit4sr: Taming diffusion transformer for real-world image super-resolution. In Proceedings of the IEEE/CVF International Conference on Computer Vision . 18948–18958. [17] Zheng-Peng Duan, Jiawei Zhang, Zheng Lin, Xin Jin, XunDong Wang, Dongqing Zou, Chun-Le Guo, and Chongyi Li. 2025. Diffretouch: Using diffusion to retouch on the shoulder of experts. In Proceedings of the AAAI Conference on Artificial Intelligence , Vol. 39. 2825–2833. [18] Zheng-Peng Duan, Jiawei Zhang, Siyu Liu, Zheng Lin, Chun-Le Guo, Dongqing Zou, Jimmy Ren, and Chongyi Li. 2025. A diffusion-based framework for occluded object movement. In Proceedings of the AAAI Conference on Artificial Intelligence , Vol. 39. 2816–2824. [19] Jiemin Fang, Taoran Yi, Xinggang Wang, Lingxi Xie, Xiaopeng Zhang, Wenyu Liu, Matthias Nießner, and Qi Tian. 2022. Fast Dynamic Radiance Fields with Time-Aware Neural Voxels. In SIGGRAPH Asia 2022 Conference Papers .[20] ZhanFeng Feng, Long Peng, Xin Di, Yong Guo, Wenbo Li, Yulun Zhang, Renjing Pei, Yang Wang, Yang Cao, and Zheng-Jun Zha. [n. d.]. PMQ-VE: Progressive Multi-Frame Quantization for Video Enhancement. In The Thirty-ninth Annual Conference on Neural Information Processing Systems .[21] Xueyang Fu, Chengzhi Cao, Senyan Xu, Fanrui Zhang, Kunyu Wang, and Zheng-Jun Zha. 2024. Event-driven heterogeneous network for video deraining. Inter-national Journal of Computer Vision 132, 12 (2024), 5841–5861. [22] Daiheng Gao, Nanxiang Jiang, Andi Zhang, Shilin Lu, Yufei Tang, Wenbo Zhou, Weiming Zhang, and Zhaoxin Fan. 2025. Revoking amnesia: Rl-based trajectory optimization to resurrect erased concepts in diffusion models. arXiv preprint arXiv:2510.03302 (2025). [23] Daiheng Gao, Shilin Lu, Shaw Walters, Wenbo Zhou, Jiaming Chu, Jie Zhang, Bang Zhang, Mengxi Jia, Jian Zhao, Zhaoxin Fan, et al . 2024. EraseAnything: Enabling Concept Erasure in Rectified Flow Transformers. arXiv preprint arXiv:2412.20413 (2024). [24] Guangwei Gao, Wenjie Li, Juncheng Li, Fei Wu, Huimin Lu, and Yi Yu. 2022. Feature distillation interaction weighting network for lightweight image super-resolution. In Proceedings of the AAAI conference on artificial intelligence , Vol. 36. 661–669. [25] Zhicheng Geng, Luming Liang, Tianyu Ding, and Ilya Zharkov. 2022. RSTT: Real-time Spatial Temporal Transformer for Space-Time Video Super-Resolution. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recog-nition . 17441–17451. [26] Yunpeng Gong, Yongjie Hou, Jiangming Shi, KL DIEP, and Min Jiang. 2026. A Theory-Inspired Framework for Few-Shot Cross-Modal Sketch Person Re-Identification. (2026). [27] Yunpeng Gong, Liqing Huang, and Lifei Chen. 2022. Person re-identification method based on color attack and joint defence. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition . 4313–4322. [28] Yunpeng Gong, Jiaquan Li, Lifei Chen, and Min Jiang. 2024. Exploring color in-variance through image-level ensemble learning. arXiv preprint arXiv:2401.10512 
+
+(2024). [29] Y Gong, Z Zeng, L Chen, Y Luo, B Weng, and F Ye. 2021. A person re-identification data augmentation method with adversarial defense effect. arXiv preprint arXiv:2101.08783, 2021 (2021). [30] Yunpeng Gong, Chuangliang Zhang, Yongjie Hou, Lifei Chen, and Min Jiang. 2024. Beyond dropout: Robust convolutional neural networks based on local feature masking. In International Joint Conference on Neural Networks (IJCNN) .IEEE. [31] Yunpeng Gong, Zhun Zhong, Yansong Qu, Zhiming Luo, Rongrong Ji, and Min Jiang. 2024. Cross-modality perturbation synergy attack for person re-identification. Advances in Neural Information Processing Systems 37 (2024), 23352–23377. [32] Muhammad Haris, Greg Shakhnarovich, and Norimichi Ukita. 2020. Space-time-aware multi-resolution video enhancement. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition . 2859–2868. [33] Chunming He, Chengyu Fang, Yulun Zhang, Tian Ye, Kai Li, Longxiang Tang, Zhenhua Guo, Xiu Li, and Sina Farsiu. 2025. Reti-diff: Illumination degradation image restoration with retinex-based latent diffusion model. ICLR (2025). [34] Chunming He, Kai Li, Guoxia Xu, Jiangpeng Yan, Longxiang Tang, Yulun Zhang, Yaowei Wang, and Xiu Li. 2023. Hqg-net: Unpaired medical image enhancement with high-quality guidance. IEEE Transactions on Neural Networks and Learning Systems (2023). [35] Chunming He, Kai Li, Guoxia Xu, Yulun Zhang, Runze Hu, Zhenhua Guo, and Xiu Li. 2023. Degradation-resistant unfolding network for heterogeneous image fusion. In ICCV . 12611–12621. [36] Chunming He, Kai Li, Yachao Zhang, Longxiang Tang, Yulun Zhang, Zhenhua Guo, and Xiu Li. 2023. Camouflaged object detection with feature decomposition and edge reconstruction. In CVPR . 22046–22055. [37] Chunming He, Kai Li, Yachao Zhang, Guoxia Xu, Longxiang Tang, Yulun Zhang, Zhenhua Guo, and Xiu Li. 2024. Weakly-supervised concealed object segmenta-tion with sam-based pseudo labeling and multi-scale feature grouping. NeurIPS 
+
+36 (2024). [38] Chunming He, Kai Li, Yachao Zhang, Ziyun Yang, Longxiang Tang, Yulun Zhang, Linghe Kong, and Sina Farsiu. 2025. Segment concealed object with incomplete supervision. TPAMI (2025). [39] Chunming He, Kai Li, Yachao Zhang, Yulun Zhang, Zhenhua Guo, Xiu Li, Martin Danelljan, and Fisher Yu. 2024. Strategic Preys Make Acute Predators: Enhancing Camouflaged Object Detectors by Generating Camouflaged Objects. ICLR 
+
+(2024). [40] Chunming He, Fengyang Xiao, Rihan Zhang, Chengyu Fang, Deng-Ping Fan, and Sina Farsiu. 2025. Reversible Unfolding Network for Concealed Visual Perception with Generative Refinement. arXiv preprint arXiv:2508.15027 (2025). [41] Chunming He, Rihan Zhang, Fengyang Xiao, Chenyu Fang, Longxiang Tang, Yulun Zhang, Linghe Kong, Deng-Ping Fan, Kai Li, and Sina Farsiu. 2025. RUN: Reversible Unfolding Network for Concealed Object Segmentation. ICML (2025). [42] Chunming He, Rihan Zhang, Dingming Zhang, Fengyang Xiao, Deng-Ping Fan, and Sina Farsiu. 2025. Nested Unfolding Network for Real-World Concealed Object Segmentation. arXiv preprint arXiv:2511.18164 (2025). [43] Kaiming He, Xiangyu Zhang, Shaoqing Ren, and Jian Sun. 2016. Deep Residual Learning for Image Recognition. IEEE (2016). 
+
+> 10
+
+[44] Jintong Hu, Bin Xia, Bin Chen, Wenming Yang, and Lei Zhang. 2024. GaussianSR: High Fidelity 2D Gaussian Splatting for Arbitrary-Scale Image Super-Resolution. arXiv:2407.18046 [cs.CV] https://arxiv.org/abs/2407.18046 [45] Binbin Huang, Zehao Yu, Anpei Chen, Andreas Geiger, and Shenghua Gao. 2024. 2D Gaussian Splatting for Geometrically Accurate Radiance Fields. In SIGGRAPH 2024 Conference Papers . Association for Computing Machinery. doi:10.1145/ 3641519.3657428 [46] Yi-Hua Huang, Yang-Tian Sun, Ziyi Yang, Xiaoyang Lyu, Yan-Pei Cao, and Xiaojuan Qi. 2023. SC-GS: Sparse-Controlled Gaussian Splatting for Editable Dynamic Scenes. arXiv preprint arXiv:2312.14937 (2023). [47] Zhewei Huang, Tianyuan Zhang, Wen Heng, Boxin Shi, and Shuchang Zhou. 2022. Real-Time Intermediate Flow Estimation for Video Frame Interpolation. In Proceedings of the European Conference on Computer Vision (ECCV) .[48] Huaizu Jiang, Deqing Sun, Varun Jampani, Ming-Hsuan Yang, Erik Learned-Miller, and Jan Kautz. 2018. Super slomo: High quality estimation of multiple intermediate frames for video interpolation. In IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) .[49] Siyuan Jiang, Senyan Xu, and Xingfu Wang. 2024. Rbsformer: Enhanced trans-former network for raw image super-resolution. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition . 6479–6488. [50] Dongyang Jin, Ryan Xu, Jianhao Zeng, Rui Lan, Yancheng Bai, Lei Sun, and Xiangxiang Chu. 2025. Semantic Context Matters: Improving Conditioning for Autoregressive Models. arXiv preprint arXiv:2511.14063 (2025). [51] Bernhard Kerbl, Georgios Kopanas, Thomas Leimkühler, and George Drettakis. 2023. 3D Gaussian Splatting for Real-Time Radiance Field Rendering. ACM Transactions on Graphics 42, 4 (July 2023). https://repo-sam.inria.fr/fungraph/3d-gaussian-splatting/ [52] Eunjin Kim, Hyeonjin Kim, Kyong Hwan Jin, and Jaejun Yoo. 2025. BF-STVSR: B-Splines and Fourier-Best Friends for High Fidelity Spatial-Temporal Video Super-Resolution. arXiv preprint arXiv:2501.11043 (2025). [53] Diederik Kingma and Jimmy Ba. 2014. Adam: A Method for Stochastic Opti-mization. Computer Science (2014). [54] Rui Lan, Yancheng Bai, Xu Duan, Mingxing Li, Dongyang Jin, Ryan Xu, Lei Sun, and Xiangxiang Chu. 2025. Flux-text: A simple and advanced diffusion transformer baseline for scene text editing. arXiv preprint arXiv:2505.03329 
+
+(2025). [55] Jaewon Lee and Kyong Hwan Jin. 2022. Local Texture Estimator for Implicit Representation Function. 1929–1938. [56] Jiahui Lei, Yijia Weng, Adam Harley, Leonidas Guibas, and Kostas Daniilidis. 2024. MoSca: Dynamic Gaussian Fusion from Casual Videos via 4D Motion Scaffolds. arXiv preprint arXiv:2405.17421 (2024). [57] Dong Li, Yidi Liu, Xueyang Fu, Senyan Xu, and Zheng-Jun Zha. 2024. Fourier-mamba: Fourier learning integration with state space models for image deraining. 
+
+arXiv preprint arXiv:2405.19450 (2024). [58] Leyang Li, Shilin Lu, Yan Ren, and Adams Wai-Kin Kong. 2025. Set you straight: Auto-steering denoising trajectories to sidestep unwanted concepts. arXiv preprint arXiv:2504.12782 (2025). [59] Wenjie Li, Heng Guo, Yuefeng Hou, Guangwei Gao, and Zhanyu Ma. 2025. Dual-domain modulation network for lightweight image super-resolution. IEEE Transactions on Multimedia (2025). [60] Wenjie Li, Heng Guo, Yuefeng Hou, and Zhanyu Ma. 2026. FourierSR: A Fourier Token-based Plugin for Efficient Image Super-Resolution. IEEE Transactions on Image Processing (2026). [61] Wenjie Li, Heng Guo, Xuannan Liu, Kongming Liang, Jiani Hu, Zhanyu Ma, and Jun Guo. 2024. Efficient face super-resolution via wavelet-based feature enhancement network. In Proceedings of the 32nd ACM International Conference on Multimedia . 4515–4523. [62] Wenjie Li, Juncheng Li, Guangwei Gao, Weihong Deng, Jian Yang, Guo-Jun Qi, and Chia-Wen Lin. 2024. Efficient image super-resolution with feature interaction weighted hybrid network. IEEE Transactions on Multimedia (2024). [63] Wenjie Li, Juncheng Li, Guangwei Gao, Weihong Deng, Jiantao Zhou, Jian Yang, and Guo-Jun Qi. 2023. Cross-receptive focused inference network for lightweight image super-resolution. IEEE Transactions on Multimedia 26 (2023), 864–877. [64] Wenjie Li, Jinglei Shi, Jin Han, Heng Guo, and Zhanyu Ma. 2026. Seeing Through the Rain: Resolving High-Frequency Conflicts in Deraining and Super-Resolution via Diffusion Guidance. In AAAI .[65] Wenjie Li, Mei Wang, Kai Zhang, Juncheng Li, Xiaoming Li, Yuhang Zhang, Guangwei Gao, and Zhanyu Ma. 2025. Survey on deep face restoration: From non-blind to blind and beyond. Comput. Surveys (2025). [66] Wenjie Li, Xiangyi Wang, Heng Guo, Guangwei Gao, and Zhanyu Ma. 2025. Self-Supervised Selective-Guided Diffusion Model for Old-Photo Face Restoration. In NeurIPs .[67] Wenjie Li, Yulun Zhang, Guangwei Gao, Heng Guo, and Zhanyu Ma. 2025. Measurement-Constrained Sampling for Text-Prompted Blind Face Restoration. 
+
+arXiv preprint arXiv:2511.12419 .[68] Zhan Li, Zhang Chen, Zhong Li, and Yi Xu. 2024. Spacetime Gaussian Feature Splatting for Real-Time Dynamic View Synthesis. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) . 8508–8520. [69] Zhuoyuan Li, Junqi Liao, Chuanbo Tang, Haotian Zhang, Yuqi Li, Yifan Bian, Xihua Sheng, Xinmin Feng, Yao Li, Changsheng Gao, et al . 2025. Ustc-td: A test dataset and benchmark for image and video coding in 2020s. IEEE Transactions on Multimedia (2025). [70] Zhuoyuan Li, Zikun Yuan, Li Li, Dong Liu, Xiaohu Tang, and Feng Wu. 2024. Object segmentation-assisted inter prediction for versatile video coding. IEEE Transactions on Broadcasting 70, 4 (2024), 1236–1253. [71] Zhen Li, Zuo-Liang Zhu, Ling-Hao Han, Qibin Hou, Chun-Le Guo, and Ming-Ming Cheng. 2023. AMT: All-Pairs Multi-Field Transforms for Efficient Frame Interpolation. In IEEE Conference on Computer Vision and Pattern Recognition (CVPR) .[72] Jingyun Liang, Yuchen Fan, Xiaoyu Xiang, Rakesh Ranjan, Eddy Ilg, Simon Green, Jiezhang Cao, Kai Zhang, Radu Timofte, and Luc Van Gool. 2022. Recur-rent Video Restoration Transformer with Guided Deformable Attention. arXiv preprint arXiv:2206.02146 (2022). [73] Ce Liu and Deqing Sun. 2011. A Bayesian approach to adaptive video super resolution. In CVPR 2011 . 209–216. [74] Kean Liu, Mingchen Zhong, Senyan Xu, Zhijing Sun, Jiaying Zhu, Chengjie Ge, Xingbo Wang, Xin Lu, Xueyang Fu, and Zheng-Jun Zha. 2025. Event-conditioned dual-modal fusion for motion deblurring. In Proceedings of the Computer Vision and Pattern Recognition Conference . 1482–1492. [75] Yidi Liu, Dong Li, Jie Xiao, Yuanfei Bao, Senyan Xu, and Xueyang Fu. 2025. DreamUHD: Frequency Enhanced Variational Autoencoder for Ultra-High-Definition Image Restoration. In Proceedings of the AAAI Conference on Artificial Intelligence , Vol. 39. 5712–5720. [76] Shilin Lu, Xinghong Hu, Chengyou Wang, Lu Chen, Shulu Han, and Yuejia Han. 2022. Copy-move image forgery detection based on evolving circular domains coverage. Multimedia Tools and Applications 81, 26 (2022), 37847–37872. [77] Shilin Lu, Zhuming Lian, Zihan Zhou, Shaocong Zhang, Chen Zhao, and Adams Wai-Kin Kong. 2025. Does FLUX Already Know How to Perform Physically Plausible Image Composition? arXiv preprint arXiv:2509.21278 (2025). [78] Shilin Lu, Yanzhu Liu, and Adams Wai-Kin Kong. 2023. Tf-icon: Diffusion-based training-free cross-domain image composition. In Proceedings of the IEEE/CVF International Conference on Computer Vision . 2294–2305. [79] Shilin Lu, Zilan Wang, Leyang Li, Yanzhu Liu, and Adams Wai-Kin Kong. 2024. Mace: Mass concept erasure in diffusion models. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition . 6430–6440. [80] Shilin Lu, Zihan Zhou, Jiayou Lu, Yuanzhi Zhu, and Adams Wai-Kin Kong. 2024. Robust watermarking using generative priors against image editing: From benchmarking to advances. arXiv preprint arXiv:2410.18775 (2024). [81] Xin Lu, Yuanfei Bao, Jiarong Yang, Anya Hu, Jie Xiao, Kunyu Wang, Dong Li, Senyan Xu, Kean Liu, Xueyang Fu, et al . 2025. Evenformer: Dynamic even transformer for real-world image restoration. In Proceedings of the Computer Vision and Pattern Recognition Conference . 1081–1091. [82] Yunfan Lu, Zipeng Wang, Yusheng Wang, and Hui Xiong. 2024. HR-INR: Con-tinuous Space-Time Video Super-Resolution via Event Camera. arXiv preprint arXiv:2405.13389 (2024). [83] Jonathon Luiten, Georgios Kopanas, Bastian Leibe, and Deva Ramanan. 2024. Dynamic 3D Gaussians: Tracking by Persistent Dynamic View Synthesis. In 
+
+3DV .[84] Ben Mildenhall, Pratul P. Srinivasan, Matthew Tancik, Jonathan T. Barron, Ravi Ramamoorthi, and Ren Ng. 2020. NeRF: Representing Scenes as Neural Radiance Fields for View Synthesis. In ECCV .[85] Seungjun Nah, Tae Hyun Kim, and Kyoung Mu Lee. 2017. Deep Multi-Scale Convolutional Neural Network for Dynamic Scene Deblurring. In The IEEE Conference on Computer Vision and Pattern Recognition (CVPR) .[86] Simon Niklaus and Feng Liu. 2020. Softmax splatting for video frame interpola-tion. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition . 5437–5446. [87] Byeonghyun Pak, Jaewon Lee, and Kyong Hwan Jin. 2023. B-spline Texture Coefficients Estimator for Screen Content Image Super-Resolution. In Proceed-ings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition .10062–10071. [88] Tejas Panambur, Ishan Rajendrakumar Dave, Chongjian Ge, Ersin Yumer, and Xue Bai. 2026. CreativeVR: Diffusion-Prior-Guided Approach for Structure and Motion Restoration in Generative and Real Videos. Preprint (2026). [89] Jongmin Park, Minh-Quan Viet Bui, Juan Luis Gonzalez Bello, Jaeho Moon, Jihyong Oh, and Munchurl Kim. 2025. SplineGS: Robust Motion-Adaptive Spline for Real-Time Dynamic 3D Gaussians from Monocular Video. In Proceedings of the Computer Vision and Pattern Recognition Conference (CVPR) . 26866–26875. [90] Junheum Park, Chul Lee, and Chang-Su Kim. 2021. Asymmetric bilateral mo-tion estimation for video frame interpolation. In Proceedings of the IEEE/CVF international conference on computer vision . 14539–14548. [91] Long Peng, Yang Cao, Renjing Pei, Wenbo Li, Jiaming Guo, Xueyang Fu, Yang Wang, and Zheng-Jun Zha. 2024. Efficient real-world image super-resolution via adaptive directional gradient convolution. arXiv preprint arXiv:2405.07023 
+
+(2024). 
+
+> 11
+
+[92] Long Peng, Yang Cao, Yuejin Sun, and Yang Wang. 2024. Lightweight adaptive feature de-drifting for compressed image classification. IEEE Transactions on Multimedia 26 (2024), 6424–6436. [93] Long Peng, Xin Di, Zhanfeng Feng, Wenbo Li, Renjing Pei, Yang Wang, Xueyang Fu, Yang Cao, and Zheng-Jun Zha. 2025. Directing mamba to complex textures: An efficient texture-aware state space model for image restoration. arXiv preprint arXiv:2501.16583 (2025). [94] Long Peng, Wenbo Li, Jiaming Guo, Xin Di, Haoze Sun, Yong Li, Renjing Pei, Yang Wang, Yang Cao, and Zheng-Jun Zha. 2024. Unveiling hidden details: A raw data-enhanced paradigm for real-world super-resolution. arXiv preprint arXiv:2411.10798 (2024). [95] Long Peng, Wenbo Li, Renjing Pei, Jingjing Ren, Jiaqi Xu, Yang Wang, Yang Cao, and Zheng-Jun Zha. [n. d.]. Towards Realistic Data Generation for Real-World Super-Resolution. In The Thirteenth International Conference on Learning Representations .[96] Long Peng, Yang Wang, Xin Di, Xueyang Fu, Yang Cao, Zheng-Jun Zha, et al .2025. Boosting image de-raining via central-surrounding synergistic convo-lution. In Proceedings of the AAAI Conference on Artificial Intelligence , Vol. 39. 6470–6478. [97] Long Peng, Anran Wu, Wenbo Li, Peizhe Xia, Xueyuan Dai, Xinjie Zhang, Xin Di, Haoze Sun, Renjing Pei, Yang Wang, et al . 2025. Pixel to Gaussian: Ultra-Fast Continuous Super-Resolution with 2D Gaussian Modeling. arXiv preprint arXiv:2503.06617 (2025). [98] Nasim Rahaman, Aristide Baratin, Devansh Arpit, Felix Draxler, Min Lin, Fred Hamprecht, Yoshua Bengio, and Aaron Courville. 2019. On the spectral bias of neural networks. In International conference on machine learning . PMLR, 5301–5310. [99] Anurag Ranjan and Michael J. Black. 2017. Optical Flow Estimation using a Spatial Pyramid Network. In Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition .[100] Fitsum Reda, Janne Kontkanen, Eric Tabellion, Deqing Sun, Caroline Panto-faru, and Brian Curless. 2022. FILM: Frame Interpolation for Large Motion. In 
+
+European Conference on Computer Vision (ECCV) .[101] Yan Ren, Shilin Lu, and Adams Wai-Kin Kong. 2025. All That Glitters Is Not Gold: Key-Secured 3D Secrets within 3D Gaussian Splatting. arXiv preprint arXiv:2503.07191 (2025). [102] Mehdi SM Sajjadi, Raviteja Vemulapalli, and Matthew Brown. 2018. Frame-recurrent video super-resolution. In Proceedings of the IEEE conference on com-puter vision and pattern recognition . 6626–6634. [103] Zhihao Shi, Xiaohong Liu, Kangdi Shi, Linhui Dai, and Jun Chen. 2020. Video Interpolation via Generalized Deformable Convolution. arXiv preprint arXiv:2008.10680 (2020). [104] Vincent Sitzmann, Julien N.P. Martel, Alexander W. Bergman, David B. Lindell, and Gordon Wetzstein. 2020. Implicit Neural Representations with Periodic Activation Functions. [105] Shuochen Su, Mauricio Delbracio, Jue Wang, Guillermo Sapiro, Wolfgang Hei-drich, and Oliver Wang. 2017. Deep Video Deblurring for Hand-Held Cameras. In 2017 IEEE Conference on Computer Vision and Pattern Recognition (CVPR) .237–246. [106] Zhijing Sun, Senyan Xu, Kean Liu, Runze Tian, Xueyang Fu, and Zheng-Jun Zha. 2025. EVDM: Event-based Real-world Video Deblurring with Mamba. In Proceedings of the IEEE/CVF International Conference on Computer Vision .13793–13803. [107] Matthew Tancik, Pratul Srinivasan, Ben Mildenhall, Sara Fridovich-Keil, Nithin Raghavan, Utkarsh Singhal, Ravi Ramamoorthi, Jonathan Barron, and Ren Ng. 2020. Fourier features let networks learn high frequency functions in low dimensional domains. Advances in neural information processing systems 33 (2020), 7537–7547. [108] Zachary Teed and Jia Deng. 2020. Raft: Recurrent all-pairs field transforms for optical flow. In Computer Vision–ECCV 2020: 16th European Conference, Glasgow, UK, August 23–28, 2020, Proceedings, Part II 16 . Springer, 402–419. [109] Xujie Wan, Wenjie Li, Guangwei Gao, Huimin Lu, Jian Yang, and Chia-Wen Lin. 2025. Attention-guided multiscale interaction network for face super-resolution. 
+
+IEEE Transactions on Systems, Man, and Cybernetics: Systems (2025). [110] Xintao Wang, Kelvin C.K. Chan, Ke Yu, Chao Dong, and Chen Change Loy. 2019. EDVR: Video restoration with enhanced deformable convolutional networks. In The IEEE Conference on Computer Vision and Pattern Recognition Workshops (CVPRW) .[111] Yang Wang, Long Peng, Liang Li, Yang Cao, and Zheng-Jun Zha. 2023. Decoupling-and-aggregating for image exposure correction. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition . 18115–18124. [112] Zhijie Wang, Aiping Liu, Jinbao Wei, Qingguo Xie, Kongqiao Wang, and Xun Chen. 2024. DDC-Net: Dual-Domain Cascaded Network with POCS Prior for Fast MRI Reconstruction. IEEE Sensors Journal (2024). [113] Zhijie Wang, Jinbao Wei, Gang Yang, Aiping Liu, Wei Wei, Bensheng Qiu, and Xun Chen. 2025. Dual-Domain Self-Consistency-Enhanced Deep Unfolding Network for accelerated MRI reconstruction. Computer Methods and Programs in Biomedicine (2025), 108995. [114] Jinbao Wei, Yuhang Chen, Zhijie Wang, Gang Yang, Shimin Tao, Jian Gao, Aiping Liu, and Xun Chen. 2025. Rethinking Diffusion Bridge Model with Dual Alignments for Medical Image Synthesis. In Proceedings of the 33rd ACM International Conference on Multimedia . 1052–1061. [115] Jinbao Wei, Zhijie Wang, Kongqiao Wang, Li Guo, Xueyang Fu, Ji Liu, and Xun Chen. 2023. Accurate MRI Reconstruction via Multi-Domain Recurrent Networks. In IJCAI . 1524–1532. [116] Jinbao Wei, Gang Yang, Zhijie Wang, Yu Liu, Aiping Liu, and Xun Chen. 2024. Misalignment-Resistant Deep Unfolding Network for multi-modal MRI super-resolution and reconstruction. Knowledge-Based Systems 296 (2024), 111866. [117] Jinbao Wei, Gang Yang, Zhijie Wang, Shimin Tao, Aiping Liu, and Xun Chen. 2025. Degradation-Aware Prompted Transformer for Unified Medical Image Restoration. IEEE Transactions on Image Processing 34 (2025), 8583–8598. [118] Jinbao Wei, Gang Yang, Wei Wei, Aiping Liu, and Xun Chen. 2025. Multi-contrast MRI arbitrary-scale super-resolution via dynamic implicit network. 
+
+IEEE Transactions on Circuits and Systems for Video Technology (2025). [119] Shuoyan Wei, Feng Li, Shengeng Tang, Runmin Cong, Yao Zhao, Meng Wang, and Huihui Bai. 2025. Towards Robust and Generalizable Continuous Space-Time Video Super-Resolution with Events. arXiv preprint arXiv:2510.03833 
+
+(2025). [120] Shuoyan Wei, Feng Li, Shengeng Tang, Yao Zhao, and Huihui Bai. 2025. EvEn-hancer: Empowering Effectiveness, Efficiency and Generalizability for Contin-uous Space-Time Video Super-Resolution with Events. In Proceedings of the Computer Vision and Pattern Recognition Conference . 17755–17766. [121] Bing Wu, Chang Zou, Changlin Li, Duojun Huang, Fang Yang, Hao Tan, Jack Peng, Jianbing Wu, Jiangfeng Xiong, Jie Jiang, et al . 2025. Hunyuanvideo 1.5 technical report. arXiv preprint arXiv:2511.18870 (2025). [122] Chenyang Wu, Jiayi Fu, Chun-Le Guo, Shuhao Han, and Chongyi Li. 2026. VTinker: Guided Flow Upsampling and Texture Mapping for High-Resolution Video Frame Interpolation. In Proceedings of the AAAI Conference on Artificial Intelligence , Vol. 40. 10638–10645. [123] Guanjun Wu, Taoran Yi, Jiemin Fang, Lingxi Xie, Xiaopeng Zhang, Wei Wei, Wenyu Liu, Qi Tian, and Xinggang Wang. 2024. 4D Gaussian Splatting for Real-Time Dynamic Scene Rendering. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) . 20310–20320. [124] Xiaoyu Xiang, Yapeng Tian, Yulun Zhang, Yun Fu, Jan P. Allebach, and Chen-liang Xu. 2020. Zooming Slow-Mo: Fast and Accurate One-Stage Space-Time Video Super-Resolution. In IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) . 3370–3379. [125] Fengyang Xiao, Jingjia Feng, Peng Hu, Dingming Zhang, Lei Xu, Guanyi Qin, Lu Li, Chunming He, and Sina Farsiu. 2026. QualiTeacher: Quality-Conditioned Pseudo-Labeling for Real-World Image Restoration. arXiv preprint arXiv:2603.08030 (2026). [126] Fengyang Xiao, Peng Hu, Lei Xu, Xinge Guo, Guanyi Qin, Yuqi Shen, Chengyu Fang, Rihan Zhang, Chunming He, and Sina Farsiu. 2026. Beyond Ground-Truth: Leveraging Image Quality Priors for Real-World Image Restoration. CVPR (2026). [127] Fengyang Xiao, Sujie Hu, Yuqi Shen, Chengyu Fang, Jinfa Huang, Chunming He, Longxiang Tang, Ziyun Yang, and Xiu Li. 2024. A Survey of Camouflaged Object Detection and Beyond. CAAI AIR (2024). [128] Zeyu Xiao and Zhiwei Xiong. 2025. Incorporating degradation estimation in light field spatial super-resolution. Computer Vision and Image Understanding 
+
+252 (2025), 104295. [129] Gang Xu, Jun Xu, Zhen Li, Liang Wang, Xing Sun, and Mingming Cheng. 2021. Temporal Modulation Network for Controllable Space-Time Video Super-Resolution. In IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) .[130] Ryan Xu, Dongyang Jin, Yancheng Bai, Rui Lan, Xu Duan, Lei Sun, and Xiangx-iang Chu. 2025. Scalar: Scale-wise controllable visual autoregressive learning. 
+
+arXiv preprint arXiv:2507.19946 (2025). [131] Senyan Xu, Zhijing Sun, Jiaying Zhu, Yurui Zhu, Xueyang Fu, and Zheng-Jun Zha. 2024. Demosaicformer: Coarse-to-fine demosaicing network for hybridevs camera. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition . 1126–1135. [132] Xiangyu Xu, Li Siyao, Wenxiu Sun, Qian Yin, and Ming-Hsuan Yang. 2019. Quadratic video interpolation. In NeurIPS .[133] Can Yang, Zhenzhong Wang, Junyuan Liu, Yunpeng Gong, and Min Jiang. 2026. PEGNet: A Physics-Embedded Graph Network for Long-Term Stable Multiphysics Simulation. In Proceedings of the AAAI Conference on Artificial Intelligence (AAAI) .[134] Siyuan Yang, Shilin Lu, Shizheng Wang, Meng Hwa Er, Zengwei Zheng, and Alex C Kot. 2025. Temporal-Guided Spiking Neural Networks for Event-Based Human Action Recognition. arXiv preprint arXiv:2503.17132 (2025). [135] Qiaosi Yi, Juncheng Li, Qinyan Dai, Faming Fang, Guixu Zhang, and Tieyong Zeng. 2021. Structure-preserving deraining with residue channel prior guidance. In Proceedings of the IEEE/CVF international conference on computer vision . 4238– 4247. [136] Qiaosi Yi, Juncheng Li, Faming Fang, Aiwen Jiang, and Guixu Zhang. 2021. Efficient and accurate multi-scale topological network for single image dehazing. 
+
+> 12
+
+IEEE Transactions on Multimedia 24 (2021), 3114–3128. [137] Qiaosi Yi, Shuai Li, Rongyuan Wu, Lingchen Sun, Zhengqiang Zhang, and Lei Zhang. 2026. GDPO-SR: Group Direct Preference Optimization for One-Step Generative Image Super-Resolution. arXiv preprint arXiv:2603.16769 (2026). [138] Xinlei Yu, Zhangquan Chen, Yudong Zhang, Shilin Lu, Ruolin Shen, Jiangning Zhang, Xiaobin Hu, Yanwei Fu, and Shuicheng Yan. 2025. Visual Document Un-derstanding and Question Answering: A Multi-Agent Collaboration Framework with Test-Time Scaling. arXiv preprint arXiv:2508.03404 (2025). [139] Jianhao Zeng, Yancheng Bai, Ruidong Chen, Xuanpu Zhang, Lei Sun, Dongyang Jin, Ryan Xu, Nannan Zhang, Dan Song, and Xiangxiang Chu. 2025. Eevee: Towards Close-up High-resolution Video-based Virtual Try-on. arXiv preprint arXiv:2511.18957 (2025). [140] Guozhen Zhang, Yuhan Zhu, Haonan Wang, Youxin Chen, Gangshan Wu, and Limin Wang. 2023. Extracting motion and appearance via inter-frame attention for efficient video frame interpolation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition . 5682–5692. [141] Xinjie Zhang, Xingtong Ge, Tongda Xu, Dailan He, Yan Wang, Hongwei Qin, Guo Lu, Jing Geng, and Jun Zhang. 2024. GaussianImage: 1000 FPS Image Rep-resentation and Compression by 2D Gaussian Splatting. In European Conference on Computer Vision .[142] Xu Zhang, Jiaqi Ma, Guoli Wang, Qian Zhang, Huan Zhang, and Lefei Zhang. 2026. Perceive-IR: Learning to Perceive Degradation Better for All-in-One Image Restoration. IEEE Transactions on Image Processing 35 (2026), 2018–2033. [143] Xu Zhang, Huan Zhang, Guoli Wang, Qian Zhang, and Lefei Zhang. 2026. ClearAIR: A Human-Visual-Perception-Inspired All-in-One Image Restoration. In Proceedings of the AAAI Conference on Artificial Intelligence . 12861–12869. [144] Xu Zhang, Huan Zhang, Guoli Wang, Qian Zhang, Lefei Zhang, and Bo Du. 2025. UniUIR: Considering Underwater Image Restoration as an All-in-One Learner. IEEE Transactions on Image Processing 34 (2025), 6963–6977. [145] Ziqing Zhang, Kai Liu, Zheng Chen, Xi Li, Yucong Chen, Bingnan Duan, Linghe Kong, and Yulun Zhang. 2025. InfVSR: Breaking Length Limits of Generic Video Super-Resolution. arXiv preprint arXiv:2510.00948 (2025). [146] Chen Zhao, Jiawei Chen, Hongyu Li, Zhuoliang Kang, Shilin Lu, Xiaoming Wei, Kai Zhang, Jian Yang, and Ying Tai. 2026. LUVE: Latent-Cascaded Ultra-High-Resolution Video Generation with Dual Frequency Experts. arXiv preprint arXiv:2602.11564 (2026). [147] Rui Zhao, Ruiqin Xiong, Dongkai Wang, Shiyu Xuan, Jian Zhang, Xiaopeng Fan, and Tiejun Huang. 2025. Spike Camera Optical Flow Estimation Based on Continuous Spike Streams. IEEE Transactions on Pattern Analysis and Machine Intelligence (2025). [148] Rui Zhao, Ruiqin Xiong, Dongkai Wang, Shiyu Xuan, Jian Zhang, Xiaopeng Fan, and Tiejun Huang. 2026. Spike Camera Optical Flow Estimation Based on Continuous Spike Streams. IEEE Transactions on Pattern Analysis and Machine Intelligence 48, 4 (2026), 4756–4770. doi:10.1109/TPAMI.2025.3649050 [149] Rui Zhao, Ruiqin Xiong, Jian Zhang, Xinfeng Zhang, Zhaofei Yu, and Tiejun Huang. 2024. Optical flow for spike camera with hierarchical spatial-temporal spike fusion. In Proceedings of the AAAI Conference on Artificial Intelligence ,Vol. 38. 7496–7504. [150] Rui Zhao, Ruiqin Xiong, Jing Zhao, Zhaofei Yu, Xiaopeng Fan, and Tiejun Huang. 2022. Learning optical flow from continuous spike streams. Advances in Neural Information Processing Systems 35 (2022), 7905–7920. [151] Yaozong Zheng, Bineng Zhong, Qihua Liang, Guorong Li, Rongrong Ji, and Xianxian Li. 2023. Toward unified token learning for vision-language tracking. 
+
+IEEE Transactions on Circuits and Systems for Video Technology 34, 4 (2023), 2125–2135. [152] Yaozong Zheng, Bineng Zhong, Qihua Liang, Ning Li, and Shuxiang Song. 2025. Decoupled Spatio-Temporal Consistency Learning for Self-Supervised Tracking. In Proceedings of the AAAI Conference on Artificial Intelligence , Vol. 39. 10635– 10643. [153] Yaozong Zheng, Bineng Zhong, Qihua Liang, Zhiyi Mo, Shengping Zhang, and Xianxian Li. 2024. Odtrack: Online dense temporal token learning for visual tracking. In Proceedings of the AAAI conference on artificial intelligence , Vol. 38. 7588–7596. [154] Yaozong Zheng, Bineng Zhong, Qihua Liang, Zhenjun Tang, Rongrong Ji, and Xianxian Li. 2022. Leveraging local and global cues for visual tracking via parallel interaction network. IEEE Transactions on Circuits and Systems for Video Technology 33, 4 (2022), 1671–1683. [155] Yaozong Zheng, Bineng Zhong, Qihua Liang, Shengping Zhang, Guorong Li, Xianxian Li, and Rongrong Ji. 2025. Towards universal modal tracking with online dense temporal token learning. IEEE Transactions on Pattern Analysis and Machine Intelligence (2025). [156] Mingchen Zhong, Xin Lu, Dong Li, Senyan Xu, Ruixuan Jiang, Xueyang Fu, and Baocai Yin. 2025. CompEvent: Complex-valued Event-RGB Fusion for Low-light Video Enhancement and Deblurring. arXiv preprint arXiv:2511.14469 (2025). [157] Zihan Zhou, Shilin Lu, Shuli Leng, Shaocong Zhang, Zhuming Lian, Xinlei Yu, and Adams Wai-Kin Kong. 2025. DragFlow: Unleashing DiT Priors with Region Based Supervision for Drag Editing. arXiv preprint arXiv:2510.02253 (2025). [158] Yuanzhi Zhu, Ruiqing Wang, Shilin Lu, Junnan Li, Hanshu Yan, and Kai Zhang. 2024. Oftsr: One-step flow for image super-resolution with tunable fidelity-realism trade-offs. arXiv preprint arXiv:2412.09465 (2024). [159] Junhao Zhuang, Shi Guo, Xin Cai, Xiaohui Li, Yihao Liu, Chun Yuan, and Tianfan Xue. 2025. FlashVSR: Towards Real-Time Diffusion-Based Streaming Video Super-Resolution. arXiv preprint arXiv:2510.12747 (2025). 
+
+> 13
+
+## A Details of Covariance Experiment 
+
+Figure 7: Comparison of temporal correlation between pixel-level and covariance-based representations. The radar charts evaluate the correlation across continuous time intervals ( 𝑡 = 0
+
+to 7) using Pearson Correlation (left) and Cosine Similarity (right). Gaussian covariance (blue) exhibits significantly higher and more stable temporal consistency than raw pixels (red). To elucidate our motivation, we first investigate the temporal stability of various scene representations. Traditional STVSR meth-ods rely heavily on pixel-level temporal alignment, which often suffers from severe performance degradation under complex or large-scale motions. In contrast, modeling scene dynamics with 2D Gaussian functions provides a fundamentally more robust al-ternative. As illustrated in Fig. 7, we conducted a proof-of-concept experiment to compare the temporal correlation of raw pixel values against Gaussian covariance parameters across different time in-tervals (from 𝑡 = 0 to 𝑡 = 7). We employed Pearson correlation and cosine similarity as our evaluation metrics. The radar chart clearly illustrates this discrepancy: the pixel-level correlation (represented by the red polygon) decays rapidly as the time interval increases, in-dicating its high sensitivity to temporal variations. Conversely, the covariance parameters (represented by the blue polygon) exhibit exceptional stability, forming a nearly uniform and maximal area across all time steps. This observation demonstrates, both visually and quantitatively, that Gaussian covariance possesses superior robustness in handling temporal variations. Consequently, lever-aging these highly stable covariance parameters forms the core foundation of our proposed C-STVSR framework, enabling precise motion modeling and high-fidelity feature aggregation. The aforementioned experiments were evaluated on the GoPro[ 85 ]dataset using [ 97 ]. We also conducted identical experiments on the Adobe240[ 105 ] dataset, which yielded consistent results; thus, we omit the redundant visualizations. Furthermore, we concurrently analyzed the temporal stability of the position and color attributes. The color information exhibits trends and similarities highly con-sistent with those in the pixel domain. Although the position infor-mation demonstrates lower similarity compared to the covariance parameters, it still maintains commendable stability, presenting a promising avenue for our future work. 
+
+Table 4: Performance comparison on the C-STVSR baselines for out-of-distribution scale on Adobe240[ 105 ] dataset. Results are evaluated using PSNR (dB) and SSIM metrics in Y channels. All frames are interpolated by a scaling factor specified on the table and metrics calculated across all interpolated frames. Red and blue indicate the best and the second best performance, respectively. Temporal Spatial VideoINR[10] MoTIF[9] BF-STVSR[52] Ours Scale Scale                                          
+
+> ×8×429.27 / 0.8651 29.82 / 0.8750 30.12 / 0.8808 30.35 / 0.8827
+> ×6
+> ×430.08 / 0.8842 30.79 / 0.8926 31.05 / 0.8973 31.09 / 0.8942
+> ×627.52 / 0.8057 28.20 / 0.8169 28.40 / 0.8220 28.49 / 0.8217
+> ×12 23.90 / 0.6733 24.80 / 0.6904 24.84 / 0.6906 25.03 / 0.6964
+> ×12
+> ×427.25 / 0.8203 27.67 / 0.8274 28.04 / 0.8362 28.30 / 0.8398
+> ×625.89 / 0.7658 26.32 / 0.7756 26.74 / 0.7861 26.90 / 0.7873
+> ×12 23.25 / 0.6594 24.04 / 0.6761 24.31 / 0.6802 24.48 / 0.6854
+> ×16
+> ×425.77 / 0.7795 26.07 / 0.7844 26.46 / 0.7947 26.71 / 0.7998
+> ×624.87 / 0.7381 25.15 / 0.7452 25.64 / 0.7577 25.80 / 0.7603
+> ×12 22.78 / 0.6493 23.42 / 0.6637 23.82 / 0.6698 23.99 / 0.6754
+
+Table 5: Performance comparison on the Arbitrary Video Super-Resolution (AVSR) baselines for different spatial scales on Adobe240[ 105 ] and GoPro[ 85 ] datasets. Results are evalu-ated using PSNR (dB) and SSIM metrics in Y channels. Red and blue indicate the best and the second best performance, respectively. Dataset Spatial Scale VideoINR[10] MoTIF[9] BF-STVSR[52] Ours GoPro[85]                                 
+
+> ×432.88 / 0.9297 34.13 / 0.9368 34.29 / 0.9381 34.57 / 0.9404
+> ×629.52 / 0.8574 30.28 / 0.8649 30.35 / 0.8660 30.41 / 0.8679
+> ×826.70 / 0.7901 27.13 / 0.7993 27.00 / 0.7976 27.36 / 0.8036
+> ×12 24.84 / 0.7164 25.59 / 0.7275 25.50 / 0.7221 25.71 / 0.7324 Adobe240[105]
+> ×431.44 / 0.9029 32.50 / 0.9109 32.62 / 0.9123 33.02 / 0.9167
+> ×628.26 / 0.8171 28.92 / 0.8247 28.99 / 0.8267 29.14 / 0.8293
+> ×825.73 / 0.7466 26.17 / 0.7562 26.04 / 0.7557 26.45 / 0.7620
+> ×12 24.08 / 0.6745 24.80 / 0.6868 24.73 / 0.6837 24.96 / 0.6927
+
+## B Additional Quantitative Results B.1 Continuous Spatio-Temporal Super-Resolution 
+
+To further evaluate the robustness and generalization ability of our proposed method, we conduct extensive experiments on out-of-distribution (OOD) spatio-temporal scales. As shown in Table 4, we additionally evaluate our model on the Adobe240 dataset under extreme and arbitrary scaling factors. Under all challenging con-figurations, our method consistently outperforms state-of-the-art baselines, including VideoINR, MoTIF, and BF-STVSR. The supe-rior PSNR and SSIM scores indicate that modeling spatio-temporal dynamics via 2D Gaussians provides a more continuous and robust representation, further demonstrating the enhanced generalization capability of our model. This effectively mitigates the severe per-formance degradation typically observed in traditional grid-based or pixel-level interpolation methods when pushed to extreme con-tinuous scales. 
+
+## B.2 Arbitrary Video Super-Resolution 
+
+In addition to the joint spatio-temporal evaluation, we also in-vestigate the capability for purely spatial arbitrary video super-resolution. Table 5 presents the quantitative results on the GoPro    
+
+> 14 BF-STVSR Ours
+> Overlap VideoINR MoTIF
+> GT
+
+(a) Rapid Camera Zooming BF-STVSR Ours    
+
+> Overlap VideoINR MoTIF
+> GT
+
+(b) Fast Camera Translation 
+
+Figure 8: Qualitative comparison of different C-STVSR methods under large-scale global camera motions. (a) Visual results in a scenario with rapid camera zooming, where severe global scale changes occur. (b) Visual results under fast camera translation, causing massive global pixel shifts. Best viewed zoomed in. and Adobe240 datasets for spatial upsampling scales ranging from 
+
+4× to 12 ×. Even when performing the AVSR task independently, our framework maintains a distinct advantage over existing methods. Notably, at the highly challenging 12 × spatial scale, our method sur-passes the second-best performing model by a significant margin. This consistent superiority validates the effectiveness of our feature aggregation and rendering mechanisms in reconstructing high-frequency spatial details at arbitrary resolutions. However, due to certain inherent limitations of 2D-GS, our model currently can-not perform arbitrary-scale frame interpolation under a 2× spatial super-resolution condition. We attribute this to our representation strategy, where the ratio of the number of initialized Gaussian ker-nels to the original pixels is set to 1:4. This specific density ratio leads to erroneous rendering results when the spatial upsampling factor falls below 2×.
+
+## C Additional Qualitative Results 
+
+In this section, we provide qualitative comparisons between our proposed method and state-of-the-art C-STVSR baselines under various scaling configurations. First, Fig. 9 visualizes the super-resolution results on an in-distribution temporal scale , specif-ically evaluating the configuration with a spatial scaling factor of ×4 and a temporal factor of ×8. Second, to demonstrate the generalization capability of our model, Fig. 10 presents qualitative comparisons on an out-of-distribution temporal scale . In this scenario, the models are evaluated using a spatial scaling factor of 
+
+×4 and a temporal factor of ×6. Finally, Fig. 11 illustrates the visual performance of different methods restricted to the standard Video Super-Resolution (VSR) task , where only spatial upsampling (with a factor of ×4) is performed without temporal frame interpo-lation. Across all scenarios, our method consistently synthesizes visually pleasing frames with sharper details, clearer structural boundaries, and fewer blurring artifacts compared to the existing baselines. To further demonstrate the robustness of our proposed frame-work, we provide additional qualitative comparisons under scenar-ios dominated by large-scale global camera motions in Fig. 8. These challenging cases, involving rapid zooming and fast translation, test the model’s ability to handle massive, non-rigid pixel displace-ments across the entire frame. Specifically, Fig. 8(a) visualizes a scene with rapid camera zooming. The severe global scale change causes previous C-STVSR baselines to produce noticeable ghost-ing artifacts and blurred edges. In contrast, our method effectively adapts to these variations, maintaining sharp structural boundaries. Furthermore, Fig. 8(b) illustrates a scenario with fast camera trans-lation. While massive global pixel shifts almost entirely ruin the interpolation results of other models (exhibiting severe pixelation and structural distortion), our model maintains remarkable stability. By correctly modeling the global trajectory, our framework syn-thesizes artifact-free frames that strictly preserve both foreground details and background contexts. These results demonstrate that our Gaussian-based representation is intrinsically more robust against extreme temporal variations than traditional pixel-based methods. 
+
+## D Computational Efficiency 
+
+Table 6: Computational efficiency comparison for 270 p →
+
+1080 p video upscaling. Results are evaluated using inference time (s), render time (s), and VRAM (GiB). Red and blue indicate the best and the second best performance, respectively. Note that lower values indicate better efficiency. Temporal Spatial Metric VideoINR[10] MoTIF[9] BF-STVSR[52] Ours Scale Scale                                 
+
+> ×8×4
+> Inference Time (s) ↓7.89 4.3 3.0 1.4 Rendering Time (s) ↓7.13 3.5 2.2 0.4 VRAM (GiB) ↓13.8 32.0 29.3 15.5
+> ×4×4
+> Inference Time (s) ↓4.3 2.7 2.1 1.3 Rendering Time (s) ↓3.7 1.997 1.4 0.3 VRAM (GiB) ↓13.7 32.2 28.8 15.3
+
+A critical advantage of Gaussian-based representations lies in their computational efficiency, particularly benefiting from the highly optimized rasterization pipeline. To reflect practical, real-world application scenarios, we benchmark our model by upscaling videos from 270p ( 480 × 270 ) to 1080p ( 1920 × 1080 ) under 4× and 
+
+8× temporal configurations. We comprehensively evaluate three metrics: full inference time (the complete forward pass including the encoder), pure rendering time (excluding the encoder, which accurately represents the core C-STVSR rasterization process), and VRAM consumption. All time-related metrics are calculated as the average of 100 continuous inference iterations to ensure robust 
+
+> 15
+
+## GT VideoINR MoTIF BF-STVSR Ours t = 0  t = 0.125  t = 0.25  t = 0.375  t = 0.5  t = 0.625  t = 1 Figure 9: Qualitative comparisons of different C-STVSR methods on in-distribution time scale. The spatial scaling factor is set to ×4 and the temporal factor to ×8. Best viewed zoomed in. 
+
+measurement. As detailed in Table 6, our method achieves a re-markable reduction in processing time. For instance, under the 
+
+8× temporal configuration, our pure rendering time is merely 0.4
+
+seconds, which is over 5 times faster than the recent BF-STVSR framework. Furthermore, while maintaining this exceptionally high speed and state-of-the-art visual quality, our framework requires significantly less VRAM (15.5 GiB) compared to MoTIF (32.0 GiB) and BF-STVSR (29.3 GiB). Although VideoINR consumes slightly less VRAM, it does so at the cost of substantially lower rendering speed and inferior synthesis quality. Overall, our method achieves 
+
+> 16
+
+## GT VideoINR MoTIF BF-STVSR Ours t = 0  t = 0.167  t = 0.333  t = 0.5  t = 0.667  t = 0.833  t = 1 Figure 10: Qualitative comparisons of different C-STVSR methods on out-of-distribution time scale. The spatial scaling factor is set to ×4 and the temporal factor to ×6. Best viewed zoomed in. 
+
+an optimal balance between performance and computational effi-ciency, paving the way for practical, high-resolution continuous video interpolation. 
+
+> 17
+
+GT VideoINR MoTIF BF-STVSR Ours Figure 11: Qualitative comparison of different C-STVSR methods in the VSR task. The spatial scaling factor is set to ×4. Best viewed zoomed in.
