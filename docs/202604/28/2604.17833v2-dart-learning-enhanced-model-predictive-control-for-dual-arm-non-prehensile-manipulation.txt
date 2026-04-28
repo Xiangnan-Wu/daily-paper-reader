@@ -1,0 +1,532 @@
+Title: DART: Learning-Enhanced Model Predictive Control for Dual-Arm Non-Prehensile Manipulation
+
+URL Source: https://arxiv.org/pdf/2604.17833v2
+
+Published Time: Tue, 28 Apr 2026 00:41:22 GMT
+
+Number of Pages: 9
+
+Markdown Content:
+# DART: Learning-Enhanced Model Predictive Control for Dual-Arm Non-Prehensile Manipulation 
+
+Autrio Das, Shreya Bollimuntha, Madala Venkata Renu Jeevesh, Keshab Patra, Tashmoy Ghosh, Nagamanikandan Govindan, Arun Kumar Singh, and K Madhava Krishna 
+
+Abstract — What appears effortless to a human waiter remains a major challenge for robots. Manipu-lating objects non-prehensilely on a tray is inherently difficult, and the complexity is amplified in dual-arm settings. Such tasks are highly relevant to service robotics in domains such as hotels and hospitality, where robots must transport and reposition diverse objects with precision. We present DART, a novel dual-arm framework that integrates nonlinear Model Predictive Control (MPC) with an optimization-based impedance controller to achieve accurate object motion relative to a dynamically controlled tray. The framework systematically evaluates three comple-mentary strategies for modeling tray–object dynam-ics as the state transition function within our MPC formulation: (i) a physics-based analytical model, (ii) an online regression-based identification model that adapts in real-time, and (iii) a reinforcement learn-ing–based dynamics model that generalizes across ob-ject properties. Our pipeline is validated in simulation with objects of varying mass, geometry, and friction coefficients. Extensive evaluations highlight the trade-offs among the three modeling strategies in terms of settling time, steady-state error, control effort, and generalization across objects. To the best of our knowledge, DART constitutes the first framework for non-prehensile Dual-Arm manipulation of objects on a tray. Project Link: https://dart-icra.github.io/dart/ 
+
+I. INTRODUCTION 
+
+Service robots performing human like tasks face a fundamental limitation: most rely exclusively on grasping to manipulate objects [1], struggling with items that are large, fragile, or awkwardly positioned i.e. neces-sitating non-prehensile manipulation, i.e., manipulating objects without grasping [2], [3]. This field encompasses diverse strategies including pushing [4], throwing [5], and rolling [6], exploiting friction, inertia, and contact forces without rigid grasping to offer promising alternatives for challenging scenarios. Among these techniques [3], [5]–[9], tray-based object manipulation moves objects through controlled surface tilting, presenting a natu-ral, human-inspired approach with broad applications in restaurants, hospitals, and laboratories. However, ex-tending this capability to dual-arm systems introduces various challenges: the shared tray dynamically couples both arms, requiring precise coordination while simul-taneously controlling object motion through uncertain dynamics. Unlike single-arm manipulation, this problem demands understanding and predicting how tray tilting                  
+
+> Fig. 1: Non-Prehensile Manipulation using aDual xArm7 setup. Our framework transports abowl of fruits to the goal location on the tray through a sequence of tilts given by MPC executed by the dual-arm system.
+
+affects object trajectories while maintaining stable, com-pliant control of the two manipulators. When two robotic arms coordinate to manipulate a tray for controlling object motion on its surface, several critical constraints emerge [10]. First , the tray creates dynamic coupling between the arms, meaning any mo-tion by one arm directly affects the tray orientation and, consequently, the object’s trajectory and the other arm’s required response. Second , precise object control requires accurate modeling of complex tray–object dy-namics involving friction, inertia, and contact mechanics that vary significantly with object properties such as mass, geometry, and surface characteristics. Third , the system must maintain compliance to handle interaction forces, while executing coordinated tilting motions, as rigid control can amplify disturbances and destabilize the entire manipulation process. These coupled dynamics create a challenging control problem where traditional approaches struggle with adaptability. Existing research has largely treated non-prehensile manipulation and dual-arm coordination as separate problems. Non-prehensile manipulation work has pri-marily focused on single-arm systems [4], [11], [12], while dual-arm coordination research typically assumes grasped objects with well-defined contact models [13]– [16]. The intersection of dual-arm coordination and non-
+
+> arXiv:2604.17833v2 [cs.RO] 25 Apr 2026
+
+prehensile manipulation remains largely unexplored, de-spite its practical importance and technical complex-ity. Accurately modeling object-tray dynamics presents a fundamental challenge: analytical models may over-simplify complex contact mechanics, while purely data-driven approaches may lack interpretability and fail to generalize across diverse objects and conditions. To address these limitations, we propose DART (Dual-Arm Robot Tray manipulation), a unified frame-work that integrates nonlinear Model Predictive Control (MPC) with optimization-based impedance control. Our MPC computes optimal tray tilt trajectories to guide objects to desired goals while accounting for system constraints and object dynamics. Simultaneously, our impedance controller ensures stable, compliant execution by both arms, managing interaction forces and maintain-ing coordination throughout the manipulation process. To summarize, our contributions are: 1) We introduce the to the best of our knowledge a first framework for dual-arm non-prehensile tray manipulation, formulating a control problem that bridges bimanual coordination with contact-rich object manipulation. 2) We develop three complementary dynamics mod-eling strategies: physics-based, online regression-based, and reinforcement learning-based. A key in-novation of our framework is the integration of RL-learned state transition dynamics as a constraint within the MPC, enabling the controller to gen-eralize across varying object geometries, masses, and surface interactions without requiring elabo-rate fine-tuning for each new object. 3) We demonstrate through extensive experiments across objects with varying mass, geometry, and surface properties that our framework performs well. We analyze and compare these approaches across metrics including settling time, steady-state error, and control effort. 
+
+II. RELATED WORKS 
+
+A. Non-Prehensile Manipulation 
+
+Non-prehensile manipulation is crucial for tasks in-volving hard-to-grasp objects or cluttered workspaces [2], [3]. This field encompasses diverse techniques such as throwing [5], pushing [17], rolling [6], and sliding [8], [18]. Several studies have explored the non-prehensile manipulation of objects on horizontal surfaces [9], [11], [12]. Prior research on planar object transportation has followed two distinct approaches. One focuses on main-taining object stability during transport, explicitly pre-venting sliding or slippage [11], [12]. In contrast, other works deliberately exploit sliding as the manipulation mechanism [8]. Many previous studies assume the pres-ence of external barriers to constrain object motion and rely on precise knowledge of surface friction coefficients within their model-based controllers [18]. While such setups enable impressive controllability, they limit gen-eralization to unconstrained environments with unknown friction properties. Recent advances have addressed these limitations through adaptive and learning-based ap-proaches [8], but the vast majority of non-prehensile manipulation research remains constrained to single-arm systems. 
+
+B. Dual-Arm Manipulation 
+
+Dual-arm manipulation extends robotic capabilities beyond single-arm limitations, enabling coordinated ob-ject transport and bimanual assembly [10], [14]. Dual-arm systems are pivotal for manipulating heavier pay-loads that exceed single-arm capacity limits [19], [20], providing enhanced stability through distributed load-bearing, crucial for tray based transportation and manip-ulation where payload weight, tray stability, and precise orientation control must be simultaneously managed [10]. Traditional approaches utilize impedance-based con-trol [21], [22] to handle dynamic coupling between ma-nipulators, while recent advances have employed learn-ing methods including imitation learning [23], vision-language models [24], and reinforcement learning [25]. These approaches have demonstrated impressive capabil-ities in coordinated manipulation tasks requiring precise force regulation and synchronization between arms [26], [27], which is essential for maintaining stable tray orien-tation during transport. However, existing dual-arm research exclusively as-sumes rigidly grasped objects with controlled dynamics. This fundamental assumption fails in tray-based scenar-ios where objects slide freely, creating entirely differ-ent contact dynamics that existing frameworks do not address. Single-arm non-prehensile approaches cannot leverage the enhanced force distribution and coordina-tion that dual-arm systems provide. To bridge this gap, our DART framework introduces the first integration of non-prehensile tray manipulation with dual-arm coordination, combining complementary dynamics modeling strategies within a unified nonlinear MPC and optimization-based impedance control archi-tecture for dual-arm non-prehensile object manipulation. The framework’s generality is a key strength, enabling adaptation to diverse object geometries, masses, and surface properties without requiring extensive recalibra-tion or object-specific modeling. DART enables precise manipulation of objects through controlled tray tilting, a capability essential for service robotics applications in domains such as hospitality, healthcare, and domestic environments. 
+
+III. SYSTEM DESCRIPTION 
+
+We consider a system of two manipulator arms rigidly grasping a tray as shown in Fig. 2, and an object of mass m is placed on it. The world frame {W} is fixed to the environment, the tray frame {B} aligned with 
+
+{W} at zero tilt, and the object frame {O} is attached to the object’s center of mass (CoM). The object-tray configuration and dual arm system are described as follows.       
+
+> Fig. 2: Task Setup: Two robotic arms are placed with the bases fixed to the ground. The tray is rigidly grasped and an object is placed on the tray. The world frame is represented by {W} , body frame by {B} and object frame by {O} .
+
+A. Object–Tray Model 
+
+The pose of the object in {W} is defined as x =[p⊤, θ⊤]⊤, where p ∈ R3 is the position and θ ∈ R3 is the orientation (roll-pitch-yaw). The linear and angular velocities are v ∈ R3 and ω ∈ R3. The twist in {W} 
+
+is defined as ν = [ v⊤, ω⊤]⊤. The object state in {W} 
+
+is defined as X = [ x⊤, ν⊤]⊤. The control input u =[u α, uβ ]⊤ ∈ R2 represents the commanded roll (u α) and pitch (u β ) angles of the tray in the world frame {W} .These tilt angles are constrained by the tray actuation limits |uα| ≤ umax  
+
+> α
+
+, |uβ | ≤ umax  
+
+> β
+
+(refer to Table I). The desired goal state of the object in {W} is denoted by 
+
+Xref . The object pose and twist in {O} are denoted by 
+
+xo and νo respectively. Friction coefficient between the object and tray is represented by μ.
+
+B. Dual-Robot Model 
+
+We consider a system of two torque-controlled ma-nipulators with 7 degrees of freedom (DoF). The joint positions, velocities, and acceleration vectors are denoted by qL/R , ˙qL/R , ¨qL/R , where the subscript L/R refers to the left or right arm, respectively. The joint-space mass matrix is M (q), and the combined centripetal, Coriolis, and gravitational effects are given by h(q, ˙q). The manipulator’s Jacobian and its derivative are given by J(q) and ˙J(q) respectively. The joint torques applied to each arm are τ L/R .The two end-effectors rigidly grasp the tray at fixed, predefined grasp poses {GL, G R} ∈ SE (3), enabling coordinated tray manipulation. The poses of the end-effector are expressed as yL/R = ypos,L/R , yori,L/R 
+
+⊤ ,
+
+where ypos,L/R ∈ R3 is the Cartesian position of the end-effector and yori,L/R ∈ R3 is its orientation (e.g., roll–pitch–yaw) in {W} . The desired end–effector poses 
+
+yref L/R are obtained from the desired tray pose as their relative placement w.r.t. the tray CoM stays constant. 
+
+IV. METHOD 
+
+We adopt a two-layer control framework for non-prehensile manipulation of the object as described below: 1) High-level controller: A nonlinear MPC (refer Sec. IV-A) for manipulating the object from its current state X to the desired state Xref , computes 
+
+u over the prediction horizon N. The dynamics rollout constraint in this MPC is modeled in three different ways as described in Sec. IV-B. 2) Low-level controller: A torque controller, adapted from an optimization-based dual-arm impedance control framework (refer to Sec. IV-C) [26], [28], computes τ L/R for each manipulator in order to realize the commanded tray tilts u, as given by the high-level controller. 
+
+A. Model Predictive Control 
+
+The high-level MPC controller computes optimal con-trol commands uk and object states Xk for a horizon of length N. It solves the nonlinear optimization in Eq. 1 for each discrete time step k ∈ [0 , N) which is sampled at T s. The tracking error at step k is defined as ek =(Xk − Xref ). The cost function penalizes the state tracking error 
+
+ek, the control effort uk, the control rate change ∆ uk,and the terminal state error eN to ensure smooth tray motion: min   
+
+> X,U
+> N−1
+
+X
+
+> k=0
+
+e⊤ 
+
+> k
+
+Q e k +
+
+ uk
+
+∆uk
+
+⊤
+
+QR
+
+ uk
+
+∆uk
+
+!
+
++ e⊤ 
+
+> N
+
+QNeN
+
+(1a) s.t. Xk+1 = Φ  Xk, uk, ∆t, (1b) 
+
+νmin ≤ νk ≤ νmax (1c) 
+
+umin ≤ uk ≤ umax (1d) ∆umin ≤ ∆uk ≤ ∆umax (1e) Here, Q and QN denote the weight matrices for the state tracking error along the horizon and at the terminal step, respectively. In our implementation, Q is struc-tured to separately weight position and velocity errors (Q = diag( Qp, Qv)) (refer to Table I). The matrix QR
+
+penalizes both the control input uk and its rate of change ∆uk, where ∆uk =
+
+(
+
+u0 − uprev , k = 0 ,
+
+uk − uk−1, 0 < k ≤ N (2) Here uprev is defined as the command executed at the previous simulation timestep. Initially, uprev is defined as [0 , 0] ⊤. The decision variables are stacked as X =[X⊤ 
+
+> 0
+
+, X⊤ 
+
+> 1
+
+, . . . , X⊤ 
+
+> N
+
+]⊤ and U = [ u⊤ 
+
+> 0
+
+, u⊤ 
+
+> 1
+
+, . . . , u⊤ 
+
+> N
+
+]⊤,which together describe the object state and control trajectories over the horizon. The object dynamics are enforced as a discrete-time state-transition mapping Φ( ·)(Eq. 1b). We obtain this function by numerical integra-tion of the object dynamic models illustrated in Sec. IV-B. Parameter Update   
+
+> Dynamical System
+> Physics Based
+> Dynamics Model
+> Recursive Least Square
+> Regressor Based Identification Model
+> PMPC RMPC LMPC
+
+DART Framework       
+
+> Dynamics Constraint
+> Non Linear MPC Controller
+> Impedance
+> Error
+> Postural
+> Error
+> QP EOM
+> Replay Buffer
+> PPO Agent
+> Delayed
+> Buffer
+> Logit Transform
+> +Sigmoid
+> Transform
+> (Arm Torques) (Control)
+> (Object State)
+> (End Effector Poses, Joint Angles and Velocities)
+> a) b) c)
+> MuJoCo Environment
+> Reinforcement Learning Based Dynamics Model
+
+Fig. 3: DART Framework: Our proposed framework takes the current object state X and the desired target state Xref . We choose 
+
+νref as 06×1 as inputs. These are fed into a nonlinear MPC, which computes the optimal tray-tilt commands ( u). These commands are then passed to an optimization-based impedance controller, which computes the torques required to realize the tilts. Feedback from the simulator updates the object state for closing the loop for the next MPC step. The object-tray dynamics is modeled as a state transition constraint for the MPC. We propose three models for this state transition constraint, namely (a) PMPC: an analytical physics-based dynamics model, (b) RMPC: a regressor-based model which learns unmodeled dynamics and (c) LMPC: a PPO agent used to estimate the object dynamics. 
+
+B. Object–Tray Dynamics 
+
+Within our MPC framework (Sec. IV-A), the state–transition function (Eq. 1b) is instantiated with three alternative dynamics models. We denote the com-plete MPC pipeline under each instantiation as :  
+
+> •
+
+Physics–Based MPC (PMPC): Uses analytical object dynamics with simple contact models and therefore requires modeling the dynamics of the object.  
+
+> •
+
+Regression–Based MPC (RMPC): Augments a nominal dynamics model with an online linear re-gressor to capture unmodeled dynamics and contact effects, reducing reliance on exact dynamics.  
+
+> •
+
+Reinforcement–Learning–Based MPC (LMPC): Starts from a nominal dynamics model and learns object dynamics parameters via reinforcement learning (RL) to directly capture unmodeled behaviors. PMPC is purely physics–based, whereas RMPC and LMPC relax the need for exact dynamics and contact models through online adaptation or learning. The three variants are detailed below. 
+
+1) Physics-Based Dynamics Model : The object dynamics in the frame {O} as adapted from [29] is expressed as 
+
+Mo(xo) ˙ νo + Co(xo, νo) νo + go(x) = Fo(xo, νo, u) (3) where Mo ∈ R6×6, Co ∈ R6×6, and go ∈ R6 de-note, respectively, the inertia matrix, the centrifugal and Coriolis matrix, and the gravity vector of the object. Here Fo(xo, νo, u) = Jc(xo)⊤f (xo, νo, u) ∈ R6 denotes the generalized contact wrench produced due to the tray’s contact interactions. Jc(xo) represents the contact Jacobian and f (.) encodes the stacked contact forces. Frictional effects are modeled using the Stribeck friction model [30]. The tray orientation (tilt) is controlled through the dual-arm manipulators. The tilt u modifies the compo-nents of the gravity vector acting along the tray’s tangent plane. Thus, go(xo) depends on the tray tilt and we can say go(xo) ∼ Go(xo, u). After updating and rearranging, we compute the acceleration of the object as follows: ˙νo = M−1o (xo)
+
+h
+
+Fo(xo, νo, u) − Co(xo, νo) νo − Go(xo, u)
+
+i
+
+(4) which can be compactly written in continuous time as ˙νo = F xo, νo, u (5) Numerical Integration of Eq. 5 yields the state-transition function Φ( ·) used as the rollout constraint in the MPC: 
+
+Xk+1 = Φ  Xk, uk
+
+ (6) Φ is computed by transforming the pose from {W} to 
+
+{O} , evaluating object dynamics in {O} , integrating ν
+
+in {O} and then updating the pose in {W} using the appropriate map. 
+
+2) Regression-Based Identification Model : We employ a regressor-based model, formulated as a Recur-sive Least Squares (RLS) [31] estimator, to learn the unmodeled dynamics. For each Cartesian axis j ∈ {x, y, z} in {O} , we construct 3 ×1 feature vectors jϕt = [v j, tanh  vj/ϵ t
+
+, 1] ⊤
+
+and jϕr = [ωj, tanh  ωj/ϵ r
+
+, 1] ⊤ for the translational and rotational components of the unmodeled dynamics respectively. Here, ϵt and ϵr are regularization terms. These vectors ( jϕt, jϕr) capture Coriolis and damping effects, Coulomb friction and other bias, which correlate with velocity, tanh expressions and a numerical constant respectively. The adaptive parameter vectors, jzt,j zr ∈ R3, and the feature vectors jϕt and jϕr are used to model the dynamics as follows: ˆao = ao + ∆ˆ ao,k (7) 
+
+ao = M−1o (xo)
+
+h
+
+−Co(xo, νo) νo − Go(xo, u)
+
+i
+
+(8) where ∆ˆ ao,k =
+
+xϕ⊤
+
+> t x
+
+zt,y ϕ⊤
+
+> t y
+
+zt,z ϕ⊤
+
+> t z
+
+zt,x ϕ⊤
+
+> r x
+
+zr,y ϕ⊤
+
+> r y
+
+zr,z ϕ⊤
+
+> r z
+
+zr
+
+⊤
+
+(9) 
+
+Online Parameter Identification: At each step k, we compute the acceleration discrepancy defined as ˜ ao =
+
+ ˜ao,t⊤, ˜ao,r⊤⊤ ∈ R6, ˜ao,k = ao,k − ao,k where ao,k =(νo,k − νo,k−1)/Ts.We then update the adaptive parameter vectors jzt
+
+and jzr using the regressors jϕt,k = jϕt(νo,k−1) and 
+
+> j
+
+ϕr,k = jϕr(νo,k−1). For all j ∈ { x, y, z} and forgetting factor λ ∈ (0 , 1], the RLS update is: 
+
+> j
+
+Kt,k =
+
+> j
+
+Pt,k−1jϕt,k
+
+λ + jϕ⊤
+
+> t,kj
+
+Pt,k−1jϕt,kjzt,k = jzt,k−1 + jKt,k
+
+ j ˜ao,t,k − jϕ⊤
+
+> t,kj
+
+zt,k−1
+
+
+
+> j
+
+Pt,k = 1
+
+λ
+
+ jPt,k−1 − jKt,kjϕ⊤
+
+> t,kj
+
+Pt,k−1
+
+ (10) Here jPt,k denotes the error covariance matrix and 
+
+> j
+
+Kt,k is the gain vector for axis j. An analogous update is applied to jzr,k for all j ∈ { x, y, z}. We use ˙ νo = ˆ ao,k
+
+and numerically integrate it to obtain the state transition constraint similar to Eq. 6. 
+
+3) Reinforcement Learning-Based Dynamics Model : We use proximal policy optimization (PPO) [32], an RL method to learn the parameter vector 
+
+ψ which collects the state independent components of 
+
+Mo, Co, Go and Fo.The system dynamics with the learned parameter vector is represented as ˙νo = cMo(ψ, xo)−1hbFo(ψ, xo, νo)
+
+− bCo(ψ, xo, νo) νo − bGo(ψ, xo, u) 
+
+i
+
+(11) PPO is employed to compute the structured updates of the parameter vector ψ, enabling the dynamics model to account for unmodeled disturbances, parametric un-certainty, and model mismatch. To ensure that cM o remains positive definite and bCo
+
+and bGo are physically plausible, we constrain ψ by means of a tanh squashing function. Further, to prevent saturation, we adopt a Logit–Sigmoid reparameterization to ensure ψ remains bounded, while the learning process is unconstrained. Each parameter is normalized and mapped into logit space. 
+
+r = ψ /ψ max η = ln ( r / (1 − r)) (12) The policy provides ∆ η and we map η′ = η + ∆ η back through the sigmoid 
+
+r′ = σ(η′) ψ′ = ψmax r′ (13) This ensures adaptation occurs in an unconstrained space while the realized parameters remain bounded and sta-ble. Experience from state transitions and MPC com-mands, along with sampled actions, is stored in a dense replay buffer for policy updates. A secondary sparse buffer collects samples at a lower rate, promoting general-ization across variations in geometry, mass, and friction, enabling PPO to adapt robustly to diverse dynamical conditions. Finally, the policy receives a reward signal R which encourages low position error and low velocity of the object simultaneously. It also collects the L1 norm of ∆ u
+
+as a penalty. 
+
+R = e  
+
+> −∥ p−pref ∥22
+> 2σ2p
+
+wp + wv e 
+
+> −∥ v−vref ∥22
+> 2σ2v
+
+!
+
+− ∥ ∆u∥1
+
+(14) where wp and wv are scalar weights that are tuned to the desired scaling between the position and velocity minimization rewards. 
+
+C. Controller 
+
+At each step, the high–level MPC (Sec. IV-A) outputs the commanded tray tilts u (roll–pitch in {W} ). The tray CoM remains fixed while its orientation follows u.We adapt the QP–based dual–arm impedance con-troller of [26], [28] to realize these poses. At each time step, the optimal joint accelerations are computed by solving (¨q∗
+
+> L
+
+, ¨q∗
+
+> R
+
+) = arg min  
+
+> (¨qL,¨qR)
+
+wimp 
+
+ ∥eimp L ∥22 +∥eimp R ∥22
+
+
+
++wpos 
+
+ ∥epos L ∥22 +∥epos R ∥22
+
+ (15) subject to joint position, velocity, and torque limits. The impedance–task error eimp is 
+
+eimp = ¨y − Λ−1h
+
+D
+
+
+
+˙yref − ˙y
+
+
+
++ K yref − yi
+
+(16) 
+
+Λ =
+
+
+
+JM −1J⊤−1
+
+, ¨y = J ¨q + ˙J ˙q (17) The postural–task error biases each arm to its grasp configuration: 
+
+epos = ¨q − 2pKnull ( ˙qref − ˙q) + Knull (qref − q), (18) with K, Knull and D as stiffness and damping matrices (Table I). The damping matrix D is computed using √Λ√K + √K√Λ.Finally, the optimal joint accelerations yield the torques 
+
+τ = M (q) ¨q∗ + h(q, ˙q), (19) which are applied to the simulator. This converts the MPC generated tray tilts into dual–arm torques realizing the desired motion while respecting all constraints. V. EXPERIMENTS 
+
+We evaluate our proposed framework as a simulated dual-arm non-prehensile tray manipulation task, where two UFactory xArm7 manipulators jointly tilt a tray to drive an object on the tray towards a desired target state. We emphasize robustness to variations in object mass, geometry, and tray–object friction. All experiments are conducted in the MuJoCo simulator with identical phys-ical models, initial conditions, and prediction horizons to ensure unbiased comparisons across the methods. 
+
+A. Task Setup 
+
+In each trial, a tray with mass of 1 kg and dimensions of 40 cm × 30 cm × 1 cm, is manipulated by the control input u executed as in Sec. IV-C. We consider three object geometries: {cube, cylinder, sphere }, representing area, line, and point contacts, respectively. Each object is evaluated at two different masses {1, 2} kg and three different friction coefficients 
+
+{0.05 , 0.10 , 0.20 }, resulting in 3 × 3 × 2 = 18 unique object configurations. Fixing the initial object position to be at the tray’s center, we uniformly sample target positions at a radial distance of [0 .08 , 0.12] m from the center and average over them to get the final metrics for each configuration. The xArm7 bases are mounted with a fixed separation of 1 .4 m, providing sufficient dexterous workspace for coordinated tray manipulation.                                  
+
+> Symbol Description Value
+> TsSimulation/MPC time step 0.002s nxState dimension 8nuControl dimension 2NPrediction horizon 20
+> umax
+> α,umax
+> βMax. roll/pitch command 0.6 rad
+> QpPose error weight 250 I6
+> QvVelocity error weight 2I6
+> QRControl effort weight 0.2I4
+> KCartesian stiffness (N/m) diag(5000 I3,50 I3)
+> Knull Joint stiffness (posture) 7I3N/m TABLE I: Controller parameters used in all experiments.
+
+B. Controller Parameters 
+
+The weight matrices used by the MPC in the high-level task, as well as those used by the low-level QP based impedance controller are listed in Table I. These are the default values used in all experiments in Sec. V unless mentioned otherwise. The weight matrices Qp, Qv, QN, and QR are tuned iteratively. Increasing Qp places greater emphasis on accurate final positioning of the object, while higher Qv
+
+helps dampen overshoot. QN enforces convergence to the desired state, and QR penalizes excessive torque changes, promoting smooth and feasible tray motions without saturating the torques.This tuning balances positioning accuracy with control effort. 
+
+C. Training Details for LMPC 
+
+The reinforcement learning policy was trained in sim-ulation using MuJoCo, running three environments in parallel and collecting 500 episodes of 20,000 steps each— sufficient to observe convergence given an initial, arbi-trary, non-zero parameter vector. We used PPO with a learning rate of 3 × 10 −4, value function coefficient cv =0.5, and entropy coefficient β = 0 .01. Training covered a total of 500 × 20 ,000 steps ( ≈ 2 hours of wall-clock time) and was evaluated every 2048 iterations. Further, we have adopted domain randomization to randomly select any one of the 18 physical object configurations to improve the generalization capabilities of the RL agent. 
+
+D. Implementation Details 
+
+Both RMPC and LMPC are implemented in Python using the PyTorch framework. The nonlinear MPC and the optimization-based dual arm controller are solved using the Interior Point Optimization (IPOPT) solver in CasADi [33]. All simulations and training experiments were executed on a Ryzen 9 8945HS CPU and NVIDIA GeFORCE RTX 4090 GPU. To ensure real–time performance during training and evaluation, the codebase was parallelized using Python’s 
+
+multiprocessing library. Specifically, the CasADi solver for the MPC and the dual–arm controller and the MuJoCo simulation envi-ronment were each executed in separate processes, which communicate via a shared memory buffer in CPU mem-ory. Synchronization is achieved using multiple mutex locks, with the MuJoCo solver’s updates as a reference clock. 
+
+E. Evaluation Metrics 
+
+The data collected for evaluation is sampled at afrequency of 500Hz for a duration of 20 seconds. At each timestep i ∈ [1 , n], the position error is defined as 
+
+ei = pref − pi, with n the total number of steps. We assess the three MPC methods (PMPC, RMPC, LMPC) using three widely used performance measures [34], [35].  
+
+> •
+
+Steady State Error: Measures the mean error over the last 4s (20 % of the samples) as all three methods reach steady state before this. It is computed as: ˆess = 10.2n 
+
+> n
+
+X
+
+> i=0.8n+1
+
+∥ei∥2 (20)  
+
+> •
+
+Settling Time: Measures the time taken to reach the steady state with a tolerance of 1%. It is defined as the smallest time index is such that 
+
+∥ei∥ ≤ ε, ∀ i ≥ is (21) where ε = 1 .01 ∥ˆess ∥. 
+
+> •
+
+Control Effort: Evaluates the efficiency and smoothness of the applied torques. We compute Object Mass(Kg) Friction Settling Time(s) Steady State Error(m) Control Effort PMPC RMPC LMPC PMPC RMPC LMPC PMPC RMPC LMPC                                                                                                                                                                   
+
+> Cube 10.05 6.70 17.14 3.89 0.060 0.017 0.0066 2174.35 943.46 2007.70 0.1 7.34 16.92 3.47 0.020 0.018 0.0075 2131.62 949.57 1885.27 0.2 7.43 17.02 2.57 0.020 0.026 0.016 2209.89 1164.74 1884.86 20.05 7.16 21.11 4.85 0.050 0.017 0.0059 2328.56 3873.42 2085.31
+> 0.1 6.52 21.70 4.91 0.039 0.013 0.0055 2192.75 3906.57 2258.05 0.2 6.89 21.30 3.86 0.039 0.014 0.0117 2275.39 3941.35 2182.49
+> Cylinder 10.05 6.24 16.53 4.02 0.060 0.025 0.0030 1704.56 992.04 1780.91 0.1 5.92 16.60 4.22 0.031 0.021 0.0026 1718.19 893.93 1782.94 0.2 4.97 18.08 4.74 0.0019 0.020 0.0044 1172.72 924.44 2041.98 20.05 4.66 15.82 3.22 0.0315 0.013 0.0044 1569.18 2925.26 2063.84 0.1 4.12 19.48 2.93 0.0024 0.014 0.0044 1582.98 2855.69 1988.34 0.2 4.96 18.61 4.12 0.040 0.012 0.0041 1659.26 2970.69 1926.88 Sphere 10.05 5.39 15.58 1.48 0.0052 0.034 0.0166 1817.05 1102.22 2007.70 0.1 4.27 13.74 1.21 0.0047 0.030 0.0207 1651.87 998.74 1885.27 0.2 4.30 12.45 1.39 0.0060 0.030 0.0223 1735.35 1164.49 1884.86 20.05 6.05 11.97 1.34 0.054 0.028 0.0304 2068.16 3461.95 2085.31 0.1 4.65 10.83 1.20 0.0054 0.031 0.0301 2041.12 3527.24 2258.05 0.2 5.76 12.80 0.82 0.0137 0.027 0.0262 2107.73 3515.69 2182.49
+
+TABLE II: Performance comparison of different object geometries with varying mass and friction parameters, each configuration averaged over 20 radially sampled targets. 
+
+energy and rate costs from the joint torques τ k of both xArm7s as Jeffort = w E
+
+> n
+
+X
+
+> i=1
+
+∥τ i∥2 ∆t + w RnX
+
+> i=2
+
+∥ τ i − τ i-1 
+
+∆t ∥2,
+
+(22) where w E, w R are the associated weights. 
+
+VI. RESULTS 
+
+We evaluate the performance of DART across a range of object configurations using the metrics defined in Sec. V-E. 
+
+Fig. 4: Performance of two objects, Cube on the left and Cylinder on the right visualized as a standard deviation and average plot denoting the position error and tilt commands given by the LMPC RMPC and PMPC. The color legend corresponding to the three methods shown on top 
+
+A. Quantitative Results 
+
+Table II summarizes the performance of all three controllers across all the object configurations described in Sec. V-A. We observe that LMPC has better settling time and and steady state error. However, it’s control effort is relatively high. RMPC requires low control effort for low mass objects but it shows higher settling time. PMPC offers better steady state error for rolling contacts and low control effort for high mass rolling contacts. We further observe that RMPC and LMPC general-ize well across objects, masses, and friction coefficients, which can be observed in their consistent settling times and steady state errors. PMPC cannot generalize and requires object-specific parameters to be provided. This is observed in Table II. While LMPC outperforms the other two methods in terms of settling times, it requires training and compu-tation V-C. RMPC adapts real time and does not require any training. Fig. 4 visualizes the above observations for 2 differ-ent object configurations, showing the trends in steady state error across RMPC, LMPC and PMPC, and the respective commands produced by these methods. This portrays the trends observed across Table II. LMPC con-verges the fastest while PMPC shows a smooth settling to the lowest steady state error for the Cube. 
+
+B. Qualitative Results 
+
+We qualitatively evaluate our framework across diverse and challenging scenarios. Fig. 5 shows trajectories for varying object shapes, each presenting a different ma-nipulation challenge due to different contact interactions. We chose a shorter goal to observe the trajectories given by different controllers to test the ability to react faster. The controller behaviours are clearly differenti-ated. PMPC takes long (Fig. 5) yet faster (Table II) trajectories which can be treated a trade-off of simplified contact dynamics model as Eq. 5. RMPC converges towards the target while adapting online; however, in some scenarios, it overshoots with a sub-optimal estimate of dynamics but manages to converge as it updates it parameters. As observed in the Fig. 5 cylinder shows some steady state error of 2-2.3 cm which is consistent with Table II. LMPC is always taking the shortest and fastest trajectories compared to the other two meth-ods(Fig. 5) with good overall performance along with Fig. 5: Visualizations of the trajectories: This figure de-picts the trajectories followed by a cube(green), sphere(red), and a cylinder(purple) with mass 1kg and friction 0.2 ,manipulated by using 3 different MPC methods. The curves shows only the path of the object taken on the tray, longer path doesn’t mean longer convergence. The color legend corresponds to the three methods as shown on top. 
+
+genaralization over different object configurations. These rollouts highlight how environment parameters strongly affect manipulation dynamics, underscoring the need for controllers that generalize across conditions rather than overfit to a single setup. 
+
+VII. CONCLUSION AND FUTURE WORK 
+
+This paper presents DART, a first framework for dual-arm non-prehensile tray manipulation. By integrating nonlinear MPC with optimization-based impedance con-trol, our approach enables object transportation with accuracy up to 2 mm on dynamically controlled trays, a capability critical for service robots. Our comparison of three dynamics modeling strategies reveal various strengths: physics-based models offer interpretability, regression-based models provide online adaptation, while reinforcement learning delivers superior generalization with faster convergence. Through validation across objects with varying mass, geometry, and friction properties, we demonstrate that DART effectively navigates the complex, coupled dy-namics between dual manipulators and sliding objects. Future work will extend this framework to handle sur-faces with variable friction, uneven surfaces, complex objects, orientation control through active yawing, and non-planar object manipulation. 
+
+References 
+
+[1] Mario Tr¨ obinger, Christoph J¨ ahne, Zheng Qu, Jean Elsner, Anton Reindl, Sebastian Getz, Thore Goll, Benjamin Loinger, Tamara Loibl, Christoph Kugler, et al. Introducing garmi-a service robotics platform to support the elderly at home: Design philosophy, system overview and first results. IEEE Robotics and Automation Letters , 6(3):5857–5864, 2021. [2] Wenxuan Zhou, Bowen Jiang, Fan Yang, Chris Paxton, and David Held. Hacman: Learning hybrid actor-critic maps for 6d non-prehensile manipulation. arXiv preprint arXiv:2305.03942 , 2023. [3] Matthew T Mason. Progress in nonprehensile manipulation. 
+
+The International Journal of Robotics Research , 18(11):1129– 1141, 1999. [4] Alejandro Guti´ errez-Giles, Fabio Ruggiero, Vincenzo Lip-piello, and Bruno Siciliano. Closed-loop control of a nonpre-hensile manipulation system inspired by the pizza-peel mech-anism. In 2019 18th European Control Conference (ECC) ,pages 1580–1585. IEEE, 2019. [5] Aykut C Satici, Fabio Ruggiero, Vincenzo Lippiello, and Bruno Siciliano. A coordinate-free framework for robotic pizza tossing and catching. In 2016 IEEE international conference on robotics and automation (ICRA) , pages 3932–3939. IEEE, 2016. [6] Diana Serra, Fabio Ruggiero, Alejandro Donaire, Luca Rosario Buonocore, Vincenzo Lippiello, and Bruno Siciliano. Control of nonprehensile planar rolling manipulation: A passivity-based approach. IEEE Transactions on Robotics , 35(2):317– 329, 2019. [7] Kuan-Ting Yu, Maria Bauza, Nima Fazeli, and Alberto Ro-driguez. More than a million ways to be pushed. a high-fidelity experimental dataset of planar pushing. In 2016 IEEE/RSJ international conference on intelligent robots and systems (IROS) , pages 30–37. IEEE, 2016. [8] Hamidreza Raei, Elena De Momi, and Arash Ajoudani. A re-inforcement learning approach to non-prehensile manipulation through sliding. IEEE Robotics and Automation Letters , 2025. [9] Neel Jawale, Byron Boots, Balakumar Sundaralingam, and Mohak Bhardwaj. Dynamic non-prehensile object transport via model-predictive reinforcement learning, 2024. [10] Christian Smith, Yiannis Karayiannidis, Lazaros Nalpantidis, Xavi Gratal, Peng Qi, Dimos V Dimarogonas, and Danica Kragic. Dual arm manipulation—a survey. Robotics and Autonomous systems , 60(10):1340–1353, 2012. [11] Adam Heins and Angela P Schoellig. Keep it upright: Model predictive control for nonprehensile object transportation with obstacle avoidance on a mobile manipulator. IEEE Robotics and Automation Letters , 8(12):7986–7993, 2023. [12] Mario Selvaggio, Akash Garg, Fabio Ruggiero, Giuseppe Ori-olo, and Bruno Siciliano. Non-prehensile object transportation via model predictive non-sliding manipulation control. IEEE Transactions on Control Systems Technology , 31(5):2231– 2244, 2023. [13] Markus Grotz, Mohit Shridhar, Tamim Asfour, and Dieter Fox. Peract2: Benchmarking and learning for robotic bimanual manipulation tasks, 2024. [14] Franziska Krebs and Tamim Asfour. A bimanual manipu-lation taxonomy. IEEE Robotics and Automation Letters ,7(4):11031–11038, 2022. [15] Guangyao Zhai, Yu Zheng, Ziwei Xu, Xin Kong, Yong Liu, Benjamin Busam, Yi Ren, Nassir Navab, and Zhengyou Zhang. Da 2 dataset: Toward dexterity-aware dual-arm grasp-ing. IEEE Robotics and Automation Letters , 7(4):8941–8948, 2022. [16] Md Faizal Karim, Mohammed Saad Hashmi, Shreya Bol-limuntha, Mahesh Reddy Tapeti, Gaurav Singh, Naga-manikandan Govindan, and K Madhava Krishna. Dg16m: A large-scale dataset for dual-arm grasping with force-optimized grasps. arXiv preprint arXiv:2503.08358 , 2025. [17] Baris Serhan, Harit Pandya, Ayse Kucukyilmaz, and Gerhard Neumann. Push-to-see: Learning non-prehensile manipulation to enhance instance segmentation via deep q-learning. In 
+
+2022 International Conference on Robotics and Automation (ICRA) , pages 1513–1519, 2022. [18] Jian Shi, J Zachary Woodruff, Paul B Umbanhowar, and Kevin M Lynch. Dynamic in-hand sliding manipulation. IEEE Transactions on Robotics , 33(4):778–795, 2017. [19] Aaron Edsinger and Charles C Kemp. Two arms are better than one: A behavior based control system for assistive bi-manual manipulation. In Recent Progress in Robotics: Viable Robotic Service to Human: An Edition of the Selected Papers from the 13th International Conference on Advanced Robotics ,pages 345–355. Springer, 2007. [20] Simone Pantanetti, Federico Emiliani, Daniele Costa, Gia-como Palmieri, and Albin Bajrami. From single to dual-arm collaborative robotic assembly: A case study at i-labs. In 2024 20th IEEE/ASME International Conference on Mechatronic and Embedded Systems and Applications (MESA) , pages 1–6, 2024. [21] Fabrizio Caccavale, Pasquale Chiacchio, Alessandro Marino, and Luigi Villani. Six-dof impedance control of dual-arm cooperative manipulators. IEEE/ASME Transactions on Mechatronics , 13(5):576–586, 2008. [22] Jinoh Lee, Pyung Hun Chang, and Rodrigo S Jamisola. Relative impedance control for dual-arm robots performing asymmetric bimanual tasks. IEEE transactions on industrial electronics , 61(7):3786–3796, 2013. [23] Tony Z. Zhao, Vikash Kumar, Sergey Levine, and Chelsea Finn. Learning Fine-Grained Bimanual Manipulation with Low-Cost Hardware. In Proceedings of Robotics: Science and Systems , Daegu, Republic of Korea, July 2023. [24] Koffivi Fid` ele Gbagbe, Miguel Altamirano Cabrera, Ali Al-abbas, Oussama Alyunes, Artem Lykov, and Dzmitry Tset-serukou. Bi-vla: Vision-language-action model-based system for bimanual robotic dexterous manipulations. arXiv preprint arXiv:2405.06039 , 2024. [25] Yuanpei Chen, Tianhao Wu, Shengjie Wang, Xidong Feng, Jiechuan Jiang, Zongqing Lu, Stephen McAleer, Hao Dong, Song-Chun Zhu, and Yaodong Yang. Towards human-level bimanual dexterous manipulation with reinforcement learning. 
+
+Advances in Neural Information Processing Systems , 35:5150– 5163, 2022. [26] Md Faizal Karim, Shreya Bollimuntha, Mohammed Saad Hashmi, Autrio Das, Gaurav Singh, Srinath Sridhar, Arun Ku-mar Singh, Nagamanikandan Govindan, and K Madhava Kr-ishna. Da-vil: Adaptive dual-arm manipulation with rein-forcement learning and variable impedance control. In 2025 IEEE International Conference on Robotics and Automation (ICRA) , pages 11896–11903. IEEE, 2025. [27] Heyu Hu and Jianfu Cao. Adaptive variable impedance control of dual-arm robots for slabstone installation. ISA transactions ,128:397–408, 2022. [28] Jari van Steen, Gijs van den Brandt, Nathan van de Wouw, Jens Kober, and Alessandro Saccon. Quadratic programming-based reference spreading control for dual-arm robotic manip-ulation with planned simultaneous impacts. IEEE Transac-tions on Robotics , 40:3341–3355, 2024. [29] Rajesh Subburaman, Mario Selvaggio, and Fabio Ruggiero. A non-prehensile object transportation framework with adaptive tilting based on quadratic programming. IEEE Robotics and Automation Letters , 8(6):3581–3588, 2023. [30] B. Armstrong-Helouvry. Stick-slip arising from stribeck fric-tion. In Proceedings., IEEE International Conference on Robotics and Automation , pages 1377–1382 vol.2, 1990. [31] Theo Lequy and Andreas M Menzel. Stochastic motion under nonlinear friction representing shear thinning. Physical Review E, 108(6):064606, 2023. [32] John Schulman, Filip Wolski, Prafulla Dhariwal, Alec Rad-ford, and Oleg Klimov. Proximal policy optimization algo-rithms. arXiv preprint arXiv:1707.06347 , 2017. [33] Joel AE Andersson, Joris Gillis, Greg Horn, James B Rawl-ings, and Moritz Diehl. Casadi: a software framework for nonlinear optimization and optimal control. Mathematical Programming Computation , 11(1):1–36, 2019. [34] Katsuhiko Ogata. Modern control engineering . Prentice hall, 2010. [35] Sigurd Skogestad and Ian Postlethwaite. Multivariable feed-back control: analysis and design . john Wiley & sons, 2005.

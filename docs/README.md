@@ -6,100 +6,100 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-04-27
-- 运行时间：2026-04-27 20:17:15 UTC
+- 最新运行日期：2026-04-28
+- 运行时间：2026-04-28 21:08:57 UTC
 - 运行状态：成功
 - 本次总论文数：26
 - 精读区：14
 - 速读区：12
 
 ### 今日简报（AI）
-今日精选 26 篇前沿论文，深度聚焦 VLA 模型在空间感知与在线强化学习中的突破性进展。
-满分神作 OmniVLA-RL 与 PokeVLA 揭示了轻量化模型结合世界知识与在线学习是提升机器人具身智能的关键。
-建议重点关注 VLA 模型的端侧部署与导航漂移优化，这是实现复杂环境下智能体自主化的核心路径。
-- 详情：[/202604/27/README](/202604/27/README)
+今日深挖 26 篇 AI 前沿，重点聚焦机器人 VLA 模型综述及在线强化学习的突破性进展。
+满分论文揭示了具身智能从数据引擎到模型引导的全链路演进，标志着视觉-语言-动作协同进入新高度。
+推荐从 VLA 综述入手构建具身智能知识图谱，并同步关注视频生成与
+- 详情：[/202604/28/README](/202604/28/README)
 
 ### 精读区论文标签
-1. [OmniVLA-RL: A Vision-Language-Action Model with Spatial Understanding and Online RL](/202604/27/2604.17706v2-omnivla-rl-a-vision-language-action-model-with-spatial-understanding-and-online-rl)  
+1. [Vision-Language-Action in Robotics: A Survey of Datasets, Benchmarks, and Data Engines](/202604/28/2604.23001v1-vision-language-action-in-robotics-a-survey-of-datasets-benchmarks-and-data-engines)  
    标签：评分：10.0/10、query:robot
-   evidence：具有空间理解和强化学习能力的VLA模型
-2. [PokeVLA: Empowering Pocket-Sized Vision-Language-Action Model with Comprehensive World Knowledge Guidance](/202604/27/2604.20834v2-pokevla-empowering-pocket-sized-vision-language-action-model-with-comprehensive-world-knowledge-guidance)  
+   evidence：机器人领域视觉-语言-动作（VLA）模型与数据基础设施综述
+2. [RL Token: Bootstrapping Online RL with Vision-Language-Action Models](/202604/28/2604.23073v1-rl-token-bootstrapping-online-rl-with-vision-language-action-models)  
    标签：评分：10.0/10、query:robot
-   evidence：用于具身操纵的轻量级VLA模型
-3. [dWorldEval: Scalable Robotic Policy Evaluation via Discrete Diffusion World Model](/202604/27/2604.22152v1-dworldeval-scalable-robotic-policy-evaluation-via-discrete-diffusion-world-model)  
+   evidence：预训练VLA模型的在线强化学习微调
+3. [Modular Sensory Stream for Integrating Physical Feedback in Vision-Language-Action Models](/202604/28/2604.23272v1-modular-sensory-stream-for-integrating-physical-feedback-in-vision-language-action-models)  
    标签：评分：10.0/10、query:robot
-   evidence：用于可扩展机器人策略评估的离散扩散世界模型
-4. [CodeGraphVLP: Code-as-Planner Meets Semantic-Graph State for Non-Markovian Vision-Language-Action Models](/202604/27/2604.22238v1-codegraphvlp-code-as-planner-meets-semantic-graph-state-for-non-markovian-vision-language-action-models)  
+   evidence：将物理反馈集成到视觉-语言-动作模型中
+4. [Move-Then-Operate: Behavioral Phasing for Human-Like Robotic Manipulation](/202604/28/2604.23620v1-move-then-operate-behavioral-phasing-for-human-like-robotic-manipulation)  
    标签：评分：10.0/10、query:robot
-   evidence：具有语义图状态的非马尔可夫视觉-语言-动作模型
-5. [RedVLA: Physical Red Teaming for Vision-Language-Action Models](/202604/27/2604.22591v1-redvla-physical-red-teaming-for-vision-language-action-models)  
+   evidence：用于机器人操作的视觉-语言-动作框架
+5. [Vision-Language-Action Safety: Threats, Challenges, Evaluations, and Mechanisms](/202604/28/2604.23775v1-vision-language-action-safety-threats-challenges-evaluations-and-mechanisms)  
    标签：评分：10.0/10、query:robot
-   evidence：VLA 模型物理安全的红队测试框架
-6. [GazeVLA: Learning Human Intention for Robotic Manipulation](/202604/27/2604.22615v1-gazevla-learning-human-intention-for-robotic-manipulation)  
+   evidence：机器人VLA模型安全性的综述
+6. [AsyncShield: A Plug-and-Play Edge Adapter for Asynchronous Cloud-based VLA Navigation](/202604/28/2604.24086v1-asyncshield-a-plug-and-play-edge-adapter-for-asynchronous-cloud-based-vla-navigation)  
    标签：评分：10.0/10、query:robot
-   evidence：用于机器人操作和人类意图转移的GazeVLA框架
-7. [Agentic World Modeling: Foundations, Capabilities, Laws, and Beyond](/202604/27/2604.22748v1-agentic-world-modeling-foundations-capabilities-laws-and-beyond)  
+   evidence：用于机器人云端VLA导航的适配器
+7. [$M^2$-VLA: Boosting Vision-Language Models for Generalizable Manipulation via Layer Mixture and Meta-Skills](/202604/28/2604.24182v1-m2-vla-boosting-vision-language-models-for-generalizable-manipulation-via-layer-mixture-and-meta-skills)  
    标签：评分：10.0/10、query:robot
-   evidence：智能体世界建模分类法，涉及环境动力学和动作条件预测
-8. [ScenarioControl: Vision-Language Controllable Vectorized Latent Scenario Generation](/202604/27/2604.17147v1-scenariocontrol-vision-language-controllable-vectorized-latent-scenario-generation)  
-   标签：评分：9.0/10、query:profile-2
-   evidence：用于自主智能体的矢量化潜空间视觉语言可控场景生成
-9. [SYMBOLIZER: Symbolic Model-free Task Planning with VLMs](/202604/27/2604.17830v1-symbolizer-symbolic-model-free-task-planning-with-vlms)  
+   evidence：用于通用操纵的视觉-语言-动作模型
+8. [CF-VLA: Efficient Coarse-to-Fine Action Generation for Vision-Language-Action Policies](/202604/28/2604.24622v1-cf-vla-efficient-coarse-to-fine-action-generation-for-vision-language-action-policies)  
+   标签：评分：10.0/10、query:robot
+   evidence：VLA策略的高效动作生成
+9. [DART: Learning-Enhanced Model Predictive Control for Dual-Arm Non-Prehensile Manipulation](/202604/28/2604.17833v2-dart-learning-enhanced-model-predictive-control-for-dual-arm-non-prehensile-manipulation)  
    标签：评分：9.0/10、query:robot
-   evidence：将VLM与经典规划结合用于机器人任务规划
-10. [Memorize When Needed: Decoupled Memory Control for Spatially Consistent Long-Horizon Video Generation](/202604/27/2604.18215v1-memorize-when-needed-decoupled-memory-control-for-spatially-consistent-long-horizon-video-generation)  
-   标签：评分：9.0/10、query:profile-2
-   evidence：空间一致的长程视频生成
-11. [Memorize When Needed: Decoupled Memory Control for Spatially Consistent Long-Horizon Video Generation](/202604/27/2604.18215v2-memorize-when-needed-decoupled-memory-control-for-spatially-consistent-long-horizon-video-generation)  
-   标签：评分：9.0/10、query:q7
-   evidence：空间一致的长程视频生成
-12. [DynamicRad: Content-Adaptive Sparse Attention for Long Video Diffusion](/202604/27/2604.20470v1-dynamicrad-content-adaptive-sparse-attention-for-long-video-diffusion)  
-   标签：评分：9.0/10、query:q7
-   evidence：长视频扩散模型的稀疏注意力机制
-13. [OccDirector: Language-Guided Behavior and Interaction Generation in 4D Occupancy Space](/202604/27/2604.22240v1-occdirector-language-guided-behavior-and-interaction-generation-in-4d-occupancy-space)  
+   evidence：为机器人控制和MPC建模托盘-物体动力学
+10. [EgoMotion: Hierarchical Reasoning and Diffusion for Egocentric Vision-Language Motion Generation](/202604/28/2604.19105v1-egomotion-hierarchical-reasoning-and-diffusion-for-egocentric-vision-language-motion-generation)  
    标签：评分：9.0/10、query:robot
-   evidence：用于自动驾驶模拟的生成式世界模型
-14. [SpaMEM: Benchmarking Dynamic Spatial Reasoning via Perception-Memory Integration in Embodied Environments](/202604/27/2604.22409v1-spamem-benchmarking-dynamic-spatial-reasoning-via-perception-memory-integration-in-embodied-environments)  
+   evidence：用于具身智能的第一视角视觉语言动作生成
+11. [TS-Attn: Temporal-wise Separable Attention for Multi-Event Video Generation](/202604/28/2604.19473v1-ts-attn-temporal-wise-separable-attention-for-multi-event-video-generation)  
+   标签：评分：9.0/10、query:q13
+   evidence：基于复杂描述的多事件视频生成
+12. [BridgeACT: Bridging Human Demonstrations to Robot Actions via Unified Tool-Target Affordances](/202604/28/2604.23249v1-bridgeact-bridging-human-demonstrations-to-robot-actions-via-unified-tool-target-affordances)  
    标签：评分：9.0/10、query:robot
-   evidence：通过动作条件场景变换进行空间信念演化
+   evidence：通过示能性连接人类演示与机器人动作
+13. [Characterizing Vision-Language-Action Models across XPUs: Constraints and Acceleration for On-Robot Deployment](/202604/28/2604.24447v1-characterizing-vision-language-action-models-across-xpus-constraints-and-acceleration-for-on-robot-deployment)  
+   标签：评分：9.0/10、query:robot
+   evidence：VLA模型在机器人硬件上的加速与部署
+14. [World-R1: Reinforcing 3D Constraints for Text-to-Video Generation](/202604/28/2604.24764v1-world-r1-reinforcing-3d-constraints-for-text-to-video-generation)  
+   标签：评分：9.0/10、query:q14
+   evidence：具有3D约束的世界模拟视频生成
 
 ### 速读区论文标签
-1. [LookasideVLN: Direction-Aware Aerial Vision-and-Language Navigation](/202604/27/2604.17190v1-lookasidevln-direction-aware-aerial-vision-and-language-navigation)  
+1. [Chatting about Conditional Trajectory Prediction](/202604/28/2604.18126v1-chatting-about-conditional-trajectory-prediction)  
    标签：评分：8.0/10、query:robot
-   evidence：无人机视觉语言导航
-2. [Dual-Anchoring: Addressing State Drift in Vision-Language Navigation](/202604/27/2604.17473v1-dual-anchoring-addressing-state-drift-in-vision-language-navigation)  
+   evidence：人机交互系统的轨迹预测与路径规划
+2. [AdaCluster: Adaptive Query-Key Clustering for Sparse Attention in Video Generation](/202604/28/2604.18348v1-adacluster-adaptive-query-key-clustering-for-sparse-attention-in-video-generation)  
+   标签：评分：8.0/10、query:q7
+   evidence：通过自适应聚类加速视频扩散Transformer
+3. [EAST: Early Action Prediction Sampling Strategy with Token Masking](/202604/28/2604.18367v1-east-early-action-prediction-sampling-strategy-with-token-masking)  
+   标签：评分：8.0/10、query:q12
+   evidence：早期动作预测与未观察视频帧的推理
+4. [SafetyALFRED: Evaluating Safety-Conscious Planning of Multimodal Large Language Models](/202604/28/2604.19638v1-safetyalfred-evaluating-safety-conscious-planning-of-multimodal-large-language-models)  
    标签：评分：8.0/10、query:robot
-   evidence：解决智能体视觉语言导航中的状态漂移问题
-3. [Waking Up Blind: Cold-Start Optimization of Supervision-Free Agentic Trajectories for Grounded Visual Perception](/202604/27/2604.17475v1-waking-up-blind-cold-start-optimization-of-supervision-free-agentic-trajectories-for-grounded-visual-perception)  
-   标签：评分：8.0/10、query:robot
-   evidence：用于具身感知的智能体轨迹与任务控制器
-4. [Agent-World: Scaling Real-World Environment Synthesis for Evolving General Agent Intelligence](/202604/27/2604.18292v1-agent-world-scaling-real-world-environment-synthesis-for-evolving-general-agent-intelligence)  
-   标签：评分：8.0/10、query:q14
-   evidence：为智能体扩展真实世界环境合成
-5. [Coevolving Representations in Joint Image-Feature Diffusion](/202604/27/2604.17492v1-coevolving-representations-in-joint-image-feature-diffusion)  
-   标签：评分：7.0/10、query:profile-2
-   evidence：用于扩散训练的图像-特征联合生成建模
-6. [UniGeo: Unifying Geometric Guidance for Camera-Controllable Image Editing via Video Models](/202604/27/2604.17565v1-unigeo-unifying-geometric-guidance-for-camera-controllable-image-editing-via-video-models)  
-   标签：评分：7.0/10、query:q9
-   evidence：利用视频模型进行相机可控的视图合成
-7. [ViPS: Video-informed Pose Spaces for Auto-Rigged Meshes](/202604/27/2604.17623v2-vips-video-informed-pose-spaces-for-auto-rigged-meshes)  
-   标签：评分：7.0/10、query:q9
-   evidence：从预训练视频扩散模型中提取运动先验
-8. [A Hamilton-Jacobi Reachability-Guided Search Framework for Efficient and Safe Indoor Planar Robot Navigation](/202604/27/2604.17679v1-a-hamilton-jacobi-reachability-guided-search-framework-for-efficient-and-safe-indoor-planar-robot-navigation)  
+   evidence：评估多模态大模型作为自主智能体的安全意识规划
+5. [Understanding Human Actions through the Lens of Executable Models](/202604/28/2604.18064v1-understanding-human-actions-through-the-lens-of-executable-models)  
    标签：评分：7.0/10、query:robot
-   evidence：用于机器人导航规划的可达性引导搜索
-9. [Frequency-guided Multi-level Reasoning for Scene Graph Generation in Video](/202604/27/2604.17298v1-frequency-guided-multi-level-reasoning-for-scene-graph-generation-in-video)  
-   标签：评分：6.0/10、query:q8
-   evidence：视频中物体关系的结构化语义表示
-10. [AnyLift: Scaling Motion Reconstruction from Internet Videos via 2D Diffusion](/202604/27/2604.17818v1-anylift-scaling-motion-reconstruction-from-internet-videos-via-2d-diffusion)  
-   标签：评分：6.0/10、query:profile-2
-   evidence：利用扩散模型从互联网视频中重建3D运动
-11. [WebUncertainty: Dual-Level Uncertainty Driven Planning and Reasoning For Autonomous Web Agent](/202604/27/2604.17821v1-webuncertainty-dual-level-uncertainty-driven-planning-and-reasoning-for-autonomous-web-agent)  
+   evidence：用于人类动作理解和零样本策略推理的可执行模型
+6. [OmniHuman: A Large-scale Dataset and Benchmark for Human-Centric Video Generation](/202604/28/2604.18326v1-omnihuman-a-large-scale-dataset-and-benchmark-for-human-centric-video-generation)  
+   标签：评分：7.0/10、query:q7
+   evidence：用于以人为中心的视频生成的大规模数据集
+7. [DAG-STL: A Hierarchical Framework for Zero-Shot Trajectory Planning under Signal Temporal Logic Specifications](/202604/28/2604.18343v1-dag-stl-a-hierarchical-framework-for-zero-shot-trajectory-planning-under-signal-temporal-logic-specifications)  
+   标签：评分：7.0/10、query:robot
+   evidence：未知动力学下零样本轨迹规划的分层框架
+8. [Using large language models for embodied planning introduces systematic safety risks](/202604/28/2604.18463v1-using-large-language-models-for-embodied-planning-introduces-systematic-safety-risks)  
+   标签：评分：7.0/10、query:robot
+   evidence：评估用于机器人规划的大语言模型的安全风险
+9. [WebUncertainty: Dual-Level Uncertainty Driven Planning and Reasoning For Autonomous Web Agent](/202604/28/2604.17821v2-webuncertainty-dual-level-uncertainty-driven-planning-and-reasoning-for-autonomous-web-agent)  
    标签：评分：6.0/10、query:robot
-   evidence：自主代理的预测性规划与推理
-12. [GS-STVSR: Ultra-Efficient Continuous Spatio-Temporal Video Super-Resolution via 2D Gaussian Splatting](/202604/27/2604.18047v1-gs-stvsr-ultra-efficient-continuous-spatio-temporal-video-super-resolution-via-2d-gaussian-splatting)  
-   标签：评分：6.0/10、query:q7
-   evidence：时空视频超分辨率与帧率增强
+   evidence：自主网络智能体的不确定性驱动规划
+10. [Learning to Credit the Right Steps: Objective-aware Process Optimization for Visual Generation](/202604/28/2604.19234v1-learning-to-credit-the-right-steps-objective-aware-process-optimization-for-visual-generation)  
+   标签：评分：6.0/10、query:profile-2
+   evidence：视觉生成模型的流程优化
+11. [Learning to Credit the Right Steps: Objective-aware Process Optimization for Visual Generation](/202604/28/2604.19234v2-learning-to-credit-the-right-steps-objective-aware-process-optimization-for-visual-generation)  
+   标签：评分：6.0/10、query:q9
+   evidence：使用强化学习优化视觉生成
+12. [MOSA: Motion-Guided Semantic Alignment for Dynamic Scene Graph Generation](/202604/28/2604.19631v1-mosa-motion-guided-semantic-alignment-for-dynamic-scene-graph-generation)  
+   标签：评分：6.0/10、query:q8
+   evidence：视频序列中的动态交互建模
 
 
 <div class="dpr-home-promo-card">

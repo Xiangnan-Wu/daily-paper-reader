@@ -1,0 +1,1202 @@
+Title: CF-VLA: Efficient Coarse-to-Fine Action Generation for Vision-Language-Action Policies
+
+URL Source: https://arxiv.org/pdf/2604.24622v1
+
+Published Time: Tue, 28 Apr 2026 02:22:07 GMT
+
+Number of Pages: 16
+
+Markdown Content:
+# CF-VLA: Efficient Coarse-to-Fine Action Generation for Vision-Language-Action Policies 
+
+# Fan Du 1,∗, Feng Yan 2,3,∗, Jianxiong Wu 3, Xinrun Xu 4, Weiye Zhang 3, Weinong Wang 2, Yu Guo 2, Bin Qian 3, Zhihai He 1, Fei Wang 2, Heng Yang 31Southern University of Science and Technology 2Xi’an Jiaotong University 
+
+3United Nova Technology 4University of Science and Technology of China 
+
+∗Equal contribution Performance 
+
+Coarse to Fine 
+
+Flow Matching 
+
+1x 2x 3x 4x 5x 
+
+6x 7x 8x 9x 10x 
+
+Coarse Fine 
+
+𝒩 (𝜇 , 𝜎 ) 𝜖 ̃ = 𝜖 − 𝑢 ,
+
+AP -Guided Noise Action Manifold Gaussian Noise 
+
+KL Loss 
+
+Step 1 Step 2 
+
+Step 
+
+Sampling Time 
+
+𝝅 𝟎 .𝟓 
+
+CTF 
+
+29.17 ms 
+
+7.81 ms 
+
+𝒕 ∗
+
+# Calvin 
+
+# Libero 
+
+# Real 
+
+75.40% Reduction 
+
+> 60%
+> 70%
+> 80%
+> 90%
+> 3.10
+> 3.70
+> 3.30
+> 3.50
+
+Calvin Real Libero 
+
+> MIP  (NFE=  2)
+> 𝝅 𝟎 .𝟓  (NFE=  10 )
+> CF -VLA  (NFE=  2)
+> 93.6%
+> 95.7%
+> 96.5%
+> 63.5%
+> 79.0%
+> 83.0%
+> 3.12
+> 3.52
+> 3.67
+
+Success Rate Avg. Len. 
+
+Figure 1: Teaser of CF-VLA. Standard flow matching requires multiple iterative steps to recover action structure from uninformative Gaussian noise. CF-VLA instead adopts a coarse-to-fine two-step process: a coarse stage constructs an action-prior-guided (AP-guided) noise initialization, followed by a single-step refinement. This design achieves a stronger efficiency–performance frontier across CALVIN, LIBERO, and real-robot settings, reducing action sampling latency by 75.4%. 
+
+## Abstract 
+
+Flow-based vision-language-action (VLA) policies offer strong ex-pressivity for action generation, but suffer from a fundamental inefficiency: multi-step inference is required to recover action struc-ture from uninformative Gaussian noise, leading to a poor effi-ciency–quality trade-off under real-time constraints. We address this issue by rethinking the role of the starting point in generative action modeling. Instead of shortening the sampling trajectory, we propose CF-VLA , a coarse-to-fine two-stage formulation that re-structures action generation into a coarse initialization step that constructs an action-aware starting point, followed by a single-step local refinement that corrects residual errors. Concretely, the coarse stage learns a conditional posterior over endpoint velocity to trans-form Gaussian noise into a structured initialization, while the fine stage performs a fixed-time refinement from this initialization. To stabilize training, we introduce a stepwise strategy that first learns a controlled coarse predictor and then performs joint optimization. Experiments on CALVIN and LIBERO show that our method es-tablishes a strong efficiency–performance frontier under low-NFE (Number of Function Evaluations) regimes: it consistently outper-forms existing NFE=2 methods, matches or surpasses the NFE=10 
+
+𝜋 0.5 baseline on several metrics, and reduces action sampling la-tency by 75.4%, and achieves the best average real-robot success rate of 83.0%, outperforming MIP by 19.5 points and 𝜋 0.5 by 4.0 points. These results suggest that structured, coarse-to-fine generation enables both strong performance and efficient inference. Our code is available at https://github.com/EmbodiedAI-RoboTron/CF-VLA. 
+
+## Keywords 
+
+Vision Language Action, Robot Manipulation, Coarse-to-Fine 
+
+## 1 Introduction 
+
+Flow-based VLA policies [ 1, 11 , 14 , 33 ] have recently emerged as a promising direction for robotic manipulation, with methods such as 𝜋 0.5 offering strong expressivity for modeling multimodal contin-uous actions. However, their practical deployment remains limited by a fundamental inefficiency: action generation starts from unin-formative Gaussian noise and requires multiple iterative refinement steps to recover meaningful structure, leading to a poor efficiency– quality trade-off under real-time constraints. A useful perspective on this limitation comes from the recent analysis of Liu et al. [ 24 ], who study oracle velocity in flow-based diffusion models and show that the target dynamics exhibit a two-stage structure: early-time evolution mainly performs navigation from the Gaussian prior toward relevant modes, whereas later-time dynamics become increasingly dominated by the nearest data sample and focus on refining fine-grained details. This observation 
+
+> arXiv:2604.24622v1 [cs.CV] 27 Apr 2026 Du et al.
+
+helps explain why aggressively reducing the number of sampling steps can make high-quality generation difficult: a small inference budget forces global transport and local correction to compete within the same truncated trajectory. Consistent with this view, recent work in generative robotic control [ 29 ] suggests that splitting inference into two MSE-supervised stages—a coarse, large-step update followed by a smaller corrective refinement—can already achieve performance on par with flow-based policies 𝜋 0 [1]. In this work, we revisit flow-based action generation from a coarse-to-fine perspective and argue that efficient generation re-quires restructuring the starting point rather than shortening the trajectory. We decompose the generation process into two explicit stages: (i) a coarse initialization stage that resolves the global mis-match between Gaussian noise and the action manifold by con-structing an AP-guided initialization, and (ii) a fine refinement stage that performs a single-step local correction to recover the final action. Concretely, the coarse stage learns a conditional pos-terior over endpoint velocity to transform Gaussian noise into an AP-guided initialization, while the fine stage performs a fixed-time refinement from this initialization. To stabilize training, we fur-ther introduce a stepwise optimization strategy that first learns a controlled coarse predictor and then switches to full joint training, ensuring that the refinement stage operates in a well-conditioned local regime. As illustrated in Figure 1, this design replaces iterative refinement from unstructured noise with a two-step pipeline of AP-guided initialization followed by local correction. Our method achieves a favorable balance between action qual-ity and efficiency under a strict two-step inference budget. On LIBERO [ 22 ] and CALVIN [ 28 ], it matches or surpasses the strong baseline 𝜋 0.5 [ 11 ] while significantly reducing computation, includ-ing a 75.4% reduction in action sampling latency. We further validate the method on real-robot manipulation, where CF-VLA achieves the best average success rate of 83.0%, outperforming MIP by 19.5 points and 𝜋 0.5 by 4.0 points, with additional gains on contact-rich and bimanual tasks. These results suggest that the efficiency bot-tleneck of flow-based policies lies in the structure of the starting point, rather than the length of the sampling trajectory. Overall, our contributions are threefold: (1) A coarse-to-fine two-stage VLA framework that explicitly separates global alignment and local refinement; the frame-work is plug-and-play and can be seamlessly applied to arbitrary flow-based VLA policies. (2) A variance-aware endpoint distribution formulation that transforms Gaussian noise into AP-guided initializations closer to the valid action manifold; (3) A stepwise training strategy that stabilizes cross-stage cou-pling and enables efficient low-step generation. 
+
+## 2 Related Work 
+
+Vision-language-action policies. Vision-language-action (VLA) policies [ 14 , 44 ] transfer the semantic grounding ability of large vision-language models to embodied control. RT-2 [ 2] established this paradigm, and OpenVLA [ 17 ] later provided a strong open-source baseline for VLA training and adaptation. More recently, 
+
+𝜋 0 [ 1] and 𝜋 0.5 [ 11 ] introduced flow-matching-based continuous action experts, showing the effectiveness of flow-based [ 21 , 25 ]action generation in VLA policies. Our work follows this line and focuses on improving action-generation efficiency under strict low-NFE budgets. 
+
+Generative action policies under low inference budgets. 
+
+Diffusion [ 5, 37 ] and flow-based policies [ 21 ] can model complex continuous action distributions, but usually require multiple de-noising [ 25 ] or integration steps at inference time, which limits closed-loop control efficiency. Under low inference budgets, the challenge is not only reducing computation, but also maintaining action quality when early predictions strongly affect later rollout behavior [32]. 
+
+Minimal iterative policies. Minimal Iterative Policy (MIP) [ 29 ]is most closely related to our setting. Under a 𝜋 0-aligned policy setup, it replaces the flow-matching action generator with a light-weight two-step iterative regression design and shows that such a minimal policy can achieve performance comparable to the origi-nal flow-based policy on challenging benchmarks. However, MIP mainly treats the two steps as iterative prediction and refinement, without explicitly learning an action-aware initialization distribu-tion. In contrast, CF-VLA assigns the first step to variance-aware coarse initialization and the second step to fixed-time local refine-ment, thereby explicitly separating start-point shaping from final recovery. 
+
+## 3 Coarse-to-Fine Two-Step Action Generation 3.1 Overview 
+
+We consider behavioral cloning for VLA policy learning from a dataset D = {( 𝑜 𝑖 , 𝑎 𝑖 )} 𝑁 𝑖 =1, where each observation 𝑜 consists of visual inputs, a language instruction, and the robot state, and 𝑎 ∈
+
+R𝐻 ×𝑑 denotes an action chunk of horizon 𝐻 with dimension 𝑑 . As a starting point, we adopt standard flow matching (FM) to model the conditional action distribution. [1, 21]. 
+
+Limitation of standard flow matching. Standard flow match-ing (FM) [ 21 ] defines a time-dependent velocity field 𝑣 𝜃 (𝑜, 𝑥 𝑡 , 𝑡 )
+
+along the linear interpolation 
+
+𝑥 𝑡 = 𝑡𝜖 + ( 1 − 𝑡 )𝑎, 𝑢 𝑡 = 𝜖 − 𝑎, (1) where 𝜖 ∼ N ( 0, 𝐼 ) and 𝑡 ∈ [ 0, 1].At inference time, actions are obtained by integrating this veloc-ity field from noise to action through multiple Euler steps. While expressive, this formulation introduces a structural in-efficiency. The induced dynamics are inherently heterogeneous: early-time evolution primarily performs large-scale transport from Gaussian noise toward the action distribution, whereas late-time evolution focuses on local refinement near valid actions [ 24 ]. How-ever, both regimes are parameterized by a single velocity field and executed through a homogeneous iterative solver [ 4, 21 ]. As a re-sult, the model repeatedly spends computation rediscovering coarse action structure from uninformative noise, even though this global alignment is largely shared across samples. Under strict inference budgets, this leads to a suboptimal efficiency–quality trade-off. 
+
+From global transport to AP-guided initialization. We at-tribute this inefficiency to a mismatch between the structure of the problem and the structure of the computation induced by expert demonstrations [ 19 , 42 ]. As illustrated in Figure 3, standard FM ignores this structure at initialization and reconstructs it through Coarse-to-Fine Two-Step VLA Phase II: Full Joint Optimization Phase I: Stability -Oriented Warm -Up 
+
+Action Expert VLM Backbone 
+
+# SigLIP (400M) + Gemma (2.6B)                                    
+
+> “Pick up the towel
+> and fold it into thirds
+> by making two
+> consecutive folds.”
+> “Grasp the plastic
+> bottle and tilt it to
+> pour the water into
+> the box.”
+> Action Expert 𝒕 Action Expert 𝒕 ∗
+> Velocity 𝝅 𝜽
+> 𝒖 Variance 𝝅 𝜽
+> 𝐯𝐚𝐫 Velocity 𝝅 𝜽
+> 𝒖
+> MSE
+> 𝑵 (𝒖 ,𝒗𝒂𝒓 )
+> Mean Var
+> Sampled
+> 𝑢 -
+> MSE
+> 𝒙 𝒕
+> 𝝅 𝜽
+> 𝒖 𝒐 ,𝒙 𝒕 ∗,𝒕 ∗−𝒖 𝟐
+> 𝟐
+> Action 𝒂 Noise 𝝐 𝟏 Obs 𝒐
+> Action Expert 𝒕
+> 𝜖 ̃=𝜖 −𝑢 -
+> Distribution 𝒒
+> Action Expert 𝒕 ∗
+> Velocity 𝝅 𝜽
+> 𝒖
+> 𝑳 𝒄𝒐𝒂𝒓𝒔𝒆
+> 𝑳 𝒇𝒊𝒏𝒆
+> 𝑳 𝒕𝒐𝒕𝒂𝒍 =
+> 𝑳 𝒇𝒊𝒏𝒆 +𝝀 𝑳 𝒄𝒐𝒂𝒓𝒔𝒆
+> KL
+> MSE
+
+Figure 2: Overview of CF-VLA. CF-VLA adopts a two-phase training strategy. Phase I is a stability-oriented warm-up stage that shapes endpoint velocity and variance prediction and trains the refinement branch on a controlled proxy input, avoiding unreliable coarse outputs at the beginning of optimization. Phase II then performs full joint optimization of the final coarse-to-fine mechanism: KL-supervised endpoint posterior matching transforms pure Gaussian noise into an AP-guided initialization, and a single-step refinement branch performs local correction to recover the target action. This two-phase design enables stable training and efficient two-step generation. Pure -Gaussian 
+
+Noise Initialization    
+
+> !(#,%)!(',%)
+
+GT Action 
+
+Manifold 
+
+Flow Matching 
+
+Start Point 
+
+CF (Ours) 
+
+Start Point 
+
+AP -Guided 
+
+Noise Initialization 
+
+KL 
+
+①
+
+# "!"#$ 
+
+MSE 
+
+②
+
+Figure 3: Geometric view of CF-VLA. Standard flow matching starts from pure Gaussian noise, forcing early steps to spend computation on global transport toward the task-conditioned action manifold. CF-VLA instead first builds an AP-guided initialization distribution with a KL-supervised coarse stage, then applies a single refinement stage to recover the ground-truth action. iterative transport at every rollout. To address this, we shift the focus from shortening the sampling trajectory to restructuring the starting point. Instead of repeatedly discovering the action manifold during inference, we propose to directly initialize generation in a neighborhood already aligned with it. Accordingly, our method decomposes action generation into two functional stages, as shown in Figure 2: 
+
+• Coarse initialization: construct an AP-guided initializa-tion distribution aligned with the action manifold; 
+
+• Fine refinement: perform a single local correction to re-cover the final action. Concretely, given an observation 𝑜 , we first sample Gaussian noise 𝜖 1 ∼ N ( 0, 𝐼 ). The coarse stage transforms 𝜖 1 into an AP-guided initialization ˜𝜖 that is biased toward the action manifold. The fine stage then applies a single refinement step from ˜𝜖 to predict the final action. This design fundamentally changes low-NFE generation. Stan-dard FM uses multiple steps to both discover a plausible action direction and refine it. In contrast, our method separates these roles: global alignment is handled once through initialization, while the limited computation budget is reserved for precise local correction. Yet training this decomposition from scratch can be unstable: early coarse predictions are disordered and Gaussian-like, mak-ing them poor refinement inputs. Phase I (Figure 2) introduces a stability-oriented warm-up stage, shaping endpoint velocity and variance, and supervising refinement on a proxy input rather than immature coarse outputs. 
+
+## 3.2 Endpoint Prior Modeling (Coarse Stage) 
+
+The goal of the coarse stage is not to predict the final action, but to shape the geometry of the AP-guided initialization distribution. For each training pair (𝑜, 𝑎 ), we sample endpoint noise 𝜖 1 ∼N ( 0, 𝐼 ) and define the endpoint target velocity 
+
+𝑢 𝑡 1 = 𝜖 1 − 𝑎. (2) We model a conditional posterior over this velocity: 
+
+𝑞 𝜃 (𝑢 | 𝑜, 𝜖 1) = N 𝜋 𝑢 𝜃 (𝑜, 𝜖 1, 1), 𝜋 var  
+
+> 𝜃
+
+(𝑜, 𝜖 1, 1) 𝐼 . (3) This posterior is matched to the target distribution: 
+
+𝑝 (𝑢 | 𝑜, 𝑎, 𝜖 1) = N ( 𝑢 𝑡 1 , 𝜎 2noise 𝐼 ) (4) where 𝜎 2noise is a tunable hyperparameter controlling the isotropic variance. We then optimize the KL objective 
+
+Lcoarse (𝜃 ) = E(𝑜,𝑎 ), 𝜖 1
+
+KL  𝑞 𝜃 (𝑢 | 𝑜, 𝜖 1) ∥ 𝑝 (𝑢 | 𝑜, 𝑎, 𝜖 1) . (5) This formulation explicitly treats the coarse stage as a distribu-tion shaping problem rather than point regression. The objective is Du et al. 
+
+to learn a stochastic, task-conditioned AP-guided initialization dis-tribution whose mass is concentrated near plausible actions, rather than collapsing to a deterministic estimate. The AP-guided initialization is then defined as 
+
+˜𝜖 = 𝜖 1 − ˆ𝑢, ˆ𝑢 ∼ 𝑞 𝜃 (𝑢 | 𝑜, 𝜖 1). (6) Compared with pure Gaussian noise, the mean of ˜𝜖 is already shifted toward the action manifold, providing a more informative starting point for subsequent refinement. This reduces the burden on the refinement stage, which no longer needs to recover global action structure from an uninformative Gaussian start. 
+
+## 3.3 Local Manifold Recovery (Fine Stage) 
+
+Once the AP-guided initialization distribution is reshaped, the prob-lem faced by the model changes fundamentally. The fine stage no longer needs to discover global action structure; instead, it operates in a local neighborhood around the target manifold. We therefore reformulate refinement as a local recovery problem. Given ˜𝜖 , we apply a single update at a fixed time 𝑡 𝑓 :
+
+Lfine (𝜃 ) = E(𝑜,𝑎 ), 𝜖 1, ˆ𝑢 
+
+h
+
+𝜋 𝑢 𝜃 (𝑜, ˜𝜖, 𝑡 𝑓 ) − ( ˜𝜖 − 𝑎 ) 22
+
+i
+
+. (7) This objective is appropriate because, under a well-shaped ini-tialization, the residual error lies in a locally smooth regime around the action manifold. In this regime, a single first-order update is sufficient to recover high-quality actions. This decomposition converts generation from a global transport problem into a local correction problem conditioned on a learned initialization. 
+
+## 3.4 Joint Objective 
+
+The overall objective combines the two roles: 
+
+L( 𝜃 ) = Lfine (𝜃 ) + 𝜆 Lcoarse (𝜃 ). (8) These two terms operate at different levels. The coarse loss shapes the geometry of the AP-guided initialization distribution, while the fine loss learns how to recover the final action from this AP-guided initialization. Removing either component breaks the decomposition: without coarse shaping, refinement must rediscover global structure; without refinement, the model cannot land on the action manifold. 
+
+## 3.5 Stepwise Training 
+
+The coarse-to-fine formulation introduces an asymmetric depen-dency: the effectiveness of the fine stage relies on the quality of the coarse initialization. Direct joint optimization is therefore unstable. 
+
+Phase I: Stabilization. We first train the endpoint representa-tion under controlled supervision, while exposing the refinement branch to a stable proxy distribution constructed by interpolating between noise and ground-truth actions. This phase does not yet realize the full coarse-to-fine mechanism, but ensures that both branches operate on well-conditioned inputs. 
+
+Phase II: Joint optimization. Once the coarse outputs become sufficiently structured, we switch to the full objective. At this stage, the refinement branch receives inputs generated by the learned coarse posterior, and joint optimization learns how distribution shaping and local recovery reinforce each other. 
+
+Algorithm 1 Stepwise training of CF-VLA                                                                                                          
+
+> Require: Dataset D={ ( 𝑜, 𝑎 ) } , warm-up weight 𝛼 , joint weight 𝜆 , fixed refinement state 𝑡 𝑓
+> 1: Initialize model parameters 𝜃
+> 2: Phase I: Stabilization warm-up
+> 3: repeat
+> 4: Sample a mini-batch { ( 𝑜 𝑖 , 𝑎 𝑖 ) } 𝐵 𝑖 =1and noise 𝜖 1∼ N ( 0, 𝐼 )
+> 5: Construct the controlled proxy input 𝑥 𝑡 𝑓 =𝑡 𝑓 𝜖 1+ ( 1−𝑡 𝑓 )𝑎
+> 6: Compute endpoint warm-up loss for velocity and variance prediction at (𝑜, 𝜖 1,1)
+> 7: Compute refinement proxy loss at (𝑜, 𝑥 𝑡 𝑓 , 𝑡 𝑓 )
+> 8: Update 𝜃 by minimizing
+> Lwarm =Lendpoint +𝛼 Lproxy
+> 9: until warm-up converges
+> 10: Phase II: Joint coarse-to-fine optimization
+> 11: repeat
+> 12: Sample a mini-batch { ( 𝑜 𝑖 , 𝑎 𝑖 ) } 𝐵 𝑖 =1and noise 𝜖 1∼ N ( 0, 𝐼 )
+> 13: Compute the endpoint target velocity 𝑢 𝑡 1=𝜖 1−𝑎
+> 14: Predict the endpoint posterior 𝑞 𝜃 (𝑢 |𝑜, 𝜖 1)
+> 15: Compute the coarse loss Lcoarse by KL matching to the target distri-bution
+> 16: Sample ˆ𝑢 ∼𝑞 𝜃 (𝑢 |𝑜, 𝜖 1)and form ˜𝜖 =𝜖 1−ˆ𝑢
+> 17: Use ˜𝜖 as the fine-stage input and compute Lfine at (𝑜, ˜𝜖, 𝑡 𝑓 )
+> 18: Update 𝜃 by minimizing
+> L=Lfine +𝜆 Lcoarse
+> 19: until convergence
+> 20: return trained parameters 𝜃
+
+This stepwise strategy follows directly from the structure of the problem, rather than being a heuristic training trick. 
+
+## 3.6 Algorithm Summary 
+
+For clarity, Algorithm 1 summarizes the stepwise training proce-dure while omitting formula expansions already defined above. In Phase I, we use the warm-up objective Lwarm = Lendpoint +𝛼 Lproxy ,where Lendpoint supervises endpoint velocity and variance predic-tion and Lproxy supervises the refinement branch on the controlled proxy input. Inference directly follows the forward path of Phase II: Gaussian noise is first transformed into AP-guided noise initial-ization through posterior sampling, and one refinement update is then applied to produce the final action. 
+
+## 4 Experiments 
+
+We evaluate CF-VLA from three complementary perspectives: (i) task success in simulation, (ii) inference efficiency, and (iii) gener-alization to real-robot settings. We first describe the training and evaluation setup, then present comparisons with prior methods on LIBERO and CALVIN under varying inference budgets, followed by analysis of action-generation latency and real-robot results. 
+
+Training and evaluation setup. We train all models on 8 NVIDIA A100 GPUs using PyTorch FSDP, with 2 samples per GPU (global batch size 16) and a learning rate of 5 × 10 −5. For CALVIN, we follow the standard long-horizon D →D protocol. For LIBERO, we replay-filter trajectories within each suite and retain successful trajectories for unified training, evaluating a checkpoint trained for 60,000 steps. Each simulation task is evaluated with 10 trials. For Coarse-to-Fine Two-Step VLA 
+
+Table 1: LIBERO simulation comparison with prior methods grouped by inference type and NFE. In the Aux. Mech. column, “-” indicates no explicit auxiliary mechanism. Other labels denote auxiliary mechanism categories including Plan, WM, and Backbone Params. ∗ indicates our reproductions trained on replay-filtered LIBERO data. 
+
+Method Venue, Year Aux. Mech. NFE Spatial Object Goal Long Avg. 
+
+Autoregressive methods 
+
+UniVLA [3] RSS, 2025 7B AR 96.5 96.8 95.6 92.0 95.2 UnifiedVLA [36] ICLR, 2026 WM+8.5B AR 95.4 98.8 93.6 94.0 95.5 OpenVLA-OFT (7B) [15] RSS, 2025 7B AR 97.6 98.4 97.9 94.5 97.1 VLA-Cache (7B) [39] NeurIPS, 2025 7B AR 98.3 97.5 98.3 95.4 97.4 
+
+NFE = 1 methods 
+
+PI-VLA [12] Symmetry, 2026 Plan+WM+7B 1 79.5 73.4 73.3 66.6 73.2 UniAct [48] CVPR, 2025 - 1 77.0 87.0 77.0 70.0 77.8 MolmoAct-7B-D [18] arXiv, 2025 Plan+7B 1 87.0 95.4 87.6 77.2 86.6 NinA (MLP) [35] NeurIPS WS, 2025 - 1 87.8 98.2 90.2 92.8 90.9 EveryDayVLA [6] ICRA subm., 2026 Plan+7B 1 96.8 95.6 91.0 82.0 91.4 
+
+NFE = 8/10 methods 
+
+DreamVLA [47] NeurIPS, 2025 WM 10 97.5 94.0 89.5 89.5 92.6 
+
+𝜋 ∗ 
+
+> 0.5
+
+[11] CoRL, 2025 3B 10 98.4 97.4 96.2 90.6 95.7 InstructVLA [41] ICLR, 2026 - 10 97.3 99.6 96.5 89.8 95.8 MemoryVLA [34] ICLR, 2026 7B 10 98.4 98.4 96.4 93.4 96.5 Flower VLA [30] CoRL, 2025 - 8 97.5 99.1 96.1 94.9 96.9 
+
+𝜋 0.5 [11] CoRL, 2025 3B 10 98.8 98.2 98.0 92.4 96.9 X-VLA [49] ICLR, 2026 - 10 98.2 98.6 97.8 97.6 98.1 Cosmos Policy [16] ICLR, 2026 Plan+WM 10 98.1 100.0 98.2 97.6 98.5 
+
+NFE = 20/100 methods 
+
+Dita [8] ICCV, 2025 - 20 84.2 96.3 85.4 63.8 82.4 CronusVLA [20] AAAI, 2026 7B 100 97.3 99.6 96.9 94.0 97.0 
+
+NFE = 2 methods 
+
+MIP ( 𝜋 0 arch.) [29] ICLR, 2026 3B 2 97.6 95.8 95.2 82.2 92.7 MIP ( 𝜋 0.5 arch.) ∗ [29] ICLR, 2026 3B 2 96.6 97.0 95.8 85.0 93.6 
+
+𝜋 ∗ 
+
+> 0.5
+
+(NFE=2) [11] CoRL, 2025 3B 2 97.2 93.6 98.0 90.4 94.8 CF-VLA (ours) - 3B 2 98.0 99.2 96.6 92.0 96.5 
+
+real-robot experiments, the number of trials is task-dependent and reported per task. We report per-suite average success rates. 
+
+Baselines. We compare CF-VLA with strong generative pol-icy baselines. Here, NFE denotes the number of iterative updates required at inference time. Rather than treating NFE as a mere im-plementation detail, we explicitly adopt it as a primary evaluation axis that reflects the amount of iterative corrective computation. 
+
+𝜋 0.5 [ 11 ] is a strong flow-matching VLA policy with iterative sampling and serves as the main performance reference. MIP [ 29 ]also follows a two-stage sampling pipeline and is therefore the most directly comparable low-NFE baseline. For fair comparison, all baselines marked with ∗ are reproduced using the same training data and aligned settings. We further include representative low-NFE, high-NFE, and autoregressive methods to position CF-VLA across different efficiency regimes. Notably, several high-performing baselines rely on additional auxiliary mechanisms, such as explicit planning modules(Plan), world models (WM), explicit 3D geometric inputs, or consistency distillation, as well as larger backbones, which increase system complexity and computational cost. In contrast, CF-VLA improves only the core action-generation process without introducing such extra modules, making the comparison more directly isolate the effect of the action-generation design. 
+
+## 4.1 Simulation Results 
+
+Benchmarks. We evaluate on two standard language-conditioned manipulation benchmarks: LIBERO and CALVIN. LIBERO mea-sures multi-task generalization across four Franka suites (Spatial, Object, Goal, Long), while CALVIN evaluates long-horizon instruc-tion following under the D →D setting, reporting success rates for completing 1 to 5 consecutive instructions and the average sequence length [26–28]. Tables 1 and 2 compare CF-VLA with prior methods under het-erogeneous NFE budgets. Lower-NFE methods rely heavily on the structural quality of their initialization, whereas higher-NFE meth-ods compensate for unstructured starting points via extended it-erative refinement. This distinction directly reflects the role of initialization in efficient action generation. 
+
+Results on LIBERO. CF-VLA demonstrates strong performance under strict low-NFE constraints. Under identical replay-filtered training settings, CF-VLA achieves an average success rate of 96.5 at NFE=2, outperforming the reproduced NFE=10 𝜋 0.5 baseline (95.7). Du et al. 
+
+Table 2: CALVIN long-horizon comparison with prior methods grouped by NFE. In the Aux. Mech. column, “-” indicates no explicit auxiliary mechanism. Other labels summarize auxiliary mechanisms such as Plan, WM, 3D spatial input, and Distill. Avg. Len. denotes the average sequence length. ∗ indicates results reproduced by us. 
+
+Method Venue, Year Aux. Mech. NFE 1 2 3 4 5 Avg. Len. 
+
+NFE = 1 methods 
+
+DeeR [45] NeurIPS, 2024 - 1 85.3 69.6 54.9 42.0 31.2 2.83 LCD [46] ICLR, 2024 Plan 1 88.7 69.9 54.5 42.7 32.2 2.88 DySL-VLA [43] DAC, 2026 - 1 89.4 71.9 53.9 42.0 32.0 2.89 TaKSIE [13] WACV, 2025 Plan 1 90.4 73.9 61.7 51.2 40.8 3.18 HULC++ [26] ICRA, 2023 Plan 1 93.0 79.0 64.0 52.0 40.0 3.30 RoboTron-Mani [40] ICCV, 2025 3D input 1 94.7 80.3 65.1 51.4 39.0 3.31 DaDu-Corki-SW [9] ISCA, 2025 - 1 92.3 80.0 67.4 56.6 45.8 3.42 RoboUniView (default) [23] arXiv, 2024 - 1 95.4 82.7 68.5 56.4 46.1 3.49 DTP [7] RA-L, 2025 Plan 1 92.4 81.9 70.2 60.3 50.9 3.55 
+
+NFE = 4 methods 
+
+LaDi-WM [10] arXiv, 2025 WM ≈4 92.7 83.1 72.1 61.2 54.1 3.63 LightDP [38] ICCV, 2025 Distill 4 93.7 84.5 74.1 64.4 55.6 3.72 
+
+NFE ≥ 10 methods 
+
+RoboTron-Mani (DiT) [40] arXiv, 2025 3D input >10 96.9 83.0 68.1 56.5 46.8 3.51 
+
+𝜋 ∗ 
+
+> 0.5
+
+[11] CoRL, 2025 3B 10 90.4 78.1 67.9 61.2 54.7 3.52 MDT (default) [31] RSS, 2024 - 10 93.3 82.4 71.5 60.9 51.1 3.59 
+
+NFE = 2 methods 
+
+MIP ( 𝜋 0.5 arch.) ∗ [29] ICLR, 2026 3B 2 86.7 72.1 59.6 51.2 42.4 3.12 
+
+𝜋 ∗ 
+
+> 0.5
+
+(NFE=2) [11] CoRL, 2025 3B 2 88.7 76.0 66.2 59.7 52.4 3.43 CF-VLA (ours) - 3B 2 91.1 80.2 71.8 66.2 57.3 3.67 
+
+This indicates that improving the structure of the starting point enables strong performance with substantially fewer refinement steps. Notably, this gain is achieved despite a smaller iterative bud-get, indicating that the benefit does not come merely from reducing computation but from allocating computation more effectively. The gains are concentrated on Object (+1.8) and Long (+1.4), which are particularly sensitive to structured and temporally con-sistent action generation. This observation is consistent with our design: by injecting action priors at initialization, CF-VLA reduces the burden of global alignment during inference and allows the limited refinement budget to focus on local correction. Within the NFE=2 regime, CF-VLA also outperforms both the reproduced MIP baseline and the NFE=2 𝜋 0.5 variant, establishing a strong efficiency–performance trade-off. While a performance gap remains compared to high-NFE methods such as Cosmos Policy (NFE=10), these methods typically rely on additional components or higher computational budgets. In contrast, CF-VLA achieves competitive results by restructuring the generation process itself, rather than increasing iterative computation. 
+
+Results on CALVIN. The advantage of CF-VLA becomes more pronounced as the task horizon increases. Compared with both the reproduced MIP baseline and the NFE=2 𝜋 0.5 model, CF-VLA con-sistently achieves higher success rates across all 1-to-5 instruction settings. In particular, it improves the 5-instruction success rate by 4.9 points (57.3 vs 52.4) and increases the average sequence length from 3.43 to 3.67. More importantly, CF-VLA exhibits strong performance even when compared across different NFE regimes. Compared to the best NFE=1 model, CF-VLA improves the 5-instruction success rate 
+
+Table 3: LIBERO simulation success rates (%). We report the main comparison and ablation variants of CF-VLA. ∗ indi-cates our reproductions trained on replay-filtered data. 
+
+Method Spatial Object Goal Long Avg. MIP ( 𝜋 0 arch.) 97.6 95.8 95.2 82.2 92.7 MIP ( 𝜋 0.5 arch.) ∗ 96.6 97.0 95.8 85.0 93.6 
+
+𝜋 ∗ 
+
+> 0.5
+
+98.4 97.4 96.2 90.6 95.7 CF-VLA (full) 98.0 99.2 96.6 92.0 96.5 
+
+CF-VLA w/o Phase II 96.4 98.4 95.8 87.8 94.6 CF-VLA w/o refine. 95.6 99.0 94.2 90.6 94.9 CF-VLA w/o var. mod. 97.4 98.4 96.4 88.4 95.2 CF-VLA w/o Phase I 98.4 99.0 95.0 90.8 95.8 
+
+by 6.4 points. It also achieves the highest success rates on the 4-and 5-instruction settings (66.2 and 57.3) among methods with significantly higher computational budgets, such as MDT (NFE=10) and LightDP (NFE=4). These results support our core hypothesis: separating global alignment from local refinement allows the model to operate in a well-conditioned regime, reducing error accumulation over long horizons. By initializing generation near the action manifold, CF-VLA enables the limited refinement budget to be spent on main-taining rollout consistency, rather than repeatedly correcting large deviations. Coarse-to-Fine Two-Step VLA 
+
+Table 4: CALVIN long-horizon success rates (%). We report both the main comparison and ablation variants of CF-VLA.  
+
+> ∗
+
+indicates results reproduced by us. 
+
+Method 1 2 3 4 5 Avg. L. MIP ( 𝜋 0 arch.) ∗ 85.6 70.5 57.1 48.9 40.4 3.03 MIP ( 𝜋 0.5 arch.) ∗ 86.7 72.1 59.6 51.2 42.4 3.12 
+
+𝜋 ∗ 
+
+> 0.5
+
+90.4 78.1 67.9 61.2 54.7 3.52 CF-VLA (full) 91.1 80.2 71.8 66.2 57.3 3.67 
+
+CF-VLA w/o Phase II 88.9 77.8 67.1 59.4 50.5 3.43 CF-VLA w/o refine. 88.4 77.5 67.7 59.3 50.6 3.44 CF-VLA w/o var. mod. 87.7 76.8 67.3 60.2 52.5 3.45 CF-VLA w/o Phase I 89.2 79.2 69.8 62.5 53.9 3.55 
+
+## 4.2 Ablation Studies 
+
+Tables 3 and 4 present ablations of CF-VLA on both LIBERO and CALVIN. Specifically, “w/o Phase I” removes the stabilization warm-up and directly trains the full objective, “w/o Phase II” reports the Phase-I-only checkpoint, “w/o var. mod.” removes variance prediction in the coarse stage, and “w/o refine.” removes the fine recovery step. Together, these variants isolate the roles of Phase-I stabilization, Phase-II joint coarse-to-fine optimization, variance modeling, and fine refinement. 
+
+Results on LIBERO. The full model achieves the best average success rate of 96.5, outperforming MIP ( 𝜋 0 arch.) by 3.8 points, MIP (𝜋 0.5 arch.) by 2.9 points, and 𝜋 ∗ 
+
+> 0.5
+
+by 0.8 points. Improvements are particularly evident on the Long suite (92.0 vs 90.6), which requires stable multi-step action consistency. Removing Phase I leads to a modest drop to 95.8, suggesting that the stabilization stage primarily improves optimization robustness rather than being the sole source of the final gains. In contrast, removing refinement, removing variance modeling, or removing Phase II degrades performance more significantly, reducing the average success rate to 94.9, 95.2, and 94.6, respectively. Notably, removing variance modeling leads to a pronounced drop on Long (92.0 → 88.4), indicating that capturing uncertainty in the coarse stage is critical for maintaining stable long-horizon behavior. These results align with our design: Phase I stabilizes the shared representation, Phase II couples coarse posterior prediction to fine recovery, the coarse stage shapes an AP-guided initialization distri-bution, and the fine stage performs local correction. Without Phase II, the refinement branch never learns on coarse posterior samples; without refinement, the model cannot reliably recover the final action from the AP-guided initialization; without variance mod-eling, the coarse stage collapses toward deterministic predictions, reducing the diversity and robustness of the initialization. 
+
+Results on CALVIN. A similar pattern is observed on CALVIN. The full model achieves the best long-horizon performance, increas-ing the average sequence length from 3.12 for MIP ( 𝜋 0.5 arch.) and 3.52 for 𝜋 ∗ 
+
+> 0.5
+
+to 3.67. Removing Phase I again causes only minor degradation, confirm-ing its role as a training stabilizer. In contrast, removing refinement, removing variance modeling, or removing Phase II consistently reduces performance to 3.43–3.45 and leads to larger drops on the more challenging 4- and 5-instruction settings. 2 6 10 
+
+91 
+
+92 
+
+93 
+
+94 
+
+95 
+
+96 
+
+97 
+
+98 
+
+CF-VLA (Ours) 
+
+## π0.5
+
+## π0
+
+MIP ( π0.5 arch.) 
+
+MIP ( π0 arch.)  
+
+> 7.81 ms
+> 29.17 ms
+> ↓75.4%
+> Time Reduction
+
+## NFE (Inference Steps) 
+
+> Success Rate (%)
+
+Figure 4: Latency–performance trade-off on LIBERO. We compare average success rate and action sampling latency across methods with different numbers of function evaluations (NFEs). CF-VLA attains a stronger low-NFE operating point, achieving 96.5 average success at 7.81 ms with two function evaluations, compared with 95.7 at 29.17 ms for the reproduced NFE=10 𝜋 0.5 baseline. This trend supports our core hypothesis: separating global align-ment (coarse stage) from local correction (fine stage) is essential for maintaining rollout consistency over long horizons. When either stage is removed, the model is forced to compensate for missing structure during inference, leading to increased error accumulation. 
+
+Summary. Overall, the ablations confirm that Phase-I stabi-lization, Phase-II coarse-to-fine coupling, variance-aware coarse initialization, and single-step refinement play distinct and comple-mentary roles. The coarse stage provides a well-structured starting point, the fine stage ensures accurate recovery, and the Phase-I stabilization strategy makes their interaction trainable. 
+
+Additional ablations. We further analyze two coarse-stage hyperparameters in the supplementary material, including the variance of the AP-guided noise initialization (noise_var) and the coarse-stage loss weight ( 𝜆 ). These experiments reveal a trade-off between coarse-stage diversity and downstream controllability, fur-ther supporting the role of the coarse stage as a distribution-shaping module. 
+
+## 4.3 Latency–Performance Frontier 
+
+To complement the NFE-based comparisons, we further analyze the latency–performance trade-off by measuring wall-clock action sampling time, excluding image encoding and KV-cache construc-tion. As shown in Figure 4, CF-VLA achieves 96.5 average success on LIBERO at NFE=2, surpassing the reproduced NFE=10 𝜋 0.5 baseline (95.7), while reducing action sampling latency from 29.17 ms to 7.81 ms (a 75.4% reduction). Importantly, other NFE=2 baselines in the figure remain sig-nificantly below CF-VLA in success rate. This indicates that the improvement cannot be attributed to a smaller number of function evaluations alone. Instead, it arises from a more effective use of the limited inference budget. Du et al. 
+
+This observation is consistent with our design principle: by trans-forming unstructured Gaussian noise into an AP-guided initializa-tion, CF-VLA shifts computation from global alignment to local refinement. As a result, fewer refinement steps are required, and each step operates in a better-conditioned regime, leading to both higher efficiency and improved action quality. These results highlight that efficiency in action generation is not solely determined by reducing NFE, but by restructuring how computation is allocated across different stages of the generation process. 
+
+## 4.4 Real-robot experiments 
+
+Real-robot experimental setup. We further validate CF-VLA on five representative real-robot manipulation tasks spanning basic grasping, pick-and-place, contact-rich wiping, liquid pouring, and bimanual deformable-object manipulation, as shown in Fig. 5. 1) “Pick X”: the robot grasps either a toy bread or a small bowl. Training: 25 demonstrations for each object. Evaluation: 20 trials for each object. During evaluation, we vary the initial object orientation and position, with the position perturbed within a 5 × 5 cm tabletop region. 2) “Put X into Box”: the robot grasps either a toy eggplant and places it into a blue box, or grasps a blackboard eraser and places it into a gray box. Training: 25 demonstrations for each variant. Evaluation: 20 trials for each variant. As in “Pick X,” we vary the initial orientation and position of the object during testing, with the position sampled within a 5 × 5 cm region. 3) “Wipe Table”: the robot uses a towel to wipe up liquid on the table, where the liquid is represented by paper scraps. Training: 40 demonstrations. Evaluation: 40 trials. 4) “Pour Water”: the robot grasps a plastic bottle and tilts it to pour the liquid into a container. Training: 40 demonstrations. Evaluation: 40 trials. 5) “Fold Towel into Thirds”: the robot uses both arms to fold a towel laid flat on the table into thirds. Training: 50 demonstrations. Evaluation: 40 trials. 
+
+Real-robot results. As shown in Fig. 5, CF-VLA achieves the best average success rate of 83.0%, outperforming MIP (63.5%) by 19.5 points and 𝜋 0.5 (79.0%) by 4.0 points. The simpler tasks (“Pick X” and “Put X into Box”) mainly serve as sanity checks, where all methods already achieve relatively high success rates. The more informative comparisons arise from the harder tasks—“Wipe Table,” “Pour Water,” and “Fold Towel into Thirds”—which require sustained contact, precise trajectory control, and coordinated bimanual execution. We analyze these results from two complementary perspectives. First, compared to the reproduced 𝜋 0.5 baseline (NFE=10), CF-VLA operates with a fivefold smaller inference budget (NFE=2) while still improving success rates on these challenging tasks by 2.5, 7.5, and 7.5 points, respectively. This indicates that the performance gain does not rely on extended iterative refinement, but rather on a more effective use of the available computation budget. Second, when compared to MIP under the same NFE=2 setting, CF-VLA improves “Wipe Table,” “Pour Water,” and “Fold Towel into Thirds” by 17.5, 27.5, and 35.0 points, respectively. Since both methods operate under identical inference budgets, this improve-ment can be attributed to differences in how the action generation process is structured. These results are consistent with our core design principle. By transforming unstructured Gaussian noise into an AP-guided ini-tialization, CF-VLA reduces the burden of global alignment during execution. This allows the single refinement step to focus on local error correction in a well-conditioned regime, which is particularly important for contact-rich and long-horizon manipulation tasks where small deviations can quickly accumulate. Importantly, the real-robot results mirror the trends observed in simulation, where CF-VLA shows increasing advantages on longer-horizon and more structured tasks. This consistency suggests that the proposed coarse-to-fine decomposition captures a property of action generation that generalizes beyond simulation environments. Overall, these experiments demonstrate that CF-VLA can trans-late a strict low-NFE budget into stable and robust real-world behav-ior, especially in scenarios requiring precise control and coordinated execution. This highlights its suitability for real-time, closed-loop robotic control under practical latency constraints. 
+
+## 5 Conclusion 
+
+We presented CF-VLA, a coarse-to-fine framework for efficient flow-based action generation in vision-language-action policies. By explicitly separating global alignment from local refinement, CF-VLA restructures the generation process into a two-step procedure consisting of AP-guided initialization and single-step correction. Across CALVIN, LIBERO, and real-robot benchmarks, CF-VLA achieves a strong balance between performance and efficiency, demonstrating that high-quality action generation does not require extensive iterative refinement. Instead, our results show that the structure of the starting point plays a central role in determining both efficiency and robustness. More broadly, this work suggests a shift in perspective for gener-ative control: rather than allocating computation uniformly along a sampling trajectory, it is more effective to organize computation according to the functional roles of global alignment and local correction. We hope this principle can guide the design of future low-latency VLA systems that are deployable in the real world. 
+
+## References     
+
+> [1] Kevin Black, Noah Brown, Danny Driess, Adnan Esmail, Michael Equi, Chelsea Finn, Niccolo Fusai, Lachy Groom, Karol Hausman, Brian Ichter, Szymon Jakubczak, Tim Jones, Liyiming Ke, Sergey Levine, Adrian Li-Bell, Mohith Mothukuri, Suraj Nair, Karl Pertsch, Lucy Xiaoyang Shi, James Tanner, Quan Vuong, Anna Walling, Haohuan Wang, and Ury Zhilinsky. 2026. 𝜋 0: A Vision-Language-Action Flow Model for General Robot Control. arXiv:2410.24164 [cs.LG] https://arxiv.org/abs/2410.24164 [2] Anthony Brohan, Noah Brown, Justice Carbajal, Yevgen Chebotar, Xi Chen, Krzysztof Choromanski, Tianli Ding, Danny Driess, Avinava Dubey, Chelsea Finn, Pete Florence, Chuyuan Fu, Montse Gonzalez Arenas, Keerthana Gopalakrishnan, Kehang Han, Karol Hausman, Alexander Herzog, Jasmine Hsu, Brian Ichter, Alex Irpan, Nikhil Joshi, Ryan Julian, Dmitry Kalashnikov, Yuheng Kuang, Isabel Leal, Lisa Lee, Tsang-Wei Edward Lee, Sergey Levine, Yao Lu, Henryk Michalewski, Igor Mordatch, Karl Pertsch, Kanishka Rao, Krista Reymann, Michael Ryoo, Grecia Salazar, Pannag Sanketi, Pierre Sermanet, Jaspiar Singh, Anikait Singh, Radu Soricut, Huong Tran, Vincent Vanhoucke, Quan Vuong, Ayzaan Wahid, Stefan Welker, Paul Wohlhart, Jialin Wu, Fei Xia, Ted Xiao, Peng Xu, Sichun Xu, Tianhe Yu, and Brianna Zitkovich. 2023. RT-2: Vision-Language-Action Models Transfer Web Knowledge to Robotic Control. arXiv:2307.15818 [cs.RO] https://arxiv.org/abs/2307.15818
+
+Coarse-to-Fine Two-Step VLA MIP (NFE = 2)
+
+CF -VLA (NFE = 2)
+
+𝝅 𝟎 .𝟓 (NFE = 10 )
+
+Average Pick Place Wipe Table Pour Water Fold Towel 
+
+into Thirds 
+
+40 
+
+60 
+
+80 
+
+100 
+
+63 .5
+
+90 .0
+
+80 .0
+
+67 .5
+
+47 .5
+
+32 .5
+
+79 .0
+
+95 .0 90 .0 82 .5
+
+67 .5 60 .0
+
+83 .0
+
+95 .0 92 .5 85 .0
+
+75 .0 67 .5
+
+> Success Rate (%)
+
+MIP pi05 CF-VLA 
+
+Average Pick Place Wipe Table Pour Water Fold Towel 
+
+into Thirds 
+
+40 
+
+60 
+
+80 
+
+100 
+
+63 .5
+
+90 .0
+
+80 .0
+
+67 .5
+
+47 .5
+
+32 .5
+
+79 .0
+
+95 .0 90 .0 82 .5
+
+67 .5 60 .0
+
+83 .0
+
+95 .0 92 .5 85 .0
+
+75 .0 67 .5
+
+> Success Rate (%)
+
+MIP pi05 CF-VLA 
+
+Average Pick Place Wipe Table Pour Water Fold Towel 
+
+into Thirds 
+
+40 
+
+60 
+
+80 
+
+100 
+
+63 .5
+
+90 .0
+
+80 .0
+
+67 .5
+
+47 .5
+
+32 .5
+
+79 .0
+
+95 .0 90 .0 82 .5
+
+67 .5 60 .0
+
+83 .0
+
+95 .0 92 .5 85 .0
+
+75 .0 67 .5
+
+> Success Rate (%)
+
+MIP pi05 CF-VLA 
+
+Average Pick Place Wipe Table Pour Water Fold Towel 
+
+into Thirds 
+
+40 
+
+60 
+
+80 
+
+100 
+
+63 .5
+
+90 .0
+
+80 .0
+
+67 .5
+
+47 .5
+
+32 .5
+
+79 .0
+
+95 .0 90 .0 82 .5
+
+67 .5 60 .0
+
+83 .0
+
+95 .0 92 .5 85 .0
+
+75 .0 67 .5
+
+> Success Rate (%)
+
+MIP pi05 CF-VLA 
+
+Average Pick Place Wipe Table Pour Water Fold Towel 
+
+into Thirds 
+
+40 
+
+60 
+
+80 
+
+100 
+
+63 .5
+
+90 .0
+
+80 .0
+
+67 .5
+
+47 .5
+
+32 .5
+
+79 .0
+
+95 .0 90 .0 82 .5
+
+67 .5 60 .0
+
+83 .0
+
+95 .0 92 .5 85 .0
+
+75 .0 67 .5
+
+> Success Rate (%)
+
+MIP pi05 CF-VLA 
+
+Average Pick Place Wipe Table Pour Water Fold Towel 
+
+into Thirds 
+
+40 
+
+60 
+
+80 
+
+100 
+
+63 .5
+
+90 .0
+
+80 .0
+
+67 .5
+
+47 .5
+
+32 .5
+
+79 .0
+
+95 .0 90 .0 82 .5
+
+67 .5 60 .0
+
+83 .0
+
+95 .0 92 .5 85 .0
+
+75 .0 67 .5
+
+> Success Rate (%)
+
+MIP pi05 CF-VLA 
+
+Average Pick Place Wipe Table Pour Water Fold Towel 
+
+into Thirds 
+
+40 
+
+60 
+
+80 
+
+100 
+
+63 .5
+
+90 .0
+
+80 .0
+
+67 .5
+
+47 .5
+
+32 .5
+
+79 .0
+
+95 .0 90 .0 82 .5
+
+67 .5 60 .0
+
+83 .0
+
+95 .0 92 .5 85 .0
+
+75 .0 67 .5
+
+> Success Rate (%)
+
+MIP pi05 CF-VLA 
+
+Average Pick Place Wipe Table Pour Water Fold Towel 
+
+into Thirds 
+
+40 
+
+60 
+
+80 
+
+100 
+
+63 .5
+
+90 .0
+
+80 .0
+
+67 .5
+
+47 .5
+
+32 .5
+
+79 .0
+
+95 .0 90 .0 82 .5
+
+67 .5 60 .0
+
+83 .0
+
+95 .0 92 .5 85 .0
+
+75 .0 67 .5
+
+> Success Rate (%)
+
+MIP pi05 CF-VLA 
+
+Average Pick Place Wipe Table Pour Water Fold Towel 
+
+into Thirds 
+
+40 
+
+60 
+
+80 
+
+100 
+
+63 .5
+
+90 .0
+
+80 .0
+
+67 .5
+
+47 .5
+
+32 .5
+
+79 .0
+
+95 .0 90 .0 82 .5
+
+67 .5 60 .0
+
+83 .0
+
+95 .0 92 .5 85 .0
+
+75 .0 67 .5
+
+> Success Rate (%)
+
+MIP pi05 CF-VLA 
+
+Figure 5: Real-robot results on five representative manipulation tasks. The top panel shows representative task snapshots, and the bottom panel compares success rates of MIP, 𝜋 0.5, and CF-VLA. CF-VLA achieves the best average success rate of 83.0% across five tasks, outperforming MIP (63.5%) by 19.5 points and 𝜋 0.5 (79.0%) by 4.0 points. 
+
+[3] Qingwen Bu, Yanting Yang, Jisong Cai, Shenyuan Gao, Guanghui Ren, Maoqing Yao, Ping Luo, and Hongyang Li. 2025. UniVLA: Learning to Act Anywhere with Task-centric Latent Actions. In Robotics: Science and Systems (RSS) . https: //arxiv.org/abs/2505.06111 [4] Ricky T. Q. Chen, Yulia Rubanova, Jesse Bettencourt, and David Duvenaud. 2019. Neural Ordinary Differential Equations. arXiv:1806.07366 [cs.LG] https: //arxiv.org/abs/1806.07366 [5] Cheng Chi, Zhenjia Xu, Siyuan Feng, Eric Cousineau, Yilun Du, Benjamin Burchfiel, Russ Tedrake, and Shuran Song. 2024. Diffusion Policy: Visuomo-tor Policy Learning via Action Diffusion. arXiv:2303.04137 [cs.RO] https: //arxiv.org/abs/2303.04137 [6] Samarth Chopra, Alex McMoil, Ben Carnovale, Evan Sokolson, Rajkumar Kuben-dran, and Samuel Dickerson. 2025. EveryDayVLA: A Vision-Language-Action Model for Affordable Robotic Manipulation. arXiv:2511.05397 [cs.RO] https: //arxiv.org/abs/2511.05397 [7] Shichao Fan, Quantao Yang, Yajie Liu, Kun Wu, Zhengping Che, Qingjie Liu, and Min Wan. 2025. Diffusion Trajectory-guided Policy for Long-horizon Robot Manipulation. arXiv:2502.10040 [cs.RO] doi:10.1109/LRA.2025.3619794 [8] Zhi Hou, Tianyi Zhang, Yuwen Xiong, Hengjun Pu, Chengyang Zhao, Ronglei Tong, Yu Qiao, Jifeng Dai, and Yuntao Chen. 2025. Diffusion Transformer Policy. arXiv:2410.15959 [cs.RO] https://arxiv.org/abs/2410.15959 [9] Yiyang Huang, Yuhui Hao, Bo Yu, Feng Yan, Yuxin Yang, Feng Min, Yinhe Han, Lin Ma, Shaoshan Liu, Qiang Liu, and Yiming Gan. 2025. Dadu-Corki: Algorithm-Architecture Co-Design for Embodied AI-powered Robotic Manipulation. In 
+
+Proceedings of the 52nd Annual International Symposium on Computer Architecture (SIGARCH ’25) . ACM, 327–343. doi:10.1145/3695053.3731099 [10] Yuhang Huang, Jiazhao Zhang, Shilong Zou, Xinwang Liu, Ruizhen Hu, and Kai Xu. 2025. LaDi-WM: A Latent Diffusion-based World Model for Predictive Manipulation. arXiv:2505.11528 [cs.RO] https://arxiv.org/abs/2505.11528 [11] Physical Intelligence, Kevin Black, Noah Brown, James Darpinian, Karan Dha-balia, Danny Driess, Adnan Esmail, Michael Equi, Chelsea Finn, Niccolo Fusai, Manuel Y. Galliker, Dibya Ghosh, Lachy Groom, Karol Hausman, Brian Ichter, Szy-mon Jakubczak, Tim Jones, Liyiming Ke, Devin LeBlanc, Sergey Levine, Adrian Li-Bell, Mohith Mothukuri, Suraj Nair, Karl Pertsch, Allen Z. Ren, Lucy Xiaoyang Shi, Laura Smith, Jost Tobias Springenberg, Kyle Stachowicz, James Tanner, Quan Vuong, Homer Walke, Anna Walling, Haohuan Wang, Lili Yu, and Ury Zhilinsky. 2025. 𝜋 0.5: a Vision-Language-Action Model with Open-World Generalization. arXiv:2504.16054 [cs.LG] https://arxiv.org/abs/2504.16054 [12] Yina Jian, Di Tian, Xuan-Jing Chen, Zhen-Yuan Wei, Chen-Wei Liang, and Mu-Jiang-Shan Wang. 2026. PI-VLA: Adaptive Symmetry-Aware Decision-Making for Long-Horizon Vision–Language–Action Manipulation. Symmetry 18, 3 (2026). doi:10.3390/sym18030394 [13] Xuhui Kang and Yen-Ling Kuo. 2024. Incorporating Task Progress Knowl-edge for Subgoal Generation in Robotic Manipulation through Image Edits. arXiv:2410.11013 [cs.RO] https://arxiv.org/abs/2410.11013 [14] Kento Kawaharazuka, Jihoon Oh, Jun Yamada, Ingmar Posner, and Yuke Zhu. 2025. Vision-Language-Action Models for Robotics: A Review Towards Real-World Applications. IEEE Access 13 (2025), 162467–162504. doi:10.1109/access. 2025.3609980 [15] Moo Jin Kim, Chelsea Finn, and Percy Liang. 2025. Fine-Tuning Vision-Language-Action Models: Optimizing Speed and Success. arXiv:2502.19645 [cs.RO] https: //arxiv.org/abs/2502.19645 [16] Moo Jin Kim, Yihuai Gao, Tsung-Yi Lin, Yen-Chen Lin, Yunhao Ge, Grace Lam, Percy Liang, Shuran Song, Ming-Yu Liu, Chelsea Finn, and Jinwei Gu. 2026. Cosmos Policy: Fine-Tuning Video Models for Visuomotor Control and Planning. arXiv:2601.16163 [cs.AI] https://arxiv.org/abs/2601.16163 [17] Moo Jin Kim, Karl Pertsch, Siddharth Karamcheti, Ted Xiao, Ashwin Balakrishna, Suraj Nair, Rafael Rafailov, Ethan Foster, Grace Lam, Pannag Sanketi, Quan Vuong, Thomas Kollar, Benjamin Burchfiel, Russ Tedrake, Dorsa Sadigh, Sergey Levine, Percy Liang, and Chelsea Finn. 2024. OpenVLA: An Open-Source Vision-Language-Action Model. arXiv:2406.09246 [cs.RO] https://arxiv.org/abs/2406. 09246 [18] Jason Lee, Jiafei Duan, Haoquan Fang, Yuquan Deng, Shuo Liu, Boyang Li, Bohan Fang, Jieyu Zhang, Yi Ru Wang, Sangho Lee, Winson Han, Wilbert Pumacay, Angelica Wu, Rose Hendrix, Karen Farley, Eli VanderBilt, Ali Farhadi, Dieter Fox, and Ranjay Krishna. 2025. MolmoAct: Action Reasoning Models that can Reason in Space. arXiv:2508.07917 [cs.RO] https://arxiv.org/abs/2508.07917 [19] Yonghyeon Lee, Byeongho Lee, Seungyeon Kim, and Frank C. Park. 2024. Motion Manifold Flow Primitives for Task-Conditioned Trajectory Generation under Complex Task-Motion Dependencies. arXiv:2407.19681 [cs.RO] https://arxiv. org/abs/2407.19681 [20] Hao Li, Shuai Yang, Yilun Chen, Xinyi Chen, Xiaoda Yang, Yang Tian, Hanqing Wang, Tai Wang, Dahua Lin, Feng Zhao, and Jiangmiao Pang. 2025. CronusVLA: Towards Efficient and Robust Manipulation via Multi-Frame Vision-Language-Action Modeling. arXiv:2506.19816 [cs.RO] https://arxiv.org/abs/2506.19816 [21] Yaron Lipman, Ricky T. Q. Chen, Heli Ben-Hamu, Maximilian Nickel, and Matt Le. 2023. Flow Matching for Generative Modeling. arXiv:2210.02747 [cs.LG] https://arxiv.org/abs/2210.02747 [22] Bo Liu, Yifeng Zhu, Chongkai Gao, Yihao Feng, Qiang Liu, Yuke Zhu, and Peter Stone. 2023. LIBERO: Benchmarking Knowledge Transfer for Lifelong Robot Learning. arXiv:2306.03310 [cs.AI] https://arxiv.org/abs/2306.03310 [23] Fanfan Liu, Feng Yan, Liming Zheng, Chengjian Feng, Yiyang Huang, and Lin Ma. 2024. RoboUniView: Visual-Language Model with Unified View Representation for Robotic Manipulation. arXiv:2406.18977 [cs.RO] https://arxiv.org/abs/2406. 18977 [24] Haoming Liu, Jinnuo Liu, Yanhao Li, Liuyang Bai, Yunkai Ji, Yuanhe Guo, Shenji Wan, and Hongyi Wen. 2025. From Navigation to Refinement: Revealing the Two-Stage Nature of Flow-based Diffusion Models through Oracle Velocity. arXiv:2512.02826 [cs.LG] https://arxiv.org/abs/2512.02826 [25] Cheng Lu, Yuhao Zhou, Fan Bao, Jianfei Chen, Chongxuan Li, and Jun Zhu. 2022. DPM-Solver: A Fast ODE Solver for Diffusion Probabilistic Model Sampling in Around 10 Steps. arXiv:2206.00927 [cs.LG] https://arxiv.org/abs/2206.00927 [26] Oier Mees, Jessica Borja-Diaz, and Wolfram Burgard. 2023. Grounding Language with Visual Affordances over Unstructured Data. arXiv:2210.01911 [cs.RO] https://arxiv.org/abs/2210.01911 [27] Oier Mees, Lukas Hermann, and Wolfram Burgard. 2022. What Matters in Language Conditioned Robotic Imitation Learning over Unstructured Data. arXiv:2204.06252 [cs.RO] https://arxiv.org/abs/2204.06252 [28] Oier Mees, Lukas Hermann, Erick Rosete-Beas, and Wolfram Burgard. 2022. CALVIN: A Benchmark for Language-Conditioned Policy Learning for Long-Horizon Robot Manipulation Tasks. arXiv:2112.03227 [cs.RO] https://arxiv.org/ abs/2112.03227 [29] Chaoyi Pan, Giri Anantharaman, Nai-Chieh Huang, Claire Jin, Daniel Pfrommer, Chenyang Yuan, Frank Permenter, Guannan Qu, Nicholas Boffi, Guanya Shi, and Max Simchowitz. 2026. Much Ado About Noising: Dispelling the Myths Du et al. 
+
+of Generative Robotic Control. arXiv:2512.01809 [cs.RO] https://arxiv.org/abs/ 2512.01809 [30] Moritz Reuss, Hongyi Zhou, Marcel Rühle, Ömer Erdinç Yağmurlu, Fabian Otto, and Rudolf Lioutikov. 2025. FLOWER: Democratizing Generalist Robot Policies with Efficient Vision-Language-Action Flow Policies. arXiv:2509.04996 [cs.RO] https://arxiv.org/abs/2509.04996 [31] Moritz Reuss, Ömer Erdinç Yağmurlu, Fabian Wenzel, and Rudolf Lioutikov. 2024. Multimodal Diffusion Transformer: Learning Versatile Behavior from Multimodal Goals. arXiv:2407.05996 [cs.RO] https://arxiv.org/abs/2407.05996 [32] Tim Salimans and Jonathan Ho. 2022. Progressive Distillation for Fast Sampling of Diffusion Models. arXiv:2202.00512 [cs.LG] https://arxiv.org/abs/2202.00512 [33] Rui Shao, Wei Li, Lingsen Zhang, Renshan Zhang, Zhiyang Liu, Ran Chen, and Liqiang Nie. 2025. Large VLM-based Vision-Language-Action Models for Robotic Manipulation: A Survey. arXiv:2508.13073 [cs.RO] https://arxiv.org/abs/2508. 13073 [34] Hao Shi, Bin Xie, Yingfei Liu, Lin Sun, Fengrong Liu, Tiancai Wang, Erjin Zhou, Haoqiang Fan, Xiangyu Zhang, and Gao Huang. 2026. MemoryVLA: Perceptual-Cognitive Memory in Vision-Language-Action Models for Robotic Manipulation. arXiv:2508.19236 [cs.RO] https://arxiv.org/abs/2508.19236 [35] Denis Tarasov, Alexander Nikulin, Ilya Zisman, Albina Klepach, Nikita Lyubaykin, Andrei Polubarov, Alexander Derevyagin, and Vladislav Kurenkov. 2025. NinA: Normalizing Flows in Action. Training VLA Models with Normaliz-ing Flows. arXiv:2508.16845 [cs.CV] https://arxiv.org/abs/2508.16845 [36] Yuqi Wang, Xinghang Li, Wenxuan Wang, Junbo Zhang, Yingyan Li, Yuntao Chen, Xinlong Wang, and Zhaoxiang Zhang. 2025. Unified Vision-Language-Action Model. arXiv:2506.19850 [cs.CV] https://arxiv.org/abs/2506.19850 [37] Rosa Wolf, Yitian Shi, Sheng Liu, and Rania Rayyes. 2025. Diffusion Models for Robotic Manipulation: A Survey. arXiv:2504.08438 [cs.RO] https://arxiv.org/abs/ 2504.08438 [38] Yiming Wu, Huan Wang, Zhenghao Chen, Jianxin Pang, and Dong Xu. 2025. On-Device Diffusion Transformer Policy for Efficient Robot Manipulation. arXiv:2508.00697 [cs.RO] https://arxiv.org/abs/2508.00697 [39] Siyu Xu, Yunke Wang, Chenghao Xia, Dihao Zhu, Tao Huang, and Chang Xu. 2025. VLA-Cache: Efficient Vision-Language-Action Manipulation via Adaptive Token Caching. arXiv:2502.02175 [cs.RO] https://arxiv.org/abs/2502.02175 [40] Feng Yan, Fanfan Liu, Liming Zheng, Yufeng Zhong, Yiyang Huang, Zechao Guan, Chengjian Feng, and Lin Ma. 2025. RoboTron-Mani: All-in-One Multimodal Large Model for Robotic Manipulation. arXiv:2412.07215 [cs.RO] https://arxiv.org/ abs/2412.07215 [41] Shuai Yang, Hao Li, Bin Wang, Yilun Chen, Yang Tian, Tai Wang, Hanqing Wang, Feng Zhao, Yiyi Liao, and Jiangmiao Pang. 2026. InstructVLA: Vision-Language-Action Instruction Tuning from Understanding to Manipulation. arXiv:2507.17520 [cs.RO] https://arxiv.org/abs/2507.17520 [42] Yandan Yang, Shuang Zeng, Tong Lin, Xinyuan Chang, Dekang Qi, Junjin Xiao, Haoyun Liu, Ronghan Chen, Yuzhi Chen, Dongjie Huo, Feng Xiong, Xing Wei, Zhiheng Ma, and Mu Xu. 2026. ABot-M0: VLA Foundation Model for Robotic Manipulation with Action Manifold Learning. arXiv:2602.11236 [cs.CV] https: //arxiv.org/abs/2602.11236 [43] Zebin Yang, Yijiahao Qi, Tong Xie, Bo Yu, Shaoshan Liu, and Meng Li. 2026. DySL-VLA: Efficient Vision-Language-Action Model Inference via Dynamic-Static Layer-Skipping for Robot Manipulation. arXiv:2602.22896 [cs.RO] https: //arxiv.org/abs/2602.22896 [44] Zhaoshu Yu, Bo Wang, Pengpeng Zeng, Haonan Zhang, Ji Zhang, Zheng Wang, Lianli Gao, Jingkuan Song, Nicu Sebe, and Heng Tao Shen. 2026. A Survey on Efficient Vision-Language-Action Models. arXiv:2510.24795 [cs.CV] https: //arxiv.org/abs/2510.24795 [45] Yang Yue, Yulin Wang, Bingyi Kang, Yizeng Han, Shenzhi Wang, Shiji Song, Jiashi Feng, and Gao Huang. 2024. DeeR-VLA: Dynamic Inference of Multimodal Large Language Models for Efficient Robot Execution. arXiv:2411.02359 [cs.RO] https://arxiv.org/abs/2411.02359 [46] Edwin Zhang, Yujie Lu, Shinda Huang, William Wang, and Amy Zhang. 2024. Language Control Diffusion: Efficiently Scaling through Space, Time, and Tasks. arXiv:2210.15629 [cs.LG] https://arxiv.org/abs/2210.15629 [47] Wenyao Zhang, Hongsi Liu, Zekun Qi, Yunnan Wang, Xinqiang Yu, Jiazhao Zhang, Runpei Dong, Jiawei He, Fan Lu, He Wang, Zhizheng Zhang, Li Yi, Wenjun Zeng, and Xin Jin. 2025. DreamVLA: A Vision-Language-Action Model Dreamed with Comprehensive World Knowledge. arXiv:2507.04447 [cs.CV] https://arxiv.org/abs/2507.04447 [48] Jinliang Zheng, Jianxiong Li, Dongxiu Liu, Yinan Zheng, Zhihao Wang, Zhonghong Ou, Yu Liu, Jingjing Liu, Ya-Qin Zhang, and Xianyuan Zhan. 2025. Universal Actions for Enhanced Embodied Foundation Models. arXiv:2501.10105 [cs.RO] https://arxiv.org/abs/2501.10105 [49] Jinliang Zheng, Jianxiong Li, Zhihao Wang, Dongxiu Liu, Xirui Kang, Yuchun Feng, Yinan Zheng, Jiayin Zou, Yilun Chen, Jia Zeng, Ya-Qin Zhang, Jiangmiao Pang, Jingjing Liu, Tai Wang, and Xianyuan Zhan. 2025. X-VLA: Soft-Prompted Transformer as Scalable Cross-Embodiment Vision-Language-Action Model. arXiv:2510.10274 [cs.RO] https://arxiv.org/abs/2510.10274 Coarse-to-Fine Two-Step VLA 
+
+## Supplementary Material 
+
+Scope and how to read this appendix. This appendix comple-ments the main paper from five angles: cross-backbone transfer, additional coarse-stage ablations, representative real-robot cases, action-sampling latency, and an implementation-oriented walk-through of the reference two-stage policy. Unless otherwise noted, 𝜎 2noise denotes the shared coarse noise variance implemented by noise_var , 𝛾 denotes the Phase I log-variance-matching coefficient ( loss_logvar_weight ), and 𝜆 I, 𝜆 II 
+
+denote the Phase I/Phase II versions of loss_1stg_weight ; in Sec-tion B.4, KL and NLL denote the two alternative Phase II coarse objectives, while Section D details the latency of the coarse and fine inference steps of CF-VLA. Readers mainly interested in plug-and-play transfer may start with Section A; coarse-stage sensitivity with Section B; real-robot qualitative evidence with Section C; efficiency accounting with Section D; and code-level correspondence with Section E. 
+
+## A Cross-Backbone Plug-and-Play Validation A.1 Experimental setup for an alternative backbone 
+
+We test whether CF-VLA is tied to the original PI-style backbone by porting the same two-stage action generator to the PaliGemma 2 checkpoint paligemma2-3b-mix-224. The main paper and the refer-ence 𝜋 0.5 reproduction both use the original PaliGemma backbone from the same SigLIP+Gemma family. By contrast, the alternative backbone used here is a more general second-generation VLM with a Gemma 2 base, 3B scale, 224 × 224 image inputs, and mixed-task tuning. To isolate backbone transfer from other factors, we keep the replay-filtered LIBERO data, training steps, batch size, action hori-zon, NFE budget, evaluation protocol, and action-generation objec-tive unchanged. The goal of this appendix experiment is therefore not to claim that the newer backbone is categorically stronger, but to test whether the coarse-to-fine mechanism still improves action generation when the underlying VLM stack is replaced. When porting the PI-style two-stage policy to the alternative stack, we apply only interface-level compatibility edits. The model still consumes the same observation fields ( image , wrist_image ,
+
+state , and the language prompt), the action branch is aligned to the backbone text hidden size through lightweight linear projec-tions, the tokenizer is replaced with the HuggingFace tokenizer associated with the VLA model, and the action head remains light-weight, predicting Gaussian statistics for the action suffix without introducing new planning or memory modules. 
+
+## A.2 Results and discussion 
+
+Table 5 reports all compared action-expert structures under the same alternative PaliGemma 2 backbone. The overall ranking re-mains consistent with the claim in the main paper: the CF-VLA action expert outperforms the direct Flow Matching baseline and MIP on average LIBERO success, achieving 94.6% versus 93.9% and 91.1%, respectively. The largest relative gain appears on the Long suite, where the structured coarse initialization is most helpful under a low-step budget. 
+
+Table 5: LIBERO success rates (%) on the alternative PaliGemma 2 backbone. 
+
+Action Expert Spatial Object Goal Long Avg. MIP 95.4 94.6 94.8 79.6 91.1 Flow Matching 98.4 96.0 97.0 84.2 93.9 CF-VLA (full) 98.2 97.2 97.8 85.2 94.6 
+
+CF-VLA w/o Phase II 96.6 94.8 96.2 79.4 91.8 CF-VLA w/o refine. 95.4 96.2 94.8 82.8 92.3 CF-VLA w/o var. mod. 97.0 96.6 96.8 82.0 93.1 CF-VLA w/o Phase I 98.4 97.2 96.2 84.0 94.0 
+
+The ablations show the same qualitative picture as on the original backbone. Removing Phase II causes the largest drop (94.6 → 91.8), while removing refinement or variance modeling also degrades performance to 92.3 and 93.1, respectively. Removing Phase I leads to a smaller but still consistent decrease to 94.0, suggesting that the warm-up phase remains useful for stabilization even when the backbone changes. Overall, this experiment does not argue that the alternative PaliGemma 2 checkpoint is universally stronger than the original backbone. Instead, it shows that the coarse-to-fine gain is preserved after replacing the underlying VLM stack and making only lim-ited interface-level changes. In this sense, the result supports the plug-and-play claim of CF-VLA: the improvement comes from the action-generation mechanism itself rather than from a backbone-specific trick. 
+
+## B Additional Coarse-Stage Ablations 
+
+This section analyzes four coarse-stage implementation hyperpa-rameters: the shared noise variance 𝜎 2noise , the Phase I log-variance coefficient 𝛾 , and the phase-specific coarse-loss weights 𝜆 I and 𝜆 II .We also include one objective-level ablation that replaces the default Phase II KL coarse loss with an NLL alternative. All hyperparameter tables below list the full four-parameter tuple (𝛾, 𝜎 2noise , 𝜆 I, 𝜆 II ), with boldface marking the parameter varied in the corresponding sub-section. We report the LIBERO average success rate under the same evaluation protocol used in the main paper. The best configuration in all three sweeps matches the default setting used in the main paper. 
+
+Meaning of the four tuned parameters. For readability, we sum-marize the role of each ablated parameter before presenting the sweeps. 
+
+Phase I log-variance coefficient ( 𝛾 ). In the effective Phase I path, 𝛾 corresponds to loss_logvar_weight and weights the extra log-variance-matching term inside the Phase I coarse loss: 
+
+LI 
+
+> coarse
+
+= E
+
+h
+
+𝑢 𝑡 1 − 𝜇 𝜃  
+
+> 22
+
++ 𝛾 log 𝜎 2noise − log 𝜎 2
+
+> 𝜃
+> 22
+
+i
+
+. (9) Here 𝜇 𝜃 and 𝜎 2 
+
+> 𝜃
+
+denote the predicted coarse mean and variance. The coefficient 𝛾 therefore controls how strongly Phase I calibrates the predicted coarse log-variance toward the target variance. 
+
+Coarse target variance ( 𝜎 2noise ). This parameter is the shared 
+
+noise_var used in both training phases. Its role can be written Du et al. 
+
+Table 6: 𝜎 2noise (noise_var ) sweep on LIBERO Avg. (%); bold denotes the varied entry.                         
+
+> 𝛾 𝜎 2noise 𝜆 I𝜆 II Avg. 0.01 0.005 0.1 0.1 95.3 0.01 0.01 0.1 0.1 95.8 0.01 0.01235 0.1 0.1 96.5
+> 0.01 0.02 0.1 0.1 96.1 0.01 0.04 0.1 0.1 96.2
+
+explicitly in the two phase-specific coarse objectives as 
+
+LI 
+
+> coarse
+
+= E
+
+h
+
+𝑢 𝑡 1 − 𝜇 𝜃  
+
+> 22
+
++ 𝛾 log 𝜎 2noise − log 𝜎 2
+
+> 𝜃
+> 22
+
+i
+
+, (10) 
+
+LII  
+
+> coarse
+
+= KL  𝑞 𝜃 (· | 𝑜, 𝜖 1) N ( 𝑢 𝑡 1 , 𝜎 2noise 𝐼 ) . (11) Thus, in Phase I the same 𝜎 2noise defines the target log-variance, while in Phase II it defines the target Gaussian variance for KL matching. It therefore controls how concentrated or spread the coarse initialization distribution is throughout both phases. 
+
+Phase-specific coarse weights ( 𝜆 I and 𝜆 II ). When the two training phases are distinguished explicitly, we use 𝜆 I and 𝜆 II for the Phase I and Phase II versions of loss_1stg_weight , respectively. Their effective code-level objectives can be written as 
+
+LI = LI 
+
+> fine
+
++ 𝜆 I LI
+
+> coarse
+
+, (12) 
+
+LII = LII  
+
+> fine
+
++ 𝜆 II LII 
+
+> coarse
+
+. (13) Here 𝜆 I weights the Phase I MSE-based coarse objective, while 𝜆 II 
+
+weights the Phase II KL-based coarse objective. In contrast, loss_ logvar_weight is the separate Phase-I-only coefficient already denoted above by 𝛾 .
+
+## B.1 Effect of 𝜎 2noise 
+
+Table 6 shows that a moderate shared coarse variance gives the best trade-off between diversity and controllability. When 𝜎 2noise is too small (0.005–0.01), both phases operate with an overly concentrated coarse target: Phase I calibrates toward a narrow log-variance target, and Phase II matches a narrow KL target Gaussian. This makes the AP-guided initialization closer to a deterministic starting point and reduces the diversity available to the fine stage. Increasing the variance to 0.01235 yields the best result. Larger values (0.02–0.04) preserve broad coverage, but they slightly weaken downstream controllability because both phases now encourage a broader coarse spread that the refinement stage must later correct. 
+
+## B.2 Effect of 𝛾 
+
+As shown in Table 7, tuning 𝛾 calibrates how strongly Phase I matches the predicted coarse log-variance to the target log 𝜎 2noise .When 𝛾 is too small (e.g., 0.001–0.005), variance calibration is weak, so the coarse posterior spread becomes less well aligned with the intended target distribution. Increasing 𝛾 to 0.01 gives the best result. Larger values (e.g., 0.02–0.1) over-constrain this variance term and begin to hurt the learned endpoint representation, reducing overall success. The best performance therefore appears at an intermediate setting, indicating that log-variance calibration is helpful when it regularizes the coarse branch without dominating it. 
+
+Table 7: 𝛾 (loss_logvar_weight ) sweep on LIBERO Avg. (%); bold denotes the varied entry.                                     
+
+> 𝛾 𝜎 2noise 𝜆 I𝜆 II Avg.
+> 0.001 0.01235 0.1 0.1 95.4
+> 0.005 0.01235 0.1 0.1 96.0
+> 0.01 0.01235 0.1 0.1 96.5 0.01235 0.01235 0.1 0.1 96.3
+> 0.02 0.01235 0.1 0.1 94.9
+> 0.04 0.01235 0.1 0.1 95.8
+> 0.05 0.01235 0.1 0.1 95.4
+> 0.1 0.01235 0.1 0.1 94.8
+
+Table 8: 𝜆 I, 𝜆 II sweep on LIBERO Avg. (%): matched pairs (top) and asymmetric tweaks (bottom); bold denotes varied entries.                                             
+
+> 𝛾 𝜎 2noise 𝜆 I𝜆 II Avg. 0.01 0.01235 0.01 0.01 94.6 0.01 0.01235 0.05 0.05 95.4 0.01 0.01235 0.1 0.1 96.5
+> 0.01 0.01235 0.2 0.2 95.1 0.01 0.01235 1194.4 0.01 0.01235 0.1 0.05 95.6 0.01 0.01235 0.05 0.1 95.5 0.01 0.01235 0.2 0.1 95.0 0.01 0.01235 0.1 0.2 94.9 0.01 0.01235 10.1 94.5
+
+## B.3 Effect of 𝜆 I and 𝜆 II 
+
+Table 8 shows that moderate phase-specific coarse-stage weights are preferable to either weak or overly strong weighting. Here 
+
+𝜆 I and 𝜆 II are the Phase I and Phase II versions of loss_1stg_ weight . The matched setting (𝜆 I, 𝜆 II ) = (0.1, 0.1) yields the best result, while reducing both to (0.01 , 0.01 ) or increasing both to (1, 1)
+
+lowers the average success rate to 94.6 and 94.4, respectively. One-sided perturbations are slightly less harmful than large symmetric shifts, but they still underperform the balanced default, suggesting that both the Phase I warm-up objective and the Phase II coupled objective benefit from balanced coarse-stage weighting. 
+
+## B.4 Effect of the Phase II coarse objective 
+
+Beyond hyperparameter sweeps, we also compare two Phase II coarse objectives. The default KL loss matches the predicted coarse posterior to a target Gaussian, whereas the NLL variant directly maximizes the likelihood of the target sample under the predicted Gaussian. For clarity, the Goal-suite score of the full/default CF-VLA model should be 96.6; the 96.4 value reported in the main paper is a typo-graphical error, while the rounded average remains 96.5. Table 9 Coarse-to-Fine Two-Step VLA 
+
+Table 9: Phase II coarse-objective ablation on LIBERO (%).                
+
+> Phase II coarse objective Spatial Object Goal Long Avg. KL (default) 98.0 99.2 96.6 92.0 96.5
+> NLL 97.4 93.0 99.0 81.2 92.7
+
+shows that replacing KL with NLL lowers the average LIBERO success rate from 96.5 to 92.7, with the largest drop on Long (92.0 
+
+→ 81.2). This suggests that distribution-level KL matching is bet-ter suited to learning the coarse posterior used to initialize the downstream low-step refinement stage. Taken together, Tables 6, 7, 8, and 9 support the interpretation in the main paper: CF-VLA works best when the coarse stage is stochastic enough to cover plausible action modes, its variance is calibrated to a moderate target spread, the two phase-specific coarse-stage weights remain moderate and balanced across training, and the Phase II coarse branch is trained with distribution-level KL matching rather than the NLL alternative. 
+
+## C Real-Robot Cases and Typical Failure Analysis C.1 Supplementary video overview 
+
+We provide a supplementary real-robot video in the file Real-Robot Case.mov . The video contains representative cases from the real-robot experiments discussed in the main paper and is organized in the following order: Fold Towel into Thirds , Pour Water , Put X into Box , Wipe Table , and Pick X . Due to the 50 MB size limit imposed on the supplementary materials, the video shows only representative cases illustrating both successes and typical failures. 
+
+## C.2 Representative cases 
+
+The Fold Towel into Thirds segment includes one successful CF-VLA case, one failed CF-VLA case, and one successful MIP case. The Pour Water segment includes one successful CF-VLA case and one failed 
+
+𝜋 0.5 case. For Pick X , we include three successful CF-VLA variants that differ in object identity and initial object orientation. The re-maining segments primarily show successful CF-VLA executions on 
+
+Put X into Box and Wipe Table , complementing the Pick X variants and illustrating stable execution across grasping, pick-and-place, contact-rich wiping, and longer-horizon manipulation. 
+
+## C.3 Typical failure analysis 
+
+The failed Fold Towel into Thirds case highlights a characteristic dif-ficulty of bimanual deformable manipulation. After lifting the towel, the robot may release the grippers before reaching the intended folding point. In practice, this is also one of the hardest moments to annotate consistently during teleoperated data collection, because the correct release timing depends on subtle alignment between both end-effectors and the cloth state. The failed Pour Water case illustrates a different but equally typical failure source: the bottle is not aligned with the container opening before pouring. Our inter-pretation is that the wrist camera becomes partially occluded by the bottle itself, reducing the visibility of the target container and making the final pouring position harder to localize accurately. 
+
+## D Action-Sampling Latency Details 
+
+This section provides additional details for the action-sampling latency results reported in the main paper. We measure action-generation latency for CF-VLA and 𝜋 0.5 over 500 complete rollouts on LIBERO Spatial using a single NVIDIA A100 GPU, while keeping all other variables unchanged. Timing starts after prefix genera-tion (visual-language encoding and KV-cache construction) and immediately before action generation, and ends once action gen-eration is complete. The reported numbers therefore isolate the action-sampling stage rather than the shared prefix cost. 
+
+Table 10: Average action-sampling latency on LIBERO Spatial 
+
+over 500 rollouts (ms).          
+
+> Method Coarse step Fine step(s) Total action sampling CF-VLA 3.78 4.03 7.81
+> 𝜋 0.5–29.17 29.17
+
+CF-VLA spends 3.78 ms on the coarse step and 4.03 ms on the fine step on average, yielding a total action-sampling latency of 7.81 ms. By contrast, 𝜋 0.5 has no separate coarse step, so the coarse step entry is marked as “–”. Its iterative denoising process can instead be viewed as repeatedly applying the fine steps of CF-VLA for 10 iterations. Therefore, for 𝜋 0.5, the values in the fine step and Total columns are both 29.17 ms under the same timing rule. 
+
+## E Core Implementation Appendix E.1 Code map 
+
+The reference two-stage policy lives in 
+
+code/pi_2stg_pytorch.py (class Pi02stgPytorch ). For concreteness, the walkthrough below is based on the implementation built on top of the 𝜋 0.5 codebase, but the same coarse-to-fine design is not tied to that specific stack and can also be instantiated on other policy frameworks with analogous prefix/suffix action-generation interfaces. At a high level, a 
+
+𝜋 0.5-style policy can be read in three blocks. First, embed_prefix 
+
+converts image and language inputs into prefix tokens and runs a cached VLM forward pass. Second, embed_suffix constructs the action-side tokens consumed by the expert trunk, injecting timestep information while reusing the prefix context. Third, 
+
+forward() and sample_actions() repeatedly call the suffix path while reusing the cached prefix states, so most action-generation logic lives on the suffix side. The two-stage implementation keeps this overall scaffold and modifies the places that matter for CF-VLA. Relative to a plain 𝜋 0.5 policy, Pi02stgPytorch adds a Gaussian prediction head for coarse initialization, inserts an explicit coarse stage before the refinement stage inside forward() 
+
+and sample_actions() , and exposes phase-specific switches in 
+
+model_kwargs so the same backbone can realize both the Phase I warm-up path and the Phase II coupled path. 
+
+• Shared 𝜋 0.5 prefix path. embed_prefix builds prefix tokens from images and language. A cached forward through paligemma_with_expert yields 
+
+past_key_values for the action expert. 
+
+• Shared 𝜋 0.5 suffix path. embed_suffix builds action and time embeddings; forward_suffix and denoise_step Du et al. 
+
+run the expert trunk on suffix tokens while attending to the cached prefix. 
+
+• New Gaussian posterior head. Mean and log-variance come from action_out_proj and 
+
+action_out_proj_logvar , packed into 
+
+DiagonalGaussianDistribution , which implements 
+
+mode() , sample() , and kl() .
+
+• New two-stage control flow. Phase I and Phase II appear as branches inside forward() and sample_actions() .Routing is controlled through model_kwargs , including for example: 
+
+– 1stg_loss_type 
+
+– 1stg_as_noise 
+
+– 1stg_output_mode 
+
+– times_list_train and times_start_test 
+
+Concrete presets are in code/config_phase1.yaml and 
+
+code/config_phase2.yaml ; Section E.6 lists the full set. 
+
+• Loss composition. In the appendix ablation notation, 𝛾 
+
+denotes the Phase I log-variance coefficient implemented by loss_logvar_weight . The phase-specific coarse-loss weights 𝜆 I and 𝜆 II are both implemented by 
+
+loss_1stg_weight in their respective phases. 
+
+• Sampling schedule. sample_actions() first runs a coarse pass near 𝑡 =1, then a fine pass from the coarse output. Step scaling follows the configured refinement start time when applicable (e.g. times_start_test ). The rest of this section follows the same reading order: first the shared 𝜋 0.5-style backbone pieces, then the new Gaussian/two-stage additions, and finally the effective Phase I and Phase II paths. The listings below distill the effective path documented in code/ phase1_effective_code.md , together with its Phase II counter-part in code/phase2_effective_code.md . Unrelated branches are omitted, and literal hyperparameter values are anonymized as ... .
+
+## E.2 Phase-to-code switch summary 
+
+Once the shared 𝜋 0.5 scaffold and the new Gaussian head are fixed, the effective-code summaries in code/phase1\_effective\_code. md and code/phase2\_effective\_code.md can be read as two straight-line executions of the same backbone, differing mainly in how the coarse output is supervised and how it seeds the fine stage. 
+
+• Phase I warm-up —after building the prefix cache once, the code first performs a coarse pass at 𝑡 =1 from a zero initialization, supervising the posterior mean with MSE and adding a separate 𝛾 -weighted log-variance term im-plemented by loss_logvar_weight . It then performs a second suffix forward at 𝑡 =0.1 to regress the usual refine-ment target. In the phase-specific notation of Section B, the whole Phase I coarse loss is weighted by 𝜆 I.
+
+• Phase II coupled training —the code keeps the same pre-fix/suffix scaffold, but changes the coarse branch into a Gaussian posterior-matching step: the coarse output is trained against a target Gaussian via KL, and a sample from that posterior is directly used to initialize the fine branch. In the phase-specific notation of Section B, this Phase II coarse loss is weighted by 𝜆 II .This is why the appendix presents the code in four logical pieces— shared modules, Phase I training/sampling, Phase II training/sam-pling, and the mapping back to the full implementation—instead of reproducing every optional branch in pi_2stg_pytorch.py .
+
+## E.3 Gaussian posterior helper and suffix forward 
+
+The first architectural change beyond a plain 𝜋 0.5 action head is that the suffix path now predicts both mean and log-variance, rather than only a deterministic action-direction vector. The helper below packages this output as a diagonal Gaussian posterior, which is then reused by both the coarse stage and the refinement stage.       
+
+> class DiagonalGaussianDistribution( object ):
+> def __init__(self, parameters: torch.Tensor, deterministic: bool
+> = False): self.mean, self.logvar = torch.chunk(parameters, 2, dim=-1) self.logvar = torch.clamp(self.logvar, -5.0, 20.0) # std, var, sample(), kl(other), nll(...), mode() elided
+> def mode(self) -> torch.Tensor:
+> return self.mean # forward_suffix: suffix expert -> linear heads -> Gaussian parameters suffix_out = hidden_states[:, -self.config.action_horizon :] v_t = torch.cat( [self.action_out_proj(suffix_out), self.action_out_proj_logvar( suffix_out)], dim=-1, )
+> return DiagonalGaussianDistribution(v_t)
+
+## E.4 Phase I (warm-up): training and sampling 
+
+Training (coarse MSE warm-up plus fine regression). Phase I train-ing first builds the prefix cache once, then runs a coarse pass at 
+
+𝑡 =1 from a zero state. This coarse branch regresses 𝑢 𝑡 = 𝜀 − 𝑎 
+
+and uses the shared noise_var to define the target log-variance; 
+
+loss_logvar_weight implements the separate Phase I coefficient 
+
+𝛾 on that matching term. The code then performs a second suffix for-ward for the fine branch at 𝑡 =0.1 and regresses the usual refinement target. In the phase-specific notation used in Section B, the total ob-jective is the fine-stage MSE plus 𝜆 I times the coarse loss; in the dis-tilled listing below this multiplier is written as loss_1stg_weight .    
+
+> loss_1stg_weight = ... # e.g. 1.0 (= lambda_I) noise_var = ... # e.g. 0.01 loss_logvar_weight = ... # e.g. 0.01 (= gamma) images, img_masks, lang_tokens, lang_masks, state = self. _preprocess_observation( observation, train=True )prefix_embs, prefix_pad_masks, prefix_att_masks = self.embed_prefix( images, img_masks, lang_tokens, lang_masks )prefix_att_2d_masks = make_att_2d_masks(prefix_pad_masks, prefix_att_masks) prefix_position_ids = torch.cumsum(prefix_pad_masks, dim=1) - 1 prefix_att_2d_masks_4d = self._prepare_attention_masks_4d( prefix_att_2d_masks) past_key_values = self._apply_checkpoint( forward_func, prefix_embs, prefix_att_2d_masks_4d, prefix_position_ids
+
+Coarse-to-Fine Two-Step VLA 
+
+)# Coarse (endpoint) branch one_noise = torch.zeros(actions.shape, dtype=torch.float32, device= actions.device) one_time = torch.ones(actions.shape[0], dtype=torch.float32, device= actions.device) x_t = one_noise one_u_t = one_noise - actions posterior = self.forward_suffix(state, x_t, one_time, prefix_pad_masks, past_key_values, None) mse_loss = F.mse_loss(one_u_t, posterior.mode(), reduction="none") target_logvar = torch.log( torch.tensor(noise_var, device=one_u_t.device, dtype=one_u_t. dtype) ) * torch.ones_like(one_u_t) mse_loss = mse_loss + loss_logvar_weight * F.mse_loss( target_logvar, posterior.logvar, reduction="none" )loss_1stg = mse_loss.mean(dim=[1, 2]) # Fine branch noise = self.sample_noise(actions.shape, actions.device) time = torch.full((actions.shape[0],), 0.1, dtype=torch.float32, device=actions.device) time_expanded = time[:, None, None] x_t = time_expanded * noise + (1 - time_expanded) * actions u_t = noise - actions posterior = self.forward_suffix(state, x_t, time, prefix_pad_masks, past_key_values, None) v_t = posterior.mode() action_loss = F.mse_loss(u_t, v_t, reduction="none") combined_loss = action_loss.mean() + loss_1stg_weight * loss_1stg 
+
+return combined_loss, {"action_loss": action_loss.mean().item(), " loss_1stg": loss_1stg.mean().item()} 
+
+Sampling (default single coarse step and single fine step). Prefix cache is built once; each stage calls denoise_step (expert forward with frozen prefix KV). The code first takes one coarse Euler step from 𝑥 𝑡 =0 at 𝑡 =1, treats the result as the coarse initialization, then rescales both the state and the step size to the refinement start time 
+
+𝑡 =0.1 before the final update. 
+
+images, img_masks, lang_tokens, lang_masks, state = self. _preprocess_observation( observation, train=False )prefix_embs, prefix_pad_masks, prefix_att_masks = self.embed_prefix( images, img_masks, lang_tokens, lang_masks )prefix_att_2d_masks = make_att_2d_masks(prefix_pad_masks, prefix_att_masks) prefix_position_ids = torch.cumsum(prefix_pad_masks, dim=1) - 1 prefix_att_2d_masks_4d = self._prepare_attention_masks_4d( prefix_att_2d_masks) _, past_key_values = self.paligemma_with_expert.forward( attention_mask=prefix_att_2d_masks_4d, position_ids=prefix_position_ids, past_key_values=None, inputs_embeds=[prefix_embs, None], use_cache=True, )bsize = observation.state.shape[0] actions_shape = (bsize, self.config.action_horizon, self.config. action_dim) # Coarse: start from x_t = 0 at t = 1, integrate with dt = -1 once one_noise = torch.zeros(actions_shape, dtype=torch.float32, device= device) dt = torch.tensor(-1.0, dtype=torch.float32, device=device) x_t = one_noise time = torch.tensor(1.0, dtype=torch.float32, device=device) expanded_time = time.expand(bsize) posterior = self.denoise_step(state, prefix_pad_masks, past_key_values, x_t, expanded_time) x_t = x_t + dt * posterior.mode() noise = x_t # Fine: rescale initial state and step size when times_start_test matches training dt = torch.tensor(-1.0, dtype=torch.float32, device=device) x_t = noise time = torch.tensor(0.1, dtype=torch.float32, device=device) dt = dt * 0.1 x_t *= 0.9 expanded_time = time.expand(bsize) posterior = self.denoise_step(state, prefix_pad_masks, past_key_values, x_t, expanded_time) x_t = x_t + dt * posterior.mode() 
+
+return x_t 
+
+## E.5 Phase II: KL coarse stage and coupled fine branch 
+
+Training (KL on coarse posterior; sample or mode feeds the fine ini-tializer). Phase II training keeps the same overall flow but changes the semantics of the coarse branch. After the shared prefix cache is built, the coarse pass at 𝑡 =1 is interpreted as a Gaussian posterior and matched through KL to the target Gaussian N ( 𝑢 𝑡 , noise_var 𝐼 )
+
+built from the same shared noise_var used in Phase I. The code then draws a sample from that posterior, uses it to initialize the fine branch, and regresses 𝑣 𝑡 to 𝑢 𝑡 = 𝜀 ′ − 𝑎 , where 𝜀 ′ is constructed from the sampled coarse state rather than from an independent Gaussian sample. In the phase-specific notation used in Section B, the coefficient multiplying this KL-based coarse loss is denoted by 
+
+𝜆 II .
+
+loss_1stg_weight = ... # e.g. 0.1 (= lambda_II) noise_var = ... # KL target variance images, img_masks, lang_tokens, lang_masks, state = self. _preprocess_observation( observation, train=True )prefix_embs, prefix_pad_masks, prefix_att_masks = self.embed_prefix( images, img_masks, lang_tokens, lang_masks )prefix_att_2d_masks = make_att_2d_masks(prefix_pad_masks, prefix_att_masks) prefix_position_ids = torch.cumsum(prefix_pad_masks, dim=1) - 1 prefix_att_2d_masks_4d = self._prepare_attention_masks_4d( prefix_att_2d_masks) past_key_values = self._apply_checkpoint( forward_func, prefix_embs, prefix_att_2d_masks_4d, prefix_position_ids )one_noise = torch.zeros(actions.shape, dtype=torch.float32, device= actions.device) one_time = torch.ones(actions.shape[0], dtype=torch.float32, device= actions.device) x_t = one_noise one_u_t = one_noise - actions Du et al. 
+
+posterior = self.forward_suffix(state, x_t, one_time, prefix_pad_masks, past_key_values, None) other = torch.cat( [one_u_t, torch.log( torch.tensor(noise_var, device=one_u_t.device, dtype= one_u_t.dtype) * torch.ones_like(one_u_t) ), ], dim=-1, )loss_1stg = posterior.kl(DiagonalGaussianDistribution(other)) noise = one_noise - posterior.sample() time = torch.full((actions.shape[0],), 0.1, dtype=torch.float32, device=actions.device) x_t = noise u_t = noise - actions posterior = self.forward_suffix(state, x_t, time, prefix_pad_masks, past_key_values, None) v_t = posterior.mode() action_loss = F.mse_loss(u_t, v_t, reduction="none") combined_loss = action_loss.mean() + loss_1stg_weight * loss_1stg 
+
+return combined_loss, {"action_loss": action_loss.mean().item(), " loss_1stg": loss_1stg.mean().item()} 
+
+Sampling. Phase II uses the same high-level two-step schedule as Phase I: one coarse Euler step at 𝑡 =1 followed by one fine step at 
+
+𝑡 =0.1 with rescaled d𝑡 . Relative to Phase I, the main difference is therefore not the coarse-then-fine structure itself, but the fact that training has coupled the fine initializer to the coarse posterior. 
+
+# ... prefix cache identical to Phase I listing ... bsize = observation.state.shape[0] actions_shape = (bsize, self.config.action_horizon, self.config. action_dim) one_noise = torch.zeros(actions_shape, dtype=torch.float32, device= device) dt = torch.tensor(-1.0, dtype=torch.float32, device=device) x_t = one_noise time = torch.tensor(1.0, dtype=torch.float32, device=device) expanded_time = time.expand(bsize) posterior = self.denoise_step(state, prefix_pad_masks, past_key_values, x_t, expanded_time) x_t = x_t + dt * posterior.mode() noise = x_t dt = torch.tensor(-1.0, dtype=torch.float32, device=device) x_t = noise time = torch.tensor(0.1, dtype=torch.float32, device=device) dt = dt * 0.1 expanded_time = time.expand(bsize) posterior = self.denoise_step(state, prefix_pad_masks, past_key_values, x_t, expanded_time) x_t = x_t + dt * posterior.mode() 
+
+return x_t 
+
+## E.6 Alignment with the monolithic forward /
+
+## sample_actions methods 
+
+The production methods interleave the above logic with several compatibility branches. The phase-specific paths correspond to the following entries in model_kwargs :
+
+• 1stg_loss_type selects the coarse objective ( mse for the default Phase I warm-up path, kl for the default Phase II path, and nll for the Phase II ablation in Section B.4). 
+
+• 1stg_as_noise : whether coarse output is routed into the fine initializer. 
+
+• 1stg_output_mode : use posterior.mode() or 
+
+posterior.sample() when forming that initializer. 
+
+• times_t1 : optional rescale of the coarse terminal time. 
+
+• times_start_test : refinement start time and step-size scaling at inference. 
+
+• times_list_train : candidate fine times sampled during training. 
+
+• noisy_actions : clean coarse state vs. diffusion-style mix-ing for the fine pass. 
+
+• flow_num : number of fine samples averaged per optimiza-tion step. Readers interested in implementation details may refer to Sec-tions E.4–E.5 for the conceptual path, and, if desired, cross-check these branches in code/pi_2stg_pytorch.py , along with code/ config_phase1.yaml and code/config_phase2.yaml .
