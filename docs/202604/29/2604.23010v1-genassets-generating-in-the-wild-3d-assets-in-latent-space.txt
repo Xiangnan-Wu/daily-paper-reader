@@ -1,0 +1,529 @@
+Title: GenAssets: Generating in-the-wild 3D Assets in Latent Space
+
+URL Source: https://arxiv.org/pdf/2604.23010v1
+
+Published Time: Tue, 28 Apr 2026 00:17:32 GMT
+
+Number of Pages: 22
+
+Markdown Content:
+# GenAssets: Generating in-the-wild 3D Assets in Latent Space 
+
+# Ze Yang 1,2 Jingkang Wang 1,2 Haowei Zhang 1
+
+# Sivabalan Manivasagam 1,2 Yun Chen 1,2 Raquel Urtasun 1,2
+
+> 1
+
+Waabi 2University of Toronto 
+
+{zyang, jwang, hzhang, siva, ychen, urtasun }@waabi.ai Scalable Assets Generation    
+
+> 120°
+> Controllable Assets Generation 360° Assets Reconstruction
+> Pedestrian Bicycle Motorcycle Large truck Night
+> Bus
+> 240°
+> Scalable Sensor Simulation (actor executes a U-turn)
+> Front camera Front-right camera Front-left camera
+
+Figure 1. GenAssets takes in-the-wild camera image(s) and point cloud(s), and automatically reconstruct or generate 360° assets .Our 3D assets are diverse and high-quality with complete geometry and appearance, allowing for realistic and scalable sensor simulation. 
+
+# Abstract 
+
+High-quality 3D assets for traffic participants are critical for multi-sensor simulation, which is essential for the safe end-to-end development of autonomy. Building assets from in-the-wild data is key for diversity and realism, but existing neural-rendering based reconstruction methods are slow and generate assets that render well only from viewpoints close to the original observations, limiting their usefulness in simulation. Recent diffusion-based generative models build complete and diverse assets, but perform poorly on in-the-wild driving scenes, where observed actors are captured under sparse and limited fields of view, and are partially oc-cluded. In this work, we propose a 3D latent diffusion model that learns on in-the-wild LiDAR and camera data captured by a sensor platform and generates high-quality 3D assets with complete geometry and appearance. Key to our method is a “reconstruct-then-generate” approach that first lever-ages occlusion-aware neural rendering trained over multi-ple scenes to build a high-quality latent space for objects, and then trains a diffusion model that operates on the latent space. We show our method outperforms existing recon-struction and generation based methods, unlocking diverse and scalable content creation for simulation. Please visit 
+
+https://waabi.ai/genassets for more details. 
+
+# 1. Introduction 
+
+Simulation environments enable testing the performance of autonomy systems in long-tail and safety critical scenarios safely, efficiently, and scalably [48, 69, 85, 107]. To test the complete autonomy stack, the virtual environments should simulate the sensor data ( e.g. , LiDAR, camera) of the robot. Realistic and consistent sensor simulation across multiple modalities depends on the availability of high-quality 3D 
+
+assets that accurately represent the geometry and appear-ance of traffic participants such as cars and motorcycles. Commoditized simulation environments rely on artists to manually build such 3D assets [17, 66, 70]. This process is slow, costly, and requires precise specification of attributes such as geometry, UV mapping, and materials. As a conse-quence, existing methods utilize very limited content, fail-ing to capture the full diversity of objects in the real world. An alternative and much more appealing approach that has gained traction is to reconstruct assets from real world data captured by the sensor platform, which enables diver-sity and realism. Reconstruction-based neural rendering methods have demonstrated impressive results by optimiz-ing 3D representations that can render and match input sen-sor data for self-driving scenes [14, 19, 34, 78, 82, 95, 103, 104, 107, 113]. These approaches render high-quality data 1
+
+> arXiv:2604.23010v1 [cs.CV] 24 Apr 2026
+
+when the viewpoint is close to the training views, but can suffer from severe artifacts at novel viewpoints due to in-complete observations. Additionally, each asset must be ob-served in the real world and reconstructed via optimization, making it computationally expensive and limiting diversity. Recent 3D generative models [8, 9, 21, 54, 64, 71] have shown promise in generating complete assets and render-ing novel views far from source. These methods leverage a combination of generative adversarial networks (GANs), diffusion models, and neural rendering, and train on large corpuses of images to learn shape and appearance pri-ors. NeRF-based diffusion models that optimize via score-distillation sampling (SDS) [40, 59], or denoise in 3D space [11, 24, 52, 55, 94], have demonstrated particularly high-quality complete shape and appearance generation, and also offer controllability through text/image conditioning. How-ever, such models usually rely on synthetic datasets with ground-truth 3D models to render the dense 2D views nec-essary to learn a 3D representation prior. They also primar-ily work on “clean” images that fully capture the object of interest. This reliance on clean synthetic data limits their ability to handle in-the-wild real data from a moving plat-form, where the data is typically captured from sparse view-points, under partial occlusions, limited resolution, and with sensor noise ( e.g ., lighting artifacts, rolling shutter). In this work, we propose a latent diffusion 3D generative model that learns directly from sparse, in-the-wild data, en-abling high-quality asset generation at scale. We tackle the challenges of asset completion and generative modelling via a two-stage “reconstruct-then-generate” methodology. In the first stage, we learn a low-dimensional object la-tent space that generates complete assets by training across multiple scenes via neural rendering. To handle partial oc-clusion, we jointly learn a scene representation for both the static scene and dynamic actors, enabling occlusion-aware rendering during learning. In the second stage, we train a diffusion model to operate on the 3D latent space, enabling realistic asset generation that can be conditioned on individual views, day or night, or the actor class, en-abling asset variations that are applicable to new scenes. We evaluate our model on the public self-driving dataset PandaSet [97], demonstrating its capability to reconstruct and generate high-quality assets from sparse, in-the-wild data. Additionally, we showcase applications such as con-ditional generation, as well as realistic rendering of our as-sets for downstream simulation systems, highlighting our approach’s flexibility, scalability, and practical utility. 
+
+# 2. Related Work 
+
+3D Reconstruction in the Wild: Reconstructing objects from in-the-wild data is essential for creating 3D digi-tal twins and simulations, but poses significant challenges due to the complexity ( e.g ., occlusions, sparse viewpoints, partial observations) and noise ( e.g ., localization and cal-ibration inaccuracies [109], sensor noise). Object-based reconstructions fall into optimizing explicit meshes [12, 53, 86, 105] or implicit representations [31, 50, 56, 88, 106, 108, 110] methods via differentiable rendering. How-ever, they rely on accurate object segmentation masks and struggle to handle complex occlusions. To address this issue, recent works propose compositional neural fields [41, 57, 60, 82, 107] or 3D Gaussians [14, 34, 103] to de-compose 3D world into static background and dynamic ac-tors. These works often involve costly per-scene optimiza-tions and cannot generalize well to novel views with large shifts nor produce complete ( i.e ., 360-degree) objects. To mitigate these limitations, recent works propose generaliz-able reconstruction models [13, 27, 51, 63, 92] that gener-ate a 3D representation with a single feed-forward network trained on many scenes. Another line of work aims to in-corporate data-driven priors from pre-trained models ( e.g ., stable diffusion [65]) via score-distillation sampling (SDS) [29, 59, 89, 93]. However, existing methods either require object-centric synthetic training data [27, 92, 93] ( e.g ., Ob-javerse [15]) and/or perform poorly on in-the-wild sensor data [13, 29, 89]. Our approach builds high-fidelity and complete assets by directly learning on real-world data. 
+
+GAN-based 3D Generation: Generative Adversarial Networks [23] (GANs) have shown great potential for 3D asset generation [21, 100], where the generator transforms random noise into the target 3D representation, and the dis-criminator is jointly trained using 2D images rendered from the generated representation and the ground truth. This paradigm allows generation without requiring explicit 3D ground truth. Specifically, π-GAN [8] introduces a genera-tive model for high-quality 3D-aware image synthesis based on neural radiance fields. GIRAFFE [54] further proposes to represent scenes as compositional generative neural fea-ture fields, allowing for better object-background disentan-glement and controllable scene generation. EG3D [9] and GET3D [21] further improve 3D generation efficiency and quality by integrating the triplane representation (for vol-ume rendering or explicit mesh rendering) with a StyleGAN [32] architecture. Although they achieve robust and consis-tent 3D generation, they primarily focus on “clean” object-centric images with full coverage and no occlusions and have difficulties generalizing to in-the-wild driving data. Most recently, DiscoScene [100] and GINA-3D [71] learn 3D generative models from in-the-wild data. However, they often produce significant visual artifacts ( e.g ., floating par-ticles, low-fidelity shapes and texture). In contrast, our method generates high-quality assets. 
+
+Diffusion-based 3D Generation: Diffusion-based meth-ods have achieved tremendous success in image generation 2[26, 58, 65, 75, 76], leveraging denoising diffusion prob-abilistic models [26] to transform white noise into high-quality outputs through iterative refinement. To bridge the gap between 2D and 3D generation, a common strategy in-volves lifting 2D images to 3D via score distillation sam-pling (SDS) [22, 29, 40, 59, 72, 79, 89, 93]. These meth-ods rely on pre-trained or fine-tuned 2D diffusion models and optimize 3D representations with diffusion-prior guid-ance. The optimization is slow and the supervision can be multi-view inconsistent. To address this issue, recent works [38, 42, 44, 46, 72, 87] propose to synthesize multi-view consistent images via diffusion models and then perform 3D reconstruction with explicit meshes [99], neural radi-ance fields [38, 87] or 3D Gaussians [80, 102]. Another line of work performs diffusion directly in 3D, either by training 3D-aware diffusion model from posed 2D imges without requiring explicit 3D supervision [1, 7, 11, 24, 52, 73, 77, 81, 96, 101] or by operating directly on 3D data [45, 47, 83]. Inspired by latent diffusion models (LDM) [65], recent works diffuse within a latent space, where mod-els like UNet [67] or VAEs [35, 84] map 3D data to a com-pressed latent representation for faster, higher-quality and more scalable synthesis of both objects [64, 94] and large-scale scenes [28, 49, 61, 62, 98, 111]. However, existing works primarily focus on synthetic objects [11, 49] or static scenes [28, 61, 62, 98] and cannot handle complex real-world scenarios. In contrast, we propose a latent diffusion 3D generative model with compositional radiance fields that learns directly from in-the-wild dynamic scenes, enabling high-quality 3D asset generation at scale. 
+
+# 3. Method 
+
+Our goal is to build a generative model that can create high-fidelity assets scalably for self-driving simulation. The model should enable unconditional generation of diverse as-sets for a variety of classes (e.g., cars, buses, trucks, pedes-trians), and also support generating complete assets condi-tioned on new in-the-wild camera images and LiDAR point clouds for actors that may be occluded or far-away. Im-portantly, to avoid the quality degradation [11] that occurs when generative models trained on synthetic data are trans-ferred to real data, our generative model should directly learn over a corpus of real-world driving scenes collected by a robot sensor platform. Towards this goal, we propose a two-stage “reconstruct-then-generate” framework. In the first stage, we jointly learn a set of latent codes through reconstruction-based neural rendering, where each latent code represents a foreground actor in our dataset. We de-vise a compositional scene representation that enables ren-dering of actors of driving scenes in an occlusion-aware manner, enabling us to decouple the foreground actors from the background ( e.g ., road, sky, vegetation). Fig. 2 pro-vides an overview of this process. In the second stage, we train a diffusion model to learn generative priors in this as-set latent space, enabling the generation of realistic and di-verse neural assets. This enables both unconditional gener-ation and conditional generation through score-based guid-ance. Fig. 3 shows the overview of our latent asset diffusion model. We first introduce our compositional scene repre-sentation (Sec. 3.1). We then describe how we compress the actor representations into a latent space to learn the set of latent codes via neural rendering (Sec. 3.2), and detail the diffusion process in the latent space and the training process (Sec. 3.3). 
+
+3.1. Compositional Scene Representation 
+
+We aim to learn a generative 3D asset model from real-world driving scenes. Unlike existing object-centric ap-proaches [9, 11, 21, 22, 52, 55, 94], our sensor data contains many actors captured under different viewpoint, distances, and occlusions. To handle multiple instances and their oc-clusions, we leverage a compositional scene representation. Each scene is decomposed into a static background B and a set of dynamic actors {A i}Ki=1 , with each actor enclosed within a 3D box and localized by a trajectory of SE (3) 
+
+poses. We model the static background and dynamic ac-tors with separate neural feature fields parameterized by tri-plane representations [9]. Specifically, for each dynamic actor’s volume, explicit features are aligned along three or-thogonal planes, each with resolution NA × NA × C, where 
+
+NA is the spatial resolution, and C is the feature dimension. Similarly, triplane features of resolution NB × NB × C rep-resent the background volume. For a spatial query coor-dinate x ∈ R3, we project it onto each of the three feature planes t = ( txy , txz , tyz ) and bilinearly interpolate the cor-responding feature vectors. The interpolated features are concatenated with view direction d ∈ S2 and processed by an MLP network ffeat to yield geometry as a signed-distance function (SDF) s and a neural feature f . This querying pro-cess is defined by: 
+
+s, f = ffeat ({interp (xp, tp)}p∈{ xy,xz,yz }, d), (1) where xp represents the 2D projection of x onto feature plane p. To render the scene representation, we first trans-form the object-centric actor neural feature fields to world coordinates similar to [82, 107]. Then we composite the background and actor feature fields. The composited geom-etry and appearance features are then rendered into sensor observations through neural volume rendering. 
+
+3.2. Learning Latent Asset Representations 
+
+Encoding to a Latent Space: Per-scene reconstruction methods [82, 103, 107] train each scene separately, with its own set of actor and background triplanes. This prevents effective handling of ambiguities in occluded or unseen regions, resulting in actor representations that generalize 310    
+
+> Neural Assets Composed Neural Feature Fields Rendered Points Latent Code
+> …
+> Asset Decoder
+> …
+> Latent Regularization Background Model LiDAR Rendering Camera Rendering Category
+> Rendered Image
+
+Figure 2. Learning latent asset representation. We learn a low-dimensional object latent space that generates complete assets by training across multiple scenes via occlusion-aware neural rendering. The asset decoder is trained to map low-dimension latent codes into neural assets which are then composed with learnable per-scene background models to match real-world sensor observations. 
+
+poorly to unseen viewpoints. Naively training jointly over all the explicit triplanes for every actor in the dataset con-taining tens of thousands of objects requires vast amounts of GPU memory and still does not force the learned tri-planes to have complete actor shape and appearance. To address these limitations, we propose learning a latent code 
+
+ci ∈ RnA×nA×c for each actor representation and a class embedding ei ∈ RnA×nA×c, combined with a shared as-set triplane decoder fdec that maps the latent code into the triplane representation: 
+
+fdec : ei, ci ∈ RnA×nA×c → ti ∈ RNA×NA×3C . (2) The class embedding ei has the same spatial resolution as the latent code and is shared among actors of the same class. We concatenate it with the actor latent code before passing it to the decoder. The decoder fdec upsamples the latent code by a factor f = NA/n A. The intuition is that dif-ferent actors are observed from various viewpoints, so their feature planes ti capture different informative regions. By compressing them into a latent code bottleneck, we enable learning shape and appearance priors, allowing inference of invisible parts from sparse observations. 
+
+Rendering Sensor Observations: Now that we have de-coded the asset neural fields {ti}Ni=1 from the latent codes 
+
+{ci}Ni=1 , the next step is to composite them with the back-ground neural fields tB and render into the sensor data. In this work, we focus on camera images and LiDAR point clouds, as they are primary sensory modalities for SDVs. For camera rendering, we use a hybrid volume and neu-ral rendering framework for both efficiency and realism. Given a camera ray r(t) = o + hd sent from the camera center o to the pixel in direction d, we sample 3D points along the ray, querying geometry st and neural feature ft
+
+via Eq. (1). We then aggregate these samples to obtain the pixel feature through volume rendering: 
+
+f (r) = 
+
+> Nt
+
+X
+
+> t=1
+
+wtft, wi = αtt−1Y
+
+> j=1
+
+(1 − αj ), (3) where αt is the opacity for the t-th point, derived from the SDF st following [82, 107]. We repeat this process to vol-ume render all camera pixels, generating a 2D feature map 
+
+F ∈ RHf ×Wf ×Cf . Then we leverage 2D CNN network frgb 
+
+[107] to convert this feature map into an image Irgb :
+
+frgb : F ∈ RHf ×Wf ×Cf → Irgb ∈ RH×W ×3. (4) The CNN network frgb upsamples the rendered map from resolution Hf × Wf to H × W . This allows us to signif-icantly reduce the number of neural feature field queries. This approach also enhances model capacity and improves image quality by capturing spatial relationships effectively. In addition to camera images, we use LiDAR rendering for additional geometry supervision. LiDAR sensors emit laser pulses and measure the time of flight to determine dis-tances to reflective surfaces. This depth information pro-vides valuable supervision for asset geometry. Using sim-ilar notation, we define r(t) = o + hd as a ray cast from the LiDAR sensor center o in the direction d. We render LiDAR depth similarly to Eq. (3) by aggregating sample depths via volume rendering: D(r) = PNt 
+
+> t=1
+
+wtht, where 
+
+ht is the depth of the t-th sampled point, and wt is the sam-ple weight computed as in Eq. (3). 
+
+Learning: We jointly optimize the asset code {ci}Nc
+
+> i=1
+
+,class embedding {ei}Ne
+
+> i=1
+
+, background neural fields tB, as-set decoder fdec , neural feature fields MLP ffeat , and RGB CNN network frgb by minimizing the differences between rendered and observed sensor data. To achieve high-fidelity reconstruction and rendering, we incorporate perceptual and patch-based adversarial objectives. We also regular-ize the latent space by applying a Kullback–Leibler (KL) penalty. Our full objective is: 
+
+L = Lrgb +λperp Lperp +λadv Ladv +λlid Llid +λKL LKL , (5) where Lrgb and Lperp represent the ℓ2 photometric loss and the perceptual loss [112] between rendered and observed images, Ladv is the adversarial objective using patchGAN [30], Llid is the ℓ1 depth loss between rendered and ob-served LiDAR points, and LKL is the injected KL penalty 4Sampled Latent 
+
+> U-Net
+> Time step t
+> Denoised Latent
+> L2 Diffusion Loss
+> Conditions
+> Sampled Noise
+> U-Net
+> Time step t
+> DDIM sampler
+> Generated Latent
+> Asset Decoder
+> Conditions
+
+Figure 3. Left: Training asset diffusion model in latent space. Right: Sampling diffusion model for (un)conditional neural asset generation. 
+
+guiding the latent space towards a standard normal distribu-tion, similar to [35, 65]: LKL = 12 ∥μ2 
+
+> i
+
++σ2 
+
+> i
+
+−1−log( σ2 
+
+> i
+
+)∥1,where μi and σi represent the mean and standard devia-tion components of latent code ci, i.e ., ci = μ2 
+
+> i
+
++ σi ⊙ ϵ,with ϵ ∼ N (0, I). This regularization prevents overfit-ting and encourages the latent space to be compact, con-tinuous, smooth, and low-variance, enabling easier learn-ing of generative models. Similar to [20, 100], we intro-duce additional perceptual losses on object patches for en-hanced object-level supervision, where the patches are ob-tained by projecting the 3D instance boxes onto the image plane. Please refer to supp. for more details. 
+
+3.3. Latent Asset Diffusion Model 
+
+Given our learned asset code library {ci}Ni=1 from the dataset, we aim to learn generative priors using a diffusion model. Diffusion models [26, 74] are probabilistic frame-works that model the data distribution by progressively de-noising a Gaussian noise variable. In our approach, the dif-fusion model operates directly in the latent space and begins with Gaussian noise, progressively denoising it to recover the underlying latent distribution. The forward or diffu-sion process is a discrete-time Markov chain that iteratively adds Gaussian noise to the latent code c(0) , producing pro-gressively noisier codes following the transition probability 
+
+q(c(t)|c(t−1) ) = N (p1 − β(t)c(t−1) , β (t)I), according to a noise schedule β(t). After T steps, the code approximates pure Gaussian noise. This forward process can be directly sampled at timestep t using closed-form expression: 
+
+c(t) =
+
+p
+
+¯α(t)c(0) +
+
+p
+
+1 − ¯α(t)ϵ, (6) where ¯α(t) = Qts=1 α(s) with α(t) = 1 − β(t), and 
+
+ϵ ∼ N (0, I) is drawn from a Gaussian distribution. The goal of the diffusion model is to learn the reverse process, progressively denoising the noisy code to recover a clean version. We parameterize the denoising network fdiff as a U-Net [67], which takes the noisy code c(t) and timestep t
+
+as inputs, predicting the noise estimate fdiff (c(t), t ) and re-moving it to yield a denoised code. The denoising network is trained with a weighted ℓ2 objective: 
+
+Ldiff = Ec,ϵ,t 
+
+ 12 w(t)∥fdiff (c(t), t ) − ϵ∥22
+
+
+
+, (7) where ϵ ∼ N (0, I) is standard Gaussian noise, t ∼ U (1 , T )
+
+is uniformly sampled from the interval [1 , T ], and c(t) is de-rived from c(0) (Eq. (6)), where c(0) ∼ { ci}Ni=1 is sampled from the asset code library. The term w(t) provides time-dependent weighting. Learning the diffusion process in the latent space, rather than in high-dimensional triplane space like prior work [4, 11, 52, 73, 94], offers key advantages for likelihood-based generative modeling by: (i) focusing on essential contents of the data and (ii) operating in a com-putationally efficient, compact space. 
+
+Unconditional Asset Generation: Unconditional asset generation involves generating a latent code using the learned diffusion model fdiff and then decoding it into neu-ral assets using the learned asset decoder fdec . Sampling from the diffusion prior can be performed with various solvers ( e.g ., DDPM [26], DDIM [75]), similar to methods used in image generation. Taking DDIM [75] for example, we begin with a random Gaussian code c(T ) ∼ N (0, I) and iteratively denoise it over T steps until reaching t = 0 :
+
+c(t−1) =
+
+p
+
+α(t−1) c(t) − pβ(t)˜ϵ
+
+√α(t)
+
+!
+
++ pβ(t−1) ˜ϵ, (8) s.t. ˜ϵ = fdiff (c(t), t ), (9) where ˜ϵ is the noise estimate at timestep t from the denois-ing network fdiff . The final denoised code c(0) is a sam-ple from the learned latent distribution. We then pass this code to the asset decoder to generate the asset neural fields, 
+
+t = fdec (c(0) ), for scene composition and rendering. 
+
+Conditional / Guided Assets Generation: For condi-tional generation, we aim to model the conditional distri-bution of the latent space p(c|y). This can be achieved with a conditional denoising network fdiff (c(t), t, y ), with condi-tion signals such as actor class and time-of-day. As shown in Fig. 1, classifier-free diffusion guidance enables effec-tive control over asset generation. Alternatively, for some inverse problems such as image-to-3D, conditional genera-tion can be approximated from an unconditional model us-ing classifier guidance [16, 76], leveraging gradients of the rendering loss w.r.t. known observations. This flexibility re-5moves the need for separate models tailored to different in-verse problems. Given camera image and/or LiDAR point cloud of a new actor to reconstruct, during the sampling pro-cess (Eq. (8)) we compute the gradient of the rendering loss with respect to the current code: g = ∇c(t) (Lrgb + λlid Llid ),and then steer the sampling process by updating the noisy code similar to [11, 52]: 
+
+ˆc(t−1) ← c(t−1) − λ · g, (10) where c(t−1) is computed following Eq. (8) and ˆc(t−1) is the updated code; λ is a small guidance weight. 
+
+# 4. Experiments 
+
+In this section, we first describe our experimental setup. We then compare our model to state-of-the-art reconstruc-tion methods across multiple novel view synthesis settings. Next, we compare to SoTA generative models for 3D gener-ation. Finally, we demonstrate conditional generation from different classes, single-image, and appearance (day/night), and show that the generated assets enhance downstream de-tection performance. Please refer to the supp. for imple-mentation details and ablation of our model components. 
+
+4.1. Experimental Setup 
+
+Dataset: We conduct experiments on the PandaSet [97] dataset, which includes 103 driving scenes captured in San Francisco, with each scene spanning 8 seconds ( 80 frames at 10 hz). The data collection platform features a 360 ◦ me-chanical spinning LiDAR, a forward-facing LiDAR, along with six 1920 ×1080 cameras surrounding the vehicles. Ob-ject bounding boxes are provided with the dataset. As our focus is object reconstruction and generation, we extract ob-ject segmentation masks for metric evaluation. Specifically, we leverage 3D object boxes and LiDAR points to identify actor patches in the camera images, and then apply a vi-sual foundation model [37] to generate instance masks for the actors. Our method does not require instance masks for learning. We employ them strictly to evaluate foreground-only metrics. Please see supp. for details. 
+
+Baselines: We compare our method with several state-of-the-art reconstruction and generation approaches. For reconstruction, we benchmark against per-scene NeRF-based NeuRAD [82] and 3D Gaussian Splatting-based Street Gaussians [103], as well as generalizable reconstruction methods G3R [13] and PixelSplat [10]. During evalua-tion, these methods take as input all source views for the full scene, except for PixelSplat, which can only handle two views. For generation, we evaluate against the GAN-based EG3D [9] and DiscoScene [100], as well as diffusion-based SSDNeRF [11]. As EG3D and SSDNeRF are object-centric models, we train them on our object-centric bench-mark with instance masks. 
+
+4.2. Reconstruction Evaluation 
+
+Evaluation Settings and Metrics: We evaluate our method across three challenging settings: (1) Sparse view synthesis: Using every 10 th frame for training and the re-maining frames for testing, with both training and testing frames captured from the front camera. (2) Novel camera synthesis: Training on frames from the front camera and evaluating on frames from the front-left camera. (3) 360 ◦
+
+View synthesis: Rotating actors ( 0◦–360 ◦) to simulate vari-ous behaviors, evaluated on front camera views. We select 
+
+7 diverse scenes to assess reconstruction performance, with the remaining 96 scenes for learning generalizable priors. For sparse view synthesis and novel camera synthesis , we report PSNR, SSIM [90], and LPIPS [112]. For 360 ◦ view synthesis , since no ground truth images are available, we report FID metrics [25]. As PixelSplat [10] is designed to reconstruct with two input views, we only evaluate it on the 
+
+sparse view synthesis setting. 
+
+Sparse View Synthesis: We first compare our method against state-of-the-art approaches for sparse view synthe-sis in Tab. 1. Our method outperforms the baselines across all metrics. Unlike prior methods that uses 90% frames [14, 104], 75% frames [103] or 50% frames [13, 82, 107] for training, our setup is more challenging, relying on only 
+
+10% of frames for training. We found that baseline methods struggle to learn robust geometry, leading to severe artifacts in novel viewpoints. Qualitative results in Fig. 4 (top) show that our method renders camera images more accurately. 
+
+Novel Camera Synthesis: We compare our method against SoTA for novel camera synthesis in Tab. 1. A vi-sual comparison is provided in Fig. 4 (middle). All base-line methods effectively reconstruct observed camera data (front camera). However, for new sensor poses (front-left camera), previously unobserved regions become visible, re-quiring the model to “hallucinate” these areas. For instance, the front-right part of the SUV in Fig. 4 (middle) is invisible in the front camera but becomes visible in front-left camera views. Reconstruction methods fail on these regions. Our method, by learning generative priors, is capable of render-ing complete and high-quality simulations in this setting. 
+
+360 ◦ View Synthesis: Sensor simulation requires not only simulating novel viewpoints but also synthesizing en-tirely new scenarios. Consider a four-way intersection with a car crossing in front of you from a perpendicular lane. To explore a situation where that car suddenly turns sharply into your lane, we must render actors in significantly dif-ferent poses than those seen in the original scene. To that end, we investigate a 360 ◦ view synthesis setting by rotat-ing actors in the scene from 0◦ to 360 ◦, simulating various 6G3R Street Gaussian Ours GT 
+
+> 45°
+> 180° 90°
+> 45°
+> 180° 90°
+> 45°
+> 180° 90°
+> NeuRAD
+> 45°
+> 180° 90°
+> Front Front-left
+> Sparse View Synthesis
+> 360° View Synthesis
+> Novel Camera Synthesis
+
+Figure 4. Top: Sparse view synthesis. GenAssets generalizes well on this extreme setting thanks to low-dimensional latent space learned across many scenes, while the SoTA reconstruction methods are less robust and produce noticeable visual artifacts ( e.g ., missing, blurry or distorted appearance). Middle: Novel camera synthesis. We train on frames from the front camera and evaluate on frames from the front-left camera. Our method generates assets that have better extrapolation results, while retaining high quality in the original view. 
+
+Bottom: 360 ◦ view synthesis. Through our multi-scene training and latent space, our method enables higher-fidelity asset completion for different object orientations compared to SoTA reconstruction-based methods. 
+
+Methods Sparse View Synthesis Novel Camera Synthesis 360° View Synthesis PSNR ↑ SSIM ↑ LPIPS ↓ PSNR ↑ SSIM ↑ LPIPS ↓ FID ↓
+
+PixelSplat* [10] 17.67 0.704 0.336 - - - -G3R [13] 18.37 0.711 0.255 17.40 0.723 0.221 191.92 Street Gaussian [103] 20.01 0.763 0.156 17.81 0.724 0.226 162.37 NeuRAD [82] 21.07 0.825 0.129 17.49 0.723 0.214 159.38 Ours 21.34 0.825 0.113 18.36 0.805 0.147 100.28 
+
+Table 1. Quantitative comparison with SoTA reconstruction approaches on PandaSet. We evaluate on sparse view synthesis (10% frames for training and remaining frames for testing), novel camera synthesis (training on front camera and testing on front-left camera), and 360 ◦ view synthesis (rotating actors from 0◦ to 360 ◦). GenAssets outperforms existing SoTA per-scene or generalizable reconstruction approaches across all settings. PixelSplat* [10] (2 input views) only for sparse view synthesis evaluation. 
+
+orientations. Since ground-truth images are unavailable, we report FID [25] in Tab. 1. Qualitative results in Fig. 4 (bot-tom) show that our method effectively hallucinates unseen parts of the actors, whereas all baselines struggle to do so. 
+
+4.3. Generation Evaluation 
+
+Evaluation Metrics: To evaluate the generation quality, we report both Fr´ echet Inception Distance (FID) [25] and Kernel Inception Distance (KID) [5] scores. The metrics are calculated by comparing distributions of 10 K generated images with all available images in the validation set, pro-viding a quantitative assessment of similarity in terms of perceptual quality and realism. FID measures the distance between the mean and covariance of feature representations from real and generated image distributions. KID comple-ments FID by measuring differences in feature embeddings through a kernel-based approach. All generated objects are rendered at a resolution of 256 × 256 .
+
+Unconditional Generation: We compare our method against SoTA GAN-based method EG3D [9] and Dis-coScene [100], as well as diffusion-based method SSD-NeRF [11] in Tab. 2. All baselines struggle with occlu-sion, leading to suboptimal assets. In addition, EG3D and DiscoScene suffers from mode collapse, producing limited asset variety (mainly sedans). DiscoScene struggles to dif-ferentiate foreground and background and exhibits bound-ary artifacts, likely due to the absence of LiDAR or mask supervision. SSDNeRF yields blurry results, potentially due to challenges posed by our real-world sparse setting. Our model improves over these baselines across all metrics. Fig. 5 shows a visual comparison. 7EG3D SSDNeRF Ours DiscoScene Figure 5. Qualitative comparison on unconditional generation. Our methods generates more diverse, complete and higher-quality 3D assets compared to SoTA 3D generative models. Ours MeshLRM  
+
+> Ours MeshLRM Ours MeshLRM
+> Figure 6. Qualitative results on single-image to 3D.
+
+4.4. Applications 
+
+Conditional Generation: The flexibility of our frame-work enables various conditional generation tasks. Specif-ically, we freeze the learned latent codes and train a con-ditional diffusion model fdiff (c(t), t, y ) using classifier-free guidance. We explore conditioning on fine-grained actor classes and time-of-day (day/night), with results presented in Fig. 1. We can generate complete assets for a variety classes, with intra-class shape and appearance variation. 
+
+Single Image to 3D: Our approach also enables generat-ing 3D assets from single-view images using a rendering-guided denoising process (Eq. (10)), where the denois-ing gradient is directed to minimize rendering loss against the observed image. Fig. 6 shows qualitative results of single-image reconstruction for three nearby vehicles, alongside comparisons to SoTA large reconstruction model MeshLRM [92]. MeshLRM produces distorted shapes and synthetic cartoon-ish appearance for unobserved views. Our approach generates higher quality completion and is consistent with the input. Please refer to supp. for more comparisons with other SoTA large models. 
+
+Data Augmentation with GenAssets: We now show-case that our generated assets boost downstream perfor-mance when training a BEVFormer [39] 3D object detec-tor (Tab. 3). Specifically, we augment the training dataset by swapping out existing actors with generated ones for the same scene layouts. Please see supp. for more details. Methods FID ↓ KID ↓
+
+SSDNeRF [11] 191.30 156.13 DiscoScene [100] 138.48 116.27 EG3D [9] 80.56 38.97 Ours 59.50 28.32   
+
+> Table 2. Unconditional generation evaluation on PandaSet.
+> KID scores are multiplied by 10 3. GenAssets outperforms SoTA baselines on both metrics and generates higher-quality 3D assets.
+
+mAP ↑ AP@1m ↑ AP@2m ↑ AP@4m ↑
+
+Real 27.08 8.58 26.99 45.67 Real + Sim 29.32 9.78 29.18 49.00       
+
+> Table 3. Data augmentation with GenAssets helps 3D detec-tion. We report distance-based APs [6] at 1m,2mand 4m.
+
+# 5. Conclusion 
+
+In this work, we tackled the challenge of generating high-quality and complete assets from in-the-wild Li-DAR and camera data captured by a moving sensor plat-form. Towards this goal, we developed a “reconstruct-then-generate” approach where we first learn to reconstruct foreground actors over multiple scenes with compositional scene neural rendering and encode them to a latent space. We then train a diffusion model to operate within this latent space to enable generation. We show our method generates high-quality, complete assets for actors such as vehicles and motorcycles, outperforming both per-scene reconstruction methods and generative models. We also show that our ap-proach can be conditioned for controllable asset generation such as on sparse sensor data, actor class, and time of day, enabling diverse and scalable content creation for simula-tion. Future work involves generating dynamic lighting and animation, intrinsic decomposition, and adopting more effi-cient scene representation and rendering techniques. 
+
+Acknowledgement: We sincerely thank the Waabi team for their invaluable assistance and support. We also thank the anonymous reviewers for their insightful suggestions. 8References 
+
+[1] Titas Anciukeviˇ cius, Zexiang Xu, Matthew Fisher, Paul Henderson, Hakan Bilen, Niloy J Mitra, and Paul Guerrero. Renderdiffusion: Image diffusion for 3d reconstruction, in-painting and generation. In CVPR , 2023. 3 [2] Jonathan T. Barron, Ben Mildenhall, Dor Verbin, Pratul P. Srinivasan, and Peter Hedman. Mip-nerf 360: Unbounded anti-aliased neural radiance fields. CVPR , 2022. 13 [3] Jonathan T Barron, Ben Mildenhall, Dor Verbin, Pratul P Srinivasan, and Peter Hedman. Zip-nerf: Anti-aliased grid-based neural radiance fields. In ICCV , 2023. 22 [4] Miguel Angel Bautista, Pengsheng Guo, Samira Abnar, Walter Talbott, Alexander Toshev, Zhuoyuan Chen, Lau-rent Dinh, Shuangfei Zhai, Hanlin Goh, Daniel Ulbricht, et al. Gaudi: A neural architect for immersive 3d scene generation. NeurIPS , 2022. 5 [5] Mikołaj Bi´ nkowski, Danica J Sutherland, Michael Arbel, and Arthur Gretton. Demystifying mmd gans. arXiv , 2018. 7, 16 [6] Holger Caesar, Varun Bankiti, Alex H Lang, Sourabh Vora, Venice Erin Liong, Qiang Xu, Anush Krishnan, Yu Pan, Giancarlo Baldan, and Oscar Beijbom. nuscenes: A multi-modal dataset for autonomous driving. In CVPR , 2020. 8, 18 [7] Ang Cao, Justin Johnson, Andrea Vedaldi, and David Novotny. Lightplane: Highly-scalable components for neu-ral 3d fields. arXiv , 2024. 3 [8] Eric R Chan, Marco Monteiro, Petr Kellnhofer, Jiajun Wu, and Gordon Wetzstein. pi-gan: Periodic implicit genera-tive adversarial networks for 3d-aware image synthesis. In 
+
+CVPR , 2021. 2 [9] Eric R Chan, Connor Z Lin, Matthew A Chan, Koki Nagano, Boxiao Pan, Shalini De Mello, Orazio Gallo, Leonidas J Guibas, Jonathan Tremblay, Sameh Khamis, et al. Efficient geometry-aware 3d generative adversarial networks. In CVPR , 2022. 2, 3, 6, 7, 8, 14, 15, 16 [10] David Charatan, Sizhe Lester Li, Andrea Tagliasacchi, and Vincent Sitzmann. pixelsplat: 3d gaussian splats from im-age pairs for scalable generalizable 3d reconstruction. In 
+
+CVPR , 2024. 6, 7, 14, 15 [11] Hansheng Chen, Jiatao Gu, Anpei Chen, Wei Tian, Zhuowen Tu, Lingjie Liu, and Hao Su. Single-stage dif-fusion nerf: A unified approach to 3d generation and recon-struction. In ICCV , 2023. 2, 3, 5, 6, 7, 8, 15, 16 [12] Yun Chen, Frieda Rong, Shivam Duggal, Shenlong Wang, Xinchen Yan, Sivabalan Manivasagam, Shangjie Xue, Ersin Yumer, and Raquel Urtasun. Geosim: Realistic video simu-lation via geometry-aware composition for self-driving. In 
+
+CVPR , 2021. 2 [13] Yun Chen, Jingkang Wang, Ze Yang, Sivabalan Mani-vasagam, and Raquel Urtasun. G3r: Gradient guided gen-eralizable reconstruction. In ECCV , 2025. 2, 6, 7, 14, 15 [14] Ziyu Chen, Jiawei Yang, Jiahui Huang, Riccardo de Lu-tio, Janick Martinez Esturo, Boris Ivanovic, Or Litany, Zan Gojcic, Sanja Fidler, Marco Pavone, et al. Omnire: Omni urban scene reconstruction. arXiv , 2024. 1, 2, 6, 22 [15] Matt Deitke, Dustin Schwenk, Jordi Salvador, Luca Weihs, Oscar Michel, Eli VanderBilt, Ludwig Schmidt, Kiana Ehsani, Aniruddha Kembhavi, and Ali Farhadi. Objaverse: A universe of annotated 3d objects. In CVPR , 2023. 2 [16] Prafulla Dhariwal and Alexander Nichol. Diffusion models beat gans on image synthesis. NeurIPS , 2021. 5 [17] Alexey Dosovitskiy, German Ros, Felipe Codevilla, Anto-nio Lopez, and Vladlen Koltun. CARLA: An open urban driving simulator. In CoRL , 2017. 1 [18] Patrick Esser, Robin Rombach, and Bjorn Ommer. Taming transformers for high-resolution image synthesis. In CVPR ,2021. 13 [19] Tobias Fischer, Jonas Kulhanek, Samuel Rota Bul` o, Lorenzo Porzi, Marc Pollefeys, and Peter Kontschieder. Dynamic 3d gaussian fields for urban areas. arXiv , 2024. 1 [20] Raghudeep Gadde, Qianli Feng, and Aleix M Martinez. De-tail me more: Improving gan’s photo-realism of complex scenes. In ICCV , 2021. 5 [21] Jun Gao, Tianchang Shen, Zian Wang, Wenzheng Chen, Kangxue Yin, Daiqing Li, Or Litany, Zan Gojcic, and Sanja Fidler. Get3d: A generative model of high quality 3d tex-tured shapes learned from images. NeurIPS , 2022. 2, 3 [22] Ruiqi Gao, Aleksander Holynski, Philipp Henzler, Arthur Brussee, Ricardo Martin-Brualla, Pratul Srinivasan, Jonathan T Barron, and Ben Poole. Cat3d: Create anything in 3d with multi-view diffusion models. arXiv , 2024. 3 [23] Ian Goodfellow, Jean Pouget-Abadie, Mehdi Mirza, Bing Xu, David Warde-Farley, Sherjil Ozair, Aaron Courville, and Yoshua Bengio. Generative adversarial nets. NeurIPS ,2014. 2 [24] Jiatao Gu, Alex Trevithick, Kai-En Lin, Joshua MSusskind, Christian Theobalt, Lingjie Liu, and Ravi Ra-mamoorthi. Nerfdiff: Single-image view synthesis with nerf-guided distillation from 3d-aware diffusion. In ICML ,2023. 2, 3 [25] Martin Heusel, Hubert Ramsauer, Thomas Unterthiner, Bernhard Nessler, and Sepp Hochreiter. Gans trained by a two time-scale update rule converge to a local nash equi-librium. NeurIPS , 2017. 6, 7, 16 [26] Jonathan Ho, Ajay Jain, and Pieter Abbeel. Denoising dif-fusion probabilistic models. NeurIPS , 2020. 3, 5, 13 [27] Yicong Hong, Kai Zhang, Jiuxiang Gu, Sai Bi, Yang Zhou, Difan Liu, Feng Liu, Kalyan Sunkavalli, Trung Bui, and Hao Tan. LRM: Large reconstruction model for single im-age to 3d. arXiv , 2023. 2 [28] Qianjiang Hu, Zhimin Zhang, and Wei Hu. Rangeldm: Fast realistic lidar point cloud generation. In ECCV , 2025. 3 [29] Sungwon Hwang, Min-Jung Kim, Taewoong Kang, Jayeon Kang, and Jaegul Choo. VEGS: View extrapolation of ur-ban scenes in 3d gaussian splatting using learned priors. 
+
+arXiv , 2024. 2, 3 [30] Phillip Isola, Jun-Yan Zhu, Tinghui Zhou, and Alexei A Efros. Image-to-image translation with conditional adver-sarial networks. In CVPR , 2017. 4 [31] Wonbong Jang and Lourdes Agapito. Codenerf: Disentan-gled neural radiance fields for object categories. In ICCV ,2021. 2 
+
+9[32] Tero Karras, Samuli Laine, and Timo Aila. A style-based generator architecture for generative adversarial networks. In CVPR , 2019. 2 [33] Bernhard Kerbl, Georgios Kopanas, Thomas Leimk¨ uhler, and George Drettakis. 3d gaussian splatting for real-time radiance field rendering. ACM Trans. Graph. , 2023. 22 [34] Mustafa Khan, Hamidreza Fazlali, Dhruv Sharma, Tong-tong Cao, Dongfeng Bai, Yuan Ren, and Bingbing Liu. Autosplat: Constrained gaussian splatting for autonomous driving scene reconstruction. arXiv , 2024. 1, 2 [35] Diederik P Kingma. Auto-encoding variational bayes. 
+
+arXiv , 2013. 3, 5, 13 [36] Diederik P Kingma and Jimmy Ba. Adam: A method for stochastic optimization. ICLR , 2015. 14 [37] Alexander Kirillov, Eric Mintun, Nikhila Ravi, Hanzi Mao, Chloe Rolland, Laura Gustafson, Tete Xiao, Spencer Whitehead, Alexander C Berg, Wan-Yen Lo, et al. Segment anything. In ICCV , 2023. 6, 15, 16 [38] Jiahao Li, Hao Tan, Kai Zhang, Zexiang Xu, Fujun Luan, Yinghao Xu, Yicong Hong, Kalyan Sunkavalli, Greg Shakhnarovich, and Sai Bi. Instant3d: Fast text-to-3d with sparse-view generation and large reconstruction model. 
+
+arXiv , 2023. 3 [39] Zhiqi Li, Wenhai Wang, Hongyang Li, Enze Xie, Chong-hao Sima, Tong Lu, Yu Qiao, and Jifeng Dai. Bevformer: Learning bird’s-eye-view representation from multi-camera images via spatiotemporal transformers. In ECCV , 2022. 8 [40] Chen-Hsuan Lin, Jun Gao, Luming Tang, Towaki Takikawa, Xiaohui Zeng, Xun Huang, Karsten Kreis, Sanja Fidler, Ming-Yu Liu, and Tsung-Yi Lin. Magic3d: High-resolution text-to-3d content creation. In CVPR , 2023. 2, 3[41] Jeffrey Yunfan Liu, Yun Chen, Ze Yang, Jingkang Wang, Sivabalan Manivasagam, and Raquel Urtasun. Neural scene rasterization for large scene rendering in real time. In ICCV ,2023. 2 [42] Minghua Liu, Chao Xu, Haian Jin, Linghao Chen, Mukund Varma T, Zexiang Xu, and Hao Su. One-2-3-45: Any sin-gle image to 3d mesh in 45 seconds without per-shape op-timization. NeurIPS , 2024. 3 [43] Minghua Liu, Chong Zeng, Xinyue Wei, Ruoxi Shi, Ling-hao Chen, Chao Xu, Mengqi Zhang, Zhaoning Wang, Xi-aoshuai Zhang, Isabella Liu, et al. Meshformer: High-quality mesh generation with 3d-guided reconstruction model. arXiv , 2024. 20 [44] Ruoshi Liu, Rundi Wu, Basile Van Hoorick, Pavel Tok-makov, Sergey Zakharov, and Carl Vondrick. Zero-1-to-3: Zero-shot one image to 3d object. In ICCV , 2023. 3 [45] Zhen Liu, Yao Feng, Michael J Black, Derek Nowrouzezahrai, Liam Paull, and Weiyang Liu. Meshdif-fusion: Score-based generative 3d mesh modeling. arXiv ,2023. 3 [46] Xiaoxiao Long, Yuan-Chen Guo, Cheng Lin, Yuan Liu, Zhiyang Dou, Lingjie Liu, Yuexin Ma, Song-Hai Zhang, Marc Habermann, Christian Theobalt, et al. Wonder3d: Single image to 3d using cross-domain diffusion. In CVPR ,2024. 3 [47] Shitong Luo and Wei Hu. Diffusion probabilistic models for 3d point cloud generation. In CVPR , 2021. 3 [48] Sivabalan Manivasagam, Ioan Andrei Bˆ arsan, Jingkang Wang, Ze Yang, and Raquel Urtasun. Towards zero domain gap: A comprehensive study of realistic lidar simulation for autonomy testing. In ICCV , 2023. 1 [49] Quan Meng, Lei Li, Matthias Nießner, and Angela Dai. Lt3sd: Latent trees for 3d scene diffusion. arXiv , 2024. 3[50] Ben Mildenhall, Pratul P Srinivasan, Matthew Tancik, Jonathan T Barron, Ravi Ramamoorthi, and Ren Ng. Nerf: Representing scenes as neural radiance fields for view syn-thesis. Communications of the ACM , 2021. 2 [51] Norman M¨ uller, Andrea Simonelli, Lorenzo Porzi, Samuel Rota Bul` o, Matthias Nießner, and Peter Kontschieder. Autorf: Learning 3d object radiance fields from single view observations. In CVPR , 2022. 2 [52] Norman M¨ uller, Yawar Siddiqui, Lorenzo Porzi, Samuel Rota Bulo, Peter Kontschieder, and Matthias Nießner. Diffrf: Rendering-guided 3d radiance field diffusion. In CVPR , 2023. 2, 3, 5, 6 [53] Jacob Munkberg, Jon Hasselgren, Tianchang Shen, Jun Gao, Wenzheng Chen, Alex Evans, Thomas M¨ uller, and Sanja Fidler. Extracting triangular 3d models, materials, and lighting from images. In CVPR , 2022. 2 [54] Michael Niemeyer and Andreas Geiger. Giraffe: Repre-senting scenes as compositional generative neural feature fields. In CVPR , 2021. 2 [55] Evangelos Ntavelis, Aliaksandr Siarohin, Kyle Olszewski, Chaoyang Wang, Luc V Gool, and Sergey Tulyakov. Au-todecoding latent 3d diffusion models. NeurIPS , 2023. 2, 3[56] Michael Oechsle, Songyou Peng, and Andreas Geiger. Unisurf: Unifying neural implicit surfaces and radiance fields for multi-view reconstruction. In ICCV , 2021. 2 [57] Julian Ost, Fahim Mannan, Nils Thuerey, Julian Knodt, and Felix Heide. Neural scene graphs for dynamic scenes. In 
+
+CVPR , 2021. 2 [58] Dustin Podell, Zion English, Kyle Lacey, Andreas Blattmann, Tim Dockhorn, Jonas M¨ uller, Joe Penna, and Robin Rombach. SDXL: Improving latent diffusion mod-els for high-resolution image synthesis. In ICLR , 2024. 3 [59] Ben Poole, Ajay Jain, Jonathan T Barron, and Ben Milden-hall. Dreamfusion: Text-to-3d using 2d diffusion. arXiv ,2022. 2, 3, 17 [60] Ava Pun, Gary Sun, Jingkang Wang, Yun Chen, Ze Yang, Sivabalan Manivasagam, Wei-Chiu Ma, and Raquel Ur-tasun. Neural lighting simulation for urban scenes. In 
+
+NeurIPS , 2023. 2, 22 [61] Haoxi Ran, Vitor Guizilini, and Yue Wang. Towards realis-tic scene generation with lidar diffusion models. In CVPR ,2024. 3 [62] Xuanchi Ren, Jiahui Huang, Xiaohui Zeng, Ken Museth, Sanja Fidler, and Francis Williams. Xcube: Large-scale 3d generative modeling using sparse voxel hierarchies. In 
+
+CVPR , 2024. 3 
+
+10 [63] Xuanchi Ren, Yifan Lu, Hanxue Liang, Zhangjie Wu, Huan Ling, Mike Chen, Sanja Fidler, Francis Williams, and Ji-ahui Huang. SCube: Instant large-scale scene reconstruc-tion using voxsplats. arXiv , 2024. 2 [64] Barbara Roessle, Norman M¨ uller, Lorenzo Porzi, Samuel Rota Bul` o, Peter Kontschieder, Angela Dai, and Matthias Nießner. L3dg: Latent 3d gaussian diffusion. 
+
+arXiv , 2024. 2, 3 [65] Robin Rombach, Andreas Blattmann, Dominik Lorenz, Patrick Esser, and Bj¨ orn Ommer. High-resolution image synthesis with latent diffusion models. In CVPR , 2022. 2, 3, 5 [66] Guodong Rong, Byung Hyun Shin, Hadi Tabatabaee, Qiang Lu, Steve Lemke, M¯ artin ¸ ˇ s Moˇ zeiko, Eric Boise, Geehoon Uhm, Mark Gerow, and Shalin Mehta. Lgsvl simulator: A high fidelity simulator for autonomous driving. In ITSC ,2020. 1 [67] Olaf Ronneberger, Philipp Fischer, and Thomas Brox. U-net: Convolutional networks for biomedical image segmen-tation. In MICCAI , 2015. 3, 5, 13 [68] Tim Salimans and Jonathan Ho. Progressive distillation for fast sampling of diffusion models. arXiv , 2022. 13 [69] Jay Sarva, Jingkang Wang, James Tu, Yuwen Xiong, Siva-balan Manivasagam, and Raquel Urtasun. Adv3d: Gener-ating safety-critical 3d objects through closed-loop simula-tion. In CoRL , 2023. 1 [70] Shital Shah, Debadeepta Dey, Chris Lovett, and Ashish Kapoor. AirSim: High-fidelity visual and physical simula-tion for autonomous vehicles. In Field and service robotics ,2018. 1 [71] Bokui Shen, Xinchen Yan, Charles R Qi, Mahyar Najibi, Boyang Deng, Leonidas Guibas, Yin Zhou, and Dragomir Anguelov. Gina-3d: Learning to generate implicit neural assets in the wild. In CVPR , 2023. 2 [72] Yichun Shi, Peng Wang, Jianglong Ye, Mai Long, Kejie Li, and Xiao Yang. Mvdream: Multi-view diffusion for 3d generation. arXiv , 2023. 3 [73] J Ryan Shue, Eric Ryan Chan, Ryan Po, Zachary Ankner, Jiajun Wu, and Gordon Wetzstein. 3d neural field genera-tion using triplane diffusion. In CVPR , 2023. 3, 5 [74] Jascha Sohl-Dickstein, Eric Weiss, Niru Maheswaranathan, and Surya Ganguli. Deep unsupervised learning using nonequilibrium thermodynamics. In ICML , 2015. 5 [75] Jiaming Song, Chenlin Meng, and Stefano Ermon. Denois-ing diffusion implicit models. arXiv , 2020. 3, 5 [76] Yang Song, Jascha Sohl-Dickstein, Diederik P Kingma, Abhishek Kumar, Stefano Ermon, and Ben Poole. Score-based generative modeling through stochastic differential equations. arXiv , 2020. 3, 5 [77] Stanislaw Szymanowicz, Christian Rupprecht, and Andrea Vedaldi. Viewset diffusion:(0-) image-conditioned 3d gen-erative models from 2d data. In ICCV , 2023. 3 [78] Matthew Tancik, Vincent Casser, Xinchen Yan, Sabeek Pradhan, Ben Mildenhall, Pratul P Srinivasan, Jonathan T Barron, and Henrik Kretzschmar. Block-nerf: Scalable large scene neural view synthesis. In CVPR , 2022. 1 [79] Jiaxiang Tang, Jiawei Ren, Hang Zhou, Ziwei Liu, and Gang Zeng. Dreamgaussian: Generative gaussian splatting for efficient 3d content creation. arXiv , 2023. 3 [80] Jiaxiang Tang, Zhaoxi Chen, Xiaokang Chen, Tengfei Wang, Gang Zeng, and Ziwei Liu. Lgm: Large multi-view gaussian model for high-resolution 3d content creation. In 
+
+ECCV , 2025. 3 [81] Ayush Tewari, Tianwei Yin, George Cazenavette, Semon Rezchikov, Josh Tenenbaum, Fr´ edo Durand, Bill Freeman, and Vincent Sitzmann. Diffusion with forward models: Solving stochastic inverse problems without direct super-vision. NeurIPS , 2023. 3 [82] Adam Tonderski, Carl Lindstr¨ om, Georg Hess, William Ljungbergh, Lennart Svensson, and Christoffer Petersson. NeuRAD: Neural rendering for autonomous driving. In 
+
+CVPR , 2024. 1, 2, 3, 4, 6, 7, 14 [83] Arash Vahdat, Francis Williams, Zan Gojcic, Or Litany, Sanja Fidler, Karsten Kreis, et al. Lion: Latent point diffu-sion models for 3d shape generation. NeurIPS , 2022. 3 [84] Aaron Van Den Oord, Oriol Vinyals, et al. Neural discrete representation learning. NeurIPS , 2017. 3 [85] Jingkang Wang, Ava Pun, James Tu, Sivabalan Mani-vasagam, Abbas Sadat, Sergio Casas, Mengye Ren, and Raquel Urtasun. Advsim: Generating safety-critical sce-narios for self-driving vehicles. In CVPR , 2021. 1 [86] Jingkang Wang, Sivabalan Manivasagam, Yun Chen, Ze Yang, Ioan Andrei Bˆ arsan, Anqi Joyce Yang, Wei-Chiu Ma, and Raquel Urtasun. CADSim: Robust and scalable in-the-wild 3d reconstruction for controllable sensor simulation. In 6th Annual Conference on Robot Learning , 2022. 2 [87] Peng Wang and Yichun Shi. Imagedream: Image-prompt multi-view diffusion for 3d generation. arXiv , 2023. 3 [88] Peng Wang, Lingjie Liu, Yuan Liu, Christian Theobalt, Taku Komura, and Wenping Wang. Neus: Learning neural implicit surfaces by volume rendering for multi-view recon-struction. arXiv , 2021. 2 [89] Qitai Wang, Lue Fan, Yuqi Wang, Yuntao Chen, and Zhaox-iang Zhang. FreeVS: Generative view synthesis on free driving trajectory. arXiv , 2024. 2, 3 [90] Zhou Wang, Alan C Bovik, Hamid R Sheikh, and Eero P Simoncelli. Image quality assessment: from error visibility to structural similarity. TIP , 2004. 6, 15 [91] Zhengyi Wang, Yikai Wang, Yifei Chen, Chendong Xiang, Shuo Chen, Dajiang Yu, Chongxuan Li, Hang Su, and Jun Zhu. Crm: Single image to 3d textured mesh with convolu-tional reconstruction model. In ECCV , 2025. 20 [92] Xinyue Wei, Kai Zhang, Sai Bi, Hao Tan, Fujun Luan, Valentin Deschaintre, Kalyan Sunkavalli, Hao Su, and Zex-iang Xu. MeshLRM: Large reconstruction model for high-quality mesh. arXiv , 2024. 2, 8 [93] Rundi Wu, Ben Mildenhall, Philipp Henzler, Keunhong Park, Ruiqi Gao, Daniel Watson, Pratul P Srinivasan, Dor Verbin, Jonathan T Barron, Ben Poole, et al. Reconfusion: 3d reconstruction with diffusion priors. In CVPR , 2024. 2, 3[94] Shuang Wu, Youtian Lin, Feihu Zhang, Yifei Zeng, Jingxi Xu, Philip Torr, Xun Cao, and Yao Yao. Direct3d: Scalable 
+
+11 image-to-3d generation via 3d latent diffusion transformer. 
+
+arXiv , 2024. 2, 3, 5 [95] Zirui Wu, Tianyu Liu, Liyi Luo, Zhide Zhong, Jianteng Chen, Hongmin Xiao, Chao Hou, Haozhe Lou, Yuantao Chen, Runyi Yang, et al. Mars: An instance-aware, modu-lar and realistic simulator for autonomous driving. In CAAI International Conference on Artificial Intelligence , 2023. 1 [96] Ziyi Wu, Yulia Rubanova, Rishabh Kabra, Drew Hud-son, Igor Gilitschenski, Yusuf Aytar, Sjoerd van Steenkiste, Kelsey Allen, and Thomas Kipf. Neural assets: 3d-aware multi-object scene synthesis with image diffusion models. In NeurIPS , 2024. 3 [97] Pengchuan Xiao, Zhenlei Shao, Steven Hao, Zishuo Zhang, Xiaolin Chai, Judy Jiao, Zesong Li, Jian Wu, Kai Sun, Kun Jiang, et al. Pandaset: Advanced sensor suite dataset for autonomous driving. In ITSC , 2021. 2, 6, 15 [98] Yuwen Xiong, Wei-Chiu Ma, Jingkang Wang, and Raquel Urtasun. Learning compact representations for lidar com-pletion and generation. In CVPR , 2023. 3 [99] Jiale Xu, Weihao Cheng, Yiming Gao, Xintao Wang, Shenghua Gao, and Ying Shan. Instantmesh: Efficient 3d mesh generation from a single image with sparse-view large reconstruction models. arXiv , 2024. 3, 20 [100] Yinghao Xu, Menglei Chai, Zifan Shi, Sida Peng, Ivan Sko-rokhodov, Aliaksandr Siarohin, Ceyuan Yang, Yujun Shen, Hsin-Ying Lee, Bolei Zhou, et al. Discoscene: Spatially disentangled generative radiance fields for controllable 3d-aware scene synthesis. In CVPR , 2023. 2, 5, 6, 7, 8, 15 [101] Yinghao Xu, Hao Tan, Fujun Luan, Sai Bi, Peng Wang, Jiahao Li, Zifan Shi, Kalyan Sunkavalli, Gordon Wetzstein, Zexiang Xu, et al. Dmv3d: Denoising multi-view diffusion using 3d large reconstruction model. arXiv , 2023. 3 [102] Yinghao Xu, Zifan Shi, Wang Yifan, Hansheng Chen, Ceyuan Yang, Sida Peng, Yujun Shen, and Gordon Wet-zstein. Grm: Large gaussian reconstruction model for effi-cient 3d reconstruction and generation. arXiv , 2024. 3 [103] Yunzhi Yan, Haotong Lin, Chenxu Zhou, Weijie Wang, Haiyang Sun, Kun Zhan, Xianpeng Lang, Xiaowei Zhou, and Sida Peng. Street gaussians for modeling dynamic ur-ban scenes. In ECCV , 2024. 1, 2, 3, 6, 7, 14 [104] Jiawei Yang, Boris Ivanovic, Or Litany, Xinshuo Weng, Seung Wook Kim, Boyi Li, Tong Che, Danfei Xu, Sanja Fidler, Marco Pavone, et al. Emernerf: Emergent spatial-temporal scene decomposition via self-supervision. arXiv ,2023. 1, 6 [105] Ze Yang, Sivabalan Manivasagam, Ming Liang, Bin Yang, Wei-Chiu Ma, and Raquel Urtasun. Recovering and sim-ulating pedestrians in the wild. In Conference on Robot Learning , 2021. 2 [106] Ze Yang, Shenlong Wang, Sivabalan Manivasagam, Zeng Huang, Wei-Chiu Ma, Xinchen Yan, Ersin Yumer, and Raquel Urtasun. S3: Neural shape, skeleton, and skinning fields for 3d human modeling. In CVPR , 2021. 2 [107] Ze Yang, Yun Chen, Jingkang Wang, Sivabalan Mani-vasagam, Wei-Chiu Ma, Anqi Joyce Yang, and Raquel Ur-tasun. Unisim: A neural closed-loop sensor simulator. In 
+
+CVPR , 2023. 1, 2, 3, 4, 6, 13, 14, 22 [108] Ze Yang, Sivabalan Manivasagam, Yun Chen, Jingkang Wang, Rui Hu, and Raquel Urtasun. Reconstructing ob-jects in-the-wild for realistic sensor simulation. In ICRA ,2023. 2 [109] Ze Yang, George Chen, Haowei Zhang, Kevin Ta, Ioan An-drei Bˆ arsan, Daniel Murphy, Sivabalan Manivasagam, and Raquel Urtasun. Unical: Unified neural sensor calibration. In ECCV , 2025. 2, 22 [110] Jason Zhang, Gengshan Yang, Shubham Tulsiani, and Deva Ramanan. NeRS: Neural reflectance surfaces for sparse-view 3d reconstruction in the wild. NeurIPS , 2021. 2 [111] Lunjun Zhang, Yuwen Xiong, Ze Yang, Sergio Casas, Rui Hu, and Raquel Urtasun. Copilot4d: Learning unsuper-vised world models for autonomous driving via discrete dif-fusion. arXiv , 2023. 3 [112] Richard Zhang, Phillip Isola, Alexei A Efros, Eli Shecht-man, and Oliver Wang. The unreasonable effectiveness of deep features as a perceptual metric. In CVPR , 2018. 4, 6, 15 [113] Xiaoyu Zhou, Zhiwei Lin, Xiaojun Shan, Yongtao Wang, Deqing Sun, and Ming-Hsuan Yang. Drivinggaussian: Composite gaussian splatting for surrounding dynamic au-tonomous driving scenes. In CVPR , 2024. 1 
+
+12 Supplementary Material 
+
+In the supplementary material, we provide implementation details of our method (Sec. A) and baselines (Sec. B), exper-imental settings (Sec. C), additional results and analysis (Sec. D), and then discuss limitations and future directions of our method (Sec. E). Please refer to our project page https://waabi.ai/genassets for an overview of our methodology and video results of GenAssets for scalable content creation and sensor simulation. 
+
+# A. GenAssets Details 
+
+Scene Representation Model: Our scene representation model is based on tri-plane feature maps and neural feature fields MLP network ffeat . For each actor, we use a tri-plane with spatial resolution of 128 × 128 and feature dimension of 12 . For the background, we use a triplane with spatial resolution 256 × 256 and feature dimension of 12 . The neural feature fields MLP network is composed of two sub-networks. The first one takes the interpolated feature {interp (xp, tp)}p∈{ xy,xz,yz }
+
+as input and predicts the signed distance value s and an intermediate feature. The second network takes the concatenation of the intermediate feature and viewpoint encoding as input to predict the neural feature vector f with 32 channels. To model the unbounded scene, we adopted an inverted sphere parameterization similar to [2, 107]. To decouple shadows from actors, we identify the camera ray’s intersection with the actor’s bottom plane (derived from the actor’s pose and dimension) and use a shadow head MLP to predict the actor’s shadow RGB. 
+
+Rendering Details: To render the neural feature fields, we sample query points with a step size of 5 cm for regions inside the foreground actor bounding boxes, and 30 cm otherwise. To enable efficient volume rendering for unbounded background regions, we leverage geometry priors from LiDAR observations to localize near-surface regions, restricting radiance field evaluations to these areas. This approach significantly reduces the number of samples and radiance queries needed. Specifi-cally, we construct an occupancy grid for the scene volume based on aggregated LiDAR point clouds similar to [107], with a voxel size of 0.5 m. Additionally, 8 extra points are sampled for the distant sky region during volume rendering. 
+
+Asset Decoder: Our asset decoder fdec is designed to transform the asset latent representation into the tri-plane represen-tation. The latent code has a spatial resolution of 8 × 8 and a feature dimension of 32 . We regularize the latent space with a small Kullback-Leibler (KL) penalty using the reparameterization trick [35]. The asset decoder adopts a similar architec-ture to [18], where the latent code is concatenated with the class embedding and processed through a sequence of blocks: a residual block with 256 channels, a non-local block with 256 channels, and another residual block with 256 channels. This is followed by five residual blocks with channel channels 256 , 128 , 128 , 64 , 64 , with four 2×upsampling layers interleaved from the second to the last residual block, progressively increasing the spatial resolution to 128 ×128 . Finally, a convolutional layer predicts the tri-plane representation. Group normalization with 32 groups is applied to normalize intermediate features. 
+
+Camera RGB CNN Network: The camera RGB network frgb consists of 6 residual blocks with 32 channels, and upsample the rendered image feature map from 480 × 270 to 1920 × 1080 resolution. A convolution layer is applied at the beginning to convert input feature to 32 channels, and another convolution layer is applied to predict the final output image. To get a larger receptive field, we set kernel size to 5 for all residual blocks. Two 2× upsampling layers are inserted after the second residual block and the fourth residual block. 
+
+Denoising Network: The denoising network fdiff is implemented as a U-Net [67], following the design in DDPM [26]. The U-Net uses a base channel of 128 and includes two 2× scaling module, each consisting of two residual blocks. The feature dimension increases progressively from the base channel size of 128 to 512 . Timestep embeddings t and conditioning signals ( e.g ., class labels, time-of-day) are incorporated into the intermediate layers. For the prediction format, we use the 
+
+v-parameterization, as proposed in [68]. 
+
+Training Details: In the first stage, we jointly train the asset code {ci}Nc
+
+> i=1
+
+, class embedding {ei}Ne
+
+> i=1
+
+, background neural fields tB, asset decoder fdec , neural feature fields MLP ffeat , and RGB CNN network frgb to minimize the reconstruction objective (Eqn. 5 in the main paper). The training set consists of 6 cameras from PandaSet across 96 training logs, each containing 80 images at 1920 × 1080 resolution, totaling approximately 46 k images. Training is performed on 16 NVIDIA A10G GPUs, for 100 epochs, taking approximately 1.5 days to complete. The loss weights in the learning objective are set 13 as follows: λrgb = 1 , λperp = 0 .1, λadv = 0 .001 , λlid = 0 .01 , and λKL = 1 e − 5. For the additional perceptual loss on object patches, we project the 3D instance boxes onto images to extract patches, which are resized to 256 × 256 resolution for perceptual loss computation. We adopt Adam optimizer [36] for training. Learning rate is 0.05 for asset latent code, 
+
+0.0001 for asset decoder and class embedding, 0.001 for neural feature fields network, and 0.001 for RGB CNN network. In the second stage, the denoising network is trained exclusively on 8 NVIDIA A10G GPUs for 100 k iterations, requiring approximately 12 hours. The Adam optimizer is used with a learning rate of 0.0001 for the denoising network. 
+
+# B. Baseline Implementation Details 
+
+B.1. Reconstruction Baselines 
+
+NeuRAD [82]: Following [107], NeuRAD leverages compositional neural radiance fields to handle dynamic scenes. It further proposes several techniques to handle more complex sensor phenonmena ( e.g ., rolling-shutter, ray-dropping and beam divergence) and achieves superior performance in camera simulation. We adopt the public implementation 1 and train the models for 20,000 iterations. The models are trained on all input views (9 images for sparse view synthesis, and 80 images for novel camera synthesis and 360 ◦ view synthesis) for each validation snippet. 
+
+Street Gaussian [103]: Street Gaussian replaces NeRFs in [82, 107] with compositional 3DGS and achieves real-time camera simulation, but does not support LiDAR. We adopt the public implementation 2 and train the models for 30,000 iterations with the default hyperparameters ( e.g ., density control, learning rate schedule). We use 800,000 downsampled aggregated LiDAR points and random 200,000 points for the initialization of 3D Gaussians. We train the models on all input views (9 images for sparse view synthesis, and 80 images for novel camera synthesis and 360 ◦ view synthesis) for each validation snippet. 
+
+PixelSplat [10]: PixelSplat is a generalizable scene reconstruction approach based on 3D Gaussian Splatting. It predicts 3D Gaussians with a 2-view epipolar transformer to extract features and then predicts the depth distribution and pixel-aligned Gaussians. The model is trained with 96 training PandaSet snippets with 9 source views and 71 target views. During sparse view synthesis evaluation, we select the two nearest source views to predict and render the representation. We adopt the public implementation 3 and use 2× A6000 (48GB) to train the models. Due to GPU memory constraints, we downscale the image resolution to 360 × 640 for PandaSet (and rescale images to 1920 × 1080 for evaluation). We note that the original work uses an 80GB A100 for training and handles 256 × 256 resolution. We use re10k config and train each model for 100k iterations with a batch size of 1. 
+
+G3R [13]: G3R is a generalizable reconstruction approach that is designed for real-world large scenes and can efficiently predict high-quality 3D Gaussians taking many training images. It learns a reconstruction network that takes the gradient feedback signals from differentiable rendering to iteratively update a 3D scene representation. We adapt G3R to our evalu-ation setting by training models on sparse training views (sparse view synthesis) or all front-camera images (novel camera synthesis and 360 ◦ view synthesis). For all experiments, during training we follow [13] to randomly select 20 consecutive frames (10 source views, 10 target views) using the front camera. We train the models on 2 × A6000 (48GB) for 300 epochs. During the evaluation, we take all source images to reconstruct the 3D representations (9 images for sparse view synthesis, 80 images for novel camera synthesis and 360 ◦ view synthesis) for each validation snippet, and then render at the target views. 
+
+B.2. Generation Baselines 
+
+EG3D [9]: EG3D is a GAN-based model for high-quality 3D object synthesis with implicit representations. It combines StyleGAN-like latent space manipulation with a geometry-aware approach, leveraging a tri-plane representation to balance rendering quality and computational efficiency. The architecture integrates volumetric rendering and an efficient super res-olution module, enabling fast and scalable training while maintaining photorealistic results and precise 3D structures. We adopt the official implementation 4 and train the models on our object-centric benchmark ( ≈ 55 k object images) using 2×
+
+A5000 (24GB) GPUs. We render the feature map at a resolution of 64 × 64 and use 4× super resolution module to produce 
+
+> 1https://github.com/georghess/neurad-studio
+> 2https://github.com/ziyc/drivestudio
+> 3https://github.com/dcharatan/pixelsplat
+> 4https://github.com/NVlabs/eg3d
+
+14 final images at 256 × 256 resolution. Each ray samples 64 coarse samples and 64 importance samples. The model is trained with a batch size of 8 images over a total of 1000 k images. We apply R1 regularization with γ = 1 to ensure stable training. 
+
+DiscoScene [100]: DiscoScene is a 3D-aware GAN-based generative model for controllable scene synthesis. It utilizes an abstract object-level representation as the scene layout prior and spatially disentangles the scene into object-centric generative radiance fields by learning solely from 2D images with the global-local discriminators. We use the official implementation 5
+
+and follow the provided configuration 6 for Waymo. We train the model on all cameras from PandaSet, with a heuristic-based filtering process to remove noisy object samples. Specifically, we exclude objects smaller than 200 pixels in the original 
+
+1920 × 1080 resolution or those occluded by closer objects ( i.e ., having > 50% IoU with a nearer object when projecting the 3D instance box onto the camera image). We train the model using 2× A5000 (24GB) GPUs for 300 k iterations. 
+
+SSDNeRF [11]: SSDNeRF (Single-Stage Diffusion Neural Radiance Field) is a SoTA diffusion-based model for high-quality 3D object generation. It proposes a single-stage training paradigm with an end-to-end objective that jointly optimizes the tri-plane NeRF reconstruction and a diffusion model in the triplane space. This design enables simultaneous 3D re-construction and generative prior learning. SSDNeRF achieves competitive results in both unconditional generation and sparse-view 3D reconstruction tasks. We adopt the official implementation 7 and use 2× A5000 (24GB) GPUs to train the models on our object-centric benchmark. We follow the config for unconditional generation detailed in the official repo 8. We train the model with rendered images at a resolution of 256 × 256 and tri-plane resolution of 128 × 128 . Since instances in our PandaSet object-centric benchmark contain varying numbers of images, we randomly sample three views per instance in each iteration. The model is trained with a batch size of 16 instances over 400 k iterations. 
+
+# C. Experiment Details 
+
+C.1. Pandaset Dataset 
+
+We evaluate on public real-world dataset PandaSet [97] which contains 103 urban driving scenes captured in San Francisco. Each scene spans 8 seconds ( 80 frames sampled at 10 Hz). The data collection platform consists of a 360 ◦ mechanical spinning LiDAR as well as a forward-facing LiDAR, along with 6 HD ( 1920 × 1080 ) cameras. These cameras are facing front, front-left, left, back, front-right, and right. PandaSet also provides human annotated 3D bounding boxes in each frame. Following [13], we select 7 diverse scenes ( 001, 030, 040, 080, 090, 110, 120 ) for evaluation, and the remaining 96 scenes for training. As our focus is object reconstruction and generation, we leverage Segment Anything model (SAM) [37] to extract object segmentation masks for metric evaluation. We also use them to train object-centric baselines EG3D [9] and SSDNeRF [11]. Specifically, we project 3D bounding boxes onto the camera image to obtain 2D boxes. The 2D bounding boxes are used as prompts for the SAM, which generates per-pixel object masks. Next, we project the 3D LiDAR points within the 3D bounding box onto the camera image and calculate the ratio of points falling outside the object mask. To handle failures in SAM that are inconsistent with the 3D annotation, instances with more than 30% of LiDAR points falling outside the masks are removed. We also filter out instances that are too small ( < 100 pixels) in the camera images. To further improve the data quality for training object-centric baselines, we exclude instances that are heavily occluded by other objects. Specifically, we project actor bounding boxes onto the camera image and determine the occluded areas caused by closer actor bounding boxes. Instances with more than 50% of their bounding box area occluded are removed. After processing, we have around 55k object images (with corresponding instance masks) to train the object-centric baselines and around 5k images for evaluation. Fig. A1 shows examples of object-centric images created from PandaSet. 
+
+C.2. Evaluation Metric Details 
+
+Asset Reconstruction Metrics: For Sparse view synthesis and Novel camera synthesis settings, we report peak signal-to-noise ratio (PSNR), structural similarity (SSIM) [90], and perceptual similarity (LPIPS) [112] metrics to evaluate the photorealism of novel views. We mask out the background using our inferred object segmentation masks. Our approach, along with generalizable reconstruction baselines PixelSplat [10] and G3R [11], are trained on the 96 training logs to learn generalizable priors. For Sparse view synthesis , we evaluate using the front camera from 7 evaluation logs. All methods take  
+
+> 5https://github.com/NVlabs/eg3d
+> 6https://github.com/snap-research/discoscene/blob/master/scripts/discoscene/training/train_waymo256. sh 7https://github.com/Lakonik/SSDNeRF
+> 8https://github.com/Lakonik/SSDNeRF/blob/main/configs/paper_cfgs/ssdnerf_cars_uncond.py
+
+15 Figure A1. Examples of object-centric benchmark. We leverage Segment Anything [37] model and object 3D bounding boxes to create an object-centric benchmark for evaluating object reconstruction and generation, and training object-centric baselines [9, 11]. 
+
+GenAssets Actor Class PandaSet Actor Class Car Car Truck Pickup Truck Medium-sized Truck Semi-truck Bus Bus Construction Vehicle Other Vehicle - Construction Vehicle Emergency Vehicle Emergency Vehicle Bicycle Bicycle Motorcycle Motorcycle Motorized Scooter Pedestrian Pedestrian Pedestrian with Object 
+
+> Table A1. Mappings between PandaSet actor class and our defined actor class for class conditional generation.
+
+every 10 th frame as source frames and evaluate on the remaining frames. For Novel camera synthesis , we use all frames from the front camera as source frames and evaluate on all frames from the front-left camera across the 7 evaluation logs. For 
+
+360 ◦ View synthesis , we rotate actors by 0◦, 45 ◦, 90 ◦, 135 ◦, 180 ◦, 225 ◦, 270 ◦, 315 ◦ to simulate various behaviors to evaluate the asset completeness. All frames from the front camera are used as source frames, and evaluations are conducted on the 7
+
+evaluation logs. Since ground-truth images for rotated actors are unavailable, we measure Fr´ echet Inception Distance (FID) [25] between the rotated images and source images. 
+
+Asset Generation Metrics: To evaluate the asset generation quality, we report both the Fr´ echet Inception Distance (FID) [25] and Kernel Inception Distance (KID) [5] metrics. The FID metric is defined as: 
+
+FID = ∥μr − μg ∥2 + Tr 
+
+
+
+Σr + Σ g − 2(Σ r Σg ) 12
+
+
+
+(11) where μr and μg are the means of the feature representations for the real and generated images, respectively. And Σr and Σg
+
+are the corresponding covariance matrices. Tr denotes the trace of a matrix. The KID metric measures the squared Maximum Mean Discrepancy (MMD) between two distributions using a polynomial kernel. For both FID and KID, we generate 10 kobject images and compute the metrics w.r.t. all object images in the evaluation set. We render the images at a resolution of 
+
+256 × 256 , and resize the real images to the same resolution. 
+
+C.3. GenAssets Experiments Details 
+
+Asset Reconstruction Details: We train GenAssets on 96 training logs and fine-tune on the 7 evaluation logs for evaluating asset reconstruction metrics. During fine-tuning, we optimize the asset latent code and background tri-planes to minimize the reconstruction objective (Eqn. 5 in the main paper). In addition, we incorporate a diffusion prior term (Eqn. 7 in the main paper), resulting in the final training objective: L = Lrend + λdiff Ldiff . By guiding the gradient to minimize the diffusion 16 NeuRAD G3R Street Gaussian Ours GT Figure A2. Qualitative results on sparse view synthesis. All methods use every 10 th frame as source frames and evaluate on the remaining frames. GenAssets generalizes well under this challenging setting, whereas SoTA reconstruction methods show reduced robustness and introduce noticeable visual artifacts. NeuRAD G3R Street Gaussian Ours GT 
+
+> Front Front-left
+> Front Front-left
+> Front Front-left
+
+Figure A3. Qualitative results on novel camera synthesis. We train on front-camera frames and evaluate on front-left-camera frames. GenAssets achieves better extrapolation, while baseline methods exhibit significant visual artifacts. 
+
+loss, we achieve a more complete reconstruction of the actor latent code. This approach, known as score distillation sampling (SDS) [59], is widely used in radiance fields generation. 
+
+Asset Generation Details: We train GenAssets on 96 training logs, which include diverse assets classes and different times of day. For class-conditional generation, we map the PandaSet classes into 8 fine-grained GenAssets classes according to Tab. A1. We use an Embedding layer to encode the one-hot representation of class information, which is then combined with the timestep embedding before being fed into the U-Net denoising network. For time-of-day conditional generation, ac-tors from night logs ( 057, 058, 059, 062, 063, 064, 065, 066, 067, 068, 069, 070, 071, 072, 073, 074, 077, 078, 079, 149 ) are classified as night actors, while the others are categorized as day actors. The time-of-day information is then used to condition the diffusion model in the same way as the class-conditional model. For single-image-to-3D generation, we employ a rendering-guided denoising process (Eqn. 10 in main paper). We jointly gen-erate multiple actors within the same image and applying the rendering loss to the composited actor representations, which helps to mitigate the shape ambiguity caused by occlusions. 17 Front camera Front-right camera Front-left camera  
+
+> 120°
+> 240°
+> Front camera Front-right camera Front-left camera
+> 120°
+> 240°
+> 120°
+> 240°
+> 120°
+> 240°
+
+Figure A4. Qualitative results on 360 ◦ view synthesis. Leveraging multi-scene training and a structured latent space, GenAssets enables higher-fidelity asset completion across 360 ◦ orientations. 
+
+Data Augmentation Details: We show that our generated assets boost downstream performance when training the BEV-Former detector. Specifically, we augment the training dataset by swapping out existing actors with generated ones for the same scene layouts. Fig. A5 shows examples of the augmented dataset. We adapt the official BEVFormer repository 9 to support PandaSet, focusing on single-frame vehicle detection using only the front camera. Any actor outside the camera’s field of view is ignored. Our models are trained in vehicle coordinates following the FLU convention (x: forward, y: left, z: up), with the region of interest defined as . x ∈ [0 , 80 m],y ∈ [−40 m, 40 m], and z ∈ [−2m, 6m]. We use the BEVFormer-tiny architecture with a batch size of 4 per GPU. We use the AdamW optimizer and employ the default cosine learning rate schedule for 25 epochs. For augmented training, we generate a simulated (sim) dataset by replacing existing actors with generated ones while keeping the same scene layouts, and then mix this with the original data (real). We only consider the vehicle class and report distance-based AP [6] at 1m, 2m, and 4m, and average the three metrics to obtain the final mAP. 
+
+# D. Additional Experiments and Analysis 
+
+D.1. Additional Qualitative Results on Reconstruction 
+
+Sparse View Synthesis: Additional qualitative comparisons of sparse view synthesis are presented in Fig. A2. GenAssets demonstrates strong generalization in this challenging setting, while SoTA reconstruction methods exhibit reduced robustness and introduce noticeable visual artifacts. 
+
+> 9https://github.com/fundamentalvision/BEVFormer
+
+18 Figure A5. Examples of sensor simulation generated by GenAssets. For each scene layout (row), existing actors are replaced with generated ones, showcasing different variations per layout. 
+
+Novel Camera Synthesis: We compare GenAssets against SoTA methods for novel camera synthesis in Fig. A3. The inset shows source images from the front camera. Rendering from a new camera (front-left) involves significant viewpoint changes, with previously unobserved regions becoming visible. GenAssets handles these challenges effectively, whereas baselines struggle with robustness and produce visible artifacts. 
+
+360 ◦ View synthesis: Additional 360 ◦ view synthesis results are shown in Fig. A4. GenAssets captures complete asset shapes and appearances, enabling high-fidelity rendering across 360 ◦ viewpoints, allowing for scalable sensor simulation. 
+
+D.2. Additional Qualitative Results on Generation 
+
+Unconditional Generation: We provides additional unconditional generation results in Fig. A6. GenAssets generates diverse, complete and higher-quality 3D assets and enables scalable content creation for sensor simulation. 19 Figure A6. Additional qualitative results on unconditional generation. Pedestrian Bicycle Motorcycle Car Truck Night  
+
+> Construction vehicle Bus
+
+Figure A7. Additional qualitative results on conditional generation. 
+
+Conditional Generation: Fig. A6 provides additional asset generation results conditioned on class and time-of-day. GenAssets allows us to control the generation process for diverse asset creation. 
+
+Single Image to 3D: We provides additional single image to 3D comparisons in Fig. A8. Compared to SoTA 3D large models MeshFormer [43], CRM [91] and InstantMesh [99], our approach generates higher quality 360 ◦ completion and is more multi-view consistent. Due to the reliance on object-centric synthetic dataset training, existing 3D large models usually produce cartoonish generation results especially on unobserved views. 20 Ours MeshFormer Ours MeshFormer Ours MeshFormer InstantMesh InstantMesh InstantMesh CRM CRM CRM Figure A8. Additional qualitative results on single image to 3D. 
+
+Methods Sparse View Synthesis Novel Camera Synthesis 360 ◦ View Synthesis PSNR ↑ SSIM ↑ LPIPS ↓ PSNR ↑ SSIM ↑ LPIPS ↓ FID ↓
+
+Full model 21.34 0.825 0.113 18.36 0.805 0.147 100.28 
+
+w/o KL regularizer 21.48 0.825 0.112 18.06 0.800 0.150 110.87 w/o perceptual supervision 21.52 0.829 0.155 18.15 0.803 0.177 110.19 Tri-plane opt. w/o asset decoder 19.31 0.784 0.186 17.58 0.778 0.195 169.44 
+
+Table A2. Ablation study on asset reconstruction. 
+
+Methods FID ↓ KID ↓
+
+Full model 59.50 28.32 
+
+w/o KL regularizer 82.67 39.06 
+
+Table A3. Ablation study on unconditional generation. 
+
+D.3. Ablation Study 
+
+In this section, we study the effectiveness of several key components of GenAssets on PandaSet. Tab. A2 reports the re-construction metrics. The KL term plays a important role in regularizing the latent space and learning complete asset rep-resentation, which can impacts the novel camera synthesis and 360 ◦ view synthesis results where the viewpoint changes are significant. The perceptual supervision enhances the overall image quality (LPIPS and FID) by preserving more details. We also investigate a setting where per-actor triplane representation are learned directly instead of using latent codes with a shared asset decoder in latent space. We use the same resolution of 128 × 128 for the per-actor triplane representation and learn them on the 7 evaluation logs in our experiment. This approach struggles to capture complete assets, resulting in notably worse performance particularly for 360 ◦ view synthesis. Finally, we study the impact of KL regularizer in diffusion learning in Tab. A3. The KL regularizer is essential for learning complete asset representations for diffusion learning in our in-the-wild setting. 
+
+# E. Discussions 
+
+E.1. Artifacts and potential enhancements 
+
+Our reconstructed or generated assets are not perfect. Our method can still lack sharp details for unobserved views and have inconsistent color tone. Increasing model capacity and dataset size may ameliorate these artifacts. The triplane representation 21 can have boundary-like smearing artifacts. Our work may benefit from enhanced 3D representations and rendering techniques [3, 33]. We also do not model various sensor effects ( e.g ., sensor calibration [109]) or label noise [107] in the real-world data, which might result in degraded performance. 
+
+E.2. Limitations and Future Work 
+
+GenAssets assumes all objects are rigid. Despite this, we still find that the method reconstructs reasonable shape and appear-ance for pedestrians, as depicted in Fig. A7 and Fig. 1 of the main paper. Additionally, GenAssets are not fully lighting-aware. Future works include 4D modelling and animation [14], and intrinsic decomposition [60], as well as more powerful conditioning techniques to further control content creation. 22
