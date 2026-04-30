@@ -1,0 +1,697 @@
+Title: World2VLM: Distilling World Model Imagination into VLMs for Dynamic Spatial Reasoning
+
+URL Source: https://arxiv.org/pdf/2604.26934v1
+
+Published Time: Thu, 30 Apr 2026 01:13:07 GMT
+
+Number of Pages: 21
+
+Markdown Content:
+# World2VLM: Distilling World Model Imagination into VLMs for Dynamic Spatial Reasoning 
+
+## Wanyue Zhang 1,2, Wenxiang Wu 4, Wang Xu 3*, Jiaxin Luo 4,
+
+## Helu Zhi 4, Yibin Huang 4, Shuo Ren 1, Zitao Liu 4, Jiajun Zhang 1,2,5*
+
+1Institute of Automation, Chinese Academy of Sciences 
+
+2School of Artificial Intelligence, University of Chinese Academy of Sciences 
+
+3Tsinghua University 4Harbin Institute of Technology 5Wuhan AI Research 
+
+zhangwanyue2023@ia.ac.cn, xwjim812@gmail.com, shuo.ren@ia.ac.cn, jjzhang@nlpr.ia.ac.cn 
+
+## Abstract 
+
+Vision-language models (VLMs) have shown strong perfor-mance on static visual understanding, yet they still strug-gle with dynamic spatial reasoning that requires imagin-ing how scenes evolve under egocentric motion. Recent efforts address this limitation either by scaling spatial su-pervision with synthetic data or by coupling VLMs with world models at inference time. However, the former often lacks explicit modeling of motion-conditioned state tran-sitions, while the latter incurs substantial computational overhead. In this work, we propose World2VLM, a train-ing framework that distills spatial imagination from a gen-erative world model into a vision-language model. Given an initial observation and a parameterized camera trajec-tory, we use a view-consistent world model to synthesize geometrically aligned future views and derive structured su-pervision for both forward (action-to-outcome) and inverse (outcome-to-action) spatial reasoning. 1 We post-train the VLM with a two-stage recipe on a compact dataset gen-erated by this pipeline and evaluate it on multiple spatial reasoning benchmarks. 2 World2VLM delivers consistent improvements over the base model across diverse bench-marks, including SAT-Real, SAT-Synthesized, VSI-Bench, and MindCube. It also outperforms the test-time world-model-coupled methods while eliminating the need for ex-pensive inference-time generation. Our results suggest that world models can serve not only as inference-time tools, but also as effective training-time teachers, enabling VLMs to internalize spatial imagination in a scalable and efficient manner. 
+
+> *
+
+Co-corresponding author. 
+
+> 1
+
+The dataset is available at https : / / huggingface . co / datasets/WanyueZhang/World2VLM .
+
+> 2
+
+The code is available at https : / / github . com / WanyueZhang-ai/World2VLM The Problem: VLM Lacks Dynamic Mental Simulation            
+
+> Initial State
+> Question: If I move forward 1
+> meter and turn rigth, what object
+> will be in the center of my view? Answer:
+> A television.
+> VLM
+> (e.LLavA)
+> Failure in Mental Simulation.
+> (VLM fails to deduce the
+> unobserved view after the action).
+> The Inspiration: World Model ’sPowerful Dynamic Reasoning
+> Initial State
+> Action at:
+> Move forward 1m,
+> turn rigth
+> World Model
+> (SVC/HY-World
+> /Sora/Genie... )
+> Powerful Spatial-Temporal
+> Priors.
+> (Accurate mapping of state
+> transition).
+> Generated Future View
+> Our Solution: World Model ’s Training-time Internalization
+> Existing SOTA (Test-time External Coupling) Our Method (Train-time Internalization)
+> VLM
+> Call
+> External
+> WM
+> VLM
+> World2VLM
+> WM [Image
+> +
+> Question]
+> Generate
+> Video [Answer]
+> [Image + Question] Correct Answer:
+> “A sofa. ”
+> Unbearable Inference Cost (e.g.,MindJourney). Zero-WM Call during inference! Efficient & Internalized.
+> Imagination Supervision
+> (Distilling P( |,) )
+
+Figure 1. Motivation for World2VLM. Existing approaches either rely on static spatial supervision or defer dynamic reasoning to expensive test-time world-model coupling. World2VLM instead uses a generative world model at training time to synthesize action-aligned view transitions and distill dynamic spatial reasoning into the VLM itself. 
+
+## 1. Introduction 
+
+Vision-language models (VLMs) have achieved remarkable progress in multimodal understanding, enabling strong per-formance on tasks such as visual question answering, cap-tioning, and general reasoning over static images. More broadly, spatial understanding is increasingly recognized as a cornerstone capability for modern multimodal models in embodied settings, where it supports perception, naviga-tion, manipulation, and planning [2, 5, 9, 10, 13, 22, 27, 31, 33, 44, 69]. However, despite these advances, cur-rent VLMs remain fundamentally limited in dynamic spa-tial reasoning —the ability to infer how a scene evolves un-der egocentric motion, predict the consequences of actions, or mentally simulate unseen viewpoints. This limitation is particularly evident in tasks involving perspective shifts, multi-step transformations, and action-conditioned reason-1
+
+> arXiv:2604.26934v1 [cs.CV] 29 Apr 2026
+
+ing, where models often rely on shallow pattern matching rather than genuine spatial understanding. Recent camera-centric and ego-centric multi-view studies further suggest that this gap persists even when richer viewpoint informa-tion is available, indicating that camera motion itself re-mains a central reasoning bottleneck [18, 32]. Existing attempts to address this limitation largely fol-low two directions. The first is to scale spatial supervision through synthetic data, simulation, and broader benchmark construction [7, 12, 23, 26, 38, 60, 61, 63]. While useful, these approaches typically provide static supervision sig-nals and do not explicitly model how observations evolve under actions. The second is to couple VLMs with world models or imagination-based reasoning procedures at infer-ence time [6, 15, 28, 34, 52, 55]. Although this can im-prove dynamic spatial reasoning, it incurs substantial test-time overhead and leaves the VLM itself largely unchanged. This leads to a natural question: 
+
+Can a world model serve as a training-time teacher that distills spatial imagination into a vision-language model? 
+
+Recent evidence also suggests that world-model priors can be transferred into VLM representations themselves, but ex-isting efforts do not center action-aligned view-transition supervision for dynamic spatial reasoning [65]. In this work, we answer this question with World2VLM ,a training framework that treats a generative world model as a training-time teacher . Given an anchor observation and a parameterized camera trajectory, we use a view-consistent world model to synthesize geometrically aligned future views and convert them into structured supervision for both inverse spatial reasoning (outcome-to-action) and forward spatial reasoning (action-to-outcome). In this way, spatial imagination is not outsourced to an external mod-ule at inference time, but distilled into the parameters of the VLM itself. World2VLM is organized around three components. First, a world-model-guided transition construction pipeline generates motion-conditioned source-target pairs with explicit action semantics. Second, a bidirectional task suite for spatial internalization converts each tran-sition into complementary supervision for both inverse rea-soning (recovering the action behind a view change) and forward reasoning (predicting the consequences of an ac-tion). This design is important because dynamic spatial rea-soning requires both identifying the latent transition behind observations and mentally propagating that transition to un-seen future views. Third, a two-stage post-training recipe 
+
+combines supervised distillation with task-aware GRPO re-finement, enabling the model to internalize dynamic spatial structure and then sharpen its structured spatial outputs. We evaluate World2VLM on four spatial reason-ing benchmarks with substantial dynamic or viewpoint-conditioned components: SAT-Real, SAT-Synthesized, VSI-Bench, and MindCube. Together, they cover both real-image and simulated settings while emphasizing motion-conditioned reasoning, perspective change, and mental sim-ulation. Across all four, World2VLM delivers consis-tent improvements over the base Qwen2.5-VL model, and the GRPO stage further improves over the SFT check-point. Moreover, World2VLM outperforms a MindJourney-style test-time world-model-coupled baseline while requir-ing only standard VLM inference at deployment. Fine-grained analysis on SAT-Real further shows that the gains are concentrated on subproblems such as egocentric move-ment, action consequence, and perspective taking, support-ing our claim that the method improves motion-conditioned reasoning rather than only static recognition. Our contributions are summarized as follows: • We propose World2VLM , a training framework that uses a controllable world model as a training-time teacher, dis-tilling motion-conditioned view transitions into VLM pa-rameters for dynamic spatial reasoning. • We introduce a bidirectional spatial supervision frame-work consisting of a transition-construction distillation pipeline, a forward/inverse task suite, and a two-stage SFT →GRPO post-training recipe for spatial internaliza-tion. • We show through comprehensive experiments and analysis that World2VLM yields consistent gains on SAT-Real, SAT-Synthesized, VSI-Bench, and MindCube, improves the dynamic categories of SAT-Real in particu-lar, and is more effective and robust than test-time world-model coupling. 
+
+## 2. Related Work 
+
+2.1. Spatial Reasoning in VLMs 
+
+A growing body of work shows that spatial reasoning re-mains a core weakness of vision-language models. Exist-ing evaluations span single-view tests, broader multimodal suites, multi-view benchmarks, and dynamic or viewpoint-dependent settings such as SAT, VSI-Bench, MindCube, 3DSRBench, and SITE [16, 17, 23, 25, 26, 35, 37, 46, 49, 53, 56, 57, 60, 64]. Camera-centric and ego-centric multi-view analyses reinforce the same conclusion, emphasizing that viewpoint change and camera control remain under-modeled even for strong multimodal systems [18, 32]. On the training side, prior work scales spatial supervi-sion with 3D data, dynamic aptitude tasks, synthetic spa-tial VQA, and single-view to video curricula [7, 26, 29, 38, 63]. More recent post-training approaches activate spatial ability through viewpoint-consistent learning, progressive curricula, explicit 3D representations, structured camera-motion reasoning, visual-intermediate reasoning, and spa-2Forward P redict 
+
+Inverse Inference 
+
+> VLM
+> Encoder &
+> Predictor
+
+Bidirectional Internalization 
+
+> World2VLM
+> What happen if I
+> move forward?
+> Direct Dynamic
+> Spatial Reasoning
+> VLM
+> Encoder &
+> Predictor
+> Yolo
+
+VLM Reference Transition Generation   
+
+> Predict
+> Inference
+> Action
+> Meta
+> Data
+> Stage 1:SFT (Supervised Fine-Tuning)
+> Stage 2:RL Training(GRPO)
+> Action( )
+> Forward 0.5m
+> Turn Right 18 °
+
+Teacher-Student Distillation 
+
+Two-Stage Training     
+
+> GRPO Optimizer
+> Rewarder
+> •Format
+> •Numeric Accuracy
+> •Spatial Logic
+> •Trajectory Consistency
+> World2VLM
+> (student)
+> Reasoning
+> World Model
+> (Teacher)
+
+Figure 2. Overview of World2VLM. The framework consists of three components. (1) World-model-guided transition construction: 
+
+starting from an anchor observation and a parameterized egocentric action, a controllable world model synthesizes an action-aligned future view, together with detector-derived object metadata. (2) Bidirectional task suite for spatial internalization: each source-target transi-tion is converted into complementary inverse tasks that recover the underlying motion and forward tasks that predict motion-conditioned consequences. (3) Two-stage post-training: the student VLM is first optimized with supervised fine-tuning on structured spatial supervi-sion and then refined with task-aware GRPO, which rewards valid formatting, numeric accuracy, spatial logic, and trajectory consistency. After training, World2VLM performs dynamic spatial reasoning directly, without querying the world model or generating auxiliary views at inference time. 
+
+tially aware architectures [19, 30, 36, 48, 50, 51, 62, 67]. Complementary diagnostic and prompting work attributes failures to attention misalignment and weak positional grounding, and explores externalized reasoning through Video-of-Thought, imagination-based prompting, Spatial-CoT, grounded CoT, allocentric traces, and explicit 3D ex-ploration [8, 15, 21, 28, 34, 39, 40, 52, 58, 66]. Our work instead uses generated action-conditioned transitions as training-time supervision. 
+
+2.2. World Models for Spatial Dynamics 
+
+In this paper, we use generative world models that syn-thesize future observations conditioned on images, cam-eras, actions, or video context. Progress in interactive and video world modeling, including Genie, Sora, Hun-yuanVideo, and camera-controllable generation such as GEN3C, makes this form of supervision increasingly prac-tical [3, 4, 42, 45, 59]. SVC specializes in camera-conditioned novel views [68], whereas HY-WorldPlay em-phasizes action-conditioned long-horizon dynamics [45]. Related work further studies action-faithful egocentric pre-diction, cross-view forecasting, local spatial memories, out-of-sight dynamics, and distillation of world priors into de-ployable models or policies [1, 14, 24, 43, 47, 65]. We use these models as training-time teachers rather than as inference-time generators. 
+
+2.3. Mental Simulation with World Models 
+
+A closely related line of work studies whether VLMs can reason through imagined views or internal spatial represen-tations. MindJourney is the most direct point of compari-son: it couples a VLM with a controllable world model at inference time, allowing the model to iteratively generate imagined views and reason over them without fine-tuning [55]. SpatialDreamer follows the same general paradigm, but adds reinforcement learning and geometry-aware op-timization on top of world-model-guided imagination [6]. These methods show that inference-time world-model cou-pling can improve spatial reasoning, but they also introduce substantial deployment overhead and leave the VLM itself unchanged. 
+
+MindCube , by contrast, studies spatial mental model-ing from limited views and shows that explicitly construct-ing intermediate cognitive maps can improve perspective taking and mental simulation [53]. Together, these works highlight the value of imagined intermediate structure. Our method differs by shifting world-model usage from test time 
+
+to train time : rather than invoking an external generator or explicit map at inference time, we use generated future ob-servations as supervision and internalize action-conditioned transitions directly in the VLM. 33. Method 
+
+3.1. Overview 
+
+World2VLM treats a controllable world model as a
+
+training-time teacher for dynamic spatial reasoning. Rather than invoking the world model at inference time, we use it offline to synthesize view transitions under known ego-centric motion, convert these transitions into structured rea-soning tasks, and train a VLM to internalize the corre-sponding spatial regularities. The formulation is agnostic to the specific generator used as teacher; in our experiments, we instantiate it with both Stable Virtual Camera and HY-WorldPlay to study how different world-model priors affect downstream spatial supervision. Figure 2 summarizes the full teacher-student pipeline. In the data preparation stage, we pair each anchor ob-servation st with a sampled egocentric action at and use the world model to generate a motion-consistent future view sW M t+1 . When object-centric supervision is needed, a detector-tracker produces structured metadata that is seri-alized into the prompt rather than rendered on the image. These transitions are then routed into two complementary supervision paths: a forward path that predicts the spatial consequences of an action, and an inverse path that infers the action that explains a visual change between views. We first internalize these signals with supervised fine-tuning and then sharpen structured spatial outputs with GRPO. Once training is complete, the world model is no longer needed, and the resulting World2VLM answers dynamic spatial reasoning questions with standard VLM inference alone. Formally, let st denote an anchor observation and at de-note a parameterized egocentric camera motion. A world model defines a motion-conditioned transition: 
+
+sW M t+1 ∼ PW M (st+1 | st, a t), (1) where sW M t+1 is a synthesized future view aligned with the specified action. Our goal is to train a VLM with parameters 
+
+θ to internalize both inverse spatial reasoning and forward spatial consequence prediction: 
+
+Pθ (at | st, s t+1 ) and Pθ (y | st, a t), (2) without querying the world model at inference time. The resulting method has three components: (1) a world-model-guided transition construction pipeline (Sec. 3.2), (2) a bidirectional task suite for spatial internalization (Sec. 3.3), and (3) a two-stage post-training recipe consist-ing of supervised distillation followed by GRPO refinement (Sec. 3.4–3.5). 
+
+3.2. World-Model-Guided Transition Construction 
+
+Trajectory-Conditioned View Synthesis. Starting from anchor RGB observations, we sample egocentric camera trajectories from a predefined action space that includes translation, rotation, and short multi-step compositions. For each anchor image, the trajectory generator stores both step-wise actions and cumulative motion prefixes. A view-consistent world model then synthesizes future observations along the trajectory: 
+
+sW M t+∆ = G(st, a (∆)  
+
+> t
+
+), (3) where a(∆)  
+
+> t
+
+denotes the cumulative motion up to step ∆.This process yields a controllable sequence of imagined views with explicit action semantics. 
+
+Max-Displacement Pairing. To make the supervision ge-ometrically informative, we construct training pairs using the anchor frame and the farthest valid synthesized end-point in the trajectory, rather than relying on short-range neighboring views. This max-displacement pairing ampli-fies viewpoint change and forces the model to reason over non-trivial spatial transformations instead of local appear-ance continuity. 
+
+Spatial Anchoring. For tasks that require object-level reasoning, we augment synthesized transitions with object correspondences obtained from a detector-tracker. Let Bt
+
+and Bt+∆ denote the sets of normalized object boxes in the source and target views. Importantly, these boxes are seri-alized into the text prompt as structured coordinates rather than rendered onto the images. This design allows the model to use object-level anchors while keeping the visual input unchanged. The resulting anchors connect motion to object displacement, visibility change, and cross-view iden-tity, which helps prevent shortcut learning based purely on language priors. 
+
+3.3. Task Suite for Spatial Internalization 
+
+World2VLM does not train on a single-question format. In-stead, it converts each synthesized transition into a set of complementary spatial reasoning tasks that cover both mo-tion inference and action-conditioned consequence predic-tion. Table 1 summarizes the task suite used for spatial in-ternalization. The key design principle is complementarity. Some tasks ask the model to recover the motion that produced a visual transition, whereas others ask it to predict the consequence of a motion on objects, visibility, or identity. Together they force the model to bind action, viewpoint change, and object-level geometry into a unified spatial representation. It is important to distinguish task family from supervi-sion direction . The motion-centric family and the object-centric family are grouped by semantic content, whereas the inverse/forward split is grouped by reasoning direction. As a result, the family-based ablations and the direction-based 4Category Concrete Task Task Formulation Direction                   
+
+> Motion reasoning Motion distance estimation Translation distance from two translationally related views Inverse Motion orientation estimation Turning direction and magnitude from two rotationally related views Inverse Multi-step motion prediction Ordered action sequence for a composed camera trajectory Inverse Object-guided motion reasoning Viewpoint transfor-mation inference Camera action sequence from cross-view object correspondences Inverse Action verification Action-sequence verification Verification of whether a candidate motion matches an image pair Forward Object grounding Post-action object bounding box prediction Target bounding box after the described action Forward Post-action object visibility detection Object visibility after the described action Forward Object consistency Cross-view object consistency judgment Instance consistency across views under the described action Forward Table 1. Task suite used by World2VLM. Each synthesized transition is converted into one of eight concrete spatial reasoning tasks spanning motion inference, action verification, object grounding, and cross-view consistency. Together, these tasks provide complementary supervision for internalizing motion-conditioned spatial structure.
+
+ablations probe different questions and should not be con-flated. 
+
+3.4. Stage I: Supervised Distillation with Bidirec-tional Spatial Supervision 
+
+We divide the task suite into two supervision streams. The 
+
+inverse stream trains the model to infer motion from a pair of observations, covering motion distance estimation, ro-tation angle estimation, multi-step motion inference, and object-guided viewpoint transformation inference. The for-ward stream trains the model to predict spatial conse-quences given an initial observation and an action specifica-tion, covering action-sequence verification, post-action ob-ject localization, post-action visibility judgment, and cross-view object consistency judgment. Let Dinv and Dfwd denote the inverse and forward train-ing sets. We optimize the VLM with a joint supervised ob-jective: 
+
+LSFT = λinv Linv + λfwd Lfwd , (4) where Linv = −E(x,y )∼D inv log Pθ (y | x),
+
+Lfwd = −E(x,y )∼D fwd log Pθ (y | x). (5) Although both terms take the form of language-model su-pervision, they correspond to fundamentally different spa-tial queries: recovering latent motion versus forecasting motion-conditioned outcomes. This bidirectional training is the main mechanism by which World2VLM distills world-model imagination into model parameters. The two directions constrain the same transition from op-posite sides. Inverse tasks ask the model to explain what motion must have happened given two observations, which encourages sensitivity to viewpoint change and latent cam-era transformation. Forward tasks ask the model to predict 
+
+what should happen next given an observation and an ac-tion, which encourages mental rollout of object displace-ment, visibility change, and cross-view identity. For exam-ple, if a television appears near the right edge of the initial view, a forward task may ask whether it will move toward the center after the camera moves forward and turns right, whereas an inverse task may ask which camera motion best explains why that television becomes centered in the second view. Although both tasks involve the same transition, they require different reasoning operations: one predicts conse-quences from actions, and the other explains observations by recovering the underlying action. Training on both di-rections therefore reduces the chance that the model solves either family through shallow shortcuts alone; a useful spa-tial representation must support both explanation and pre-diction. 
+
+3.5. Stage II: Task-Aware GRPO Refinement 
+
+After supervised distillation, we further refine the model with Group Relative Policy Optimization (GRPO). Starting from the SFT policy, we sample multiple responses for the same prompt and assign a unified task-aware reward: 
+
+r(ˆ y, y ⋆) = αfmt rfmt +αsem rsem +αnum rnum +αgeo rgeo +αord rord ,
+
+(6) where inactive terms are set to zero depending on the task. Intuitively, rfmt enforces valid structured outputs, rsem cap-tures answer correctness, rnum evaluates distance or angle 5Method Setting SAT-Real SAT-Synth. VSI-Bench MindCube Average                                        
+
+> Qwen2.5-VL-7B Base VLM 44.67 39.60 33.00 29.26 36.63 Qwen2.5-VL-7B + WM MindJourney-style[55] 31.33 (-13.34) 51.75 (+12.15) 37.68 (+4.68) 33.85 (+4.59) 38.65 (+2.02) World2VLM-SFT SVC as WM 64.00 (+19.33) 50.00 (+10.40) 39.84 (+6.84) 33.14 (+3.88) 46.75 (+10.12) World2VLM-GRPO SVC as WM 72.67 (+28.00) 59.20 (+19.60) 41.55 (+8.55) 34.86 (+5.60) 52.07 (+15.44) World2VLM-SFT HY-WorldPlay as WM 68.66 (+23.99) 57.20 (+17.60) 38.63 (+5.63) 36.57 (+7.31) 50.27 (+13.64) World2VLM-GRPO HY-WorldPlay as WM 69.33 (+24.66) 65.20 (+25.60) 39.07 (+6.07) 36.85 (+7.59) 52.61 (+15.98)
+> Table 2. Main comparison on four dynamic spatial reasoning benchmarks. Results are reported for two teacher world models, SVC and HY-WorldPlay. Across both teachers, World2VLM internalizes world-model guidance at training time, avoids inference-time image generation, and benefits further from task-aware GRPO refinement. The MindJourney-style row is a representative test-time world-model coupling baseline. All scores are reported in percentage units; values in parentheses denote absolute gains or losses in percentage points relative to the base Qwen2.5-VL-7B model. Best results in each column are bold , and second-best results are underlined.
+
+precision, rgeo measures localization quality for bounding-box prediction, and rord evaluates sequence consistency for multi-step motion reasoning. Very long malformed re-sponses are explicitly penalized to discourage verbose but ungrounded generations. Appendix C gives the exact task-specific reward definitions, coefficient values, parsing rules, and format penalties used in our implementation. Ap-pendix D further provides representative SFT →GRPO case studies that illustrate where the refinement stage improves output quality in practice. We then optimize the policy with GRPO: 
+
+max  
+
+> θ
+
+Eˆy∼πθ (·| x) [A(ˆ y) log πθ (ˆ y | x)] − β KL( πθ ∥ πref ) ,
+
+(7) where A(ˆ y) is the group-relative advantage induced by the sampled rewards, πref is the SFT reference policy, and β
+
+controls KL regularization. This second stage does not replace the distilled supervision; rather, it sharpens the model’s decision boundaries on structured spatial outputs, especially for numerically precise actions, ordered action sequences, and object-grounded predictions. 
+
+## 4. Experiments 
+
+4.1. Experimental Setup 
+
+Base Model. We adopt Qwen2.5-VL-7B-Instruct as the base vision-language model due to its strong visual under-standing capabilities and open-source accessibility [2]. All models are initialized from the same checkpoint for fair comparison. 
+
+Teacher World Models. We instantiate World2VLM with two teacher world models. Our primary teacher is Stable Virtual Camera (SVC), a diffusion-based novel-view synthesis model that generates temporally smooth and geo-metrically consistent views conditioned on target cameras, making it particularly well suited for motion-conditioned viewpoint transitions [68]. We also study HY-WorldPlay ,an action-conditioned interactive world model built on Hun-yuanVideo, as an alternative teacher. Compared with SVC’s direct camera-conditioned view synthesis, HY-WorldPlay provides a complementary video-generation prior with ex-plicit action control and long-horizon consistency [45]. Us-ing both teachers allows us to test whether World2VLM depends on a specialized view-synthesis engine or can also benefit from a broader action-conditioned world-model prior. 
+
+Training Data. We construct training data from two com-plementary RGB sources: real indoor frames from Scan-Net [11] and simulated indoor scenes from MulSeT [64]. Starting from an anchor observation and a sampled egocen-tric action, the teacher world model synthesizes an action-conditioned future view, which we convert into eight task types spanning motion inference, action verification, ob-ject localization, visibility judgment, and cross-view con-sistency. The final supervised fine-tuning set contains about 100K samples, and the GRPO refinement set is a smaller balanced 1K subset built from the same pipeline. Bench-mark evaluation files are never mixed into either training stage. 
+
+Benchmarks. We evaluate on SAT-Real, SAT-Synthesized, VSI-Bench, and MindCube, which together cover both real-image and simulated settings with sub-stantial dynamic or viewpoint-conditioned reasoning. SAT measures dynamic spatial aptitude under egocentric motion; we report both its real-image and synthetic splits [41]. VSI-Bench probes configurational, measurement-estimation, and spatiotemporal reasoning from egocentric observations [56]. MindCube emphasizes perspective taking, mental simulation, and action-conditioned reason-ing under partial observation [53]. We follow the official evaluation protocols and exclude benchmark evaluation files from both training stages. 6Baselines. We compare against four groups of baselines: (1) the base Qwen2.5-VL-7B-Instruct model, (2) a rep-resentative test-time world-model coupling baseline that invokes a world model during inference, (3) controlled data baselines that remove or weaken the world-model-based supervision signal, and (4) our two training stages, namely World2VLM-SFT and World2VLM-GRPO. This design lets us compare train-time internalization against inference-time world-model coupling under a backbone-matched setting. For the test-time coupling setting, we adapt a MindJourney-style search-and-score pipeline [55] to the same frozen Qwen2.5-VL backbone used by our method. The world model generates imagined views un-der candidate actions, the VLM scores those candidates, and the final answer is produced from the selected trajec-tory. This baseline captures the standard test-time world-model-coupling paradigm under a backbone-matched set-ting. This design lets us compare train-time internaliza-tion against inference-time world-model coupling under a backbone-matched setting. 
+
+Training Recipe. World2VLM is trained in two stages: supervised fine-tuning followed by task-aware GRPO re-finement. We use LoRA-style parameter-efficient adap-tation [20, 54] rather than full-parameter tuning, and the world model is used only during offline data generation. At inference time, the resulting model performs standard VLM decoding without querying the world model. We take care to separate training supervision from benchmark evaluation. The world-model-generated SFT and GRPO data are con-structed from source RGB images and trajectory metadata, rather than from benchmark question-answer files. During post-training, benchmark evaluation instances are not used for optimization, model selection, or prompt-template tun-ing. Detailed trajectory construction, task templates, filter-ing rules, reward definitions, hyperparameters, and baseline configurations are deferred to Appendix A, B, C, E, and F for readability. 
+
+4.2. Overall Results 
+
+Table 2 compares World2VLM with the base Qwen2.5-VL-7B model and a representative MindJourney-style test-time world-model-coupled baseline. The main result is that training-time internalization is more effective than a representative test-time coupling base-line across both teacher choices. With SVC as the teacher, World2VLM-GRPO performs best on SAT-Real and VSI-Bench. With HY-WorldPlay, it performs best on SAT-Synthesized, MindCube, and the overall average. This pat-tern suggests that the framework transfers across distinct world-model priors rather than depending on a single gen-erator family. 0 20K 40K 60K 80K 100K    
+
+> Training samples
+> 30
+> 40
+> 50
+> 60
+> 70
+> Benchmark score (%)
+> Fit
+> Raw
+> SAT-Real SAT-Synthesized VSI-Bench MindCube
+> Figure 3. Absolute benchmark scores of World2VLM-SFT on four dynamic spatial reasoning benchmarks as a function of the amount of world-model-generated training data (0–100K samples). Faint lines and markers denote raw checkpoint evaluations, while solid curves show power-curve fits that smooth short-term fluctuations. Performance improves rapidly in the low-data regime and then gradually saturates, with the clearest gains on SAT-Real and SAT-Synthesized.
+
+The teacher comparison is also informative. SVC is strongest on the benchmarks that depend more directly on camera-conditioned viewpoint consistency, especially SAT-Real and VSI-Bench. HY-WorldPlay, by contrast, is stronger on SAT-Synthesized and MindCube, suggest-ing that its action-conditioned temporal prior is particularly useful for synthetic dynamics and mental simulation. This difference changes where the gains are largest, but not the overall conclusion that train-time internalization remains effective across teacher families. The MindJourney-style baseline is still meaningful: it improves over the base model on SAT-Synthesized, VSI-Bench, MindCube, and average score (+2.02). However, all four train-time variants achieve larger average gains while requiring only standard VLM inference at deploy-ment, yielding a better accuracy-versus-deployment-cost trade-off than invoking the generator during inference. Combined with the ablations in Sec. 4.4, these gains sug-gest that the benefit does not come merely from adding more synthetic supervision, but from training the model to support both explanation of observed transitions and predic-tion of unseen ones. Figure 3 shows how performance changes as we increase the amount of world-model-generated SFT data from 0 to 100K samples. Although the raw checkpoint evaluations are mildly non-monotonic, the power-fit curves reveal a clear underlying scaling trend: benchmark scores improve quickly in the low-data regime and then exhibit diminish-ing returns as more data are added. The effect is strongest 7Method Setting SAT-Real All Acc. Ego Move. Obj. Move. Goal Aim Action Cons. Perspective                             
+
+> Qwen2.5-VL-7B Base VLM 44.67 52.17 21.74 50.00 45.95 48.48 Qwen2.5-VL-7B + WM Test-time baseline 31.33 (-13.34) 35.00 (-17.17) 45.00 (+23.26) 16.67 (-33.33) 34.29 (-11.66) 34.38 (-14.10) World2VLM-SFT SVC as WM 64.00 (+19.33) 73.91 (+21.74) 43.48 (+21.74) 79.41 (+29.41) 75.68 (+29.73) 42.42 (-6.06) World2VLM-GRPO SVC as WM 72.67 (+28.00) 100.00 (+47.83) 65.22 (+43.48) 79.41 (+29.41) 67.57 (+21.62) 57.57 (+9.09)
+
+Table 3. Task-level breakdown on SAT-Real. In addition to overall SAT-Real accuracy, we report five dynamic categories: egocentric movement, object movement, goal aim, action consequence, and perspective taking. All scores are reported in percentage units; values in parentheses denote absolute gains or losses in percentage points relative to the base Qwen2.5-VL-7B model. Best results in each column are bold .
+
+(a) Distillation Direction Ablation Variant SAT-R SAT-S VSI MindCube Avg. 
+
+Base Model 44.67 39.60 33.00 29.26 36.63 Forward Only 52.00 (+7.33) 50.40 (+10.80) 38.03 (+5.03) 33.33 (+4.07) 43.44 (+6.81) Inverse Only 56.67 (+12.00) 38.60 (-1.00) 39.51 (+6.51) 31.05 (+1.79) 41.46 (+4.83) Bidirectional (Full SFT) 64.00 (+19.33) 50.00 (+10.40) 39.84 (+6.84) 33.14 (+3.88) 46.75 (+10.12) (b) Training Source Composition Ablation Variant SAT-R SAT-S VSI MindCube Avg. 
+
+Base Model 44.67 39.60 33.00 29.26 36.63 Real-Scene Only 53.33 (+8.66) 43.00 (+3.40) 38.95 (+5.95) 33.52 (+4.26) 42.20 (+5.57) Simulated-Scene Only 51.33 (+6.66) 47.80 (+8.20) 38.96 (+5.96) 32.57 (+3.31) 42.67 (+6.04) Mixed-Source (Full SFT) 64.00 (+19.33) 50.00 (+10.40) 39.84 (+6.84) 33.14 (+3.88) 46.75 (+10.12) 
+
+Table 4. Ablation of SFT design choices, compared against the base Qwen2.5-VL-7B model. The (a) subtable isolates the effect of distillation direction, while the (b) subtable isolates the effect of training-source composition. All scores are reported in percentage units; values in parentheses denote absolute gains or losses in percentage points relative to the base model. Best results in each column are bold .
+
+on SAT-Real and SAT-Synthesized, where success depends more directly on motion-conditioned viewpoint reasoning, while VSI-Bench and MindCube show smaller but still consistent gains. This pattern suggests that world-model-generated transition supervision provides scalable benefits for dynamic spatial reasoning, especially on tasks that re-quire mentally propagating scene changes under egocentric motion. 
+
+4.3. SAT-Real Task Breakdown 
+
+SAT-Real is particularly informative because it decomposes dynamic spatial reasoning under egocentric motion into several task categories. We therefore analyze five of its representative dynamic categories separately: egocentric movement , which requires updating the scene under camera motion; object movement , which tracks whether and how an object moves across views; goal aim , which asks whether a target becomes reachable or visible under an action; action consequence , which predicts how a spatial relation changes after an action; and perspective taking , which requires rea-soning from another agent’s viewpoint. This task-level tax-onomy is introduced here because its primary purpose is analytical: it clarifies which motion-sensitive abilities drive the overall SAT-Real improvement. Table 3 shows that the SAT-Real gain is broad but not perfectly uniform across the benchmark’s dynamic cate-gories. Even before RL refinement, World2VLM-SFT al-ready strengthens four of the five categories, especially those that require explicit reasoning about camera motion and action-conditioned scene change, while perspective tak-ing remains slightly below the base model. This pattern is well aligned with the supervision used in World2VLM: the model is trained not only to recover motion from a pair of views, but also to predict what will happen after an action is taken. The GRPO stage broadens this improvement further and converts the SAT-Real gain into a genuinely task-level effect rather than a single-category spike. In particular, the refine-ment stage is what lifts perspective taking from slightly be-low the base model to clearly above it, suggesting that this category benefits from better-calibrated structured reason-ing in addition to transition-based supervision. At the same time, the action-consequence score after GRPO is lower than the SFT peak, although it remains substantially above 8the base model. Overall, the strongest gains still appear on egocentric movement, goal-related reasoning, object move-ment, and action consequence prediction, which are exactly the settings where a model must mentally propagate scene changes rather than recognize a static relation. This breakdown also suggests that the gains are not uni-formly distributed across all forms of dynamic reasoning. Categories such as egocentric movement and goal aim ben-efit strongly from transition supervision alone, whereas per-spective taking appears to need both transition supervision and the additional calibration provided by RL refinement. In contrast, action consequence already improves substan-tially after SFT, so the smaller GRPO gain there is consis-tent with a setting that is easier to internalize during super-vised distillation than during reward-based sharpening. By contrast, the test-time world-model baseline remains category-dependent across the same tasks: it helps object movement, but degrades several other dynamic tasks and lowers the overall SAT-Real score. This breakdown rein-forces the main conclusion of the paper: World2VLM im-proves SAT-Real not by exploiting static shortcuts, but by more reliably internalizing dynamic spatial reasoning. 
+
+4.4. Ablation Studies 
+
+4.4.1. Effect of Bidirectional Distillation 
+
+We first ask whether the two distillation directions are com-plementary or whether one direction alone is sufficient. The left subtable in Table 4 shows that they exhibit clearly different strengths. Forward-only distillation is relatively stronger on SAT-Synthesized and MindCube, where the model is directly asked to predict the consequences of an action or mentally simulate unseen outcomes. Inverse-only distillation is stronger on SAT-Real and VSI-Bench, where success more often depends on recovering the egocentric motion that explains a viewpoint change. Their combination yields the strongest overall result, in-dicating that the two directions are not redundant. Intu-itively, inverse tasks teach the model to decode the latent motion behind a visual transition, while forward tasks teach it to roll that motion forward and anticipate its consequences on visibility, object position, and cross-view consistency. For example, if a television moves from the right edge of the first view to the center of the second, inverse distilla-tion asks which action best explains that change, whereas forward distillation asks whether a specified action would produce it. Bidirectionality is therefore not merely a task-diversification trick; it imposes complementary constraints on the same action-conditioned transition and encourages a spatial representation that supports both explanation and prediction. 
+
+4.4.2. Effect of Training Source Composition 
+
+We next examine whether World2VLM mainly benefits from one source domain or from combining both. The right subtable in Table 4 shows that real-scene-only train-ing improves SAT-Real more strongly, while simulated-scene-only training is stronger on SAT-Synthesized. How-ever, both source-restricted variants fall short of the mixed-source setting in average score. This pattern suggests that the two domains provide com-plementary supervision. Real scenes expose the model to clutter, occlusion, and appearance variation, whereas simulated scenes provide cleaner and more controllable viewpoint-conditioned transitions. Mixing them appears to improve the robustness of the learned spatial transition prior across both real and synthetic evaluation settings. 
+
+## 5. Conclusion 
+
+In this work, we proposed World2VLM , a training frame-work that uses world-model-generated view transitions as supervision for dynamic spatial reasoning. By combin-ing inverse and forward spatial learning in a two-stage SFT →GRPO recipe, World2VLM internalizes how scenes change under egocentric actions instead of relying on inference-time imagination. The core idea is to treat the world model as a training-time teacher . Motion-conditioned future views provide a practical source of supervision for learning both motion in-ference and action consequence prediction, while the subse-quent GRPO stage sharpens structured spatial outputs after this transition knowledge has been distilled into the model parameters. Empirically, World2VLM improves the base Qwen2.5-VL model on SAT-Real, SAT-Synthesized, VSI-Bench, and MindCube, with especially clear gains on motion-conditioned reasoning. The framework also transfers across two different teacher families, SVC and HY-WorldPlay, and outperforms the MindJourney-style test-time coupling base-line while using standard VLM inference at deployment. These results support our central claim that treating world models as training-time teachers is an effective and practical way to equip VLMs with dynamic spatial reasoning. 9References 
+
+[1] Anurag Bagchi, Zhipeng Bao, Homanga Bharadhwaj, Yu-Xiong Wang, Pavel Tokmakov, and Martial Hebert. Walk through paintings: Egocentric world models from internet priors, 2026. 3 [2] Shuai Bai, Keqin Chen, Xuejing Liu, Jialin Wang, Wenbin Ge, Sibo Song, Kai Dang, Peng Wang, Shijie Wang, Jun Tang, Humen Zhong, Yuanzhi Zhu, Mingkun Yang, Zhao-hai Li, Jianqiang Wan, Pengfei Wang, Wei Ding, Zheren Fu, Yiheng Xu, Jiabo Ye, Xi Zhang, Tianbao Xie, Zesen Cheng, Hang Zhang, Zhibo Yang, Haiyang Xu, and Junyang Lin. Qwen2.5-vl technical report, 2025. 1, 6 [3] Tim Brooks, Bill Peebles, Connor Holmes, Will DePue, Yufei Guo, Leo Jing, David Schnurr, Joe Taylor, Troy Luh-man, Eric Luhman, et al. Video generation models as world simulators. OpenAI Blog , 1(8):1, 2024. 3 [4] Jake Bruce, Michael D Dennis, Ashley Edwards, Jack Parker-Holder, Yuge Shi, Edward Hughes, Matthew Lai, Aditi Mavalankar, Richie Steigerwald, Chris Apps, et al. Ge-nie: Generative interactive environments. In International Conference on Machine Learning , 2024. 3 [5] Muzhen Cai, Xiubo Chen, Yining An, Jiaxin Zhang, Xuesong Wang, Wang Xu, Weinan Zhang, and Ting Liu. Cookbench: A long-horizon embodied planning benchmark for complex cooking scenarios, 2025. 1 [6] Meng Cao, Xingyu Li, Xue Liu, Ian Reid, and Xiaodan Liang. Spatialdreamer: Incentivizing spatial reasoning via active mental imagery. arXiv preprint arXiv:2512.07733 ,2025. 2, 3 [7] Boyuan Chen, Zhuo Xu, Sean Kirmani, Brian Ichter, Danny Driess, Pete Florence, Dorsa Sadigh, Leonidas J. Guibas, and Fei Xia. Spatialvlm: Endowing vision-language models with spatial reasoning capabilities. IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , pages 14455–14465, 2024. 2 [8] Shiqi Chen, Tongyao Zhu, Ruochen Zhou, Jinghan Zhang, Siyang Gao, Juan Carlos Niebles, Mor Geva, Junxian He, Jiajun Wu, and Manling Li. Why is spatial reasoning hard for vlms? an attention mechanism perspective on focus areas. In Proceedings of the International Conference on Machine Learning , 2025. 3 [9] Zhili Cheng, Yuge Tu, Ran Li, Shiqi Dai, Jinyi Hu, Shengding Hu, Jiahao Li, Yang Shi, Tianyu Yu, Weize Chen, Lei Shi, and Maosong Sun. Embodiedeval: Evaluate multi-modal llms as embodied agents. In The Annual Meeting of the Association for Computational Linguistics , 2025. 1 [10] Jacinto Colan, Ana Davila, and Yasuhisa Hasegawa. Assess-ing the value of visual input: A benchmark of multimodal large language models for robotic path planning, 2025. 1 [11] Angela Dai, Angel X. Chang, M. Savva, Maciej Halber, T. Funkhouser, and M. Nießner. Scannet: Richly-annotated 3d reconstructions of indoor scenes. IEEE Conference on Com-puter Vision and Pattern Recognition (CVPR) , pages 2432– 2443, 2017. 6 [12] Erik Daxberger, Nina Wenzel, David Griffiths, Haiming Gang, Justin Lazarow, Gefen Kohavi, Kai Kang, Marcin Eichner, Yinfei Yang, Afshin Dehghan, and Peter Grasch. Mm-spatial: Exploring 3d spatial understanding in multi-modal llms. arXiv preprint arXiv:2503.13111 , 2025. 2 [13] Mengfei Du, Binhao Wu, Zejun Li, Xuanjing Huang, and Zhongyu Wei. EmbSpatial-bench: Benchmarking spatial un-derstanding for embodied tasks with large vision-language models. In Proceedings of the Annual Meeting of the Associ-ation for Computational Linguistics , pages 346–355, 2024. 1[14] Zicheng Duan, Jiatong Xia, Zeyu Zhang, Wenbo Zhang, Gengze Zhou, Chenhui Gou, Yefei He, Feng Chen, Xinyu Zhang, and Lingqiao Liu. Liveworld: Simulating out-of-sight dynamics in generative video world models, 2026. 3 [15] Hao Fei, Shengqiong Wu, Wei Ji, Hanwang Zhang, Meishan Zhang, Mong-Li Lee, and Wynne Hsu. Video-of-thought: Step-by-step video reasoning from perception to cognition. In Proceedings of the International Conference on Machine Learning , 2024. 2, 3 [16] Xingyu Fu, Yushi Hu, Bangzheng Li, Yu Feng, Haoyu Wang, Xudong Lin, Dan Roth, Noah A Smith, Wei-Chiu Ma, and Ranjay Krishna. Blink: Multimodal large language models can see but not perceive. In European Conference on Com-puter Vision , pages 148–166. Springer, 2024. 2 [17] Wentao Ge, Shunian Chen, Hardy Chen, Nuo Chen, Juny-ing Chen, Zhihong Chen, Wenya Xie, Shuo Yan, Chenghao Zhu, Ziyue Lin, Dingjie Song, Xidong Wang, Anningzhe Gao, Zhang Zhiyi, Jianquan Li, Xiang Wan, and Benyou Wang. MLLM-bench: Evaluating multimodal LLMs with per-sample criteria. In Proceedings of the Conference of the Nations of the Americas Chapter of the Association for Com-putational Linguistics , pages 4951–4974, 2025. 2 [18] Mohsen Gholami, Ahmad Rezaei, Zhou Weimin, Sitong Mao, Shunbo Zhou, Yong Zhang, and Mohammad Akbari. Spatial reasoning with vision-language models in ego-centric multi-view scenes, 2025. 2 [19] Peiqi He, Zhenhao Zhang, Yixiang Zhang, Xiongjun Zhao, and Shaoliang Peng. Spatial-ormllm: Improve spatial rela-tion understanding in the operating room with multimodal large language model. arXiv preprint arXiv:2508.08199 ,2025. 3 [20] Edward J Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, Weizhu Chen, et al. Lora: Low-rank adaptation of large language models. In-ternational Conference on Learning Representations , 1(2): 3, 2022. 7 [21] Jiacheng Hua, Yishu Yin, Yuhang Wu, Tai Wang, Yifei Huang, and Miao Liu. Unleashing spatial reasoning in multimodal large language models via textual representation guided reasoning, 2026. 3 [22] Aaron Hurst, Adam Lerer, Adam P Goucher, Adam Perel-man, Aditya Ramesh, Aidan Clark, AJ Ostrow, Akila Weli-hinda, Alan Hayes, Alec Radford, et al. Gpt-4o system card. 
+
+arXiv preprint arXiv:2410.21276 , 2024. 1 [23] Mengdi Jia, Zekun Qi, Shaochen Zhang, Wenyao Zhang, Xinqiang Yu, Jiawei He, He Wang, and Li Yi. Omnispatial: Towards comprehensive spatial reasoning benchmark for vi-sion language models, 2025. 2 [24] Guangfeng Jiang, Yueru Luo, Jun Liu, Yi Huang, Yiyao Zhu, Zhan Qu, Dave Zhenyu Chen, Bingbing Liu, and Xu Yan. 
+
+10 Wpt: World-to-policy transfer via online world model distil-lation, 2026. 3 [25] Amita Kamath, Jack Hessel, and Kai-Wei Chang. What’s “up” with vision-language models? investigating their strug-gle with spatial reasoning. In Proceedings of the Confer-ence on Empirical Methods in Natural Language Processing ,pages 9161–9175, 2023. 2 [26] Ranjay Krishna, Jiafei Duan, Kiana Ehsani, Kate Saenko, Aniruddha Kembhavi, Dina Bashkirova, Bryan A. Plummer, Rose Hendrix, Kuo-Hao Zeng, Reuben Tan, and Arijit Ray. Sat: Spatial aptitude training for multimodal language mod-els, 2024. 2 [27] Bo Li, Yuanhan Zhang, Dong Guo, Renrui Zhang, Feng Li, Hao Zhang, Kaichen Zhang, Yanwei Li, Ziwei Liu, and Chunyuan Li. Llava-onevision: Easy visual task transfer. 
+
+arXiv preprint arXiv:2408.03326 , 2024. 1 [28] Chengzu Li, Wenshan Wu, Huanyu Zhang, Yan Xia, Shaoguang Mao, Li Dong, Ivan Vuli´ c, and Furu Wei. Imag-ine while reasoning in space: Multimodal visualization-of-thought. In Proceedings of the International Conference on Machine Learning , 2025. 2, 3 [29] Hongxing Li, Dingming Li, Zixuan Wang, Yuchen Yan, Hang Wu, Wenqi Zhang, Yongliang Shen, Weiming Lu, Jun Xiao, and Yueting Zhuang. Spatialladder: Progressive train-ing for spatial reasoning in vision-language models. arXiv preprint arXiv:2510.08531 , 2025. 2 [30] Hongxing Li, Dingming Li, Zixuan Wang, Yuchen Yan, Hang Wu, Wenqi Zhang, Yongliang Shen, Weiming Lu, Jun Xiao, and Yueting Zhuang. Spatialladder: Progressive training for spatial reasoning in vision-language models. In 
+
+The International Conference on Learning Representations ,2026. 3 [31] Xiaoqi Li, Mingxu Zhang, Yiran Geng, Haoran Geng, Yux-ing Long, Yan Shen, Renrui Zhang, Jiaming Liu, and Hao Dong. Manipllm: Embodied multimodal large language model for object-centric robotic manipulation, 2023. 1 [32] Kang Liao, Size Wu, Zhonghua Wu, Linyi Jin, Chao Wang, Yikai Wang, Fei Wang, Wei Li, and Chen Change Loy. Thinking with camera: A unified multimodal model for camera-centric understanding and generation. In The Inter-national Conference on Learning Representations , 2026. 2 [33] Hao Liu, Wilson Yan, Matei Zaharia, and Pieter Abbeel. World model on million-length video and language with ringattention. arXiv preprint arXiv:2402.08268 , 2024. 1 [34] Yuecheng Liu, Dafeng Chi, Shiguang Wu, Zhanguang Zhang, Yaochen Hu, Lingfeng Zhang, Yingxue Zhang, Shuang Wu, Tongtong Cao, Guowei Huang, Helong Huang, Guangjian Tian, Weichao Qiu, Xingyue Quan, Jianye Hao, and Yuzheng Zhuang. Spatialcot: Advancing spatial reason-ing through coordinate alignment and chain-of-thought for embodied task planning, 2025. 2, 3 [35] Wufei Ma, Haoyu Chen, Guofeng Zhang, Yu-Cheng Chou, Jieneng Chen, Celso de Melo, and Alan Yuille. 3dsrbench: A comprehensive 3d spatial reasoning benchmark. In Proceed-ings of the IEEE/CVF International Conference on Com-puter Vision , pages 6924–6934, 2025. 2 [36] Wufei Ma, Yu-Cheng Chou, Qihao Liu, Xingrui Wang, Celso M de Melo, Jianwen Xie, and Alan Yuille. Spatial-reasoner: Towards explicit and generalizable 3d spatial rea-soning. In The Annual Conference on Neural Information Processing Systems , 2025. 3 [37] Fanqing Meng, Jin Wang, Chuanhao Li, Quanfeng Lu, Hao Tian, Jiaqi Liao, Xizhou Zhu, Jifeng Dai, Yu Qiao, Ping Luo, et al. Mmiu: Multimodal multi-image understanding for evaluating large vision-language models. In The Interna-tional Conference on Learning Representations , 2025. 2 [38] Michael Ogezi and Freda Shi. Spare: Enhancing spatial rea-soning in vision-language models with synthetic data. In 
+
+Proceedings of the Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) , pages 7855–7875, 2025. 2 [39] Yuan Qi et al. Beyond semantics: Rediscovering spa-tial awareness in vision-language models. arXiv preprint arXiv:2503.17349 , 2025. 3 [40] Reza Rajabi et al. Towards grounded visual spatial reasoning in multi-modal vision language models. In ICLR Workshop ,2024. 3 [41] Arijit Ray, Jiafei Duan, Reuben Tan, Dina Bashkirova, Rose Hendrix, Kiana Ehsani, Aniruddha Kembhavi, Bryan A Plummer, Ranjay Krishna, Kuo-Hao Zeng, et al. Sat: Spa-tial aptitude training for multimodal language models. arXiv preprint arXiv:2412.07755 , 3, 2024. 6 [42] Xuanchi Ren, Tianchang Shen, Jiahui Huang, Huan Ling, Yifan Lu, Merlin Nimier-David, Thomas M¨ uller, Alexan-der Keller, Sanja Fidler, and Jun Gao. Gen3c: 3d-informed world-consistent video generation with precise camera con-trol. In Proceedings of the IEEE/CVF Conference on Com-puter Vision and Pattern Recognition , 2025. 3 [43] Rishabh Sharma, Gijs Hogervorst, Wayne E. Mackey, David J. Heeger, and Stefano Martiniani. Cross-view world models, 2026. 3 [44] Hang Su, Songming Liu, Liyuan Wang, Xingxing Wei, Caixin Kang, Shouwei Ruan, and Qihui Zhu. From reactive to cognitive: brain-inspired spatial intelligence for embodied agents, 2025. 1 [45] Qi Tian, Songtao Liu, Di Wang, Yangyu Tao, Yang Li, Fang Yang, Yuanbo Peng, Jinbao Xue, Xin Li, Hongfa Wang, An-dong Wang, Zunnan Xu, Shuai Li, Yi Chen, Yanxin Long, Hao Tan, Junkun Yuan, Qin Lin, Kai Wang, Bo Wu, Jie Jiang, Weiyan Wang, Zijian Zhang, Zuozhuo Dai, Changlin Li, Jianwei Zhang, Yuhong Liu, Yong Yang, Hongmei Wang, Yutao Cui, Jiawang Bai, Jiangfeng Xiong, Xinchi Deng, Qinglin Lu, Wenqing Yu, Jin Zhou, Weijie Kong, Zixiang Zhou, Jacob Song, Zhiyu He, Duojun Huang, Jianbing Wu, Zhiyong Xu, Mengyang Liu, Rox Min, Kathrina Wu, Al-addin Wang, Joey Wang, Pengyu Li, Zhentao Yu, Caesar Zhong, and Dax Zhou. Hunyuanvideo: A systematic frame-work for large video generative models, 2025. 3, 6 [46] Wenqi Wang, Reuben Tan, Pengyue Zhu, Jianwei Yang, Zhengyuan Yang, Lijuan Wang, Andrey Kolobov, Jianfeng Gao, and Boqing Gong. Site: towards spatial intelligence thorough evaluation. In Proceedings of the IEEE/CVF Inter-national Conference on Computer Vision , pages 9058–9069, 2025. 2 [47] Zun Wang, Han Lin, Jaehong Yoon, Jaemin Cho, Yue Zhang, 
+
+11 and Mohit Bansal. Anchorweave: World-consistent video generation with retrieved local spatial memories, 2026. 3 [48] Diankun Wu, Fangfu Liu, Yi-Hsin Hung, and Yueqi Duan. Spatial-mllm: Boosting mllm capabilities in visual-based spatial intelligence, 2025. 3 [49] Haoning Wu, Xiao Huang, Yaohui Chen, Ya Zhang, Yanfeng Wang, and Weidi Xie. Spatialscore: Towards unified evalu-ation for multimodal spatial understanding. arXiv preprint arXiv:2505.17012 , 2025. 2 [50] Hang Wu, Yujun Cai, Zehao Li, Haonan Ge, Bowen Sun, Junsong Yuan, and Yiwei Wang. Camreasoner: Reinforcing camera movement understanding via structured spatial rea-soning, 2026. 3 [51] Junfei Wu, Jian Guan, Kaituo Feng, Qiang Liu, Shu Wu, Liang Wang, Wei Wu, and Tieniu Tan. Reinforcing spatial reasoning in vision-language models with interwoven think-ing and visual drawing, 2025. 3 [52] Qiong Wu, Xiangcong Yang, Yiyi Zhou, Chenxin Fang, Baiyang Song, Xiaoshuai Sun, and Rongrong Ji. Grounded chain-of-thought for multimodal large language models, 2025. 2, 3 [53] Saining Xie, Han Liu, Ranjay Krishna, Li Fei-Fei, Jiajun Wu, Zihan Wang, Manling Li, Jieyu Zhang, Jianshu Zhang, Qineng Wang, Kangrui Wang, Keshigeyan Chandrasegaran, Baiqiao Yin, and Pingyue Zhang. Spatial mental modeling from limited views, 2025. 2, 3, 6 [54] Lingling Xu, Haoran Xie, Si-Zhao Joe Qin, Xiaohui Tao, and Fu Lee Wang. Parameter-efficient fine-tuning methods for pretrained language models: A critical review and assess-ment. arXiv preprint arXiv:2312.12148 , 2023. 7 [55] Jianwei Yang, Yilun Du, Chuang Gan, Siyuan Zhou, Reuben Tan, Yuncong Yang, Zheyuan Zhang, and Jiageng Liu. Mind-journey: Test-time scaling with world models for spatial rea-soning, 2025. 2, 3, 6, 7, 19 [56] Jihan Yang, Shusheng Yang, Anjali W Gupta, Rilyn Han, Li Fei-Fei, and Saining Xie. Thinking in space: How mul-timodal large language models see, remember, and recall spaces. In Proceedings of the Computer Vision and Pattern Recognition Conference , pages 10632–10643, 2025. 2, 6 [57] Sihan Yang, Runsen Xu, Yiman Xie, Sizhe Yang, Mo Li, Jingli Lin, Chenming Zhu, Xiaochen Chen, Haodong Duan, Xiangyu Yue, et al. Mmsi-bench: A benchmark for multi-image spatial intelligence. arXiv preprint arXiv:2505.23764 ,2025. 2 [58] Shusheng Yang, Jihan Yang, Pinzhi Huang, Ellis Brown, Zi-hao Yang, Yue Yu, Shengbang Tong, Zihan Zheng, Yifan Xu, Muhan Wang, et al. Cambrian-s: Towards spatial supersens-ing in video. arXiv preprint arXiv:2511.04670 , 2025. 3 [59] Yuxue Yang, Lue Fan, Ziqi Shi, Junran Peng, Feng Wang, and Zhaoxiang Zhang. Neoverse: Enhancing 4d world model with in-the-wild monocular videos. arXiv preprint arXiv:2601.00393 , 2026. 3 [60] Chun-Hsiao Yeh, Chenyu Wang, Shengbang Tong, Ta-Ying Cheng, Ruoyu Wang, Tianzhe Chu, Yuexiang Zhai, Yubei Chen, Shenghua Gao, and Yi Ma. Seeing from another per-spective: Evaluating multi-view understanding in mllms. In 
+
+Neural Information Processing Systems , 2025. 2 [61] Songsong Yu, Yuxin Chen, Hao Ju, Lianjie Jia, Fuxi Zhang, Shaofei Huang, Yuhan Wu, Rundi Cui, Binghao Ran, Za-ibin Zhang, et al. How far are vlms from visual spatial in-telligence? a benchmark-driven perspective. arXiv preprint arXiv:2509.18905 , 2025. 2 [62] Xiaoyu Zhan, Wenxuan Huang, Hao Sun, Xinyu Fu, Changfeng Ma, Shaosheng Cao, Bohan Jia, Shaohui Lin, Zhenfei Yin, LEI BAI, Wanli Ouyang, Yuanqi Li, Jie Guo, and Yanwen Guo. Actial: Activate spatial reasoning ability of multimodal large language models. In The Annual Con-ference on Neural Information Processing Systems , 2025. 3 [63] Jiahui Zhang, Yurui Chen, Yanpeng Zhou, Yueming Xu, Ze Huang, Jilin Mei, Junhui Chen, Yu-Jie Yuan, Xinyue Cai, Guowei Huang, et al. From flatland to space: Teaching vision-language models to perceive and reason in 3d. arXiv preprint arXiv:2503.22976 , 2025. 2 [64] Jiajun Zhang, Shuo Ren, Wang Xu, Yibin Huang, Wanyue Zhang, Yangbin Xu, JingJing Huang, and Helu Zhi. Why do mllms struggle with spatial understanding? a systematic analysis from data to architecture, 2025. 2, 6 [65] Kevin Zhang, Kuangzhi Ge, Xiaowei Chi, Renrui Zhang, Shaojun Shi, Zhen Dong, Sirui Han, and Shanghang Zhang. Can world models benefit vlms for world dynamics?, 2025. 2, 3 [66] Zaibin Zhang, Yuhan Wu, Lianjie Jia, Yifan Wang, Zhongbo Zhang, Yijiang Li, Binghao Ran, Fuxi Zhang, Zhuohan Sun, Zhenfei Yin, Lijun Wang, and Huchuan Lu. Think3d: Think-ing with space for spatial reasoning, 2026. 3 [67] Xu Zheng, Zihao Dongfang, Lutao Jiang, Boyuan Zheng, Yulong Guo, Zhenquan Zhang, Giuliano Albanese, Runyi Yang, Mengjiao Ma, Zixin Zhang, et al. Multimodal spatial reasoning in the large model era: A survey and benchmarks. 
+
+arXiv preprint arXiv:2510.25760 , 2025. 3 [68] Jensen Zhou, Hang Gao, Vikram Voleti, Aaryaman Vasishta, Chun-Han Yao, Mark Boss, Philip Torr, Christian Rupprecht, and Varun Jampani. Stable virtual camera: Generative view synthesis with diffusion models. In Proceedings of the IEEE/CVF International Conference on Computer Vision ,pages 12405–12414, 2025. 3, 6 [69] Jinguo Zhu, Weiyun Wang, Zhe Chen, Zhaoyang Liu, Shen-glong Ye, Lixin Gu, Hao Tian, Yuchen Duan, Weijie Su, Jie Shao, Zhangwei Gao, Erfei Cui, Xuehui Wang, Yue Cao, Yangzhou Liu, Xingguang Wei, Hongjie Zhang, Haomin Wang, Weiye Xu, Hao Li, Jiahao Wang, Nianchen Deng, Songze Li, Yinan He, Tan Jiang, Jiapeng Luo, Yi Wang, Con-ghui He, Botian Shi, Xingcheng Zhang, Wenqi Shao, Junjun He, Yingtong Xiong, Wenwen Qu, Peng Sun, Penglong Jiao, Han Lv, Lijun Wu, Kaipeng Zhang, Huipeng Deng, Jiaye Ge, Kai Chen, Limin Wang, Min Dou, Lewei Lu, Xizhou Zhu, Tong Lu, Dahua Lin, Yu Qiao, Jifeng Dai, and Wenhai Wang. Internvl3: Exploring advanced training and test-time recipes for open-source multimodal models, 2025. 1 
+
+12 A. Detailed Data Construction 
+
+Anchor RGB sources. We construct World2VLM super-vision from two complementary anchor-image pools. For real-scene supervision, we use ScanNet RGB frames. In the current release manifest used by our SVC pipeline, this source contributes 6,803 anchor images. For simulated su-pervision, we use a selected MulSeT RGB pool, which con-tributes 2,000 anchor images. Each manifest entry is treated as one anchor scene instance: the generator takes a single source RGB image, samples an egocentric motion program, synthesizes a trajectory of future views, and then converts the resulting trajectory bundle into one or more QA-style supervision records. 
+
+Trajectory generation with SVC. For the SVC teacher, trajectory generation uses a camera-conditioned novel-view pipeline with resolution 576 ×576 , guidance scale 4.0, cam-era scale 2.0, and 50 denoising steps. The action space contains six single-step egocentric actions: forward , back-ward , shift-left , shift-right , turn-left , and turn-right . In addition, we use three short multi-step presets: forward-then-turn-left , turn-right-then-forward , and shift-left-then-forward-then-turn-right . Translation magnitudes are sam-pled on a discrete 0.1 m grid and rotation magnitudes on a discrete 10 ◦ grid. Single-step translations are sampled up to 6.0 m, single-step rotations up to 100 ◦, and long motions are decomposed into small per-frame increments so that trajec-tories remain temporally smooth. Each generated trajectory contains at least 8 frames, and the trajectory metadata stores both step-wise actions and cumulative action prefixes. For prompt construction, we use a max-displacement policy: the anchor frame is paired with the farthest valid synthesized endpoint rather than a near-neighbor frame. This design is used for both motion-only and object-grounded prompts so that supervision emphasizes non-trivial viewpoint change instead of local appearance con-tinuity. 
+
+Trajectory generation with HY-WorldPlay. When we replace the teacher with HY-WorldPlay, we keep the same anchor-image sources, downstream templates, and train/validation split protocol, and only swap the trajectory-generation backend. HY-WorldPlay is instantiated as an action-conditioned video world model using few-step bf16 inference at 480p ( 832 × 480 , aspect ratio 16:9). Its mo-tion space again covers six single-step actions plus short multi-step presets, with translation magnitudes quantized in 0.1 m units and rotations in 10 ◦ units. Relative to SVC, HY-WorldPlay therefore changes the world-model prior and rendering mechanism, but not the downstream QA con-struction procedure. 
+
+Prompt construction. After trajectory synthesis, we con-vert each trajectory bundle into two supervision families. Motion-only prompts (A1–A4) are produced directly from the image pair and the stored action prefix. Specifically, A1 predicts translation distance, A2 predicts rotation angle, A3 predicts a 2–3 step ordered action sequence, and A4 verifies whether a proposed action sequence matches the source-target transition. Detector-grounded prompts (D1–D4) are built by running object detection and tracking on the gener-ated trajectory frames, caching the detections, normalizing boxes to integer coordinates in [0 , 1000] , and instantiating task-specific templates. D1 predicts the post-action target box, D2 predicts whether the object remains visible, D3 in-fers a 1–2 step action sequence from matched boxes across views, and D4 judges whether two boxes refer to the same physical object instance. 
+
+Filtering and quality control. We apply filtering at both the object level and the record level. For object-grounded prompts, we keep only detections that satisfy confidence 
+
+≥ 0.3, NMS IoU threshold 0.5, area ratio in [0 .01 , 0.6] , and a minimum 1% border margin from all image boundaries. When multiple candidates remain, we keep the highest-confidence valid track-consistent match. At the record level, prompt builders reject malformed outputs, invalid boxes, and action/trajectory mismatches. In the balanced subset used for GRPO data construction, 112 malformed records were removed by this validator, all due to invalid D3 action formatting. In practice, most pruning happens after genera-tion during prompt validation and balancing rather than by discarding large numbers of trajectories through aggressive temporal rejection. 
+
+Raw prompt pools. The four SVC prompt pools used to build the final supervised and reinforcement-learning data are summarized in Table 5. ScanNet contributes both motion-only and detector-grounded records, as does MulSeT. Before final packaging, these four raw pools con-tain 103,339 candidate QA pairs in total: 52,798 ScanNet motion-only records, 13,482 ScanNet detector-grounded records, 23,675 MulSeT motion-only records, and 13,384 MulSeT detector-grounded records. 
+
+Final SFT composition. The final supervised training file contains 103,097 records in total. Aggregated by su-pervision direction, it contains 61,427 inverse examples and 41,670 forward examples. Aggregated by task fam-ily, it contains 76,473 motion-only examples (A1–A4) and 26,624 detector-grounded examples (D1–D4). Table 6 gives the per-task breakdown. Because object-grounded tasks require valid tracked detections and stable cross-view matches, the final task distribution is not perfectly uniform, 13 Source Anchor images A1–A4 D1–D4 Final SFT                               
+
+> ScanNet 6,803 52,798 13,482 66,174 MulSeT 2,000 23,675 13,384 36,923 Total 8,803 76,473 26,866 103,097 Table 5. Source-level statistics for the World2VLM training data. “A1–A4” denotes motion-only prompts and “D1–D4” denotes detector-grounded prompts before final SFT packaging. The final SFT file contains 103,097 records, which we refer to as “100K” in the main text for readability.
+> Task Count Family
+> A1 24,788 Inverse / motion-only A2 13,903 Inverse / motion-only A3 18,891 Inverse / motion-only A4 18,891 Forward / motion-only D1 4,158 Forward / detector-grounded D2 13,039 Forward / detector-grounded D3 3,845 Inverse / detector-grounded D4 5,582 Forward / detector-grounded Table 6. Per-task counts in the final World2VLM supervised train-ing file.
+
+even though the overall construction procedure attempts to balance task family, trajectory group, and source domain. 
+
+GRPO refinement set. For reinforcement learning, we construct a separate balanced subset from the same four raw SVC pools. The resulting GRPO set contains 1,000 examples. This set is balanced by task type (125 exam-ples for each of A1–A4 and D1–D4) and by source bucket (250 examples each from scannet detect , scannet undetect ,
+
+mulset detect , and mulset undetect ), while also maintaining near-uniform coverage over the major trajectory groups. As described in the main paper, we then reserve a small valida-tion split from this balanced refinement pool for checkpoint selection and reward debugging. 
+
+## B. Task Templates and Output Formats 
+
+Canonical template set. Table-free summaries in the main paper describe the semantics of A1–A4 and D1–D4, but reviewers may still want to see the exact prompt sur-face form and target answer style. We therefore present the canonical template family used for dataset construction. For readability in the two-column format, we show one canoni-cal prompt form and one concrete input-output example per task. Some object-grounded tasks also admit light wording variants such as multiple-choice or short-sentence versions, but the canonical forms below capture the supervision pat-tern used throughout the dataset. 
+
+A1: Translation distance estimation. 
+
+This is an inverse motion-prediction task over an image pair. The model must infer the signed translation needed to trans-form the first view into the second view. 
+
+Prompt template.               
+
+> <image><image>How many meters did the camera move to get the second image? Answer as: move {DIR }Xmeters.
+
+Target output format. move 
+
+{forward|backward|left|right } { DIST }
+
+meters 
+
+Example.                    
+
+> User: <image><image>How many meters did the camera move to get the second image? Answer as: move forward Xmeters. Assistant: move forward 4.3 meters
+
+A2: Rotation angle estimation. 
+
+This is an inverse motion-prediction task over an image pair. The model must infer the camera’s turn direction and rota-tion magnitude from the source-target transition. 
+
+Prompt template.              
+
+> <image><image>How many degrees did the camera turn to get the second image? Answer as: turn {TURN DIR }Xdegrees.
+
+Target output format. turn {left|right }{ANGLE } degrees 
+
+Example.                    
+
+> User: <image><image>How many degrees did the camera turn to get the second image? Answer as: turn left Xdegrees. Assistant: turn left 100 degrees
+
+A3: Multi-step action-sequence prediction. 
+
+This is an inverse structured-prediction task. Given a source-target image pair linked by a short composed tra-jectory, the model must reconstruct the ordered action se-quence rather than a single scalar motion value. 
+
+Prompt template.                         
+
+> <image><image>To move from the first image to the second image, the camera used 2or 3actions in order. Write the full action sequence using ’;’ as aseparator. Allowed actions:
+
+14 - move forward/backward/left/right Xmeters - turn left/right X degrees 
+
+Target output format. action 1; action 2 or 
+
+action 1; action 2; action 3 , where each action is one of move ... X meters or turn ... Xdegrees 
+
+Example. 
+
+User: <image><image>To move from the first image to the second image, the camera used 2 or 3 actions in order. Write the full action sequence using ’;’ as a separator. Assistant: move forward 1.8 meters; turn left 50 degrees 
+
+A4: Action verification. 
+
+This is a forward verification task. Instead of predicting the action from scratch, the model must judge whether a candidate motion description is consistent with the image pair. 
+
+Prompt template. 
+
+<image><image>True or false: the camera did "{CLAIM ACTION }" to get the second image. 
+
+Target output format. true or false 
+
+Example. 
+
+User: <image><image>True or false: the camera did "move left 0.8 meters, move forward 2.8 meters and turn right 50 degrees" to get the second image. Assistant: true 
+
+D1: Post-action object localization. 
+
+This is a forward object-grounding task over a paired-view transition. The model is given an object box in the source image and must predict the corresponding box after the specified action. 
+
+Prompt template. 
+
+<image><image>In the first image, the {OBJECT } is at bbox {BBOX 1 }.Bboxes use normalized integer coordinates in [0,1000]. After the camera does "{ACTION SEQ }", give the bbox of the same {OBJECT }
+
+in the second image. Answer with bbox [x1, y1, x2, y2] only. 
+
+Target output format. [x1, y1, x2, y2] with in-teger coordinates in [0,1000] 
+
+Example. 
+
+User: <image><image>In the first image, the microwave is at bbox [94, 423, 322, 552]. Bboxes use normalized integer coordinates in [0,1000]. After the camera does "move backward 4.5 meters", give the bbox of the same microwave in the second image. Answer with bbox [x1, y1, x2, y2] only. Assistant: [48, 558, 226, 681] 
+
+D2: Post-action visibility judgment. 
+
+This is a forward object-centric reasoning task. The model receives an object box in the source image and must de-termine whether the same object remains visible after the action. 
+
+Prompt template. 
+
+<image>In the image, the {OBJECT } is at bbox {BBOX 1 }. After the camera does "{ACTION SEQ }", does this {OBJECT } disappear from view? Answer: yes or no. 
+
+Target output format. yes or no 
+
+Example. 
+
+User: <image>In the image, the chair is at bbox [626, 209, 915, 675]. After the camera does "move forward 5.5 meters", does this chair disappear from view? Answer: yes or no. Assistant: yes 
+
+D3: Box-guided action-sequence inference. 
+
+This is an inverse paired-view matching task. The model is told that the two boxes correspond to the same physical object instance and must infer the short camera action se-quence that explains their relative displacement. 
+
+Prompt template. 
+
+<image><image>The {OBJECT } in the first image (bbox {BBOX 1 }) and the {OBJECT } in the second image (bbox {BBOX 2 }) are the same physical object. The camera used 1 or 2 actions in order. Write the full action sequence using ’;’ as a separator. Allowed actions: - move forward/backward/left/right X meters - turn left/right X degrees 
+
+Target output format. action 1 or action 1; action 2 , using the same action vocabulary as A3 
+
+Example. 
+
+15 User: <image><image>The cup in the first image (bbox [412, 557, 523, 700]) and the cup in the second image (bbox [603, 368, 814, 877]) are the same physical object. The camera used 1 or 2 actions in order. Write the full action sequence using ’;’ as a separator. Assistant: move forward 3 meters; turn left 50 degrees 
+
+D4: Cross-view object-identity verification. 
+
+This is a forward paired-view verification task. Given a source box, a target box, and the applied action, the model must judge whether the two boxes correspond to the same object instance. 
+
+Prompt template.                             
+
+> <image><image>In the first image, the {OBJECT }is at bbox {BBOX 1 }.After the camera does "{ACTION SEQ }", the second image shows a{OBJECT }at bbox {BBOX 2 }.Are these the same physical object instance? Answer: yes or no.
+
+Target output format. yes or no 
+
+Example.                                       
+
+> User: <image><image>In the first image, the chair is at bbox [70, 519, 404, 986]. After the camera does "move left 5meters", the second image shows achair at bbox [384, 525, 684, 978]. Are these the same physical object instance? Answer: yes or no. Assistant: no
+
+Interpretation. Taken together, these templates cover three supervision modes. A1, A2, A3, and D3 are inverse tasks that infer motion from visual change. A4 and D4 are verification tasks that judge whether a proposed action or identity relation is compatible with the transition. D1 and D2 are forward consequence-prediction tasks that forecast object state after an action. This explicit split is important for interpreting World2VLM: the model is not trained on a single spatial QA format, but on a mixed supervision set that spans scalar regression, sequence prediction, ground-ing, visibility prediction, and paired-view verification. 
+
+## C. Reward Design for GRPO 
+
+Implementation scope. This section documents the task-aware reward used in the multitype GRPO stage. The re-ported run uses a balanced 1K refinement pool, 4 rollout samples per prompt, actor/critic learning rates of 2 × 10 −6
+
+and 1 × 10 −6, actor/critic global batch sizes of 2, fixed KL coefficient 0.01, and one training epoch. The reward is eval-uated from the model response together with the task identi-fier and reference answer, and it returns a scalar task reward together with interpretable sub-scores for analysis. 
+
+Common preprocessing and score range. For action and binary tasks, the implementation lowercases the re-sponse, strips trailing punctuation, and collapses repeated whitespace before parsing. For D1, the raw response is kept so that partial bounding-box formatting can still receive par-tial credit. All component rewards lie in [0 , 1] . The only negative case is an explicit overlength penalty: if the raw response exceeds 200 characters, the sample immediately receives the minimum task reward and zero format credit, without evaluating any task-specific sub-scores. This rule is important in our setting because the rollout prompt asks the model to produce intermediate reasoning, and the penalty discourages long malformed chains of thought that never collapse to a clean final answer. 
+
+Shared numeric precision term. For action-valued tasks, magnitude accuracy is measured by a piecewise-linear function: 
+
+snum (ˆ v, v ⋆; τ ) = 
+
+
+
+1, |ˆv − v⋆| ≤ τlow ,
+
+0, |ˆv − v⋆| ≥ τhigh ,
+
+1 − |ˆv − v⋆| − τlow 
+
+τhigh − τlow 
+
+, otherwise .
+
+(8) For translation magnitudes, (τlow , τ high ) = (0 .5 m, 5.0 m);for turn angles, (τlow , τ high ) = (5 ◦, 90 ◦). Thus rnum equals 1 for small numeric error, decays linearly in the mid-error regime, and saturates at 0 for large mismatch. 
+
+Task-specific instantiations. Table 7 summarizes which reward terms are active for each task family and how they are weighted in the implementation. 
+
+A1/A2: single-step motion rewards. For translation-distance (A1) and turn-angle (A2) prediction, the re-ward parser extracts all action strings matching move forward/backward/left/right X meters or 
+
+turn left/right X degrees from the response. Let (a⋆, v ⋆) denote the ground-truth action type and magnitude, and let {(ˆ aj , ˆvj )}j be the parsed candidates. The component rewards are 
+
+rfmt = ⊮[| ˆA| > 0] , rsem = max  
+
+> j
+
+⊮[ˆ aj = a⋆],rnum = max  
+
+> j
+
+⊮[ˆ aj = a⋆] snum (ˆ vj , v ⋆; a⋆). (9) 16 Task(s) αfmt αsem αnum αgeo αord Extra term Implementation form 
+
+A1, A2 0.10 0.35 0.55 0 0 none single-step motion reward A3, D3 0.10 0.25 0.30 0 0.35 −0.03 per extra action sequence reward A4, D2, D4 0.20 0.80 0 0 0 none binary reward D1 0.20 0 0 0.65 0 0.15 rvalid geometric box reward Table 7. Task-specific reward coefficients used by the GRPO implementation. Eq. (4) in the main text is therefore a shorthand summary: the active terms and their coefficients are instantiated differently for different task types. D1 additionally includes an auxiliary box-validity term rvalid .
+
+and the final scalar reward is 
+
+rA1 /A2 = 0 .10 rfmt + 0 .35 rsem + 0 .55 rnum . (10) Intuitively, the model only receives numeric credit when it first predicts the correct motion type and direction. 
+
+A3/D3: multi-step sequence rewards. For multi-step action prediction (A3) and object-guided action inference (D3), let a⋆ = ( a⋆
+
+> 1
+
+, . . . , a ⋆m) be the ground-truth sequence and ˆa = (ˆ a1, . . . , ˆan) the parsed predicted sequence. The implementation defines 
+
+rfmt = ⊮[n > 0] , (11) 
+
+rsem =
+
+P 
+
+> t
+
+min( ct(ˆ a), c t(a⋆)) max( n, m, 1) , (12) where ct(·) counts how many times action type t appears in the sequence, 
+
+rord = 1
+
+m
+
+> min( m,n )
+
+X
+
+> i=1
+
+⊮[ˆ ai = a⋆i ], (13) and 
+
+rnum = 1
+
+m
+
+> min( m,n )
+
+X
+
+> i=1
+
+⊮[ˆ ai = a⋆i ] snum (ˆ vi, v ⋆i ; a⋆i ). (14) The pre-penalty score is 
+
+˜rseq = 0 .10 rfmt + 0 .25 rsem + 0 .35 rord + 0 .30 rnum , (15) and the final sequence reward is 
+
+rA3 /D3 = max  0, ˜rseq − 0.03 max(0 , n − m). (16) Thus the reward favors correct action content, correct order, and correct magnitudes, while mildly penalizing unneces-sarily long predicted sequences. 
+
+A4/D2/D4: binary rewards. For action verification (A4), visibility judgment (D2), and object-identity verification (D4), the implementation uses a short-form boolean parser: 
+
+yes/true 7 → positive and no/false 7 → negative. The component rewards are 
+
+rfmt = ⊮[ˆ y ∈ { yes , no , true , false }], rsem = ⊮[ˆ y = y⋆],
+
+(17) and the final reward is 
+
+rbin = 0 .20 rfmt + 0 .80 rsem . (18) A practical limitation of this binary reward is that it only recognizes short-form labels. If the reference answer is ex-pressed in an alternative form such as A/B or a full sen-tence, the reward no longer provides binary-accuracy credit. This limitation is acceptable for the current task setting, but it also suggests that a more format-robust binary reward would be desirable in future work. 
+
+D1: geometric box reward. For post-action object lo-calization, the response is scored as a structured bounding box. The format term gives 1.0 if the response is exactly a bbox string of the form [x1, y1, x2, y2] , 0.4 if a parseable bbox appears anywhere in the response, and 0 otherwise. Let ˆb and b⋆ denote the predicted and tar-get boxes. The implementation first canonicalizes the co-ordinates by swapping endpoints when needed and clipping them to [0 , 1000] . It then defines 
+
+rvalid = 0 .7 ⊮[x1 < x 2∧y1 < y 2]+0 .3 max 
+
+
+
+0, 1 − overflow 200 
+
+
+
+,
+
+(19) where overflow is the average out-of-range amount before clipping. After canonicalization, the localization-quality term combines four geometric measures: 
+
+rIoU = IoU( ˆb, b⋆), (20) 
+
+rcenter = max 
+
+
+
+0, 1 − ∥ˆc − c⋆∥2
+
+max(80 , 0.6 d⋆)
+
+
+
+, (21) where d⋆ is the diagonal length of the target box, 
+
+rsize = max 0, 1 − | log( ˆ w/w ⋆)| + | log( ˆh/h ⋆)|
+
+1.6
+
+!
+
+,
+
+(22) 17 and 
+
+rL1 = max 0, 1 − 1180 · 14
+
+> 4
+
+X
+
+> k=1
+
+|ˆbk − b⋆k|
+
+!
+
+. (23) These are aggregated as 
+
+rbase geo = 0 .45 rIoU + 0 .20 rcenter + 0 .20 rL1 + 0 .15 rsize , (24) 
+
+rgeo = rbase geo · (0 .3 + 0 .7 rvalid ), (25) and the final D1 reward is 
+
+rD1 = 0 .20 rfmt + 0 .15 rvalid + 0 .65 rgeo . (26) Hence D1 is the only task where the geometric term is further decomposed into a validity sub-score and a localization-quality sub-score. 
+
+Task-aware reward structure. World2VLM does not use a single uniform symbolic reward across all tasks. In-stead, each sample is routed to a task-specific parser, and only the terms relevant to that task are activated: numeric precision matters for A1/A2/A3/D3, order consistency only for sequence tasks, and geometric quality only for D1. This task-aware construction allows GRPO to refine structured outputs without forcing heterogeneous task types into a sin-gle reward template. 
+
+## D. Qualitative Analysis of GRPO Improve-ments 
+
+Qualitative role of GRPO. The aggregate gains of World2VLM-GRPO over World2VLM-SFT in Table 2 es-tablish the benefit of reinforcement learning at the bench-mark level, but qualitative inspection is useful for charac-terizing how the refinement stage changes model behavior. Table 8 therefore presents representative held-out examples spanning numeric regression, counting, discrete directional reasoning, and output regularization. 
+
+Numeric precision and calibration. The clearest effect of GRPO appears on scalar regression or estimation tasks. In both SPARBench depth-prediction examples in Table 8, the SFT model produces numerically legal answers, but the magnitudes are badly calibrated: one is a large overesti-mate (10.5 instead of 5.4), and one is a large underesti-mate (0.6 instead of 1.8). After GRPO, both predictions move markedly toward the correct range. A similar pat-tern appears in VSI-Bench size-estimation examples, where GRPO often suppresses order-of-magnitude failures such as predicting 450 cm for an object whose ground-truth size is 42 cm. This behavior is consistent with the explicit numeric reward terms described in Appendix C: once the model al-ready knows the answer type , GRPO appears to sharpen the magnitude itself. 
+
+Discrete decision consistency. GRPO also benefits tasks whose answers are discrete labels rather than free-form numbers. Qualitatively, the most visible improvements arise in categories such as egocentric movement, perspec-tive taking, and object movement, where success depends on separating a small set of semantically similar alterna-tives. This pattern suggests that the GRPO stage mainly re-fines the final decision boundary once SFT has already pro-vided a plausible latent spatial representation. By contrast, categories that require more demanding relational updates exhibit smaller qualitative changes, consistent with the view that GRPO primarily calibrates decision quality rather than replacing the transition knowledge learned during SFT. 
+
+Response regularization. Another recurring effect is im-proved alignment between model outputs and the task-specific answer schema. After GRPO, responses more often appear directly in the expected short form, with fewer extra-neous wrappers or weakly normalized strings. This behav-ior is consistent with the format-sensitive reward terms and suggests that GRPO improves not only correctness, but also the evaluability and deployment robustness of the final re-sponse. 
+
+Interpretation. Taken together, these examples suggest that the role of GRPO in World2VLM is not to replace the transition knowledge already learned during SFT. Rather, its main contribution is to sharpen that knowledge at the output layer: it improves numeric calibration, increases the reliability of discrete directional and multiple-choice deci-sions, and makes the final answer format more consistent with the expected task schema. This is exactly the division of labor we intended between the two stages: SFT inter-nalizes motion-conditioned structure, and GRPO improves how that structure is expressed at inference time. 
+
+## E. Implementation Details 
+
+Supervised fine-tuning setup. The supervised stage per-forms parameter-efficient post-training of Qwen2.5-VL-7B-Instruct on 8 H100 GPUs using bfloat16, AdamW, co-sine learning-rate decay, 5% warmup, gradient accumula-tion 2, and ZeRO-2. We use seed 42, maximum sequence length 8192, and the native Qwen2.5-VL chat template for multimodal serialization. 
+
+Data split and visual preprocessing. SFT uses the mixed-source World2VLM training set of approximately 103K examples, with a 1% held-out validation split for model selection. Images are processed by the standard Qwen2.5-VL visual processor with dynamic resizing and a bounded visual-token budget, preserving the model’s native 18 Benchmark Question Type / Prompt GT SFT Output GRPO Output Observation                             
+
+> SPARBench Depth prediction: estimate the depth of a cart given a box at 3.7 m. 5.4 10.5 5.1 GRPO removes a severe overestimation and brings the prediction close to the ground-truth range. SPARBench Depth prediction: estimate the depth of toilet paper given a towel at 1.2 m. 1.8 0.6 1.5 GRPO substantially reduces underestimation and yields a more plausible metric prediction. VSI-Bench Object counting: “How many table(s) are in this room?” 212GRPO converts a near miss into the correct count. VSI-Bench Object-size estimation: estimate the longest dimension of a stool in centime-ters. 42 450 50 GRPO corrects an order-of-magnitude error and produces a better calibrated numeric es-timate. SAT-Real Perspective taking: “If I stand where the soft toy is and face right by 90 degrees, is the cellphone to the left or right?” right left right GRPO corrects the directional judgment in a representative real-image perspective-taking example. MindCube Option prediction from multi-view evi-dence. C<answer>D. Decorated wall</answer> C. Light brown wall
+> GRPO improves both correctness and output regularity by removing the extra wrapper and aligning the option label with the correct se-mantic referent.
+
+Table 8. Representative SFT →GRPO output changes on held-out evaluation examples. GT denotes ground truth. The examples illustrate three recurring effects of GRPO in our setting: better numeric calibration, more consistent discrete decisions, and cleaner answer format-ting. 
+
+patch and merge settings while keeping multi-GPU training stable. 
+
+Adaptation scope. We adopt LoRA rather than full-parameter tuning. The visual tower remains frozen through-out SFT, and the adapters use rank 256, scaling 512, dropout 0.05, and no bias adaptation. The LoRA modules are ap-plied to language-side attention and MLP projection layers, so the post-training focuses on multimodal reasoning be-havior expressed through the language backbone rather than altering the vision encoder itself. 
+
+Evaluation protocol. Reported SFT evaluations use the merged checkpoint with near-greedy decoding, making generation effectively deterministic unless a benchmark wrapper specifies otherwise. Downstream evaluation is conducted with batch size 1 for LMMS-Eval benchmarks, and with the benchmark-specific image-budget settings used for SAT-family and MindCube evaluation. 
+
+## F. Baseline Implementation Details and Com-parative Discussion 
+
+Baseline scope. The original MindJourney framework uses GPT-4o and other closed-source models in several roles within its inference-time imagination pipeline [55]. For a fair comparison with World2VLM, we transfer the same test-time paradigm onto the same open Qwen2.5-VL backbone used by our method. The resulting baseline there-fore matches the backbone and differs primarily in where world-model guidance is introduced: at inference time for the MindJourney-style baseline, and during post-training for World2VLM. 
+
+Experimental configuration. The baseline keeps the Qwen2.5-VL backbone frozen, uses a world model to ren-der imagined views under candidate egocentric actions, asks the VLM to score those imagined views with respect to the original question, ranks candidate trajectories from those scores, and produces the final answer from the selected path. In the SAT-family setting analyzed here, search uses up to three imagination steps, beam size two, the canonical forward/left-turn/right-turn action families, and the same benchmark-side image budget used throughout our exper-iments. This configuration preserves the central Mind-Journey mechanism while maintaining a backbone-matched comparison. 
+
+Discussion. This matched-baseline design is informative because both methods start from the same Qwen2.5-VL model. The MindJourney-style baseline measures the ben-efit of invoking a world model during inference without up-dating the backbone, whereas World2VLM measures the benefit of distilling analogous spatial guidance into the model during training. Under this controlled comparison, the results suggest that training-time internalization offers a favorable accuracy-efficiency trade-off while preserving direct comparability to inference-time imagination. 
+
+## G. Teacher World-Model Quality and Failure Cases 
+
+Importance of teacher quality. World2VLM treats the world model as a training-time teacher, so the quality of the generated supervision inevitably upper-bounds the quality of the distilled student. If the teacher produces images with visible artifacts, geometric distortion, action-inconsistent 19 viewpoint changes, or unstable object identity across views, then the resulting QA supervision becomes noisy. In the mild case, this noise simply weakens the usefulness of a training sample; in the severe case, it can actively teach the student the wrong motion-to-observation mapping. This is especially important here because our supervision is not limited to natural-language captions: it also includes metric motion values, structured action sequences, object boxes, visibility judgments, and cross-view identity labels, all of which are sensitive to teacher errors. 
+
+Qualitative difference between SVC and HY-WorldPlay. 
+
+Our experiments use two different teacher families precisely because no single world model is uniformly best along all dimensions. SVC is a camera-conditioned novel-view gen-erator and tends to preserve explicit viewpoint-control se-mantics better, which is consistent with its stronger per-formance on SAT-Real and VSI-Bench in the main paper. However, in our generated trajectories SVC also more fre-quently exhibits local rendering artifacts under larger view-point changes, such as stretched edges, duplicated struc-tures, warped object boundaries, and texture-level tearing around thin objects or cluttered depth discontinuities. HY-WorldPlay, by contrast, generally produces cleaner-looking frames and stronger perceptual realism, which qualitatively makes it a better image teacher in many cases. This stronger perceptual quality is consistent with its better downstream performance on SAT-Synthesized and MindCube. At the same time, HY-WorldPlay is not simply a uniformly better replacement: as an action-conditioned video world model, it can sometimes smooth, reinterpret, or visually regularize fine-grained camera motion in ways that make the rendered transition look plausible while being less tightly aligned with the exact camera-conditioned geometry that SVC was designed to model. 
+
+Propagation of teacher errors into supervision. 
+
+Teacher errors affect different task families in differ-ent ways. First, action-observation mismatch directly corrupts motion-centric tasks. If the rendered endpoint under-rotates, over-rotates, or drifts laterally relative to the nominal action trace, then A1, A2, A3, and A4 receive supervision whose target answer is formally correct with respect to metadata but visually inconsistent with the image pair. Second, geometric distortion disproportionately harms object-grounded tasks. Warped boxes, broken object silhouettes, or cross-view size inconsistency can make D1 localization targets less meaningful and can also reduce the reliability of D3/D4, which depend on stable object correspondence across views. Third, appearance hallucination and disappearance errors are particularly harmful for D2 and D4. If an object is spuriously removed, newly hallucinated, or semantically altered by the teacher, the student may be rewarded for a visibility or identity judgment that would be wrong in the underlying scene. Fourth, large-motion instability is amplified by our max-displacement pairing strategy. This strategy is useful because it increases the supervision signal, but it also means that the paired source-target views are drawn from the part of the trajectory where teacher errors are often most visible. 
+
+Interpretation of the teacher comparison. The bench-mark pattern in Table 2 is consistent with the failure modes above. SVC appears most useful when exact camera-conditioned viewpoint consistency matters more than pho-torealistic detail, which helps explain its advantage on SAT-Real and VSI-Bench. HY-WorldPlay appears more useful when global perceptual plausibility, smoother appearance evolution, and stronger temporal priors help mental sim-ulation, which is consistent with its stronger performance on SAT-Synthesized and MindCube. We therefore do not interpret the teacher comparison as “one teacher is uni-versally better.” Instead, the results suggest that different teacher families inject different spatial biases into the stu-dent: SVC contributes tighter camera-geometry alignment, while HY-WorldPlay contributes stronger perceptual real-ism and action-conditioned temporal continuity. 
+
+Current mitigation strategies. Although we do not yet perform explicit teacher-reliability modeling, several parts of the current pipeline already act as partial safeguards against teacher noise. We use two different teacher families rather than depending on a single generator, which reduces the chance that the full training signal inherits one model’s idiosyncratic errors. We also filter object-level supervi-sion using confidence, area-ratio, border-margin, and track-consistency constraints, so badly degraded teacher outputs are less likely to survive into D1–D4. In addition, prompt-level validation removes malformed records, and mixed-source training across real and simulated anchors reduces overfitting to one teacher-domain combination. Finally, the GRPO stage encourages short, well-formed, task-structured outputs, which helps the student avoid compounding noisy supervision with verbose but weakly grounded responses. 
+
+Limitations and future directions. Even with these safeguards, teacher quality remains a real bottleneck. World2VLM currently treats all retained world-model-generated samples as equally trustworthy once they pass rule-based filtering. A stronger version of the framework should estimate teacher reliability more explicitly, for ex-ample by down-weighting samples with teacher-student dis-agreement, filtering trajectories with weak cross-view geo-metric consistency, using detector confidence as a soft re-liability signal rather than a hard gate, or requiring agree-20 ment between multiple teacher rollouts before accepting a sample. Another promising direction is to make teacher quality task-aware: exact camera-motion tasks may pre-fer a camera-consistent teacher such as SVC, whereas mental-simulation tasks may benefit more from a percep-tually stronger temporal teacher such as HY-WorldPlay. We view such quality-aware teacher selection and confidence-weighted distillation as an important next step for improv-ing the robustness of training-time world-model alignment. 21

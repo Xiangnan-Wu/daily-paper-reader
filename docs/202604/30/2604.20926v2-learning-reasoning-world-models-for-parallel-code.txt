@@ -1,0 +1,535 @@
+Title: Learning Reasoning World Models for Parallel Code
+
+URL Source: https://arxiv.org/pdf/2604.20926v2
+
+Published Time: Tue, 28 Apr 2026 01:14:41 GMT
+
+Number of Pages: 22
+
+Markdown Content:
+# Learning Reasoning World Models for Parallel Code 
+
+Gautam Singh 1, Arjun Guha 2, Bhavya Kailkhura 1 & Harshitha Menon 11Lawrence Livermore National Laboratory 
+
+{singh68, gopalakrishn1 }@llnl.gov 
+
+> 2
+
+Northeastern University 
+
+a.guha@northeastern.edu 
+
+# Abstract 
+
+Large language models have shown remarkable ability in serial code gen-eration, but they still struggle with parallel code for which training data is comparatively scarce. A common remedy is to use coding agents that interact with external tools, but tool calls can be costly and sometimes impractical, e.g., for partially written code. We propose Parallel-Code World Models (PCWMs) , reasoning LLMs that aim to predict tool outcomes directly from parallel source code. To train PCWMs, we design a novel exploration and data generation pipeline that samples diverse parallel-coding problems and candidate implementations across multiple domains, then executes them via tools to record data races and performance profiles. From these, we synthesize hindsight reasoning traces that causally connect source code to observed tool outcomes. Fine-tuning on the resulting data yields no-ticeable gains, with a 7B-parameter world model improving from 64.3% to 72.8% accuracy in race-outcome prediction, while an 8B-parameter model improves in a performance profiling task from 49.3% to 58.6% accuracy. Furthermore, when open-weight models were tasked with fixing data races, world-model feedback improved their race-fixing rates relative to self-feedback by 2.7%-9.1% using our 7B-parameter world model and by 6.1%-11.1% using our 14B-parameter world model. Our results suggest that reasoning models have the potential to serve as practical substitutes for external tool calls in parallel-coding agents. 
+
+# 1 Introduction 
+
+Large language models (LLMs) have transformed code development through code genera-tion, explanation, and debugging workflows (Chen et al., 2021; Roziere et al., 2023; OpenAI, 2022; Yang et al., 2024). However, much of this progress has been concentrated in data-rich languages, programming models, and frameworks. Many real-world applications depend on niche and specialized frameworks with scarce training data, where language models struggle to produce correct, well-optimized code (Chen et al., 2024; Mora et al., 2024). A setting that is both important and representative of this scarcity problem is parallel programming . In parallel programming, a code’s functionality is decomposed across multiple threads or processes that execute concurrently—giving rise to complex non-deterministic scheduling, synchronization, and communication dynamics. Because high-quality parallel-code data is comparatively scarce, LLMs struggle more on parallel programming tasks than on serial programming tasks (Nichols et al., 2024a). A natural way to address this is via coding agents that can plan and search programs while obtaining feedback from the environment via relevant tools. However, real tool calls can be costly to configure and can sometimes be impractical, e.g., for partially written code snippets. To mitigate external tool calls for parallel codes, there are two relevant lines of research. First, in model-based reinforcement learning, agents use learned world models to plan in 1
+
+> arXiv:2604.20926v2 [cs.SE] 26 Apr 2026
+
+Figure 1: Overview. We illustrate the contrast between two ways an agent may receive feedback about code. Top: Parallel-Code World Models (PCWMs) aim to simulate the execution process causally in terms of higher-level concepts and events to infer the would-be outcome of an external tool. It does so via an auto-regressive chain of reasoning tokens. The reasoning tokens are illustrated with white tokens, and the outcome tokens are illustrated with gray tokens. Bottom: Real tool requires precise execution of the code, which can be costly to configure and may be impractical for partial code snippets. lieu of expensive environment interactions (Ha & Schmidhuber, 2018; Hafner et al., 2019). Recent work adapts this idea via code world models (CWMs), where LLMs are trained to model execution behavior and traces (Copet et al., 2025; Armengol-Estap ´e et al., 2025). However, the notion of code world models remains underexplored for parallel code . Second, in parallel-computing research, neural surrogate models have been used since the early days of deep learning to predict properties of interest from parallel programs (Malakar et al., 2018; Marathe et al., 2017; Chen et al., 2018; Cummins et al., 2020; Nichols et al., 2024c; Bolet et al., 2025; Chen et al., 2025). Yet this line of work is yet to fully explore the reasoning ability of large language models to model the process of arriving at tool outcomes from source code alone .In this work, we propose Parallel-Code World Models (PCWMs) , reasoning large language models that emulate outcomes from analysis tools for parallel code. We show that this task is difficult without explicit reasoning supervision because of the complex causal dynamics in parallel execution. Consequently, we introduce a novel exploration and data-collection pipeline that gathers diverse parallel codes, tool outcomes, and reasoning traces, yielding a reasoning dataset for training parallel-code world models. The contributions of this paper are: (1) we introduce Parallel-Code World Models (PCWMs), reasoning LLMs that emulate outcomes of tools relevant to parallel coding directly from source code; (2) we design a scalable exploration and data-collection pipeline spanning di-verse domains, problems, and parallelization strategies, and we build datasets for two parallel-coding focused tools: ThreadSanitizer for race detection and Caliper for work-percentage profiling; (3) we show that emulating these tools is challenging without explicit reasoning supervision, and therefore collect hindsight chains of thought that causally con-nect source code to observed tool outcomes; (4) we empirically demonstrate that outcome-conditioned hindsight CoT supervision is crucial for effective world-model learning, out-performing base models and a priori CoT synthesis; and (5) we show that trained PCWMs can provide useful feedback for downstream bug-fixing, e.g., fixing data races, and produce noticeable gains on benchmark evaluations. 
+
+# 2 PCWM: Parallel-Code World Model 
+
+Parallel-Code World Models (PCWMs) are reasoning models that take a parallel program source code xcode and predict a reasoning trace z and an expected execution outcome y.Within the reasoning trace, it performs high-level thought experiments and analysis of thread interactions, synchronization behavior, and possible failure modes. Formally, we 2(a) Generate Problem 
+
+Given a large vector of size n, compute the dot product of this vector with another 
+
+,→ vector of the same size. Input: vectors v and w. Output: scalar value 
+
+(b) Generate Harness                                                                      
+
+> bool validate () {
+> const size_t numTries =10;
+> const size_t vectorSize =1000; std :: random_device rd ; std :: mt19937 gen ( rd () ); std :: uniform_real_distribution <> dis ( -100.0 , 100.0) ;
+> for (int i=0; i<numTries ; i ++) {// Generate random test vectors std :: vector < double >v( vectorSize ); std :: vector < double >w( vectorSize );
+> for ( size_t j=0; j<vectorSize ; ++ j) {v[j] =dis ( gen ); w[j] =dis ( gen ); }// Compare reference vs generated
+> double correctResult =reference (v , w);
+> double testResult =generated (v , w);
+> bool isCorrect =std :: abs ( correctResult -testResult )<1e -6;
+> if (! isCorrect ) return false ;}
+> return true ;}
+
+(c) Generate Reference Implementation 
+
+double reference ( 
+
+const std :: vector < double >& v , 
+
+const std :: vector < double >& w) {
+
+double dotProduct = 0.0; 
+
+for ( size_t i = 0; i < v. size () ; ++ i) {dotProduct += v[i] * w[i ]; }
+
+return dotProduct ; }
+
+(d) Generate Candidate Implementation 
+
+double generated ( 
+
+const std :: vector < double >& v , 
+
+const std :: vector < double >& w) {
+
+double dotProduct = 0.0; # pragma omp parallel for for ( size_t i = 0; i < v. size () ; ++ i) {dotProduct += v[i] * w[i ]; }
+
+return dotProduct ; }
+
+(e) Generate Hindsight CoT Conditioned on Tool Outcome 
+
+... When each thread does the addition to dotProduct, they might be reading and writing the same memory location without synchronization. That 's a classic case for a data race. The critical part is the 'dotProduct += ... ' operation: first, the current value of dotProduct is read, then the product is added, and the new value is written back ... 
+
+Figure 2: Illustration of Our LLM-Driven Reasoning Data Generation Pipeline. Shown is one instance produced from our LLM-driven data-generation pipeline: (a) a parallel programming problem statement, (b) a generated harness, (c) a sequential reference imple-mentation, (d) a candidate OpenMP parallel implementation, and (e) an example hindsight chain-of-thought generated after observing the tool outcome for the candidate code. model this as sampling (z, y) conditioned on code xcode as follows: 
+
+z, y ← PCWM (xcode ),where PCWM denotes a parallel-code world model. In practice, we want the world model to be a reasoning LLM that can produce z, y effectively, quickly, and cheaply. For an agent calling the world model, this would produce a favorable cost-benefit trade-off for rolling out a world model over setting up and executing true code and invoking the true tool. 
+
+2.1 Data Collection 
+
+In this section, we describe the pipeline used to construct our training dataset of parallel-code, tool outcomes, and reasoning traces. 
+
+Problem and Harness Generation. We first prompt an LLM to generate a parallel pro-gramming problem and a corresponding harness code. Here: (1) a parallel programming 3problem refers to a programming task whose code solution requires parallelism for efficient execution, e.g., matrix multiplication with multiple workers; (2) the harness code specifies the execution scaffold for the task that includes what inputs are provided to the candidate code and how outputs are returned or checked. It therefore defines the interface and runtime context in which candidate code is executed. Conditioned on the problem and the harness, we then sample a diverse set of candidate parallel-code implementations. 
+
+xproblem , xharness ← LLM (ctask ) =⇒ xcode ← LLM (xproblem , xharness , cimplement ).Here, xproblem denotes the parallel programming problem statement, xharness the correspond-ing harness code, and xcode a candidate parallel-code implementation. Moreover, LLM (·)
+
+denotes LLM-based generation, while ctask and cimplement denote the context or prompts used for problem/harness generation and candidate-code generation, respectively. 
+
+Exploration Challenge. A key challenge in the above pipeline is ensuring sufficient ex-ploration during both problem generation and candidate-code generation. If sampled problems are overly concentrated in a narrow domain, the resulting world model will also be narrow in its capability. Similarly, it is important to obtain diverse candidate code implementations for each problem to expose distinct parallelization strategies. In this work, we address this by enlisting 10 domains relevant for parallel programming, defining 8 seed problems per domain, and prompting an LLM to create 20 variants of each seed problem. For generating code candidates, we prompt the LLM to produce 4 implementations per problem that are distinct from one another in their parallelization strategies. In our setup, we use a strong model, i.e., GPT-4o , for problem and harness generation. For candidate parallel-code generation, we use a zoo of open-weight models to improve code diversity: 
+
+Llama-3.3-70B , Llama-3.1-8B , Gemma-3-27B , and Phi-4 . Furthermore, we take OpenMP to be our parallelism framework. 
+
+Tool Outcome and Hindsight CoT Generation. We then run each candidate code xcode 
+
+using its harness while applying the desired toolchain to obtain the tool outcome y. In this work, we consider two tools: ThreadSanitizer and Caliper that we discuss in more detail in Section 2.2. Given the candidate code xcode and its observed tool outcome y, we sample a chain of thought z to serve as a reasoning trace for world-model learning. This process can be described as follows: 
+
+y ← Tool (xcode , xharness ) =⇒ z ← LLM (xcode , y, ccot ).Here, ccot denotes the prompt used for CoT synthesis. All prompts are provided in Ap-pendix A. There are two points worth mentioning regarding this hindsight CoT generation: 
+
+(1) In designing the prompt ccot , one should explicitly instruct the teacher that the outcome is not a foregone fact to analyze, but a target to be reached by reasoning forward causally from the code to the observed outcome. (2) When sampling CoTs from a teacher model apriori without showing the outcome, the generated CoTs can deviate from reaching the true outcome, e.g., when the teacher model is weak on that tool behavior. As such, conditioning CoT synthesis on observed outcomes y guides the CoTs towards trajectories that are consis-tent with the correct tool outcome. In our experiments, we compare two teacher models: 
+
+QwQ-32B and GPT-OSS-20B ; and evaluate their usefulness as generators of hindsight CoTs for world-model learning. 
+
+Dataset. By repeating the above pipeline across many sampled problems, multiple candidate codes per problem, tool executions, and multiple CoT samples, we collect a large set of training tuples D = {(xcode , z, y)}. Concretely, each tuple contains a candidate code xcode ,its tool outcome y, and a corresponding CoT z. In this work, we collect 27K data samples for each tool we consider for conducting reasoning post-training. 
+
+2.2 Tools 
+
+We consider the following parallel-coding relevant tools for our data-generation pipeline to collect data for world model training. Outcomes from these tools are illustrated in Figure 3. 
+
+ThreadSanitizer (Serebryany & Iskhodzhanov, 2009). It is an analysis tool that detects data races and other threading errors in multithreaded programs at runtime. We run 4(a) ThreadSanitizer Outcome   
+
+> [{
+> 'type ':'read/write race ',
+> 'code_locations ': [
+> 'generated.cc:14 '
+> ]}, {
+> 'type ':'write/write race ',
+> 'code_locations ': [
+> 'generated.cc:14 '
+> ]}]
+> (b) Caliper Outcome
+> For code snippet: #pragma omp for for (size_t i = 0; i < n; ++i) { for (size_t j = 0; j < n; ++j) { for (size_t k = 0; k < n; ++k) { C[i][j] += temp[i][k] * A[k][j]; }}}Caliper measures: - For 4 threads, a work percentage of 96 - For 16 threads, a work percentage of 76 - For 64 threads, a work percentage of 44 - For 128 threads, a work percentage of 47
+
+Figure 3: Illustration of Tool Outcomes. The left panel shows a representative Thread-Sanitizer report identifying data races in the candidate OpenMP program. The right panel shows a representative Caliper profile reporting the work percentages of a parallel code region across different thread counts, reflecting how efficiently execution time is spent on useful work rather than OpenMP overhead. ThreadSanitizer on each candidate program execution to detect data races at runtime. Specifically, for each candidate code xcode , it produces the outcome y, which is a list of races, where each race is described by the affected line or variable and the race type. The world model trained on the data generated using ThreadSanitizer outcomes is called 
+
+ThreadSanitizer World Model .
+
+Caliper (Boehme et al., 2016). It is a performance-profiling tool for HPC programs that records fine-grained runtime metrics (e.g., compute work vs. synchronization overhead) across code regions. We use Caliper to obtain the work percentages of parallel regions in each program. Here, work percentage is the fraction of total OpenMP thread time spent doing useful application work, rather than OpenMP runtime overhead, e.g., barriers, syn-chronization, and idle time. The world model trained on the data generated using Caliper work-percentage outcomes is called Caliper World Model . For Caliper, measurements for the same/similar source code can show variability due to outside factors, e.g., characteristics of the execution environment. Hence, for Caliper, we seek to jointly model Caliper measure-ments (obtained under similar conditions) for a pair of source codes, in order to model their relative structure: 
+
+y(i) ← Tool (x(i)
+
+> code
+
+, xharness ) =⇒ z(ij ) ← LLM (x(i)
+
+> code
+
+, x(j)
+
+> code
+
+, y(i), y(j), ccot ).where z(ij ) is a CoT that analyzes the relative differences between the two codes x(i)
+
+> code
+
+, x(j)
+
+> code
+
+in order to reach a joint prediction of their Caliper measurements y(i), y(j).
+
+2.3 World Model Training 
+
+We concatenate the CoT tokens and the outcome tokens into a token-sequence [z, y], and we perform supervised fine-tuning of the world model LLM to learn to predict [z, y] given a parallel code xcode . We then minimize the following loss function via supervised fine-tuning: 
+
+L(θPCWM ) = − log pθPCWM ([ z, y] | xcode ). This is equivalent to supervised fine-tuning (SFT) with a completion-only loss over the expected assistant response [z, y]. For Caliper, the world model jointly takes as input a pair of codes x(i), x(j) and the fine-tuning targets are a concatenation of the CoT tokens and Caliper outcomes for both codes: [z(ij ), y(i), y(j)]. The training loss is: L(θPCWM ) = − log pθPCWM 
+
+
+
+[z(ij ), y(i), y(j)] | x(i)
+
+> code
+
+, x(j)
+
+> code
+
+
+
+.52.4 Applications of PCWMs Parallel Code Understanding. A world model can help human developers quickly spot likely performance bugs in partially written parallel-code snippets, even before full inte-gration or execution. It can also support code review by surfacing likely synchronization bottlenecks, race-prone regions, and other parallelization-related bugs. 
+
+Feedback Providing Tool for Parallel-Code Agent. In a parallel-coding agent, the world model can be used as a source of feedback and a surrogate for expensive or slow tool calls during iterative refinement. We describe a world-model-guided bug-fixing loop for a parallel-code agent as follows, which we will use in experiments to evaluate the PCWMs: 
+
+[z, y] ← PCWM (xcode ); e ← LLM (xcode , z, y, cedit ); x′ 
+
+> code
+
+← LLM (xcode , e, capply );where xcode denotes a potentially buggy code, and z and y denote the predicted reasoning trace and tool outcome, respectively. Moreover, e denotes the edit proposal generated from world-model feedback, while cedit and capply denote the prompts or contexts used for edit generation and code updating, respectively. The output of the refinement step is the updated candidate code x′
+
+> code
+
+.
+
+# 3 Related Work 
+
+Code World Models and Feedback-Driven Code Agents. In deep learning, RL agents can improve their decisions by planning against a neural model of environment dynamics (Ha & Schmidhuber, 2018; Hafner et al., 2019). Recent work brings this idea to code agents: training world models on code execution-trace data (Copet et al., 2025; Armengol-Estap ´e et al., 2025). While Copet et al. (2025) discuss the idea of translating structured execution traces into a free-form natural language chain of thoughts, to our knowledge, the focus of their work is not on parallel code and related tools/profilers, unlike ours. Yet the notion of world models is yet to be explored for HPC settings, e.g., for parallel code generation. Simultaneously, today’s code-generation systems rely on feedback loops (Le et al., 2022; Chen et al., 2023; Shinn et al., 2023; Gehring et al., 2024). Frameworks such as SWE-agent and OpenHands utilize actor–environment interaction over repositories and tools (Yang et al., 2024; Wang et al., 2024). In HPC-specific contexts, HPC-Coder adapts LLMs for parallel-code tasks, including performance-related predictions (Nichols et al., 2024b). Although these show the utility of feedback for coding agents, they rely on external executions. In contrast, our work explicitly trains reasoning LLMs to imitate analysis tools by mapping code directly to a causal reasoning trace and an expected tool outcome. 
+
+Neural Surrogates in HPC. There is deep interest in the community to utilize large language models for HPC tasks (Nichols et al., 2024a;d; Godoy et al., 2023; 2024; Valero-Lara et al., 2023; Joel et al., 2024; Teranishi et al., 2025; Nader et al., 2025). Since the early days of deep learning, neural surrogate models for performance/cost to enable offline search and optimization have been explored (Liu et al., 2021; Malakar et al., 2018; Marathe et al., 2017; Nichols et al., 2024c; Chen et al., 2018; Cummins et al., 2020). Works on LLM-based performance inference include Bolet et al. (2025); Chen et al. (2025). However, these approaches mainly focus on scalar labels and do not leverage reasoning as a means to predict detailed tool outcomes from source code alone. 
+
+# 4 Experiments 
+
+4.1 ThreadSanitizer World Model for Data Race Analysis 
+
+4.1.1 Setup 
+
+To evaluate the ThreadSanitizer world model trained in Section 2.3, we use DataRaceBench (DRB), a benchmark suite for data-race detection in shared-memory parallel programs, with a focus on OpenMP. DRB consists of approximately 200 OpenMP codes containing race-free and intentionally racy examples. We use DRB in two settings: (1) intrinsic evaluation, 6Table 1: Importance of Teaching to Think for ThreadSanitizer World Model. We report the accuracy of predicting the presence of a race condition on OpenMP codes in DataRaceBench. We compare the world models with thinking modes on and off . For the + SFT setting, we also indicate the CoT teacher model used. The accuracies are computed using 16 samples per prompt with temperature 0.6. Base + SFT CoT Teacher World Model No CoT With CoT No CoT GPT-OSS-20B QwQ-32B Qwen-2.5-32B 67.0% 66.4% 70.5% 72.4% 75.2% 
+
+Qwen-2.5-14B 62.2% 67.1% 67.8% 69.7% 74.2% 
+
+Qwen-2.5-7B 58.5% 64.3% 64.4% 66.5% 72.8% 
+
+Llama-3.1-8B 52.6% 53.9% 64.2% 69.6% 69.7% 
+
+Average 60.1% 62.9% 66.7% 69.6% 73.0% 
+
+where the world model predicts whether a given DRB program contains a race condition, and (2) agentic race fixing, where a race-fixing agent edits DRB programs and uses the ThreadSanitizer world model as a feedback source, as described in Section 2.4. 
+
+4.1.2 Results 
+
+Importance of Teaching to Think. Table 1 shows that, on average, base models benefit from being prompted to think before answering with a list of potential data races. Supervised fine-tuning on outcome-only data, DSFT-No-CoT = {(xcode , y)}, further improves performance over the base models. Additional gains are obtained by fine-tuning on CoT-augmented data, 
+
+DSFT-With-CoT = {(xcode , z, y)}. These results show that: (1) Although prompting to think is helpful, it alone is not enough. (2) We need to explicitly train the models on reasoning behaviors in order for them to serve as better world models for parallel-codes. 
+
+Effect of CoT Teacher Model. We analyze the effect of the choice of the teacher model used to synthesize the hindsight CoTs. We compare 2 teacher models: GPT-OSS-20B and QwQ-32B .In Table 1, we can see that QwQ-32B performs better than GPT-OSS-20B for synthesizing chains of thought—achieving on average 73.0% vs. 69.6%, respectively. That being said, there appears to be a teacher–student compatibility effect: Llama-3.1-8B appears to leverage 
+
+GPT-OSS-20B chains better than Qwen-2.5-7B , achieving 69.6% versus 66.5%, respectively. 
+
+Importance of Hindsight in CoT Synthesis. We analyze the benefit of providing tool outcomes while synthesizing the CoTs (i.e., synthesizing CoTs in hindsight) versus not showing the tool outcomes at all when synthesizing the CoTs. We report the results in Table 2. We can see that CoTs without hindsight significantly degrade learning, causing the trained world model to collapse toward always predicting a constant label. 
+
+Importance of Training Dataset Size. We analyze the effect of the dataset size that was used to train the ThreadSanitizer-mimicking world model. In Table 2, on average, increasing the SFT dataset size helps improve performance, suggesting that there is value in designing better exploration policies for generating problems and candidate codes to construct larger training datasets. Additionally, larger student models appear less sensitive to CoT dataset size: for Qwen-2.5-32B trained on QwQ-32B CoTs, performance gains are relatively stable across 6K, 13K, and 27K samples (76.0%, 74.9%, 75.2%), whereas Qwen-2.5-7B shows a monotonic improvement from 6K to 27K samples (66.2% to 72.8%). 
+
+Utilizing the World Model as a Feedback Source for Race Fixing. In Table 3 and 7, we report the percentage of race-free codes after one pass of the race-fixing loop on DataRaceBench. We observe the following: (1) world models after SFT provide more effective feedback than base world models, leading to higher race-fixing performance in general; (2) larger world models generally provide better performance boost than smaller ones; and (3) on average, world models after SFT are more effective feedback providers than open-weight actor models leveraging self-feedback during race-fixing; (4) Interestingly, for open-weight actor 7Table 2: Reasoning Training Dataset Analysis. Left: We compare conditioning the teacher model ( QwQ-32B ) on tool outcomes during CoT synthesis versus synthesizing CoTs without outcome conditioning. Right: We analyze the effect of the number of reasoning data samples used for world model training. All reported numbers are accuracies of predicting the presence of a race condition on OpenMP codes in DataRaceBench. Hindsight World Model ✗ ✓
+
+Qwen-2.5-32B 49.3% 75.2% 
+
+Qwen-2.5-14B 49.3% 74.2% 
+
+Qwen-2.5-7B 49.3% 72.8% 
+
+Llama-3.1-8B 49.3% 69.7% 
+
+Average 49.3% 73.0% 
+
+SFT Dataset Size World Model Base CoT Teacher 6K 13K 27K 
+
+Qwen-2.5-32B 66.4% GPT-OSS-20B 69.8% 70.8% 72.4% 
+
+QwQ-32B 76.0% 74.9% 75.2% 
+
+Qwen-2.5-7B 64.3% GPT-OSS-20B 58.9% 63.7% 66.5% 
+
+QwQ-32B 66.2% 69.7% 72.8% 
+
+Average 67.7% 69.8% 71.7% 
+
+Table 3: Race-Fixing using Open-Weight Actor Models on DataRaceBench. We task an LLM to act as a race-fixing agent to fix race conditions in OpenMP codes in DataRaceBench. The race-fixing agent receives race analysis and detection feedback from the world model. The race-free percentages of the fixed codes are reported as measured using ThreadSanitizer. Feedback Source Oracle Self World Model Actor Model Qwen-2.5-32B Qwen-2.5-14B Qwen-2.5-7B 
+
+Base +SFT Base +SFT Base +SFT 
+
+Llama-3.1-70B 79.4% 73.8% 75.3% 80.8% 76.3% 78.3% 72.4% 75.8% 
+
+Gemma-3-27B 69.3% 63.9% 66.1% 73.0% 66.3% 71.0% 66.0% 69.7% 
+
+Average 74.4% 68.9% 70.7% 76.9% 71.3% 74.7% 69.2% 72.8% 
+
+models, world model feedback from world models 14B or larger in size even outperforms oracle or ground-truth race feedback. We think this is because world models don’t just provide the final tool outcomes but also the causal process via which those outcomes are reached, thus further helping the race-fixing task. (5) Finally, when testing commercial models as race-fixing actor models, we find that these tend to be less affected by feedback in general and do not gain significantly from feedback, including oracle feedback. 
+
+Compute Cost of World Model Calls. In Table 4, we analyze the compute cost of querying world models for feedback. We obtain these measurements by evaluating each model on DataRaceBench programs and reporting per-response FLOPs, average response length, and accuracy. We can see that: (1) the average response length needed to reach the data-race prediction tends to drop with increasing model size, with lengths decreasing from 5.2K tokens to 3K tokens when going from 7B to 32B parameter models. (2) Because of this effect, although larger models may appear more expensive, their stronger reasoning ability can allow them to reach the correct answer with fewer generated tokens. Hence, larger models may achieve higher accuracy while needing similar FLOPs/response as smaller models. 
+
+4.2 Caliper World Model for Relative Work Percentage Analysis Setup. To evaluate the Caliper world model trained in Section 2.3, we take ParEval (Nichols et al., 2024a), a benchmark consisting of 54 OpenMP programming problems. For each prob-lem, we generate multiple distinct OpenMP solutions for each problem using GPT-4.1-mini 
+
+and GPT-5.1 , and filter for the correct solutions. We then profile each correct implementation using Caliper at thread counts 4, 16, 64, and 128. This collected data serves as a testbed for evaluating our Caliper world model. For each problem in ParEval, we take pairs of distinct OpenMP solutions for the same problem, and we roll out the Caliper world model to predict 8Table 4: Compute Cost Analysis of World Models after SFT. We compare the computational cost and predictive performance of different world models after SFT on DataRaceBench. For each model, we report the estimated FLOPs per response, average generated sequence length, and accuracy for predicting the presence of a race condition in OpenMP code. Metric Qwen-2.5-32B Qwen-2.5-14B Qwen-2.5-7B Llama-3.1-8B 
+
+Model Size 32B 14B 7B 8B TFLOPs/Response 2183.76 3093.78 2346.80 3066.34 Average Response Length 3049.84 3915.18 5216.02 5282.77 Post-SFT Accuracy 75.2% 74.2% 72.8% 69.7% Table 5: Caliper World Model for Ranking Parallel-Codes in terms of Work-Percentage. 
+
+We report the accuracy of predicting the rank ordering for OpenMP code-pairs in terms of which code will exhibit higher work percentage as per Caliper. The OpenMP code-pairs are obtained by getting verified OpenMP implementations for problems in the ParEval benchmark using GPT-5.1 and GPT-4.1-mini . We compare world modeling performance of base models against the fine-tuned models for thread counts 4, 16, 64, and 128.                                                                                                                     
+
+> (a) Benchmark: ParEval OpenMP Implementations using GPT-4.1-mini with Caliper Measurements 4 threads 16 threads 64 threads 128 threads Average
+> World Model Base +SFT Base +SFT Base +SFT Base +SFT Base +SFT
+> Qwen-2.5-32B 42.7% 60.6% 45.1% 60.8% 41.7% 59.7% 42.7% 57.8% 43.0% 59.7%
+> Qwen-2.5-7B 46.8% 58.4% 48.6% 56.9% 45.7% 54.5% 46.4% 53.5% 46.9% 55.8%
+> Llama-3.1-8B 51.4% 60.2% 50.2% 59.4% 47.8% 57.1% 47.7% 57.9% 49.3% 58.6% Average 47.0% 59.7% 48.0% 59.0% 45.1% 57.1% 45.6% 56.4% 46.4% 58.0%
+> (b) Benchmark: ParEval OpenMP Implementations using GPT-5.1 with Caliper Measurements 4 threads 16 threads 64 threads 128 threads Average
+> World Model Base +SFT Base +SFT Base +SFT Base +SFT Base +SFT
+> Qwen-2.5-32B 48.2% 50.5% 41.2% 56.0% 41.2% 56.1% 41.2% 56.6% 43.0% 54.8%
+> Qwen-2.5-7B 55.5% 52.5% 47.9% 52.5% 46.6% 49.1% 44.6% 51.5% 48.6% 51.4%
+> Llama-3.1-8B 48.5% 51.8% 48.1% 57.9% 44.2% 54.0% 45.2% 55.4% 46.5% 54.8% Average 50.7% 51.6% 45.7% 55.5% 44.0% 53.1% 43.7% 54.5% 46.0% 53.7%
+
+Caliper work percentages for the code-pair. We then rank the codes in the code-pair based on the world model-predicted work-percentages and test whether the ranking matches that based on true Caliper measurements. In Table 5, we show the accuracy of their agreement. 
+
+Results. Table 5 shows the following: (1) Supervised fine-tuning consistently improves accuracy for the world models across nearly all thread counts. On average across mod-els, accuracy increases from 46.4% to 58.0% when profiling GPT-4.1-mini ’s ParEval im-plementations, and from 46.0% to 53.7% when profiling GPT-5.1 ’s ParEval implemen-tations. The gains from fine-tuning for Qwen-2.5-7B are smaller compared to those for 
+
+Llama-3.1-8B and Qwen-2.5-32B . (2) World modeling performance on OpenMP code gener-ated by GPT-4.1-mini is better than that on code generated by GPT-5.1 . A likely explanation is that GPT-4.1-mini ’s OpenMP code is simpler and more similar to the distribution of code seen during world model training. This highlights the need to improve the exploration aspect of the data synthesis pipeline in future work. Another noteworthy observation, illus-trated in Figure 4, is that the agreement between the Caliper world model and ground-truth Caliper measurements improves as the measured work-percentage gap between two codes increases. This suggests that world models struggle more with near-tie cases than with cases where measurement differences are larger and potentially less ambiguous. 9[0,10) [10,20) [20,30) [30,40)       
+
+> 55
+> 60
+> 65
+> Caliper Work-Percentage Difference
+> Accuracy (%)
+> Qwen2.5-32B + SFT
+> [0,10) [10,20) [20,30) [30,40)
+> 55
+> 60
+> 65
+> Caliper Work-Percentage Difference
+> Qwen2.5-7B + SFT
+> [0,10) [10,20) [20,30) [30,40)
+> 55
+> 60
+> 65
+> Caliper Work-Percentage Difference
+> Llama-3.1-8B + SFT
+
+Figure 4: Effect of Caliper Measurement Difference on World Model Accuracy. We report the accuracy (averaged over thread counts) of predicting rank ordering of OpenMP code pairs in terms of which code will exhibit higher work percentage as per Caliper. We disentangle the effect of possible stochasticity in rank ordering when the work-percentage difference as measured by Caliper is small (e.g., a difference of less than 10% versus a difference of 30-40%) by reporting accuracy for various work-percentage difference ranges. This is done on solutions for ParEval problems obtained using GPT-4.1-mini . Both Caliper world models show better capability of evaluating the code-pair when the work percentage difference in the evaluated code-pair is larger. 
+
+# 5 Conclusion 
+
+We introduced Parallel-Code World Models (PCWMs), reasoning language models that predict tool outcomes directly from parallel source code. To train PCWMs, we developed a scalable data-collection pipeline that generates diverse parallel programming problems, candidate OpenMP implementations, tool executions, and hindsight chains of thought to causally connect source code to the observed outcomes. For ThreadSanitizer-based race analysis, we showed that reasoning supervision and outcome-conditioned hindsight CoT synthesis are both important for effective world-model learning. We further showed that the resulting PCWMs provide useful feedback to downstream race-fixing agents, improving bug-fixing performance, showing potential to mitigate the challenges of external tool calling. Also, for Caliper-based performance profiling, fine-tuning led to improvements over the base models. Future work includes expanding PCWMs beyond OpenMP and beyond the two tools studied here. Another promising direction is to find means of better exploration for problem and candidate code generation to difficult and complicated situations pertaining to world modeling. 
+
+# Acknowledgments 
+
+This material is based upon work supported by the U.S. Department of Energy, Office of Science, Office of Advanced Scientific Computing Research, through solicitation DE-FOA-0003264, “Advancements in Artificial Intelligence for Science,” under Award Number DE-SC0025598. This work was performed under the auspices of the U.S. Department of Energy by Lawrence Livermore National Laboratory (LLNL) under Contract DE-AC52-07NA27344 (LLNL-CONF-2017735). This research used resources of the Oak Ridge Leadership Comput-ing Facility, which is a U.S. Department of Energy, Office of Science User Facility supported under Contract DE-AC05-00OR22725. 
+
+# References 
+
+Jordi Armengol-Estap ´e, Quentin Carbonneaux, Tianjun Zhang, Aram H Markosyan, Volker Seeker, Chris Cummins, Melanie Kambadur, Michael FP O’Boyle, Sida Wang, Gabriel Synnaeve, et al. What i cannot execute, i do not understand: Training and evaluating llms on program execution traces. arXiv preprint arXiv:2503.05703 , 2025. 10 Bespoke Labs. Bespoke stratos: The unreasonable effectiveness of reason-ing distillation. Blog post, 2025. URL https://www.bespokelabs.ai/blog/ bespoke-stratos-the-unreasonable-effectiveness-of-reasoning-distillation .Chandra Bhagavatula, Ronan Le Bras, Chaitanya Malaviya, Keisuke Sakaguchi, Ari Holtz-man, Hannah Rashkin, Doug Downey, Scott Wen-tau Yih, and Yejin Choi. Abductive commonsense reasoning. arXiv preprint arXiv:1908.05739 , 2019. Abhinav Bhatele, Stephanie Brink, and Todd Gamblin. Hatchet: Pruning the overgrowth in parallel profiles. In Proceedings of the International Conference for High Performance Computing, Networking, Storage and Analysis , pp. 1–21, 2019. David Boehme, Todd Gamblin, David Beckingsale, Peer-Timo Bremer, Alfredo Gimenez, Matthew LeGendre, Olga Pearce, and Martin Schulz. Caliper: performance introspection for hpc software stacks. In SC’16: Proceedings of the International Conference for High Performance Computing, Networking, Storage and Analysis , pp. 550–560. IEEE, 2016. Gregory Bolet, Giorgis Georgakoudis, Harshitha Menon, Konstantinos Parasyris, Niranjan Hasabnis, Hayden Estes, Kirk Cameron, and Gal Oren. Can large language models predict parallel code performance? In Proceedings of the 34th International Symposium on High-Performance Parallel and Distributed Computing , pp. 1–6, 2025. Le Chen, Nesreen K Ahmed, Akash Dutta, Arijit Bhattacharjee, Sixing Yu, Quazi Ishtiaque Mahmud, Waqwoya Abebe, Hung Phan, Aishwarya Sarkar, Branden Butler, et al. The landscape and challenges of hpc research and llms. arXiv preprint arXiv:2402.02018 , 2024. Le Chen, Nuo Xu, Winson Chen, Bin Lei, Pei-Hung Lin, Dunzhi Zhou, Rajeev Thakur, Caiwen Ding, Ali Jannesari, and Chunhua Liao. Beyond code pairs: Dialogue-based data generation for llm code translation. arXiv preprint arXiv:2512.03086 , 2025. Mark Chen, Jerry Tworek, Heewoo Jun, Qiming Yuan, Henrique Pond ´e, Jared Kaplan, Harrison Edwards, Yura Burda, Nicholas Joseph, Greg Brockman, Alex Ray, Raul Puri, Gretchen Krueger, Michael Petrov, Heidy Khlaaf, Girish Sastry, Pamela Mishkin, Brooke Chan, Scott Gray, Nick Ryder, Mikhail Pavlov, Alethea Power, Lukasz Kaiser, Mo Bavarian, Clemens Winter, Phil Tillet, Felipe Petroski Such, David W. Cummings, Matthias Plappert, Fotios Chantzis, Elizabeth Barnes, Ariel Herbert-Voss, William H. Guss, Alex Nichol, Igor Babuschkin, Suchir Balaji, Shantanu Jain, Andrew Carr, Jan Leike, Josh Achiam, Vedant Misra, Evan Morikawa, Alec Radford, Matthew M. Knight, Miles Brundage, Mira Murati, Katie Mayer, Peter Welinder, Bob McGrew, Dario Amodei, Sam McCandlish, Ilya Sutskever, and Wojciech Zaremba. Evaluating large language models trained on code. 
+
+ArXiv , abs/2107.03374, 2021. Tianqi Chen, Lianmin Zheng, Eddie Yan, Ziheng Jiang, Thierry Moreau, Luis Ceze, Carlos Guestrin, and Arvind Krishnamurthy. Learning to optimize tensor programs. Advances in Neural Information Processing Systems , 31, 2018. Xinyun Chen, Maxwell Lin, Nathanael Sch¨ arli, and Denny Zhou. Teaching large language models to self-debug. arXiv preprint arXiv:2304.05128 , 2023. Jade Copet, Quentin Carbonneaux, Gal Cohen, Jonas Gehring, Jacob Kahn, Jannik Kossen, Felix Kreuk, Emily McMilin, Michel Meyer, Yuxiang Wei, et al. Cwm: An open-weights llm for research on code generation with world models. arXiv preprint arXiv:2510.02387 ,2025. Chris Cummins, Zacharias V Fisches, Tal Ben-Nun, Torsten Hoefler, and Hugh Leather. Programl: Graph-based deep learning for program optimization and analysis. arXiv preprint arXiv:2003.10536 , 2020. Jonas Gehring, Kunhao Zheng, Jade Copet, Vegard Mella, Quentin Carbonneaux, Taco Cohen, and Gabriel Synnaeve. Rlef: Grounding code llms in execution feedback with reinforcement learning. arXiv preprint arXiv:2410.02089 , 2024. 11 William Godoy, Pedro Valero-Lara, Keita Teranishi, Prasanna Balaprakash, and Jeffrey Vetter. Evaluation of openai codex for hpc parallel programming models kernel generation. In 
+
+Proceedings of the 52nd International Conference on Parallel Processing Workshops , pp. 136–144, 2023. William F Godoy, Pedro Valero-Lara, Keita Teranishi, Prasanna Balaprakash, and Jeffrey S Vetter. Large language model evaluation for high-performance computing software development. Concurrency and Computation: Practice and Experience , 36(26):e8269, 2024. Etash Guha, Ryan Marten, Sedrick Keh, Negin Raoof, Georgios Smyrnis, Hritik Bansal, Marianna Nezhurina, Jean Mercat, Trung Vu, Zayne Sprague, et al. Openthoughts: Data recipes for reasoning models. arXiv preprint arXiv:2506.04178 , 2025. David Ha and J ¨urgen Schmidhuber. World models. arXiv preprint arXiv:1803.10122 , 2(3):440, 2018. Danijar Hafner, Timothy Lillicrap, Jimmy Ba, and Mohammad Norouzi. Dream to control: Learning behaviors by latent imagination. arXiv preprint arXiv:1912.01603 , 2019. Sathvik Joel, Jie JW Wu, and Fatemeh H Fard. A survey on llm-based code generation for low-resource and domain-specific programming languages. arXiv preprint arXiv:2410.03981 ,2024. Hung Le, Yue Wang, Akhilesh Deepak Gotmare, Silvio Savarese, and Steven Chu Hong Hoi. Coderl: Mastering code generation through pretrained models and deep reinforcement learning. Advances in Neural Information Processing Systems , 35:21314–21328, 2022. Muzhi Li, Jinhu Qi, Yihong Wu, Minghao Zhao, Liheng Ma, Yifan Li, Xinyu Wang, Yingxue Zhang, Ho-fung Leung, and Irwin King. From evidence to trajectory: Abductive rea-soning path synthesis for training retrieval-augmented generation agents. arXiv preprint arXiv:2509.23071 , 2025. Yang Liu, Wissam M Sid-Lakhdar, Osni Marques, Xinran Zhu, Chang Meng, James W Dem-mel, and Xiaoye S Li. Gptune: Multitask learning for autotuning exascale applications. In Proceedings of the 26th ACM SIGPLAN Symposium on Principles and Practice of Parallel Programming , pp. 234–246, 2021. Preeti Malakar, Prasanna Balaprakash, Venkatram Vishwanath, Vitali Morozov, and Kalyan Kumaran. Benchmarking machine learning methods for performance modeling of scien-tific applications. In 2018 IEEE/ACM Performance Modeling, Benchmarking and Simulation of High Performance Computer Systems (PMBS) , pp. 33–44. IEEE, 2018. Aniruddha Marathe, Rushil Anirudh, Nikhil Jain, Abhinav Bhatele, Jayaraman Thiagarajan, Bhavya Kailkhura, Jae-Seung Yeom, Barry Rountree, and Todd Gamblin. Performance modeling under resource constraints using deep transfer learning. In Proceedings of the international conference for high performance computing, Networking, Storage and Analysis , pp. 1–12, 2017. Federico Mora, Justin Wong, Haley Lepe, Sahil Bhatia, Karim Elmaaroufi, George Varghese, Joseph E Gonzalez, Elizabeth Polgreen, and Sanjit A Seshia. Synthetic programming elicitation for text-to-code in very low-resource programming and formal languages. 
+
+Advances in Neural Information Processing Systems , 37:105151–105170, 2024. Niklas Muennighoff, Zitong Yang, Weijia Shi, Xiang Lisa Li, Li Fei-Fei, Hannaneh Hajishirzi, Luke Zettlemoyer, Percy Liang, Emmanuel Cand `es, and Tatsunori B Hashimoto. s1: Simple test-time scaling. In Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing , pp. 20286–20332, 2025. Noujoud Nader, Patrick Diehl, Steve Brandt, and Hartmut Kaiser. Llm & hpc: Bench-marking deepseek’s performance in high-performance computing tasks. arXiv preprint arXiv:2504.03665 , 2025. 12 Daniel Nichols, Joshua H Davis, Zhaojun Xie, Arjun Rajaram, and Abhinav Bhatele. Can large language models write parallel code? In Proceedings of the 33rd International Sympo-sium on High-Performance Parallel and Distributed Computing , pp. 281–294, 2024a. Daniel Nichols, Aniruddha Marathe, Harshitha Menon, Todd Gamblin, and Abhinav Bhatele. Hpc-coder: Modeling parallel programs using large language models. In 
+
+ISC High Performance 2024 Research Paper Proceedings (39th International Conference) , pp. 1–12. Prometeus GmbH, 2024b. Daniel Nichols, Alexander Movsesyan, Jae-Seung Yeom, Abhik Sarkar, Daniel Milroy, Tapasya Patki, and Abhinav Bhatele. Predicting cross-architecture performance of parallel programs. In 2024 IEEE International Parallel and Distributed Processing Symposium (IPDPS) ,pp. 570–581. IEEE, 2024c. Daniel Nichols, Pranav Polasam, Harshitha Menon, Aniruddha Marathe, Todd Gamblin, and Abhinav Bhatele. Performance-aligned llms for generating fast code. arXiv preprint arXiv:2404.18864 , 2024d. NovaSky Team. Sky-t1: Train your own o1 preview model within $450. Blog post, 2025. URL https://novasky-ai.github.io/posts/sky-t1/ .OpenAI. Introducing ChatGPT. https://openai.com/index/chatgpt/ , 2022. Baptiste Roziere, Jonas Gehring, Fabian Gloeckle, Sten Sootla, Itai Gat, Xiaoqing Ellen Tan, Yossi Adi, Jingyu Liu, Romain Sauvestre, Tal Remez, et al. Code llama: Open foundation models for code. arXiv preprint arXiv:2308.12950 , 2023. Konstantin Serebryany and Timur Iskhodzhanov. Threadsanitizer: data race detection in practice. In Proceedings of the workshop on binary instrumentation and applications , pp. 62–71, 2009. Noah Shinn, Federico Cassano, Ashwin Gopinath, Karthik Narasimhan, and Shunyu Yao. Reflexion: Language agents with verbal reinforcement learning. Advances in neural information processing systems , 36:8634–8652, 2023. Keita Teranishi, Harshitha Menon, William F Godoy, Prasanna Balaprakash, David Bau, Tal Ben-Nun, Abhinav Bhatele, Franz Franchetti, Michael Franusich, Todd Gamblin, et al. Leveraging ai for productive and trustworthy hpc software: Challenges and research directions. arXiv preprint arXiv:2505.08135 , 2025. Pedro Valero-Lara, Alexis Huante, Mustafa Al Lail, William F Godoy, Keita Teranishi, Prasanna Balaprakash, and Jeffrey S Vetter. Comparing llama-2 and gpt-3 llms for hpc kernels generation. arXiv preprint arXiv:2309.07103 , 2023. Xingyao Wang, Boxuan Li, Yufan Song, Frank F Xu, Xiangru Tang, Mingchen Zhuge, Jiayi Pan, Yueqi Song, Bowen Li, Jaskirat Singh, et al. Openhands: An open platform for ai software developers as generalist agents. arXiv preprint arXiv:2407.16741 , 2024. John Yang, Carlos E Jimenez, Alexander Wettig, Kilian Lieret, Shunyu Yao, Karthik Narasimhan, and Ofir Press. Swe-agent: Agent-computer interfaces enable automated software engineering. Advances in Neural Information Processing Systems , 37:50528–50652, 2024. Eric Zelikman, Yuhuai Wu, Jesse Mu, and Noah Goodman. Star: Bootstrapping reasoning with reasoning. Advances in Neural Information Processing Systems , 35:15476–15488, 2022. Eric Zelikman, Georges Harik, Yijia Shao, Varuna Jayasiri, Nick Haber, and Noah D Good-man. Quiet-star: Language models can teach themselves to think before speaking. arXiv preprint arXiv:2403.09629 , 2024. 13 A Prompt Templates for Data Synthesis 
+
+A.1 Problem Variant Generation 
+
+This prompt is used to generate diverse problem variants from seed problems. Each seed problem is perturbed to create 20 related but distinct parallel programming problems. We use the model GPT-4o for this and generate problem variants from 80 seed problems. Listing 1: Problem Variant Generation Prompt Template 
+
+<problem> {problem} </problem> # Instructions For the following problem, propose {num_variants} parallel programming problems that are closely related but distinct from the above problem (a small perturbation). In your perturbed problem variants, you can slightly change one or more of the following about the problem: (1) the input data type and data structure (e.g., arrays can become matrices, integers can become floats, etc.), (2) the algorithmic details (e.g., slightly different operations, slightly different control flow, etc.), (3) the problem statement, or (4) the size or dimensionality of the inputs. # Formatting Instructions Your response must only contain {num_variants} problem descriptions inside numbered tags as follows: <variant_1> {PERTURBED PROBLEM STATEMENT 1 GOES HERE.} </variant_1> <variant_2> {PERTURBED PROBLEM STATEMENT 2 GOES HERE.} </variant_2> ... <variant_{num_variants}> {PERTURBED PROBLEM STATEMENT {num_variants} GOES HERE.} </variant_{num_variants}> Do NOT include any additional text or explanations. 
+
+A.2 Task-Specific Harness Generation 
+
+This prompt is used to generate problem-specific harness code that will provide a reference serial implementation as well as code that samples test cases to drive the serial as well as parallel implementations. We use GPT-4o for this. Listing 2: Reference Code Generation Prompt Template 
+
+<Makefile> 
+
+``` 
+
+{Makefile} 
+
+``` 
+
+</Makefile> <harness.cc> 
+
+``` cpp {harness_cc} 
+
+``` 
+
+</harness.cc> 
+
+14 <reference.cc>     
+
+> ``` cpp {reference_prompt_cc}
+> ```
+> </reference.cc> # Instructions For the following problem, complete the `reference.cc `code by following the coding instructions given in-line: <problem> {problem} </problem> # Formatting Instructions Your response must only contain a Markdown code block as follows:
+> ``` cpp {THE COMPLETED `reference.cc `CODE GOES HERE.}
+> ```
+> Do NOT include any additional code or explanations.
+
+A.3 Parallelization Generation With Differing Efficiencies 
+
+This prompt is used to generate a parallelized version of the serial reference implementation. By providing the serial reference implementation, this LLM has clarity on the exact argu-ments and return type that the problem-specific harness expects. In addition, we ask the LLM in this step to generate diverse parallelized implementations with possible paralleliza-tion inefficiencies to provide more diversity and improve exploration quality. For this step, we use Llama-3.3-70B-Instruct , Llama-3.1-8B-Instruct , Gemma-3-27B , and phi-4 . We use a temperature of 0.0 and ask for 4 diverse implementations within the same response. Listing 3: Inefficient Parallelization Generation Prompt Template  
+
+> <Makefile>
+> ```
+> {Makefile}
+> ```
+> </Makefile> <harness.cc>
+> ``` cpp {harness_cc}
+> ```
+> </harness.cc> <reference.cc>
+> ``` cpp {reference_cc}
+> ```
+> </reference.cc> # Instructions For the following problem, write {K} implementations for the required dependency file `
+> generated.cc `.<problem> {problem} </problem> Keep in mind for each of the {K} implementations:
+
+15 1. Your `generated.cc ` must include a definition of the `generated ` function. Do not forget to `#include ` anything that is necessary for the `generated ` function. 2. Your `generated.cc ` needs to be compatible as a dependency in the compilation process provided in the given Makefile. 3. Your implementation of the `generated ` function must use a function signature identical to the one declared in `reference.cc `.4. Your implementation of the `generated ` function must use OpenMP. 5. Your implementation of the `generated ` function must have some parallelization inefficiency, e.g., synchronization overhead, load imbalance, thread management overhead, inefficient scheduling, limited parallelism, etc. 6. Do NOT write any code comments whatsoever within your generated code. 7. Each of the {K} implementations must be distinct from one another in terms of the OpenMP directive(s) or the parallelization strategy used in order to exhibit distinct inefficiency scenarios. # Formatting Instructions Your response must only contain {K} Markdown code blocks inside numbered tags as follows: <implementation_1> 
+
+``` cpp {THE COMPLETE `generated.cc ` CODE GOES HERE. THERE MUST BE NO CODE COMMENTS.} 
+
+``` 
+
+</implementation_1> <implementation_2> 
+
+``` cpp {THE COMPLETE `generated.cc ` CODE GOES HERE. THERE MUST BE NO CODE COMMENTS.} 
+
+``` 
+
+</implementation_2> ... <implementation_K> 
+
+``` cpp {THE COMPLETE `generated.cc ` CODE GOES HERE. THERE MUST BE NO CODE COMMENTS.} 
+
+``` 
+
+</implementation_K> Do NOT include any additional code or explanations. 
+
+A.4 Parallelization with Possible Race Conditions 
+
+This prompt is used to generate a parallelized version of the serial reference implementa-tion. By providing the serial reference implementation, this LLM has clarity on the exact arguments and return type that the problem-specific harness expects. In addition, we ask the LLM in this step to generate diverse parallelized implementations and produce diverse scenarios of race conditions to provide more diversity and improve exploration quality. For this step, we use Llama-3.3-70B-Instruct , Llama-3.1-8B-Instruct , Gemma-3-27B , and 
+
+phi-4 . We use a temperature of 0.0 and ask for 4 diverse implementations within the same response. Listing 4: Racy Parallelization Generation Prompt Template 
+
+<Makefile> 
+
+``` 
+
+{Makefile} 
+
+``` 
+
+</Makefile> <harness.cc> 
+
+``` cpp {harness_cc} 
+
+16 ``` 
+
+</harness.cc> <reference.cc> 
+
+``` cpp {reference_cc} 
+
+``` 
+
+</reference.cc> # Instructions For the following problem, write {K} implementations for the required dependency file `
+
+generated.cc `.<problem> {problem} </problem> Keep in mind for each of the {K} implementations: 1. Your `generated.cc ` must include a definition of the `generated ` function. Do not forget to `#include ` anything that is necessary for the `generated ` function. 2. Your `generated.cc ` needs to be compatible as a dependency in the compilation process provided in the given Makefile. 3. Your implementation of the `generated ` function must use a function signature identical to the one declared in `reference.cc `.4. Your implementation of the `generated ` function must use OpenMP. 5. Your implementation of the `generated ` function must have a data race. 6. Do NOT write any code comments whatsoever within your generated code. 7. Each of the {K} implementations must be distinct from one another in terms of the OpenMP directive(s) or the parallelization strategy used in order to exhibit distinct data race scenarios. # Formatting Instructions Your response must only contain {K} Markdown code blocks inside numbered tags as follows: <implementation_1> 
+
+``` cpp {THE COMPLETE `generated.cc ` CODE WITH DATA RACE GOES HERE. THERE MUST BE NO CODE COMMENTS.} 
+
+``` 
+
+</implementation_1> <implementation_2> 
+
+``` cpp {THE COMPLETE `generated.cc ` CODE WITH DATA RACE GOES HERE. THERE MUST BE NO CODE COMMENTS.} 
+
+``` 
+
+</implementation_2> ... <implementation_K> 
+
+``` cpp {THE COMPLETE `generated.cc ` CODE WITH DATA RACE GOES HERE. THERE MUST BE NO CODE COMMENTS.} 
+
+``` 
+
+</implementation_K> Do NOT include any additional code or explanations. 
+
+17 A.5 Hindsight Chain-of-Thought for Data Race Detection 
+
+This prompt is used to generate Chain-of-Thought for the ThreadSanitizer, mimicking world model training. We specifically highlight in the prompt to in-fill the chain-of-thought rather than discussing it as a foregone conclusion to analyze. We use QwQ-32B for this prompt with temperature 0.999, top p =0.95, and a maximum tokens of 32768. Listing 5: Data Race Detection Hindsight CoT Prompt Template 
+
+# Given {execution_model} Code 
+
+``` cpp {generated_cc} 
+
+``` 
+
+# Instructions Your job is to think and predict data races that would be caught by ThreadSanitizer in the above {execution_model} code. ## Step 1: Think - Inside the tags <think> and </think>, in-fill a long chain of thought for the given { execution_model} code line by line. - In this chain of thought, go over each code line, write that code line, what the code line does and a verbose logical explanation why that line would or wouldn 't cause lead ThreadSanitizer to catch a data race. Thoroughly explore every important or non-trivial code line or code block by engaging in a comprehensive cycle of analysis, summarizing, exploration, reassessment, reflection, back-tracking, and iteration to develop well-considered thinking process about the detection of data race. - Inside <think> and </think>, NEVER mention or talk about you having prior knowledge of data race(s) present or prior knowledge of races thrown by ThreadSanitizer. You are only in-filling the thought for the given code. - The conclusion of the in-filled chain of thought, however, must lead to the correct answer i.e., the ThreadSanitizer 's race detections as provided below. Therefore, you will engage in a comprehensive cycle of analysis, summarizing, exploration, reassessment, reflection, back-tracking, and iteration until the correct conclusion is reached. Remember, NEVER mention or talk about you having prior knowledge of data race(s) present or prior knowledge of races thrown by ThreadSanitizer. ## Step 2: Answer After writing the thought inside the tags <think> and </think>, write verbatim ( remember verbatim) the following answer inside the tags <answer> and </answer>: <answer> \nHere is a list of data races that ThreadSanitizer will catch:\n\n {race_outcome} </answer> # Formatting Instructions In summary, your overall response will be: <think> {IN-FILLED CHAIN OF THOUGHT GOES HERE LEADING TO CORRECT CONCLUSION.} </think> <answer> \nHere is a list of data races that ThreadSanitizer will catch:\n\n {race_outcome} </answer> 
+
+18 A.6 Hindsight Chain-of-Thought for Performance Prediction 
+
+This prompt is used to generate Chain-of-Thought for the Caliper mimicking world model training. The model is given two code implementations and their Caliper profiling results, and must generate reasoning that appears to predict the performance differences. We specifically highlight in the prompt to in-fill the chain-of-thought rather than discussing it as a foregone conclusion to analyze. We use QwQ-32B for this prompt with temperature 0.999, top p =0.95, and a maximum tokens of 32768. Listing 6: Performance Prediction Hindsight CoT Prompt Template 
+
+# Code A 
+
+``` cpp {generated_cc_a} 
+
+``` 
+
+# Code B 
+
+``` cpp {generated_cc_b} 
+
+``` 
+
+# Broad Definition of Caliper 's Work Percentage The percentage of total OpenMP thread time spent doing useful application work, as opposed to OpenMP runtime overhead (e.g., barriers, synchronization, idle time, etc.). # Instructions Code A and Code B are two alternative implementations of the same functionality. Your job is to think and predict work percentages of the given Code A and Code B as would be measured by Caliper by identifying analogous parallel region pairs from Code A and Code B and focusing on difference in work percentages between regions within a pair. ## Step 1: Think - Inside the tags <think> and </think>, in-fill a long chain of thought analyzing Code A and Code B. - In this chain of thought, identify **pairs of analogous parallel region** from Code A and Code B. - Go over each pair of analogous parallel regions, analyzing the two parallel regions together side by side in terms of their differences. - Thoroughly explore these analogous parallel region pairs engaging in a comprehensive cycle of comparison, analysis, summarizing, exploration, reassessment, reflection, back-tracking, and iteration to develop well-considered thinking process about work percentage and how the work percentages measured by Caliper would differ between the two parallel regions. - Inside <think> and </think>, NEVER mention or talk about you having prior knowledge of Caliper measurements. You are **in-filling** or **smoothing** the chain of thought analyzing codes A and B -- NOT post-hoc explaining of Caliper measurements. - The conclusion of the in-filled chain of thought, however, must lead to the correct answer i.e., the correct relative difference in Caliper measurements between analogous parallel regions from codes A and B. Therefore, you will engage in a comprehensive cycle of analysis, summarizing, exploration, reassessment, reflection, back-tracking, and iteration until the correct conclusion is reached. Remember, NEVER mention or talk about you having prior knowledge of Caliper measurements. ## Step 2: Answer After writing the thought inside the tags <think> and </think>, write verbatim ( remember **verbatim**) the following answer inside the tags <answer> and </answer>: <answer> ## Caliper Measurements for Code A 
+
+19 <measurements> {measurements_a} </measurements> ## Caliper Measurements for Code B <measurements> {measurements_b} </measurements> </answer> # Formatting Instructions In summary, your overall response will be: <think> {IN-FILLED CHAIN OF THOUGHT GOES HERE LEADING TO CORRECT ANSWER.} </think> <answer> ## Caliper Measurements for Code A <measurements> {measurements_a} </measurements> ## Caliper Measurements for Code B <measurements> {measurements_b} </measurements> </answer> 
+
+A.7 Caliper Instrumentation Procedure 
+
+We automatically instrument the generated OpenMP code with Caliper profiling mark-ers using a four-step process: (1) An LLM ( GPT-4o ) takes the candidate code with line numbers and identifies all OpenMP parallel regions by returning their start and end line numbers as a JSON array. (2) For each identified region spanning lines [s, e], we insert 
+
+CALI MARK BEGIN("region s e") before line s and CALI MARK END("region s e") after line e,preserving code indentation. (3) Markers are inserted in reverse order (bottom to top) to maintain original line number references, with proper handling of nested regions by processing larger spans first. (4) The Caliper header #include <caliper/cali.h> is added at the top of the file, yielding instrumented code ready for profiling with thread counts 4, 16, 64, and 128. We leverage Hatchet (Bhatele et al., 2019) to read the Caliper reports. Listing 7: Caliper Instrumentation Region Identification Prompt Template (GPT-4o) 
+
+# Given OpenMP Code with Line Numbers 
+
+``` cpp {generated_cc_with_line_no} 
+
+``` 
+
+# Instructions Identify all OpenMP parallel regions. Return the identified regions as a JSON array with each element in the array containing integer fields called 'start ' and 'end '.Specifically, - Focus on identifying all OpenMP parallel regions in the given code (start = #pragma line, end = closing brace of that parallel region). - Regions may be nested as long as each region captures a distinct #pragma and its associated parallel region. - Use the original line numbers from the given code above in your returned JSON array to demarcate the regions. 
+
+20 # Formatting Instructions Your response must ONLY contain a valid Markdown JSON block containing a JSON array like:   
+
+> ``` json [{{ 'start ': integer, 'end ': integer}}, {{ 'start ': integer, 'end ': integer}}, ... ]
+> ```
+> Do NOT include any additional code or explanations, just the valid Markdown JSON block.
+
+# B Training Hyperparameters 
+
+Table 6 summarizes the training hyperparameters used. Table 6: World Model Fine-Tuning Hyperparameters. Training configuration used to adapt the base models into reasoning world models. 
+
+Hyperparameter Setting 
+
+Sequence Length 16,384 tokens Precision bfloat16 
+
+FSDP Sharding Strategy Full-shard Gradient Checkpointing Enabled Number of Epochs 1Effective Batch Size 32 Learning Rate 1 × 10 −5
+
+Learning Rate Scheduler Cosine Warmup Ratio 0.05 Weight Decay 1 × 10 −4
+
+AdamW β1 0.9 AdamW β2 0.95 Validation Split 5% Completion-Only Loss Enabled 21 C Additional Experimental Results 
+
+C.1 Race-Fixing using Commercial Actor Models on DataRaceBench 
+
+Table 7: Race-Fixing using Commercial Actor Models on DataRaceBench. We task an LLM to act as a race-fixing agent to fix race conditions in OpenMP codes in DataRaceBench. The race-fixing agent receives race analysis and detection feedback from the world model. The race-free percentages of the fixed codes are reported as measured using ThreadSanitizer. Feedback Source Oracle Self World Model Actor Model Qwen-2.5-32B Qwen-2.5-14B Qwen-2.5-7B 
+
+Base +SFT Base +SFT Base +SFT 
+
+claude-haiku-3 72.2% 71.2% 71.1% 73.0% 72.5% 69.9% 69.3% 70.6% 
+
+gpt-4.1-mini 83.2% 83.1% 77.9% 82.6% 79.9% 81.1% 77.7% 79.4% 
+
+Average 77.7% 77.2% 74.5% 77.8% 76.2% 75.5% 73.5% 75.0% 
+
+# D Additional Related Work 
+
+CoT Synthesis. CoT synthesis and reasoning distillation are increasingly used to turn base LLMs into reasoning-capable models, as illustrated by OpenThoughts others (Guha et al., 2025; Bespoke Labs, 2025; NovaSky Team, 2025; Muennighoff et al., 2025). One of the techniques for CoT synthesis involves reverse rationale generation conditioned on the correct answer when initial reasoning fails (Zelikman et al., 2022; 2024; Bhagavatula et al., 2019; Li et al., 2025). Yet, these methods do not target CoTs for tool-outcomes, unlike ours. 22
