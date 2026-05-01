@@ -6,88 +6,106 @@
 </div>
 
 ## 每次日报
-- 最新运行日期：2026-04-30
-- 运行时间：2026-04-30 20:17:55 UTC
+- 最新运行日期：2026-05-01
+- 运行时间：2026-05-01 20:23:04 UTC
 - 运行状态：成功
-- 本次总论文数：22
-- 精读区：10
+- 本次总论文数：28
+- 精读区：16
 - 速读区：12
 
 ### 今日简报（AI）
-今日精选 22 篇前沿成果，两篇满分论文领衔具身智能新突破，深度解析世界模型与人类意图先验。
-核心结论指出，大规模人类演示与具身世界模型的结合是提升机器人规划控制精度的关键路径。
-建议关注图像生成器在视觉学习中的通用潜力，并尝试多模态框架下的机器人技能快速适配。
-- 详情：[/202604/30/README](/202604/30/README)
+今日精选 28 篇前沿论文，深度聚焦具身智能意图理解与复杂环境下的动态避障技术。
+满分论文 GazeVLA 与 RAY-TOLD 分别在视线感知人类意图和基于射线的动态避障领域取得重大突破。
+建议优先研读这两篇满分佳作，快速掌握机器人操控与路径规划的最新演进方向。
+- 详情：[/202605/01/README](/202605/01/README)
 
 ### 精读区论文标签
-1. [Learning Human-Intention Priors from Large-Scale Human Demonstrations for Robotic Manipulation](/202604/30/2604.24681v1-learning-human-intention-priors-from-large-scale-human-demonstrations-for-robotic-manipulation)  
+1. [GazeVLA: Learning Human Intention for Robotic Manipulation](/202605/01/2604.22615v2-gazevla-learning-human-intention-for-robotic-manipulation)  
    标签：评分：10.0/10、query:robot
-   evidence：用于机器人学习的分层视觉-语言-动作框架
-2. [Lifting Embodied World Models for Planning and Control](/202604/30/2604.26182v1-lifting-embodied-world-models-for-planning-and-control)  
+   evidence：利用人类意图进行机器人操作的VLA框架
+2. [RAY-TOLD: Ray-Based Latent Dynamics for Dense Dynamic Obstacle Avoidance with TDMPC](/202605/01/2604.27450v1-ray-told-ray-based-latent-dynamics-for-dense-dynamic-obstacle-avoidance-with-tdmpc)  
    标签：评分：10.0/10、query:robot
-   evidence：提升具身世界模型用于复杂实体的规划与控制
-3. [Unified 4D World Action Modeling from Video Priors with Asynchronous Denoising](/202604/30/2604.26694v1-unified-4d-world-action-modeling-from-video-priors-with-asynchronous-denoising)  
+   evidence：用于机器人避障和规划的潜空间动力学
+3. [PRTS: A Primitive Reasoning and Tasking System via Contrastive Representations](/202605/01/2604.27472v1-prts-a-primitive-reasoning-and-tasking-system-via-contrastive-representations)  
    标签：评分：10.0/10、query:robot
-   evidence：统一的机器人动作执行与4D世界合成世界模型
-4. [STARRY: Spatial-Temporal Action-Centric World Modeling for Robotic Manipulation](/202604/30/2604.26848v1-starry-spatial-temporal-action-centric-world-modeling-for-robotic-manipulation)  
+   evidence：通过目标条件强化学习重构预训练的 VLA 基础模型
+4. [Robot Learning from Human Videos: A Survey](/202605/01/2604.27621v1-robot-learning-from-human-videos-a-survey)  
    标签：评分：10.0/10、query:robot
-   evidence：机器人操作的以动作为中心的世界建模
-5. [Open-H-Embodiment: A Large-Scale Dataset for Enabling Foundation Models in Medical Robotics](/202604/30/2604.21017v2-open-h-embodiment-a-large-scale-dataset-for-enabling-foundation-models-in-medical-robotics)  
+   evidence：机器人从人类视频中学习及技能迁移的综述
+5. [MotuBrain: An Advanced World Action Model for Robot Control](/202605/01/2604.27792v1-motubrain-an-advanced-world-action-model-for-robot-control)  
+   标签：评分：10.0/10、query:robot
+   evidence：用于机器人控制和动力学建模的统一世界动作模型 (WAM)
+6. [PhyCo: Learning Controllable Physical Priors for Generative Motion](/202605/01/2604.28169v1-phyco-learning-controllable-physical-priors-for-generative-motion)  
+   标签：评分：10.0/10、query:q16
+   evidence：使用具有可控先验的视频扩散模型进行物理世界模拟
+7. [LaST-R1: Reinforcing Action via Adaptive Physical Latent Reasoning for VLA Models](/202605/01/2604.28192v1-last-r1-reinforcing-action-via-adaptive-physical-latent-reasoning-for-vla-models)  
+   标签：评分：10.0/10、query:robot
+   evidence：集成潜空间推理的VLA框架用于机器人操作
+8. [HERMES++: Toward a Unified Driving World Model for 3D Scene Understanding and Generation](/202605/01/2604.28196v1-hermes-toward-a-unified-driving-world-model-for-3d-scene-understanding-and-generation)  
+   标签：评分：10.0/10、query:robot
+   evidence：用于3D场景理解和未来几何预测的统一驾驶世界模型
+9. [Robot Planning and Situation Handling with Active Perception](/202605/01/2604.26988v1-robot-planning-and-situation-handling-with-active-perception)  
    标签：评分：9.0/10、query:robot
-   evidence：大规模医疗机器人视频数据集
-6. [ANCHOR: A Physically Grounded Closed-Loop Framework for Robust Home-Service Mobile Manipulation](/202604/30/2604.25323v1-anchor-a-physically-grounded-closed-loop-framework-for-robust-home-service-mobile-manipulation)  
+   evidence：动态环境下的机器人规划与情境处理
+10. [SpaAct: Spatially-Activated Transition Learning with Curriculum Adaptation for Vision-Language Navigation](/202605/01/2604.27620v1-spaact-spatially-activated-transition-learning-with-curriculum-adaptation-for-vision-language-navigation)  
    标签：评分：9.0/10、query:robot
-   evidence：物理接地的闭环机器人操作
-7. [3D Generation for Embodied AI and Robotic Simulation: A Survey](/202604/30/2604.26509v1-3d-generation-for-embodied-ai-and-robotic-simulation-a-survey)  
+   evidence：具身智能体的前向状态转移预测与动作推理
+11. [Can Tabular Foundation Models Guide Exploration in Robot Policy Learning?](/202605/01/2604.27667v1-can-tabular-foundation-models-guide-exploration-in-robot-policy-learning)  
    标签：评分：9.0/10、query:robot
-   evidence：用于机器人仿真和具身智能的 3D 生成
-8. [AGEL-Comp: A Neuro-Symbolic Framework for Compositional Generalization in Interactive Agents](/202604/30/2604.26522v1-agel-comp-a-neuro-symbolic-framework-for-compositional-generalization-in-interactive-agents)  
+   evidence：用于机器人策略学习和探索的表格基础模型
+12. [Graph World Models: Concepts, Taxonomy, and Future Directions](/202605/01/2604.27895v1-graph-world-models-concepts-taxonomy-and-future-directions)  
    标签：评分：9.0/10、query:robot
-   evidence：因果程序图作为交互式智能体的世界模型
-9. [Walk With Me: Long-Horizon Social Navigation for Human-Centric Outdoor Assistance](/202604/30/2604.26839v1-walk-with-me-long-horizon-social-navigation-for-human-centric-outdoor-assistance)  
+   evidence：系统性综述了用于智能体预测和规划的图世界模型
+13. [Flying by Inference: Active Inference World Models for Adaptive UAV Swarms](/202605/01/2604.27935v1-flying-by-inference-active-inference-world-models-for-adaptive-uav-swarms)  
    标签：评分：9.0/10、query:robot
-   evidence：用于机器人导航与规划的视觉语言模型
-10. [World2VLM: Distilling World Model Imagination into VLMs for Dynamic Spatial Reasoning](/202604/30/2604.26934v1-world2vlm-distilling-world-model-imagination-into-vlms-for-dynamic-spatial-reasoning)  
+   evidence：用于无人机规划的主动推理世界模型
+14. [Beyond Gaussian Bottlenecks: Topologically Aligned Encoding of Vision-Transformer Feature Spaces](/202605/01/2604.28122v1-beyond-gaussian-bottlenecks-topologically-aligned-encoding-of-vision-transformer-feature-spaces)  
+   标签：评分：9.0/10、query:profile-2
+   evidence：关注潜变量3D状态和相机运动的视觉世界建模系统
+15. [RopeDreamer: A Kinematic Recurrent State Space Model for Dynamics of Flexible Deformable Linear Objects](/202605/01/2604.28161v1-ropedreamer-a-kinematic-recurrent-state-space-model-for-dynamics-of-flexible-deformable-linear-objects)  
    标签：评分：9.0/10、query:robot
-   evidence：将生成式世界模型的空间想象力蒸馏到视觉语言模型中
+   evidence：用于机器人操作和预测的潜动力学框架
+16. [Visual Generation in the New Era: An Evolution from Atomic Mapping to Agentic World Modeling](/202605/01/2604.28185v1-visual-generation-in-the-new-era-an-evolution-from-atomic-mapping-to-agentic-world-modeling)  
+   标签：评分：9.0/10、query:profile-2
+   evidence：提出了将视觉生成演进为智能体世界建模的分类法
 
 ### 速读区论文标签
-1. [Image Generators are Generalist Vision Learners](/202604/30/2604.20329v1-image-generators-are-generalist-vision-learners)  
-   标签：评分：8.0/10、query:q8
-   evidence：视频生成器作为视觉学习者
-2. [CCTVBench: Contrastive Consistency Traffic VideoQA Benchmark for Multimodal LLMs](/202604/30/2604.20460v1-cctvbench-contrastive-consistency-traffic-videoqa-benchmark-for-multimodal-llms)  
-   标签：评分：8.0/10、query:q14
-   evidence：基于世界模型生成的反事实交通视频构建的基准测试
-3. [MOMO: A framework for seamless physical, verbal, and graphical robot skill learning and adaptation](/202604/30/2604.20468v2-momo-a-framework-for-seamless-physical-verbal-and-graphical-robot-skill-learning-and-adaptation)  
+1. [Navigating the Clutter: Waypoint-Based Bi-Level Planning for Multi-Robot Systems](/202605/01/2604.21138v1-navigating-the-clutter-waypoint-based-bi-level-planning-for-multi-robot-systems)  
    标签：评分：8.0/10、query:robot
-   evidence：通过物理、语言和图形模态进行机器人技能学习与适配
-4. [Neuro-Symbolic Manipulation Understanding with Enriched Semantic Event Chains](/202604/30/2604.21053v1-neuro-symbolic-manipulation-understanding-with-enriched-semantic-event-chains)  
+   evidence：在复杂环境中优化任务和运动规划的混合多机器人控制框架
+2. [Exploring the Role of Synthetic Data Augmentation in Controllable Human-Centric Video Generation](/202605/01/2604.21291v1-exploring-the-role-of-synthetic-data-augmentation-in-controllable-human-centric-video-generation)  
+   标签：评分：8.0/10、query:profile-2
+   evidence：面向具身智能的可控以人为中心的视频生成
+3. [GenMatter: Perceiving Physical Objects with Generative Matter Models](/202605/01/2604.22160v1-genmatter-perceiving-physical-objects-with-generative-matter-models)  
+   标签：评分：8.0/10、query:q16
+   evidence：用于感知物理对象和运动的生成式物质模型
+4. [An LLM-Driven Closed-Loop Autonomous Learning Framework for Robots Facing Uncovered Tasks in Open Environments](/202605/01/2604.22199v1-an-llm-driven-closed-loop-autonomous-learning-framework-for-robots-facing-uncovered-tasks-in-open-environments)  
    标签：评分：8.0/10、query:robot
-   evidence：用于操作理解的符号状态
-5. [HumanScore: Benchmarking Human Motions in Generated Videos](/202604/30/2604.20157v1-humanscore-benchmarking-human-motions-in-generated-videos)  
-   标签：评分：7.0/10、query:q15
-   evidence：对生成视频中的人体动作进行运动学合理性基准测试
-6. [KD-CVG: A Knowledge-Driven Approach for Creative Video Generation](/202604/30/2604.21362v1-kd-cvg-a-knowledge-driven-approach-for-creative-video-generation)  
+   evidence：大语言模型驱动的开放环境下机器人闭环自主学习
+5. [Impact-Aware Model Predictive Control for UAV Landing on a Heaving Platform](/202605/01/2604.21078v1-impact-aware-model-predictive-control-for-uav-landing-on-a-heaving-platform)  
+   标签：评分：7.0/10、query:robot
+   evidence：用于机器人（无人机）着陆和规划的模型预测控制
+6. [Self-Predictive Representation for Autonomous UAV Object-Goal Navigation](/202605/01/2604.21130v1-self-predictive-representation-for-autonomous-uav-object-goal-navigation)  
+   标签：评分：7.0/10、query:robot
+   evidence：无人机导航的自我预测表示
+7. [SpatiO: Adaptive Test-Time Orchestration of Vision-Language Agents for Spatial Reasoning](/202605/01/2604.21190v1-spatio-adaptive-test-time-orchestration-of-vision-language-agents-for-spatial-reasoning)  
+   标签：评分：7.0/10、query:robot
+   evidence：用于空间推理和场景理解的视觉语言智能体
+8. [Vista4D: Video Reshooting with 4D Point Clouds](/202605/01/2604.21915v1-vista4d-video-reshooting-with-4d-point-clouds)  
    标签：评分：7.0/10、query:q7
-   evidence：创意视频生成
-7. [Sculpt4D: Generating 4D Shapes via Sparse-Attention Diffusion Transformers](/202604/30/2604.21592v1-sculpt4d-generating-4d-shapes-via-sparse-attention-diffusion-transformers)  
-   标签：评分：7.0/10、query:q7
-   evidence：通过扩散 Transformer 进行动态形状合成的 4D 生成框架
-8. [Building a Precise Video Language with Human-AI Oversight](/202604/30/2604.21718v1-building-a-precise-video-language-with-human-ai-oversight)  
-   标签：评分：7.0/10、query:q8
-   evidence：用于推理动态视觉世界的视频语言模型
-9. [LLM-Guided Safety Agent for Edge Robotics with an ISO-Compliant Perception-Compute-Control Architecture](/202604/30/2604.20193v1-llm-guided-safety-agent-for-edge-robotics-with-an-iso-compliant-perception-compute-control-architecture)  
+   evidence：用于重新合成具有相同动力学场景的视频重拍框架
+9. [SpatiO: Adaptive Test-Time Orchestration of Vision-Language Agents for Spatial Reasoning](/202605/01/2604.21190v2-spatio-adaptive-test-time-orchestration-of-vision-language-agents-for-spatial-reasoning)  
    标签：评分：6.0/10、query:robot
-   evidence：用于机器人控制与感知的LLM引导安全智能体
-10. [Exploring High-Order Self-Similarity for Video Understanding](/202604/30/2604.20760v1-exploring-high-order-self-similarity-for-video-understanding)  
-   标签：评分：6.0/10、query:q10
-   evidence：用于视频理解和真实机器人任务的时间动态建模
-11. [GeoRect4D: Geometry-Compatible Generative Rectification for Dynamic Sparse-View 3D Reconstruction](/202604/30/2604.20784v1-georect4d-geometry-compatible-generative-rectification-for-dynamic-sparse-view-3d-reconstruction)  
+   evidence：用于视觉场景空间推理的视觉语言智能体
+10. [Reshoot-Anything: A Self-Supervised Model for In-the-Wild Video Reshooting](/202605/01/2604.21776v1-reshoot-anything-a-self-supervised-model-for-in-the-wild-video-reshooting)  
    标签：评分：6.0/10、query:profile-2
-   evidence：利用生成先验从视频中进行动态3D重建
-12. [Learning Reasoning World Models for Parallel Code](/202604/30/2604.20926v2-learning-reasoning-world-models-for-parallel-code)  
-   标签：评分：6.0/10、query:q8
-   evidence：用于预测工具结果的推理世界模型
+   evidence：基于单目数据的自监督视频生成与相机控制
+11. [Reshoot-Anything: A Self-Supervised Model for In-the-Wild Video Reshooting](/202605/01/2604.21776v2-reshoot-anything-a-self-supervised-model-for-in-the-wild-video-reshooting)  
+   标签：评分：6.0/10、query:q7
+   evidence：自监督视频重拍与轨迹生成
+12. [Learning Reactive Human Motion Generation from Paired Interaction Data Using Transformer-Based Models](/202605/01/2604.22164v1-learning-reactive-human-motion-generation-from-paired-interaction-data-using-transformer-based-models)  
+   标签：评分：6.0/10、query:q12
+   evidence：从视频数据中预测未来序列并生成反应性动作
 
 
 <div class="dpr-home-promo-card">

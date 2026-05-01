@@ -1,0 +1,792 @@
+Title: HERMES++: Toward a Unified Driving World Model for 3D Scene Understanding and Generation
+
+URL Source: https://arxiv.org/pdf/2604.28196v1
+
+Published Time: Fri, 01 May 2026 01:20:18 GMT
+
+Number of Pages: 17
+
+Markdown Content:
+> 1
+
+# HERMES ++: Toward a Unified Driving World Model for 3D Scene Understanding and Generation 
+
+Xin Zhou, Dingkang Liang, Xiwu Chen, Feiyang Tan, Dingyuan Zhang, Hengshuang Zhao, Xiang Bai, Fellow, IEEE 
+
+Abstract —Driving world models serve as a pivotal technology for autonomous driving by simulating environmental dynamics. However, existing approaches predominantly focus on future scene generation, often overlooking comprehensive 3D scene un-derstanding. Conversely, while Large Language Models (LLMs) demonstrate impressive reasoning capabilities, they lack the ca-pacity to predict future geometric evolution, creating a significant disparity between semantic interpretation and physical simula-tion. To bridge this gap, we propose H ERMES ++, a unified driving world model that integrates 3D scene understanding and future geometry prediction within a single framework. Our approach addresses the distinct requirements of these tasks through syn-ergistic designs. First, a BEV representation consolidates multi-view spatial information into a structure compatible with LLMs. Second, we introduce LLM-enhanced world queries to facilitate knowledge transfer from the understanding branch. Third, a Current-to-Future Link is designed to bridge the temporal gap, conditioning geometric evolution on semantic context. Finally, to enforce structural integrity, we employ a Joint Geometric Opti-mization strategy that integrates explicit geometric constraints with implicit latent regularization to align internal represen-tations with geometry-aware priors. Extensive evaluations on multiple benchmarks validate the effectiveness of our method. HERMES ++ achieves strong performance, outperforming special-ist approaches in both future point cloud prediction and 3D scene understanding tasks. The model and code will be publicly released at https://github.com/H-EmbodVis/HERMESV2. 
+
+Index Terms —Driving world model, scene understanding, fu-ture point cloud generation. 
+
+I. I NTRODUCTION 
+
+# DRIVING world models [1], [2], [3], [4] show great potential for enhancing autonomous driving reliability by simulating environmental dynamics. These models enable vehicles to forecast risks and optimize decisions. Existing re-search primarily focuses on predicting scene evolution, target-ing either visual appearance changes [2], [5] or 3D geometric deformations [6], [7]. While the former captures visual texture, the latter, often represented by point clouds [8], [9], [7], [10], [11], preserves explicit geometric relationships between objects and surroundings. Maintaining accurate 3D structure is essential for downstream tasks requiring precise spatial reasoning, making it ideal for describing scene evolution. Despite progress in scene generation, a crucial limitation of existing methods is their limited capacity to understand 3D scenes. While capable of predicting plausible future states, they often fail to articulate the semantic context or the causal 
+
+X. Zhou, D. Liang, D. Zhang and X. Bai are with Huazhong University of Science and Technology. E-mail: (xzhou03, dkliang, xbai)@hust.edu.cn X. Chen, and F. Tan are with Mach Drive. H. Zhao is with the University of Hong Kong. 
+
+factors driving the predicted evolution. As shown in Fig. 1(a), while driving world models excel at forecasting environmental changes, they lack the intrinsic mechanisms to answer direct queries (e.g., visual question answering, scene description). This disconnect between prediction and interpretation creates a significant capability gap, as the contextual awareness that is essential for real-world driving remains largely unaddressed by generation-centric architectures. Moreover, recent advances in Vision-Language Models (VLMs) [12], [13], [14] have demonstrated remarkable ca-pabilities in general vision tasks by leveraging world knowl-edge and causal reasoning from large-scale pretraining. When adapted to autonomous driving scenarios [15], [16], [17], these models excel at interpreting complex driving environ-ments, answering queries about traffic participants, generat-ing comprehensive scene descriptions, and reasoning about spatial relationships between entities, as shown in Fig. 1(b). For instance, OmniDrive [15] combines 3D representations with language models for visual question answering, while DriveLM [16] employs graph-based reasoning for scene un-derstanding and planning. However, these language-centric approaches prioritize understanding the current state, lacking the predictive capacity to anticipate how the scene geometry will evolve. This deficiency is critical in safety-critical scenar-ios where collision avoidance requires anticipating both the present context and future changes. Motivated by the complementary strengths and limitations of these two paradigms, we propose that a world model should seamlessly integrate 3D scene understanding with accurate future geometry prediction. Constructing such a cohesive framework requires the careful consideration of two critical aspects. First, a suitable 3D representation is essential for effectively handling both textual understanding and multi-view spatial relationships. This representation must consolidate ob-servations into a structure that preserves geometric interactions while remaining compatible with token-based language mod-els. Second, an interaction mechanism is needed to bridge the gap between understanding and future generation. This ensures that semantic understanding guides geometric evolution and that geometric predictions ground language generation, go-ing beyond multi-task feature sharing. Additionally, ensuring consistency in predicted scene evolutions is challenging, as supervision based solely on future observations often provides only explicit constraints, leading to structural inconsistencies. Based on these observations and analyses, in this paper, we propose a unified driving world model that integrates understanding and generation tasks, termed H ERMES ++, as     
+
+> arXiv:2604.28196v1 [cs.CV] 30 Apr 2026 2Unified World Model Large Language Model
+
+(a) Only generation (b) Only understanding (c) Our unified driving world model                                        
+
+> Future Generator
+> “front -left …acommercial
+> area ... Directly in front, the
+> road curves to the left …
+> right -front …apedestrian
+> crossing …”
+> Scene understanding
+> “front -left …acommercial
+> area ... Directly in front, the
+> road curves to the left …
+> right -front …apedestrian
+> crossing …”
+> Scene understanding
+> Image Features Image Features BEV representation
+> Generation Understanding
+
+(d) Comparison          
+
+> CIDER ↑
+> 0.60
+> 0.75
+> 0.65
+> 0.70
+> 0.80
+> 1.80
+> 1.30
+> CD (3s) ↓
+> ORION
+> (ICCV 25)
+> 0.69
+> 0.75
+> 1.73
+> 1.10
+> 1.01
+> Scene evolution
+> Scene evolution
+> 0.64
+> Omni -Q
+> (CVPR 25) HERMES++
+> (Ours )VIDAR
+> (CVPR 24) DriveX
+> (ICCV 25)
+> HERMES++
+> (Ours )
+
+Fig. 1: (a) Previous driving world models focus on generative scene evolution prediction. (b) Large language models for driving are limited to scene understanding. (c) The proposed framework unifies 3D scene understanding and scene evolution generation with the BEV representation. (d) Quantitative comparison with dedicated specialist methods. shown in Fig. 1(c). H ERMES ++ is built upon a Bird’s-Eye View (BEV) representation that naturally consolidates multi-view spatial information while ensuring compatibility with LLMs. For the linking mechanism, we introduce world queries enhanced by the LLM to transfer world knowledge from text understanding to future scene generation. These queries interact with LLM-processed BEV features via a Current-to-Future Link, ensuring that predicted scene evolution is conditioned on both geometric context and semantic reasoning. Specifically, the BEV representation mitigates the effects of token length constraints when processing high-resolution multi-view inputs. Instead of directly converting multiple views into tokens, a BEV tokenizer consolidates them in two stages. First, a vision encoder transforms multi-view images into the BEV space using cross-attention, compressing high-dimensional inputs while preserving spatial information. Second, the BEV features are downsampled and flattened into LLM-compatible tokens. This approach reduces redundancy while maintaining geometric relationships in a consistent coordinate system. To strictly enforce geometric consistency in predicted scene evolutions, we further propose a Joint Geometric Optimization strategy. This mechanism integrates explicit geometric constraints on point clouds with implicit geometric regularization on the latent manifold. By aligning representations to geometry-aware priors, our approach en-sures structural integrity throughout the generation process. Furthermore, we introduce a knowledge transfer mechanism that bridges scene understanding with future evolution pre-diction. To achieve this, we directly initialize world queries from BEV features before LLM processing. These queries leverage causal attention to aggregate rich world knowledge and semantic context from text tokens. The queries then interact with LLM-encoded BEV features to generate latent representations for future timestamps via a module termed Current-to-Future Link. Within this link, we propose a Textual Injection mechanism that integrates text embeddings as condi-tioning signals, enabling semantic information to directly mod-ulate the generation process. In addition, we adaptively adjust spatial feature distributions based on future ego-motion. This effectively decouples motion from inherent scene dynamics, ensuring controllability across prediction horizons. By conducting 3D scene understanding and future scene generation within a single framework, H ERMES ++ establishes a shared representation that seamlessly accommodates both tasks, offering a holistic perspective on driving environments. This marks a significant step toward a unified driving world model, demonstrating the feasibility of integrated driving understanding and generation. Extensive experiments validate the effectiveness of H ERMES ++ in both tasks. Notably, our method significantly reduces error by 8.2% compared to the leading method DriveX [18] for challenging 3s point cloud generation. Additionally, for the understanding task, it outper-forms the prior specialist baseline Omni-Q [15] by 9.2% on the OmniDrive-nuScenes dataset [15] under the CIDEr metric. Overall, this paper presents an early and solid exploration of a unified driving world model. By analyzing the distinct requirements of 3D scene understanding and future geometry evolution prediction, we design key components, including unified representation, world queries, and a Joint Geometric Optimization strategy. We hope this work will establish a foundation for the emerging field of interpretable and predic-tive autonomous driving systems. Our main contributions are summarized as follows:  
+
+> •
+
+We propose a unified framework that effectively in-tegrates 3D scene understanding and future geometry prediction. By leveraging a unified representation, our method consolidates multi-view spatial information while maintaining compatibility with LLM processing.  
+
+> •
+
+We devise a Joint Geometric Optimization strategy to enforce structural integrity in future predictions. This mechanism combines explicit geometric constraints from ground-truth point clouds with implicit geometric regular-ization on the latent manifold, ensuring that the predicted features align with intrinsic 3D geometry.  
+
+> •
+
+We introduce LLM-enhanced world queries that facilitate knowledge transfer. In addition, incorporating textual 3
+
+conditions via the Textual Injection allows semantic rea-soning derived from scene understanding to directly guide the generation of future scene evolution.  
+
+> •
+
+We conduct extensive experiments, demonstrating that HERMES ++ achieves strong performance across both generation and understanding, outperforming prior uni-fied baselines and several specialist approaches. These results validate the effectiveness of the unified architec-ture, offering a new perspective for constructing holistic driving world models. This paper is an extended version of our conference paper, published in ICCV 2025 [19], where we make the following new contributions: 1) Unlike the conference version, which relies solely on explicit point cloud constraints, we introduce a Joint Geometric Optimization strategy. By incorporating implicit regularization on the latent space, this approach constructs geometric-aware representations that facilitate more accurate point cloud decoding, thereby enhancing future gen-eration performance. 2) We strengthen the knowledge transfer mechanism by introducing Textual Injection. This integrates text embeddings as explicit conditioning signals, enabling se-mantic reasoning derived from the language model to directly guide the prediction of future scene evolution. 3) To enhance generation controllability, we adaptively adjust spatial feature distributions based on future ego-motion, which effectively decouples camera motion from inherent scene dynamics. 4) 
+
+Through these technical advancements, our model achieves significant performance gains over the conference baseline. Specifically, we observe a 13.7% reduction in generation error and consistent improvements in scene understanding metrics compared with the conference version. 5) We have made im-provements to the quality of the manuscript in various aspects. We extend the evaluations on three additional benchmarks to validate the generalization capabilities. Furthermore, we provide expanded ablation studies and in-depth discussions on the scalability of unified architectures and the intrinsic synergy between understanding and geometric evolution. These analy-ses not only substantiate our technical contributions but also offer insights into the potential of foundational World Models for interpretable autonomous driving. II. R ELATED WORK 
+
+A. World Models for Driving 
+
+Driving world models [20] have garnered considerable attention in autonomous driving due to their ability to learn comprehensive environmental representations and predict fu-ture evolution based on action sequences. By simulating the dynamics of the driving environment, these models provide essential support for downstream tasks such as risk assessment and motion planning. Current research primarily focuses on generation tasks operating in either 2D [21], [22], [23] or 3D [24], [25] spaces. Most pioneering 2D world models perform video generation for driving scenarios. GAIA-1 [5] introduced a learned sim-ulator based on an autoregressive model. Subsequent works further leverage large-scale data [26], [27], [28] and advanced pre-training techniques to enhance generation quality regard-ing consistency [4], [29], resolution [2], [27], and controlla-bility [3], [30], [31]. More recent approaches explore scal-able DiT-based architectures [32], [33], [34], autoregressive transformers [35], [36], [37], and multimodal conditioning strategies [38], [31] to improve temporal coherence. On the other hand, other studies focus on generating 3D spatial infor-mation to provide geometric representations for autonomous systems. OccWorld [6] targets future occupancy generation and planning using spatial-temporal transformers, which have been adapted to other paradigms, including diffusion [39], [40], rendering [41], [42], [43], and autoregressive transform-ers [44]. Some approaches propose future point cloud [45], [46], [47], [48] or depth forecasting [49], [50], [51] as world models. Among these, ViDAR [7] uses images to predict future point clouds in a self-supervised manner, while recent methods [32] explore geometry-aware architectures and multi-scale temporal modeling to enhance prediction accuracy. However, existing driving world models often fail to incor-porate an understanding of the driving environment. While ca-pable of predicting future states, they lack the intrinsic ability to interpret or reason about the scenes they generate. Recent research has shifted towards unified models that combine generation and understanding within a single framework [23], [52], [44], [37], [53], yet the exploration of such unified capabilities remains nascent. For example, Doe-1 [23] explores closed-loop autonomous driving with a world model primar-ily focusing on single-view generation. Epona [37] employs an autoregressive diffusion framework to decouple temporal dynamics from visual generation for consistent long-horizon prediction and planning. FSDrive [54] introduces a visual spatio-temporal Chain-of-Thought to bridge perception and planning by generating future frames with physical constraints. Despite these advances, these methods mostly operate in 2D single-view images or lack dense 3D geometric constraints intertwined with semantic reasoning. In this paper, we propose a unified world model that under-stands driving scenarios and generates future geometric scene evolution, establishing a holistic framework for interpretable and predictive autonomous driving. 
+
+B. Large Language Models for Driving 
+
+Large Language Models (LLMs) and Vision-Language Models (VLMs) have achieved significant success by leverag-ing extensive world knowledge and causal reasoning capabili-ties derived from large-scale pretraining [55], [56], [57], [58], [59]. In the realm of autonomous driving, these models effec-tively bridge the gap between raw sensory data and semantic understanding, enabling the interpretation of complex traffic scenarios, reasoning about agent behaviors, and generating natural language explanations. Such capabilities are crucial for developing reliable autonomous systems capable of handling diverse driving situations. Recent research has adapted LLMs and VLMs to various driving tasks. For scene understanding, DriveGPT4 [17] em-ploys a VLM to generate driving commands alongside natural language justifications based on front-view observations. Driv-4
+
+eLM [16] introduces scene graphs to facilitate structured rea-soning and end-to-end driving via graph-based visual question answering. Similarly, OmniDrive [15] integrates 3D spatial representations with VLMs using a Q-Former, establishing a comprehensive benchmark for multi-task driving compre-hension. To enhance spatial-temporal modeling, ELM [60] proposes pre-training strategies tailored specifically for em-bodied scenarios. Beyond perception and reasoning, Vision-Language-Action (VLA) models have emerged to directly link perception with control [61], [62], [63], [64], [65]. For example, ORION [66] performs a differentiable connection between reasoning and action space. Despite these advances, existing methods primarily rely on the LLM to understand the current state, often lacking the capacity to predict the future geometric evolution of the surrounding environment. In this paper, we bridge this gap by enabling LLMs to comprehend the present driving scenario and predict its future evolution. Rather than treating these as isolated tasks, we establish dedicated mechanisms that allow semantic reasoning from language understanding to guide geometric prediction. This design empowers the model to leverage world knowledge for generating structurally coherent future scenes, creating a framework that seamlessly integrates scene comprehension with accurate prediction. III. P RELIMINARIES 
+
+This section briefly reviews driving world models and the Bird’s-Eye View representation as preliminaries. 
+
+Driving world models aim to learn a general representation of the driving environment by forecasting the future dynamics of a scene [20], [21], [19], [6], [7]. The core objective is to predict future states based on current observations and planned actions, enabling the model to capture the underlying data distribution of real-world driving scenarios. Formally, given an observation Ot at time t and an action 
+
+At, a driving world model predicts the subsequent observation 
+
+Ot+1 . This process typically involves three components: 
+
+Zt = E (Ot) , Zt+1 = M (Zt, At) , ˆOt+1 = D (Zt+1 ) , (1) where E : O → Z is an encoder that maps observations to latent representations, M : Z ×A → Z is the predicting model that transitions the latent state forward in time conditioned on an action, and D : Z → O is a decoder that reconstructs the observation from the predicted latent state. The latent space 
+
+Z serves as a compact representation that captures essential scene information while filtering out irrelevant details. While 
+
+Ot can vary across modalities (e.g., RGB images, LiDAR), this work focuses on multi-view images as input and point clouds as output, leveraging the latter’s ability to preserve 3D geometric structures, which are essential for spatial reasoning. 
+
+Bird’s-Eye View (BEV) has emerged as a foundational spa-tial representation for autonomous driving, offering a natural coordinate system for multi-view fusion and spatial reason-ing [28], [67], [68], [69]. Unlike perspective views, which are prone to occlusion and scale ambiguity, BEV preserves geometric relationships in a top-down logical space. Given multi-view images {I i}Ni=1 from N multi-view cam-eras, the BEV representation is defined as a feature map 
+
+FBEV ∈ RH×W ×C , where H×W represents the spatial resolu-tion and C denotes the feature dimension. The transformation from perspective view to 3D BEV space requires lifting image features to 3D spatial locations. Following modern approaches like the BEVFormer series [70], [71], we employ learnable grid queries QBEV ∈ RH×W ×C positioned at predefined grid locations in BEV space. For each query at spatial location 
+
+(x, y ), the corresponding BEV feature is computed through spatial cross-attention: 
+
+B(x, y ) = 
+
+> N
+
+X
+
+> i=1
+
+X
+
+> z∈H
+
+DA (Q(x, y ), Fi, Pi(x, y, z )) , (2) where DA( ·) denotes multi-scale deformable cross-attention that aggregates features from the i-th camera feature map Fi
+
+around the projected reference point πi(x, y, z ) with learned sampling offsets and attention weights. H is a set of predefined height anchors, and πi(·) maps a 3D location to the image plane using camera intrinsics and extrinsics. By encoding geometry, the BEV representation effectively unifies visual semantics with spatial structure. Its natural integration of visual semantics and geometric structure makes BEV well-suited for both scene understanding and generation. We thus leverage it as the core substrate to bridge scene understanding and future evolution prediction within a shared geometric space. IV. M ETHOD 
+
+Fig. 2 illustrates the overall framework of H ERMES ++, which seamlessly integrates language-based reasoning with geometric generation. The pipeline begins by transforming multi-view images into the BEV representation, which is subsequently compressed into visual tokens compatible with the large language model. These tokens, concatenated with user instructions and learnable world queries, are processed by the LLM to generate textual responses while aggregating semantic context into the queries. Following this, the Current-to-Future Link propagates the encoded BEV features to future timestamps, conditioned on the enriched queries, text embed-dings, and ego-motion. Finally, a shared Render reconstructs point clouds from the predicted features. To strictly enforce structural integrity, we employ a Joint Geometric Optimiza-tion strategy that integrates explicit geometric constraints on reconstructed point clouds with implicit geometric regulariza-tion on the latent manifold. Through this unified pipeline, HERMES ++ effectively bridges the gap between perception and prediction, leveraging world knowledge to directly guide future scene evolution. 
+
+A. Visual Tokenizer and BEV-to-Point Render 
+
+To address the spatial discontinuity inherent in multi-view inputs and the token constraints of LLMs, we adopt the BEV representation, which naturally preserves geometric structural integrity while enabling efficient compression for language interaction. Specifically, a visual tokenizer is used for feature encoding and a differentiable Render for geometric decoding. For feature encoding, we employ a BEV-based visual tok-enizer to preserve geometric spatial relationships across views 5BEV Tokenizer                                                                                                       
+
+> Max pooling
+> Text Tokenizer
+> Shared Render
+> …Q1:“Please provide asummary on what
+> does the multi -view images show?”
+> Q2:“Is there apedestrian crossing visible,
+> and if so, what does that suggest? ”
+> ……
+> Qn:“What action should be taken based
+> on the current driving scenario?”
+> World queries 𝐐 !
+> ……………
+> : Frame embedding :Ego -motion
+> 𝑡 +1𝑡 +2𝑡 +Δ𝑡
+> Flattened BEV 𝐅 𝒕
+> 𝑃 #$%𝑃 #$&𝑃 #$'#
+> ⋯
+> 𝑃 #
+> Geometric Feature
+> Extractor
+> Flattened BEV 𝐅 𝒕
+> A1:“On the left -front, we have acommercial
+> area ….Directly in front, the road curves to the
+> left leading towards aroundabout …”
+> A2:“Yes, there is apedestrian crossing visible on
+> the right -front .This suggests ... ”
+> ……
+> An:“In this context, the vehicle should approach
+> the roundabout at amoderate speed and prepare
+> for aleft turn …”
+> Scene understanding
+> Large Language Model
+> Current -to -Future Link
+
+…       
+
+> Predicted BEV Encoded BEV
+> Implicit Geometric
+> Regularization
+> ……………
+> Explicit Geometric Constraints
+> Scene reconstruction &evolution (generation)
+
+Fig. 2: Pipeline of H ERMES ++. Flattened BEV tokens, instructions, and world queries are input to the LLM to generate text and semantic contexts. The Current-to-Future Link propagates the encoded BEV to future states, conditioned on both textual semantics and world queries. The shared Render then predicts the evolution of the point cloud. During training, a Joint Geometric Optimization strategy ensures structural integrity by combining explicit geometric constraints on rendered outputs with implicit geometric regularization on latent features using a frozen geometry extractor. while providing semantically rich inputs for the LLM. Given multi-view images {Iit }Ni=1 at time t from N cameras, the tokenizer operates in two stages. First, we encode the multi-view images using a vision encoder [72], [73] to extract multi-scale perspective features. These features are then transformed into a BEV representation Fbev  
+
+> t
+
+∈ Rw×h×c via spatial cross-attention [71]. This process effectively captures both semantic and geometric information in the BEV space, where w and 
+
+h denote the spatial dimensions of the BEV grid, and c
+
+represents the feature channels. Because the raw BEV features contain a large number of tokens that exceed the length limits of most LLMs [74], we apply a downsampling module composed of strided convolutions and pooling. This reduces the spatial resolution by a factor of 4 while expanding the channel dimension to preserve information, yielding Fdown  
+
+> t
+
+∈
+
+R w   
+
+> 4×h
+> 4×4c
+
+. Finally, we flatten and project the compressed feature through a linear layer for LLM processing, following established practices in vision-language models [12], [75]: 
+
+Ft = ϕ(Flatten (Fdown  
+
+> t
+
+)) ∈ RLBEV ×C , (3) where LBEV = w 
+
+> 4
+
+× h 
+
+> 4
+
+is the number of BEV tokens, C is the hidden dimension of the LLM, and Flatten (·) reshapes the spatial dimensions into token sequences. This tokenization bal-ances spatial detail preservation with computational efficiency. To complement this encoding process and recover 3D geometry from BEV spaces, we introduce a differentiable BEV-to-Point Render R. This module operates on either the compressed BEV feature Fdown  
+
+> t
+
+or the LLM-processed BEV feature Bt (after out-projection from the LLM dimension). To generate 3D geometry from 2D BEV features, we first upsample the input to its original spatial resolution using nearest neighbor interpolation and convolutional layers. As BEV features lack height information, we expand them into a volumetric representation by reshaping along the height dimension. A series of 3D convolutional layers then refines this representation to produce ˆVt ∈ Rw×h×z×c′
+
+, where z
+
+denotes the number of discrete height levels, and c′ is the output dimension encoding the 3D scene structure. Following established neural rendering techniques [76], [77], [78], we model the scene geometry as an implicit signed distance function (SDF) field. For each LiDAR ray rk
+
+emitted from the center o along direction tk, we discretize it into n sample points pi = o + ditk with increasing depths 0 ≤ d1 < d2 < · · · < dn. For each point, we retrieve the local feature fi from ˆVt via trilinear interpolation and predict the SDF value si using a shallow MLP ϕSDF ,i.e., si = ϕSDF (pi, fi). With the predicted SDF values, the 6
+
+rendered depth for ray rk is computed as a weighted sum: 
+
+˜d(rk) = 
+
+> n
+
+X
+
+> i=1
+
+widi, wi = Tiαi, (4) where wi represents the weight derived from transmittance 
+
+Ti = Qi−1
+
+> j=1
+
+(1 − αj ) and opacity αi. The opacity is computed from the SDF gradients as: 
+
+αi = max 
+
+ στ (si) − στ (si+1 )
+
+στ (si) , 0
+
+
+
+, (5) where στ (x) = (1 + e−τ x )−1 is the sigmoid with a learnable parameter τ . The final point cloud Pt = {pk}Kk=1 is obtained by converting the rendered depths back to 3D coordinates. 
+
+B. Unification of Understanding and Generation 
+
+This subsection details the unification mechanism that seam-lessly integrates scene understanding and future evolution prediction within H ERMES ++. The central challenge lies in es-tablishing knowledge transfer from language-based reasoning to geometric prediction, thereby enabling the world knowledge acquired during understanding to guide future generation. We address this through two key designs: world queries that aggregate semantic information, and a Current-to-Future Link that leverages both geometric and textual conditioning for temporal evolution modeling. 
+
+1) Language-based Scene Understanding : The LLM serves as the central reasoning engine, processing multi-view observations encoded as BEV features Ft (Eq. 3) and responding to user instructions about the driving scenario. User instructions are tokenized into text tokens T ∈ RLtext ×C using the LLM’s vocabulary, where Ltext is the text length. These se-quences are concatenated and processed by the LLM, enabling the model to interpret the driving scene through next-token prediction. This process not only serves the immediate query-answering task but also enriches the internal representations with semantic knowledge essential for future prediction. 
+
+2) World Queries for Knowledge Transfer : To enable knowledge transfer from understanding to generation, we introduce world queries that interact directly with the LLM’s processing pipeline and act as temporal semantic carriers. Unlike conventional approaches that employ separate branches for task-specific processing, our world queries are injected into the input sequence, acting as latent placeholders that aggregate semantic information from both visual and textual contexts. Specifically, we initialize ∆t groups of world queries, with each group containing n tokens corresponding to a distinct future time step. This initialization leverages adaptive max pooling over the compressed BEV features Fdown  
+
+> t
+
+to extract salient spatial information, yielding the base spatial queries 
+
+Q ∈ Rn×4c, where 4c represents the channel dimension. To enable controllable future generation conditioned on ego-vehicle trajectories, we process the ego-motion parameters for each future frame using an MLP to generate high-dimensional motion embeddings et+i ∈ R1×4c. These embeddings are then broadcasted and added to the base spatial queries. Fur-thermore, learnable frame embeddings FE ∈ R∆t×4c are introduced to encode the temporal order. The final world queries Qw ∈ R(∆ t×n)×C are constructed by concatenating these temporally conditioned representations and projecting them to the hidden dimension of the language model using a shared linear layer ϕ:
+
+Qw = ϕ  Concat ∆ti=1 (Q ⊕ et+i) ⊕ FE  , (6) where ⊕ denotes element-wise addition with broadcasting across the spatial query and temporal dimensions accordingly. We argue that our world queries facilitate knowledge trans-fer in two ways. First, the causal attention mechanism allows world queries to access all preceding tokens, effectively ag-gregating specific semantic context from current BEV obser-vations and textual instructions. Second, the language model contains rich intrinsic world knowledge during large-scale pre-training. By processing queries, the model infuses them with world knowledge and causal priors. Thus, the resulting enriched queries Qwϵ encapsulate both context-specific details and generalized world knowledge, serving as priors for the subsequent geometric forecasting task. 
+
+3) Current-to-Future Link : While the world queries cap-ture semantic information from the understanding process, they provide only a sparse representation of future scenes with n queries per time point. To generate dense future BEV features, we introduce a Current-to-Future Link that propagates spatial information from the current encoded BEV 
+
+Bt to future time points, conditioned on both world queries and text embeddings. To incorporate semantic context into the generation process, we introduce a Textual Injection mechanism. Specifically, we extract text embeddings ˆT ∈ Rk×C from the LLM-processed text tokens via average pooling and linear projection, where k
+
+is the number of pooled tokens and C is the LLM dimension. For each future time step i ∈ { 1, . . . , ∆t}, let Qwϵ,i denote the corresponding world queries. The link consists of several stacked blocks, each containing cross-attention, self-attention, and feed-forward layers. The cross-attention layer aggregates information from both world queries and text: 
+
+X(l) 
+
+> cross
+
+= X(l) + CrossAttn (LN (X(l)), [Qwϵ,i ; ˆT]) , (7) where X(l) represents the input features (initialized as Bt), and the concatenation [Qwϵ,i ; ˆT] serves as the Key and Value. This formulation enables the model to jointly attend to geometric context from world queries and semantic guidance from text, explicitly directing the spatial evolution. To ensure the predicted scene aligns with planned trajecto-ries, we also introduce an Ego Modulation (EM) mechanism that adapts feature distributions based on future ego-motion. Specifically, the ego-motion for time point t + i is encoded through an MLP with a Tanh activation to produce modulation parameters γ and β for self-attention and feed-forward layers: EM (x) = ( γ + 1) ⊙ LN (x) + β, (8) where ⊙ denotes element-wise multiplication, and the modula-tion vectors are zero-initialized at the initial period of training to maintain stability. This modulation adaptively adjusts spatial representations based on driving maneuvers. Notably, EM is applied only to self-attention and feed-forward branches, preserving the cross-attention’s focus on semantic aggregation. 7
+
+Finally, the processed features are reshaped and upsampled to future BEV representations {Bt+i}∆ti=1 , which are subse-quently used by the shared Render to generate corresponding future point cloud evolutions {Pt+i}∆ti=1 .The Current-to-Future Link thus serves as a bridge between understanding and generation, enabling world knowledge from language reasoning to inform geometric prediction while maintaining controllability through ego-motion conditioning. This architecture enables the model to generate future scenes that are both semantically consistent with the current context and geometrically aligned with the vehicle’s behavior. 
+
+C. Joint Geometric Optimization Strategy 
+
+We observe that relying solely on rendering-based supervi-sion often results in structural ambiguity in the latent represen-tation, as it fails to capture intricate geometric structures and foreground objects. To address this, we propose a Joint Geo-metric Optimization strategy that imposes constraints on both the observational and latent levels. This mechanism integrates explicit geometric constraints derived from ground-truth point clouds with implicit regularization to internal representations. 
+
+Explicit Geometric Constraints. At the observational level, we supervise the generated point clouds to ensure geo-metric integrity. We employ a simple L1 loss on the rendered depths to minimize the discrepancy between the predicted and ground-truth geometry. The rendering loss is formulated as: 
+
+Lrender =
+
+> ∆t
+
+X
+
+> i=0
+
+λi
+
+1
+
+NiNiX
+
+> k=1
+
+d(rk) − ˜d(rk) , (9) where d(rk) and ˜d(rk) denote the ground-truth and predicted depths for ray rk, λi is the loss weight for frame t + i, and Ni
+
+is the number of rays. This explicit constraint ensures that the decoded point clouds align with the physical measurements. 
+
+Implicit Geometric Regularization. Complementary to explicit constraints, we introduce an implicit regularization for the latent manifold. This strategy aligns the predicted features with geometry-aware representations, thereby guiding the model to encode intrinsic 3D structures. Specifically, this process leverages a geometric feature extractor to derive latent priors, which are then enforced on the predicted features via two complementary alignment objectives. To obtain the geometry-aware priors, we utilize a self-supervised point cloud reconstruction network as the geo-metric feature extractor. This network comprises a sparse 3D convolutional encoder paired with the differentiable Render 
+
+R. During a pre-training stage, we voxelize the ground-truth point cloud Pt, extract features using the extractor, and subsequently render them to reconstruct the input point cloud. This self-supervision enables the capture of spatially meaningful representations. In the main training phase, the Geometric Feature Extractor functions as a frozen encoder to produce the target geometry-aware features Vt ∈ Rw×h×z×c′
+
+.We align the predicted volumetric features ˆVt with the frozen geometry-aware features Vt using two objectives that capture both local correspondence and global structural pat-terns. First, to enforce element-wise consistency, we employ a cosine similarity loss: 
+
+Lcos = 1 − 1
+
+whz 
+
+X
+
+> i,j,k
+
+ˆVt(i, j, k ) · Vt(i, j, k )
+
+∥ ˆVt(i, j, k )∥2∥Vt(i, j, k )∥2
+
+, (10) where (i, j, k ) indexes the voxel grid. Second, we introduce a Gram loss to measure feature correlations for global con-sistency. We pool the features along orthogonal spatial axes to obtain projected maps VHW t , VHZ t , and VW Z t . For a perspective d ∈ { HW, HZ, W Z }, the spatial Gram matrix is formulated as: 
+
+Gdt = Vdt VdtT ∈ RNd×Nd , (11) where Nd is the spatial tokens length in perspective d. This matrix captures pairwise correlations across spatial locations. The Gram loss minimizes the discrepancy between the Gram matrices of the predicted and geometry-aware features: 
+
+Lgram = 13
+
+X
+
+> d
+
+∥Gdt − ˆGdt ∥2 
+
+> F
+
+, d ∈ { HW, HZ, W Z }, (12) where ˆGdt and Gdt are computed from ˆVt and Vt, respectively. 
+
+∥ · ∥ F denotes the Frobenius norm. Since the geometry extractor is used only for training-time regularization and is discarded at inference, it introduces no additional inference-time cost. 
+
+D. Training Objectives 
+
+The training of H ERMES ++ is governed by a composite ob-jective function that jointly optimizes language understanding, geometric rendering, and structural alignment. To enable scene understanding, we employ next token prediction following the standard auto-regressive language modeling objective: 
+
+Llang = −
+
+> Ltext
+
+X
+
+> i=1
+
+log P (Ti|Ft, T1, . . . , Ti−1; Θ) , (13) where P (·|· ) represents the conditional probability modeled by the LLM parameters Θ, Ft is the flattened BEV feature, and Ti denotes the i-th text token. To supervise future point cloud generation, we utilize the proposed Joint Geometric Optimization strategy. This objective integrates the explicit geometric constraints (Eq. 9) with the implicit geometric regularization (Eq. 10 and Eq. 12): 
+
+Lgen = 10 Lrender + Lcos + Lgram . (14) Finally, the overall objective is the summation of the under-standing and generation losses: 
+
+Ltotal = Llang + Lgen . (15) V. E XPERIMENTAL SETUP 
+
+A. Datasets and Evaluation Metric 
+
+We conduct comprehensive experiments on four datasets, and additionally use NuInteract for vision-language alignment. 
+
+NuScenes Dataset [79] serves as the primary benchmark for geometric representation learning and unified training. In our experiments, we utilize the multi-view images as inputs 8
+
+TABLE I: Training details of H ERMES ++. The ‘/’ in Stage 1 and Stage 2 indicates the settings for the two sub-phases.                   
+
+> Config Stage 1 Stage 2 Stage 3 Optimizer AdamW AdamW AdamW Learning Rate 2e-4 2e-4/4e-4 4e-4 Training Epochs 12/6 3/6 36 Learning Rate Scheduler Cosine Cosine Cosine Total Batch Size 32 128 128
+
+and synchronized point clouds as ground truth. Following prior work [7], [19], we evaluate the consistency of predicted future scenes using the bidirectional Chamfer Distance (CD). The evaluation is restricted to a Region of Interest (ROI) defined by x, y ∈ [−51 .2m, 51 .2m] and z ∈ [−3m, 5m].
+
+OmniDrive-nuScenes Dataset [15] is utilized for the re-finement phase and unified instruction tuning. It enriches the original NuScenes dataset with high-quality scene descrip-tions and visual question-answering (QA) pairs, requiring the model to reason about complex object interactions and traffic contexts. To assess scene understanding capabilities, we evaluate the quality of textual responses on the validation set. We report CIDEr [80] for consensus, METEOR [81] for semantic alignment, and ROUGE-L [82] for structural similarity, following the official evaluation. 
+
+NuScenes-QA Dataset [83] is a large-scale visual ques-tion answering benchmark, comprising ∼460k QA pairs. It leverages 3D detection annotations to construct scene graphs, evaluating the model’s ability to interpret complex driving environments and reason about spatial relationships. We report the standard top-1 accuracy to quantify performance on this multi-view visual question-answering task. 
+
+DriveLM Dataset [16] introduces Graph Visual Question Answering to mimic human-like reasoning in driving. Con-structed on selected NuScenes keyframes, it interconnects perception, prediction, and planning questions via logical de-pendencies. The rich logical chain annotations assess the depth of the reasoning and its capability to align scene understanding with action planning. We report the hybrid metrics calculated by the official test server. 
+
+NuInteract Dataset [84] is a large-scale language-based driving dataset containing ∼1.5M diverse annotations, includ-ing dense captions for individual images and scenes. We utilize NuInteract to establish an initial alignment between BEV visual features and the LLM’s semantic space, effectively mitigating data scarcity in vision-language pre-training. 
+
+B. Implementation Details 
+
+The BEV-based tokenizer utilizes an OpenCLIP ConvNeXt-L backbone [73], [72] for visual feature extraction. Both the visual tokenizer and the Render are initialized from scratch. For the language component, we adopt the pre-trained weights of InternVL2 [13], [75]. The visual tokenizer [71] encodes the scene into a 180 × 180 BEV grid with a channel dimension of 256. In the BEV-to-Point Render, the height dimension 
+
+z and output channel c′ are both set to 32. The model forecasts scene evolution over a horizon of ∆t = 3 seconds. Regarding the training objective, we empirically set the frame-wise generation weights to λi = 1 + 0 .5 × i for i ∈ { 0, · · · , 3}
+
+to emphasize long-term prediction accuracy. The training process proceeds in three progressive stages, as summarized in Tab. I. First, to establish reliable geometric representations, we conduct a geometry-aware pre-training where the sparse 3D encoder [85] is trained via self-supervised point cloud reconstruction and subsequently frozen as a static prior. We then pre-train the tokenizer and Render to lift 2D observations into 3D space by reconstructing current point clouds from multi-view images, supervised by Lrender 
+
+and Lcos . Subsequently, we bridge the visual and linguistic modalities through alignment and refinement phases while maintaining implicit regularization. We initially train only the LLM projectors using a masking-based augmentation strategy (stitching captions with unmasked views) to mitigate data scarcity, which expands the image-text pairs by 7× to ∼200K. This is followed by a refinement phase where all parameters are unfrozen (applying LoRA [86] to the LLM) using dense captions from NuInteract [84] and scene descriptions from OmniDrive-nuScenes [15]. Finally, we integrate the Current-to-Future Link to conduct scene understanding and predict future evolution. The model is jointly trained on nuScenes keyframes, descriptions, and conversation annotations, guided by Joint Geometric Optimization using both Lgram and Lcos .VI. R ESULTS AND ANALYSIS 
+
+In this section, we conduct comprehensive experiments to validate the effectiveness of H ERMES ++. 
+
+A. Unification of Understanding and Generation 
+
+In this subsection, we present a comprehensive evaluation of H ERMES ++ on the NuScenes and OmniDrive-nuScenes benchmarks. We compare our framework against three cat-egories of baselines: 1) Generation specialists; 2) Under-standing specialists; and 3) Our conference version. Tab. II details the quantitative comparisons, from which we draw the following observations: 
+
+1) H ERMES ++ significantly advances 3s future scene generation compared to dedicated specialists. The quanti-tative results in Tab. II demonstrate that our method achieves superior geometric prediction accuracy. Compared to leading generation methods such as 4D-Occ [47] and ViDAR [7], HERMES ++ achieves better performance with only current-frame observations. Specifically, we reduce the Chamfer Dis-tance (CD) at the 3s horizon by 41.6% compared to ViDAR. Even against the recently proposed DriveX [18], our method maintains an advantage, achieving a reduction of 0.09 in CD at the 3s horizon. By employing multiple groups of world queries to inject conditional context for future BEV states, our model effectively leverages semantic information to achieve more precise scene evolution prediction. 
+
+2) H ERMES ++ achieves highly competitive understand-ing capabilities without auxiliary supervision. In the do-main of 3D scene understanding, H ERMES ++ consistently outperforms specialist models while maintaining high data efficiency. As demonstrated in OmniDrive [15], incorporating 9
+
+TABLE II: The comparison of H ERMES ++ and understanding/generation specialist models. L/C/T refers to LiDAR/camera/text, respectively. ‘Aux. Sup.’ denotes auxiliary supervision (e.g., 3D object detection, lane detection). We report METEOR, ROUGE, and CIDEr for understanding tasks, and Chamfer Distance for 0–3s on the OmniDrive-nuScenes [15] validation set. 
+
+Method Reference # LLM Params Modality Aux. Sup. Generation Understanding 0s ↓ 1s ↓ 2s ↓ 3s ↓ METEOR ↑ ROUGE ↑ CIDEr ↑
+
+Only Generation 
+
+SPFNet [87] CoRL 21 - L→L - - 2.24 - 2.50 Unsupported S2Net [46] ECCV 22 - L→L - - 1.70 - 2.06 4D-Occ [47] CVPR 23 - L→L - - 1.13 1.53 2.11 ViDAR [7] CVPR 24 - C→L - - 1.12 1.38 1.73 DriveX [18] ICCV 25 - C→L - - 0.66 0.86 1.10 
+
+Only Understanding 
+
+LLaVA-OV [88] TMLR 25 7B C→T -Unsupported - 0.221 0.284 Omni-L [15] CVPR 25 7B C→T 3D Box, Lane 0.376 0.321 0.732 Omni-Q [15] CVPR 25 7B C→T 3D Box, Lane 0.380 0.326 0.686 OmniDrive-2D [15] CVPR 25 7B C→T 3D Box, Lane 0.383 0.325 0.671 OmniDrive-BEV [15] CVPR 25 7B C→T 3D Box, Lane 0.356 0.278 0.595 ORION [66] ICCV 25 7B C→T 3D Box, Lane 0.354 0.306 0.635 
+
+Unified Understanding and Generation 
+
+HERMES [19] (conference version) ICCV 25 1.8B C→T&L - 0.59 0.78 0.95 1.17 0.384 0.327 0.741 HERMES ++ ( ours ) - 1.8B C→T&L - 0.53 0.71 0.86 1.01 0.385 0.327 0.749 HERMES ++ ( ours ) - 3.8B C→T&L - 0.51 0.68 0.82 0.97 0.389 0.331 0.772 Description 
+
+The scene depicts a quiet urban street surrounded by greenery and modern buildings . To the front, 
+
+the road stretches out straight, with clear lane markings guiding the way . On either side, trees and 
+
+shrubbery line the sidewalks , adding a touch of nature to the urban landscape . In the distance, a
+
+pedestrian can be seen walking along the sidewalk , while the buildings appear to be office or 
+
+residential complexes . The rear view shows a similar scene, with the vehicle traveling in the same 
+
+direction but with no other vehicles in sight .
+
+VQA 
+
+Q: Given the weather conditions and road environment, how should the driver adjust their driving? 
+
+A: Considering the overcast weather , the driver should be prepared for potential rain by ensuring the 
+
+vehicle's lights and wipers are functioning properly . The driver should also be vigilant for any changes 
+
+in road conditions or unexpected pedestrian movements .
+
+Q: Can you identify any landmarks or signs that might indicate where you are? 
+
+A: Yes, there is a sign for Shaw Foundation Alumni House on the right side of the road , which 
+
+suggests I am near an educational institution's campus .
+
+Q: What activities are happening on the sidewalk to the right of the vehicle? 
+
+A: There is a pedestrian walking on the sidewalk to the right of the vehicle .
+
+Q: Describe the traffic situation behind the vehicle .
+
+A: Behind the vehicle, there is a car following at a safe distance , indicating a calm traffic situation .
+
+Description 
+
+The vehicle is situated on a well -maintained urban road during what appears to be midday, under clear 
+
+skies with abundant sunshine . To the left, a large modern building with expansive glass facades 
+
+suggests a commercial or cultural district . Ahead, the road is populated with a moderate amount of 
+
+traffic, comprising sedans and SUVs , all maintaining proper lane discipline . To the right, a construction 
+
+site with cranes towering over the emerging structure indicates ongoing development in the area . The 
+
+road markings are clearly visible, and there are no pedestrians or cyclists in the immediate vicinity of the 
+
+vehicle . In the rear view, more of the urban landscape unfolds with large buildings and a few cars 
+
+parked along the roadside , but no immediate traffic that could pose a hindrance .
+
+VQA 
+
+Q: Is there a traffic light present, and what is its status? 
+
+A: Yes, there is a traffic light present in the scene, and it is green , indicating that the vehicle can proceed .
+
+Q: What type of road are we on? 
+
+A: We are on a multi -lane urban road with moderate traffic .
+
+Q: Considering the urban development visible, what might this imply about the city's economic status? 
+
+A: The presence of new buildings and infrastructure development suggests that the city is likely 
+
+experiencing growth and investment, which can imply economic well -being and a potentially vibrant 
+
+urban environment .
+
+0s 1s 2s 3s 
+
+CD: 0.24 CD: 0.40 CD: 0.40 CD: 0.54 
+
+GT 
+
+Pred. 
+
+0s 1s 2s 3s 
+
+GT 
+
+Pred. 
+
+CD: 0.19 CD: 0.26 CD: 0.29 CD: 0.34         
+
+> CAM_FRONT_LEFT CAM_FRONT CAM_FRONT_RIGHT
+> CAM_BACK_LEFT CAM_BACK CAM_BACK_RIGHT
+> CAM_FRONT_LEFT CAM_FRONT CAM_FRONT_RIGHT
+> CAM_BACK_LEFT CAM_BACK CAM_BACK_RIGHT
+
+Fig. 3: Qualitative results of H ERMES ++. The green text highlights the accurate responses to user instructions. The red circles 
+
+track the geometric evolution of other objects in the predicted point clouds. auxiliary supervision (e.g., 3D object detection and lane de-tection) enhances the model’s semantic capabilities. However, as indicated in Tab. II, H ERMES ++ attains superior perfor-mance solely through the BEV representation and standard instruction tuning, without incorporating any detection or map-based supervision. Specifically, we outperform Omni-L and OmniDrive-2D by 2.3% and 11.6% on the CIDEr metric, respectively, with consistent gains in METEOR and ROUGE 10 
+
+scores. We attribute this improvement to the geometric prop-erties of the BEV representation and the proposed task inter-action mechanisms. Baselines such as Omni-Q and ORION typically utilize sparse queries (e.g., via Q-Former3D [89]) to extract scene information. While effective, these approaches often benefit from auxiliary supervision to guide feature learn-ing, compensating for the limited geometric context captured by sparse observations. In contrast, H ERMES ++ utilizes BEV, which inherently preserves rich semantic information and geometric interaction, allowing the model to learn effective scene representations without external guidance. Furthermore, we systematically compared H ERMES ++with our conference version [19]. While the conference version already achieves highly competitive results, H ERMES ++ es-tablishes a new state-of-the-art across both tasks. As shown in Tab. II, these upgrades yield a 13.7% reduction in 3s gener-ation error alongside improvements in understanding metrics, demonstrating the effectiveness of the deeper task interaction enabled by the newly introduced technical improvements. Moreover, our framework benefits from model scaling. Increasing the LLM parameters to 3.8B yields improvements across both domains, further reducing the generation error to 0.97 and boosting the CIDEr score to 0.772. This positive correlation indicates that our unified modeling approach effec-tively internalizes spatial-semantic representations to interpret complex driving scenes, thereby bridging the gap between geometric perception and linguistic understanding. 
+
+B. Qualitative Evaluation 
+
+Fig. 3 presents qualitative results from H ERMES ++. As highlighted by the green text, the model demonstrates strong scene understanding capabilities. Notably, it is able to identify fine-grained cues such as the “Shaw Foundation Alumni House” on signage and infer that the scene is likely located on a campus. This suggests that our BEV representation preserves sufficient granularity for fine-grained semantic rea-soning, overcoming the resolution limitations often attributed to compressed features. Regarding scene evolution, the red circles track the precise geometric progression of other objects, maintaining high structural integrity consistent with the ground truth. This alignment between textual interpretation and physi-cal trajectories validates the effectiveness of our framework in bridging semantic understanding with geometric simulation. 
+
+C. Analysis and Ablation Study 
+
+The following experiments are conducted on the NuScenes dataset. Unless specified, all the ablation experiments are performed using 25% of the training data. 
+
+1) Analysis of BEV Input Representation : We first investi-gate the BEV input representation, focusing on its superiority over direct multi-view inputs and on how spatial resolution balances geometry information with computational efficiency. 
+
+Effectiveness of the BEV Input. To demonstrate the effectiveness of BEV representations as a unified interface, we compare our approach against a strong multi-view baseline where CLIP-encoded image features are directly input into the LLM. To ensure comparable information capacity, image TABLE III: Ablation on downsampling scales for the BEV. M., R., and C. are METEOR, ROUGE, and CIDEr, respectively.                                     
+
+> BEV Configuration Generation Understanding 0s ↓1s ↓2s ↓3s ↓M. ↑R. ↑C. ↑
+> Downsample ( ×8)0.827 1.084 1.410 1.781 0.370 0.314 0.681 Downsample ( ×4)0.588 0.879 1.146 1.436 0.378 0.322 0.720 Direct Query ( ×4)0.769 1.211 1.615 2.012 0.378 0.322 0.723
+
+TABLE IV: Ablation on the Joint Geometric Optimization strategy. M., R., and C. indicate METEOR, ROUGE, and CIDEr, respectively.                                                
+
+> Lcos Lgram
+> Generation Understanding 0s ↓1s ↓2s ↓3s ↓M. ↑R. ↑C. ↑
+> --0.656 0.967 1.270 1.637 0.379 0.322 0.722
+> ✓-0.594 0.890 1.161 1.441 0.378 0.321 0.717 -✓0.608 0.920 1.218 1.544 0.378 0.321 0.717
+> ✓✓0.588 0.879 1.146 1.436 0.378 0.322 0.720
+
+features are resized to 2,532 tokens, matching the length of the tokens used in our BEV input. The LLM, BEVFormer, and render head (without up/downsampling layers) then process these features for scene understanding and future prediction. Quantitative results in Fig. 4 reveal that while both methods achieve highly competitive scene understanding performance with only 0.001 METEOR difference, they diverge signifi-cantly in generation tasks. Our BEV approach significantly outperforms the multi-view baseline, reducing the Chamfer Distance at 3s by ∼32%. We attribute this to the spatial structural collapse of flattened image tokens during LLM processing, which hinders accurate 3D geometry recovery while retaining rich semantics. As shown in the qualitative case in Fig. 4, the multi-view baseline hallucinates a left turn due to misleading road markings, whereas our BEV representation, preserving spatial topology, correctly predicts a straight trajectory. This highlights BEV features as a superior, unified representation that effectively balances semantics with the geometric structural prior required for accurate forecasting. 
+
+Impact of BEV Representation Scales. We further eval-uate the impact of BEV spatial resolution, which entails a trade-off between geometric consistency and the token-processing capacity of LLMs. As shown in Tab. III, we compare downsampling strategies ( ×4, ×8) against directly learning coarse features (‘Direct Query’). The ‘Downsample (×4)’ yields the best trade-off between generation and un-derstanding, achieving the lowest CD at 0–3s and a CIDEr score of 0.720. Notably, downsampling from a fine-grained feature map significantly surpasses direct coarse querying. Specifically, the ‘Downsample ( ×4)’ strategy reduces the CD at 3s from 2.012 to 1.436, representing a 26.8% improvement. This result indicates that capturing detailed geometric informa-tion at a high resolution prior to compression is essential for preserving structural integrity, whereas direct coarse querying results in irretrievable information loss. In contrast, excessive downsampling ( ×8) creates an information bottleneck, degrad-ing the CD at 3s to 1.781 and dropping the CIDEr to 0.681, confirming that sufficient spatial resolution is critical for both precise future prediction and semantic understanding. 11 0.379 0.378 
+
+0.37 
+
+0.375 
+
+0.38 
+
+(a) (b) 
+
+(a): Multi -view as LLM input (b): BEV as LLM input 
+
+(a) 
+
+The vehicle is in a position to turn left , as indicated by the 
+
+arrow marked on the road directly in front , but there are no 
+
+explicit turn signals like turn lights or road markings to indicate 
+
+when the turn is safe to make .
+
+(b) 
+
+GT (a) (b) 
+
+CD: 2.10 CD: 0.35 The vehicle is not in a turning lane , and there are no 
+
+immediate indications for the driver to turn, such as road signs 
+
+or signals . The driver should continue driving straight while 
+
+being attentive to the surroundings .
+
+Question : Is the vehicle in a position to turn, and are there any 
+
+indications for the driver to do so? 
+
+2.14 
+
+1.44 
+
+1.2 
+
+1.7 
+
+2.2 
+
+(a) (b) 
+
+Point cloud in 3s     
+
+> CAM_FRONT_LEFT CAM_FRONT CAM_FRONT_RIGHT
+> CAM_BACK_LEFT CAM_BACK CAM_BACK_RIGHT
+
+Understanding (METEOR) ↑ Generation (3s) ↓
+
+Fig. 4: Qualitative case and comparison between Multi-view-based and BEV-based inputs. While both methods yield comparable scene understanding performance (see METEOR scores), the multi-view baseline suffers from spatial structural collapse. 0s 1s 2s 3s         
+
+> (a) w/ Explicit Geometric Constraints
+> (b) LiDAR Observations
+> (c) w/ Joint Geometric Optimization
+
+Fig. 5: Visualization of internal representations. (a) Features learned with only explicit geometric constraints. (b) The corresponding ground-truth point cloud. (c) Predicted features learned with the Joint Geometric Optimization strategy. 
+
+2) Analysis of Joint Geometric Optimization : We then investigate the impact of the proposed Joint Geometric Op-timization strategy. As in Tab. IV, depending exclusively on explicit geometric constraints yields a suboptimal CD of 1.637 at the 3s horizon. Incorporating implicit geometric regulariza-tion with Lcos significantly enhances performance, reducing the CD to 1.441. This indicates that enforcing voxel-wise feature consistency with geometry-aware priors is essential for accurate structure generation. Furthermore, only employing 
+
+Lgram also provides a noticeable improvement (CD of 1.544). We attribute this to the ability of the Gram matrix to capture global structural patterns and internal feature correlations, TABLE V: Ablation on Current-to-Future Link. M., R., and C. indicate METEOR, ROUGE, and CIDEr, respectively.                                                   
+
+> Modules Generation Understanding 0s ↓1s ↓2s ↓3s ↓M. ↑R. ↑C. ↑
+> w/o Link 0.891 1.368 1.877 2.377 0.290 0.263 0.433 w/ Simple Link 0.609 0.919 1.207 1.542 0.378 0.322 0.718 + Textual Injection 0.602 0.907 1.205 1.506 0.376 0.321 0.717 + Ego Modulation 0.597 0.895 1.165 1.442 0.377 0.320 0.711 + More blocks 0.588 0.879 1.146 1.436 0.378 0.322 0.720
+
+serving as a complement to the spatially strict Cosine loss. The integration of both implicit geometric regularizers yields superior performance (CD of 1.436), demonstrating a syner-gistic effect in which joint constraints on local feature consis-tency and global structural coherence encourage plausible 3D representations while maintaining understanding performance. To further validate the geometric regularization effect, we visualize the learned BEV features and demonstrate the ef-fectiveness of our Joint Geometric Optimization strategy. As shown in Fig. 5(a), relying on explicit geometric constraints inevitably leads to depth ambiguity. This manifests as conspic-uous ray-shaped artifacts extending along camera projection lines and an abnormally high response concentration at the ego-center, which overshadows the scene’s essential geometric structure. In contrast, the proposed Joint Geometric Opti-mization strategy imposes explicit constraints on the output while implicitly regularizing the latent manifold. As shown in Fig. 5(c), this approach effectively suppresses projection arti-facts and the central bias, yielding spatially compact features that strictly adhere to the intrinsic geometry presented in the point cloud (Fig. 5(b)). This confirms that the joint mechanism guides the model to learn a cleaner, structurally faithful latent space rather than overfitting to perspective camera views. 
+
+3) Analysis of Current-to-Future Link : We perform a progressive ablation study to validate our Current-to-Future Link in Tab. V. The ‘w/o Link’ entirely removes the Link 12 
+
+TABLE VI: Ablation on interaction of tasks. M., R., and C. indicate METEOR, ROUGE, and CIDEr, respectively.                                                
+
+> Under. Gen. Generation Understanding 0s ↓1s ↓2s ↓3s ↓M. ↑R. ↑C. ↑
+> ✓-----0.379 0.322 0.726 -✓0.599 0.885 1.157 1.434 ---Separated unification 0.600 0.981 1.296 1.634 0.376 0.320 0.703
+> ✓✓0.588 0.879 1.146 1.436 0.378 0.322 0.720
+
+TABLE VII: Ablation on world queries integration. M., R., and C. indicate METEOR, ROUGE, and CIDEr, respectively. 𝐅 𝒕 𝐓   
+
+> LLM
+> 𝐐 "
+> 𝐁 #𝐁 !"#𝐁 !"$!
+
+…   
+
+> 𝐅 𝒕 𝐓
+> LLM
+> 𝐐 "
+> 𝐁 #𝐁 !"#𝐁 !"$!
+
+…                    
+
+> 𝐅 𝒕 :Flattened BEV 𝐓 :Text tokens 𝐐 ":World queries
+> 𝐁 #:Encoded BEV at time 𝑡 𝑃 #:Point cloud at time 𝑡
+> 𝐅 𝒕 𝐓
+> LLM
+> 𝐅 𝒕
+> 𝑃 #
+> 𝐁 !"#𝐁 !"$!
+
+…                                             
+
+> 𝑃 #$%𝑃 #$&#…
+> :Current -to -Future Link
+> (a) (b) (c)
+> 𝑃 #𝑃 #$%𝑃 #$&#…𝑃 #𝑃 #$%𝑃 #$&#…
+> Setting Generation Understanding 0s ↓1s ↓2s ↓3s ↓M. ↑R. ↑C. ↑
+> (a) 0.600 0.981 1.296 1.634 0.376 0.320 0.703 (b) 0.597 0.920 1.202 1.526 0.377 0.320 0.709 (c) 0.588 0.879 1.146 1.436 0.378 0.322 0.720
+
+module, attempting to predict the future by directly copying Bt
+
+and adding future ego-motion states. This naive propagation fails to model the dynamic evolution of the environment, resulting in a severe performance drop with a 3s CD of 2.377 and a CIDEr drop to 0.433. Introducing the Simple Link, consisting of 3 vanilla attention layers, resolves this bottleneck and drastically reduces the 3s CD to 1.542. Incorporating Textual Injection reduces the CD to 1.506, suggesting that semantic abstractions and world knowledge derived from the understanding branch provide crucial con-text for geometric generation, effectively conditioning future prediction on linguistic priors. Another pronounced improve-ment is achieved by introducing the Ego Modulation, which further lowers the CD to 1.442. This module injects the ego-vehicle’s kinematic states into the feature modulation process. It is pivotal for decoupling the ego-motion from the scene’s inherent dynamics, thereby preventing the misinterpretation of static background shifts as object motion. Finally, scaling up the network depth from 3 to 6 achieves the best CD of 1.436 and boosts the CIDEr score to 0.720. This indicates that sufficient model capacity is required to capture the highly non-linear temporal evolution of complex driving scenarios. At the same time, the parallel improvement in understanding metrics suggests a positive interaction between the two tasks. 
+
+4) Analysis of task interaction : We then analyze the interaction between future generation and scene understanding to validate the necessity of the proposed framework. 
+
+Impact of Task Unification. Tab. VI evaluates the in-fluence of joint training compared to single-task specialists. The ‘Separated unification’ baseline, where tasks share the visual tokenizer but operate without deep interaction, yields TABLE VIII: Ablation on hyperparameters and configurations. M., R., and C. indicate METEOR, ROUGE, and CIDEr. 
+
+(a) Ablation on the source of world queries                                                   
+
+> Method Generation Understanding 0s ↓1s ↓2s ↓3s ↓M. ↑R. ↑C. ↑
+> Random Init 0.598 0.883 1.161 1.448 0.378 0.321 0.714 Attn. Pool 0.595 0.892 1.152 1.438 0.377 0.321 0.716 Cross Attn. 0.603 0.892 1.155 1.442 0.378 0.322 0.719 Avg. Pool 0.597 0.883 1.153 1.444 0.378 0.321 0.713 Max Pool 0.588 0.879 1.146 1.436 0.378 0.322 0.720
+
+(b) Ablation on the number of world queries                                                   
+
+> nGeneration Understanding 0s ↓1s ↓2s ↓3s ↓M. ↑R. ↑C. ↑
+> 00.598 0.910 1.173 1.478 0.377 0.321 0.716 10.593 0.888 1.146 1.419 0.377 0.321 0.712 20.599 0.884 1.148 1.431 0.377 0.321 0.717 40.588 0.879 1.146 1.436 0.378 0.322 0.720 80.594 0.889 1.152 1.430 0.378 0.321 0.719
+
+(c) Ablation on generation length.                                                                      
+
+> Second Generation Understanding 01230s ↓1s ↓2s ↓3s ↓M. ↑R. ↑C. ↑
+> ✓✓--0.550 0.835 --0.380 0.322 0.723
+> ✓✓✓-0.575 0.851 1.147 -0.378 0.322 0.718 -✓✓✓-0.933 1.189 1.476 0.378 0.321 0.716
+> ✓--✓0.584 --1.677 0.379 0.322 0.723
+> ✓✓✓✓0.588 0.879 1.146 1.436 0.378 0.322 0.720
+
+suboptimal performance with a CD of 1.634 at 3 seconds and a CIDEr score of 0.703. In contrast, our framework significantly improves these metrics to 1.436 and 0.720, respectively. This demonstrates that the proposed unified modeling is effective. Specifically, the semantic context guides geometric evolution, while geometric constraints provide physical grounding for language reasoning. Thus, the joint model achieves perfor-mance comparable to specialized single-task models without requiring separate architectures. 
+
+Impact of World Queries Integration Strategy. We further analyze the integration of world queries Qw with the LLM. We compare three settings as shown in Tab. VII. The baseline (a), i.e., separated unification, which relies solely on Textual Injection for task unification, yields a suboptimal CD of 1.634. Setting (b) introduces Qw to aggregate BEV features but bypasses the LLM reasoning process. While this improves the CD to 1.526 by enhancing feature extraction, the lack of deep semantic interaction limits its potential. Our proposed method (c), which processes Qw directly through the LLM, achieves the best performance with a CD of 1.436 and a CIDEr score of 0.720. This improvement indicates that the LLM effectively encodes semantic information into the Qw, which serves as a critical guide for future geometric prediction. Furthermore, since the world queries participate in the forward pass, the gradients from the generation objective backpropagate to refine the LLM, thereby improving the text understanding capability. 
+
+5) Analysis of Hyperparameters and Configurations :
+
+Finally, we systematically investigate the impact of specific network hyperparameters and configurations, including the query initialization strategy, the number of world queries, and the temporal prediction horizon. 13 
+
+TABLE IX: VQA results on NuScenes-QA dataset [83].                                
+
+> Method Reference Modality Acc. (%) ↑
+> LLaVA [12] NeurIPS 23 Camera 47.4 BEVDet+BUTD [83] AAAI 24 Camera 57.0 BEVDet+MCAN [83] AAAI 24 Camera 57.9 CenterPoint+BUTD [83] AAAI 24 LiDAR 58.1 CenterPoint+MCAN [83] AAAI 24 LiDAR 59.5 LiDAR-LLM [90] AAAI 25 LiDAR 48.6 Omni-Q [15] CVPR 25 Camera 59.2 OpenDriveVLA-7B [91] AAAI 26 Camera 58.2 HERMES ++ -Camera 61.3
+
+Impact of Initialization of World Queries. We first investigate the strategy for initializing world queries to validate the necessity of perceptual anchoring. As shown in Tab. VIIIa, we first introduce a ‘Random Init’ baseline where queries are learned as independent parameters. This setting yields a suboptimal CD of 1.448 at 3s. In contrast, initializing queries directly from BEV features consistently improves performance. This confirms that anchoring world queries to the current perceptual state establishes a direct channel between input features and future predictions, facilitating effective gradient flow and semantic alignment. Among the BEV-based strategies, we compare parametric methods (e.g., Attention Pooling, Cross Attention) with heuristic ones (e.g., Average Pooling, Max Pooling). Notably, the simple Max Pooling strategy achieves the best overall performance (CD 1.436), surpassing the more complex Cross Attention mechanism. We attribute this to the inherent sparsity of BEV representations, where Max Pooling effectively captures the most salient fea-tures within the grid (e.g., object occupancy) while ignoring background noise. Average Pooling dilutes these signals, and parametric methods may face optimization challenges due to limited training data. 
+
+Impact of Number of World Queries. We further analyze the quantity n of world queries Qw ∈ R(∆ t×n)×C , which serve as an information bridge between temporal BEV fea-tures and the LLM. As shown in Tab. VIIIb, n = 0 relies solely on Textual Injection within the Current-to-Future Link, which yields a suboptimal CD of 1.478 at the 3s horizon. Introducing world queries establishes a dedicated geometric-semantic bridge to guide future generation. Specifically, setting 
+
+n = 4 reduces the 3s CD by 0.04 while elevating the CIDEr metric to 0.720. This validates the effectiveness of the queries in aggregating semantic context from BEV observations and textual instructions. Further increasing n to 8 causes slight regressions in 0–2s generation. Thus, we adopt n=4 as the default configuration to balance computational efficiency with representational capacity. 
+
+Impact of Generation Horizon. Tab. VIIIc presents the impact of prediction horizon length on model performance. While shorter horizons such as 0–1s yield a lower CD of 0.550 due to reduced uncertainty, modeling long-term evolution is essential for comprehensive scene understanding. We observe that temporal continuity is critical. For instance, the discontin-uous setting of 0s and 3s results in a sharp degradation in CD from 3s to 1.677, indicating that intermediate states serve as necessary bridges for reasoning about future dynamics. Simi-larly, excluding the current state (1–3s) hampers performance TABLE X: The results on driving with language leader-board [16], where ‘Acc.’, ‘GPT’, and ‘FS’ indicate Accuracy, GPT-score, and Final Score, respectively.                                        
+
+> Method Reference Acc. ↑GPT ↑Match ↑FS ↑
+> DriveLM [16] ECCV 24 0.65 0.53 0.28 0.50 Team NVIDIA [92] CVPRW 24 0.78 0.60 -0.59 MMFM AD [92] CVPRW 24 0.67 0.64 -0.57 Omni-Q [15] CVPR 25 0.78 0.64 0.37 0.58 FSDrive [54] NeurIPS 25 0.72 0.63 0.39 0.57 HERMES ++ -0.83 0.61 0.43 0.59
+
+as the model lacks the initial geometric reference. Our default setting of 0–3s strikes an optimal balance, maintaining long-term prediction with a CD of 1.436 while preserving high semantic understanding capabilities. 
+
+D. Generalization to Additional Tasks 1) Understanding Capability on Other Datasets : To fur-ther evaluate the generalization capability of H ERMES ++ in diverse driving scenarios, we extend our evaluation to two popular benchmarks: NuScenes-QA [83], which focuses on 3D spatial perception statistics, and DriveLM [16], which emphasizes graph-based reasoning. As shown in Tab. IX, H ERMES ++ achieves state-of-the-art performance with an accuracy of 61.3%. Generalist 2D VLMs such as LLaVA [12] struggle on this benchmark, largely due to their lack of 3D spatial modeling. In contrast, modular approaches that combine 3D detectors with QA heads, such as CenterPoint+MCAN [83], perform significantly better. Notably, H ERMES ++ outperforms the camera-based SOTA Omni-Q [15] by 2.1% and effectively surpasses the LiDAR-based specialist CenterPoint+MCAN, which scores 59.5%. This result demonstrates that the BEV representation effectively encodes rich geometric information comparable to LiDAR, providing robust spatial grounding for visual question answering without relying on depth sensors during inference. We further evaluate the reasoning capability of HER -
+
+> MES
+
+++ on the DriveLM benchmark, which demands inte-grated reasoning across perception, prediction, and planning. As shown in Tab. X, H ERMES ++ achieves a highly competi-tive Final Score (FS) of 0.59, matching the challenge winner Team NVIDIA and outperforming strong baselines like Omni-Q [15] and FSDrive [54]. Notably, as shown in Fig. 1(d), our method achieves a prediction accuracy of 0.83, surpassing Omni-Q (0.78) by 5%. Furthermore, H ERMES ++ attains a leading score of 0.43 in the ‘Match’ metric without auxiliary detection supervision [93], validating the advantage of the 3D representation. By enforcing geometric consistency through the generation branch, the model inherently encodes precise spatial semantics, enabling it to ground its reasoning in a 3D scene rather than relying solely on language priors. 
+
+2) Motion Planning : To further evaluate the generalization capability of our learned unification model, we extend H ER -
+
+> MES
+
+++ to the open-loop motion planning task on the nuScenes validation set. Specifically, we append a lightweight MLP head to the world queries Qw to hierarchically regress future trajec-tories, which subsequently serve as conditions for generating 14 
+
+TABLE XI: Comparison of the motion planning in nuScenes [79] validation set.                              
+
+> Method Reference L2 (m) ↓Collision (%) ↓
+> 1s 2s 3s Avg. 1s 2s 3s Avg. Ego-MLP [94] arXiv 23 0.15 0.32 0.59 0.35 0.00 0.27 0.85 0.37 BEV-Planner [95] CVPR 24 0.30 0.52 0.83 0.55 0.10 0.37 1.30 0.59 BEV-Planner++ [95] CVPR 24 0.16 0.32 0.57 0.35 0.00 0.29 0.73 0.34 ST-P3 [96] ECCV 22 1.33 2.11 2.90 2.11 0.23 0.62 1.27 0.71 UniAD [97] CVPR 23 0.20 0.42 0.75 0.46 0.02 0.25 0.84 0.37 VAD-Base [98] ICCV 23 0.17 0.34 0.60 0.37 0.04 0.27 0.67 0.33 OmniDrive [15] CVPR 25 0.40 0.80 1.32 0.84 0.04 0.46 2.32 0.94 OmniDrive++ [15] CVPR 25 0.14 0.29 0.55 0.33 0.00 0.13 0.78 0.30 Doe-1 [23] arXiv 24 0.50 1.18 2.11 1.26 0.04 0.37 1.19 0.53 Epona [37] ICCV 25 0.61 1.17 1.98 1.25 0.01 0.22 0.85 0.36 ORION [66] ICCV 25 0.17 0.31 0.55 0.34 0.05 0.25 0.80 0.37 HERMES ++ -0.16 0.33 0.62 0.37 0.00 0.16 0.72 0.29
+
+future point clouds. It is worth emphasizing that our model is trained solely with text instructions and future geometric supervision. As shown in Tab. XI, H ERMES ++ achieves highly competitive performance with an average L2 error of 0.37m and a collision rate of 0.29%. Compared to the recent leading method ORION, H ERMES ++ achieves a 0.08% lower collision rate while maintaining a comparable L2 error. Furthermore, our method substantially improves over OmniDrive and sur-passes OmniDrive++ in average collision rate. These results demonstrate that by optimizing for future scene generation under textual guidance, H ERMES ++ effectively internalizes world knowledge and actionable driving dynamics, enabling planning potential even without perception supervision. 
+
+3) Generalization to Different LLMs : To verify the univer-sality of H ERMES ++, we conduct experiments across various LLM architectures and scales using 25% of the training data. 
+
+Effect of Model Architecture. We first evaluate the adapt-ability of our method by integrating three representative LLMs with comparable parameter counts [75], [99], [100]. As shown in Tab. XIIa, our framework consistently achieves promis-ing performance across all architectures, demonstrating its generalization capability. InternVL2 yields superior results in both generation and understanding metrics (e.g., achieving the lowest prediction error at 3s). We attribute this to its reliable vision-language alignment, which effectively adapts to our BEV-based tokenization strategy. 
+
+Impact of Model Scale. We further investigate the scala-bility of our approach using the InternVL2 series. Tab. XIIb reveals a clear positive correlation between model size and performance. As the number of parameters increases, the model achieves significant gains in both future prediction and scene understanding. Specifically, the 3.8B model outperforms the 0.8B variant by 12.5% for the 3s prediction error. We argue that our framework effectively leverages the richer world knowledge and stronger reasoning capabilities inherent in larger language models. This indicates that our method is highly scalable and has the potential for further performance gains as foundation models become increasingly powerful. TABLE XII: Comparison of different LLMs. M., R., and C. indicate METEOR, ROUGE, and CIDEr, respectively. 
+
+(a) Comparison across different LLM series.                                     
+
+> Model Generation Understanding 0s ↓1s ↓2s ↓3s ↓M. ↑R. ↑C. ↑
+> Llama-3.2 [100] 0.617 0.936 1.227 1.533 0.377 0.319 0.700 Qwen3 [99] 0.614 0.910 1.198 1.521 0.374 0.317 0.696 InternVL2 [75] 0.588 0.879 1.146 1.436 0.378 0.322 0.720
+
+(b) Comparison across model scales on InternVL2 series [75].                                     
+
+> Model Generation Understanding 0s ↓1s ↓2s ↓3s ↓M. ↑R. ↑C. ↑
+> 0.8B 0.601 0.890 1.150 1.434 0.376 0.319 0.708 1.8B 0.588 0.879 1.146 1.436 0.378 0.322 0.720 3.8B 0.557 0.768 0.991 1.255 0.383 0.325 0.742
+
+VII. C ONCLUSION 
+
+In this paper, we present H ERMES ++, a unified driving world model that integrates 3D scene understanding and future geometry prediction. By leveraging the BEV representation, we effectively consolidate multi-view visual information into a format compatible with LLMs. To facilitate interaction between semantic reasoning and geometric evolution, we introduce LLM-enhanced world queries to enable knowledge transfer. These queries then interact with LLM-encoded BEV features to generate latent representations for future times-tamps via a Current-to-Future Link. To further ensure the structural consistency of predicted futures, we devise a Joint Geometric Optimization strategy that integrates explicit geo-metric constraints with implicit latent regularization to align internal representations with geometry-aware priors. Exten-sive evaluations validate the effectiveness of our approach. HERMES ++ achieves strong performance, outperforming spe-cialists in both generation and understanding tasks. We hope this work establishes a solid foundation for future research in interpretable and predictive driving systems. 
+
+Limitation and future work. While this work presents a solid exploration toward a unified driving world model, how to leverage the semantic priors encapsulated in pre-trained multi-modal large models for BEV input requires further investigation. Additionally, expanding the generation paradigm to diverse modalities presents a promising direction for com-prehensive scene simulation. REFERENCES [1] L. Chen, P. Wu, K. Chitta, B. Jaeger, A. Geiger, and H. Li, “End-to-end autonomous driving: Challenges and frontiers,” IEEE Trans. Pattern Anal. Mach. Intell. , vol. 46, no. 12, pp. 10 164–10 183, 2024. [2] S. Gao, J. Yang, L. Chen, K. Chitta, Y. Qiu, A. Geiger, J. Zhang, and H. Li, “Vista: A generalizable driving world model with high fidelity and versatile controllability,” in Proc. Adv. Neural Inf. Process. Syst. ,2024, pp. 91 560–91 596. [3] G. Zhao, X. Wang, Z. Zhu, X. Chen, G. Huang, X. Bao, and X. Wang, “Drivedreamer-2: Llm-enhanced world models for diverse driving video generation,” in Proc. AAAI Conf. Artif. Intell. , vol. 39, no. 10, 2025, pp. 10 412–10 420. [4] Y. Wang, J. He, L. Fan, H. Li, Y. Chen, and Z. Zhang, “Driving into the future: Multiview visual forecasting and planning with world model for autonomous driving,” in Proc. IEEE Conf. Comput. Vis. Pattern Recognit. , 2024, pp. 14 749–14 759. 15 
+
+[5] A. Hu, L. Russell, H. Yeo, Z. Murez, G. Fedoseev, A. Kendall, J. Shotton, and G. Corrado, “Gaia-1: A generative world model for autonomous driving,” arXiv preprint arXiv:2309.17080 , 2023. [6] W. Zheng, W. Chen, Y. Huang, B. Zhang, Y. Duan, and J. Lu, “Occworld: Learning a 3d occupancy world model for autonomous driving,” in Proc. Eur. Conf. Comput. Vis. , 2024, pp. 55–72. [7] Z. Yang, L. Chen, Y. Sun, and H. Li, “Visual point cloud forecasting enables scalable autonomous driving,” in Proc. IEEE Conf. Comput. Vis. Pattern Recognit. , 2024, pp. 14 673–14 684. [8] J. Hou, Z. Liu, Z. Zou, X. Ye, X. Bai et al. , “Query-based temporal fusion with explicit motion for 3d object detection,” in Proc. Adv. Neural Inf. Process. Syst. , vol. 36, 2023, pp. 75 782–75 797. [9] J. Li, Z. Liu, J. Hou, and D. Liang, “Dds3d: Dense pseudo-labels with dynamic threshold for semi-supervised 3d object detection,” in Proc. IEEE Int. Conf. Robotics Automation , 2023, pp. 9245–9252. [10] D. Liang, T. Feng, X. Zhou, Y. Zhang, Z. Zou, and X. Bai, “Parameter-efficient fine-tuning in spectral domain for point cloud learning,” IEEE Trans. Pattern Anal. Mach. Intell. , vol. 47, no. 12, pp. 10 949–10 966, 2025. [11] D. Liang, X. Zhou, W. Xu, X. Zhu, Z. Zou, X. Ye, X. Tan, and X. Bai, “Pointmamba: A simple state space model for point cloud analysis,” in 
+
+Proc. Adv. Neural Inf. Process. Syst. , vol. 37, 2024, pp. 32 653–32 677. [12] H. Liu, C. Li, Q. Wu, and Y. J. Lee, “Visual instruction tuning,” in 
+
+Proc. Adv. Neural Inf. Process. Syst. , vol. 36, 2023, pp. 34 892–34 916. [13] Z. Chen, J. Wu, W. Wang, W. Su, G. Chen, S. Xing, M. Zhong, Q. Zhang, X. Zhu, L. Lu et al. , “Internvl: Scaling up vision foundation models and aligning for generic visual-linguistic tasks,” in Proc. IEEE Conf. Comput. Vis. Pattern Recognit. , 2024, pp. 24 185–24 198. [14] Z. Li, B. Yang, Q. Liu, Z. Ma, S. Zhang, J. Yang, Y. Sun, Y. Liu, and X. Bai, “Monkey: Image resolution and text label are important things for large multi-modal models,” in Proc. IEEE Conf. Comput. Vis. Pattern Recognit. , 2024, pp. 26 763–26 773. [15] S. Wang, Z. Yu, X. Jiang, S. Lan, M. Shi, N. Chang, J. Kautz, Y. Li, and J. M. Alvarez, “Omnidrive: A holistic vision-language dataset for autonomous driving with counterfactual reasoning,” in Proc. IEEE Conf. Comput. Vis. Pattern Recognit. , 2025, pp. 22 442–22 452. [16] C. Sima, K. Renz, K. Chitta, L. Chen, H. Zhang, C. Xie, J. Beißwenger, P. Luo, A. Geiger, and H. Li, “Drivelm: Driving with graph visual question answering,” in Proc. Eur. Conf. Comput. Vis. , 2024, pp. 256– 274. [17] Z. Xu, Y. Zhang, E. Xie, Z. Zhao, Y. Guo, K.-Y. K. Wong, Z. Li, and H. Zhao, “Drivegpt4: Interpretable end-to-end autonomous driving via large language model,” IEEE Robotics and Automation Letters , pp. 8186–8193, 2024. [18] C. Shi, S. Shi, K. Sheng, B. Zhang, and L. Jiang, “Drivex: Omni scene modeling for learning generalizable world knowledge in autonomous driving,” in Proc. IEEE Int. Conf. Comput. Vis. , 2025, pp. 28 599– 28 609. [19] X. Zhou, D. Liang, S. Tu, X. Chen, Y. Ding, D. Zhang, F. Tan, H. Zhao, and X. Bai, “Hermes: A unified self-driving world model for simultaneous 3d scene understanding and generation,” in Proc. IEEE Int. Conf. Comput. Vis. , 2025, pp. 27 817–27 827. [20] D. Ha and J. Schmidhuber, “World models,” in Proc. Adv. Neural Inf. Process. Syst. , 2018. [21] X. Wang, Z. Zhu, G. Huang, X. Chen, J. Zhu, and J. Lu, “Drivedreamer: Towards real-world-drive world models for autonomous driving,” in 
+
+Proc. Eur. Conf. Comput. Vis. , 2024, pp. 55–72. [22] E. Ma, L. Zhou, T. Tang, Z. Zhang, D. Han, J. Jiang, K. Zhan, P. Jia, X. Lang, H. Sun et al. , “Unleashing generalization of end-to-end autonomous driving with controllable long video generation,” 
+
+arXiv preprint arXiv:2406.01349 , 2024. [23] W. Zheng, Z. Xia, Y. Huang, S. Zuo, J. Zhou, and J. Lu, “Doe-1: Closed-loop autonomous driving with large world model,” arXiv preprint arXiv:2412.09627 , 2024. [24] C. Min, D. Zhao, L. Xiao, J. Zhao, X. Xu, Z. Zhu, L. Jin, J. Li, Y. Guo, J. Xing et al. , “Driveworld: 4d pre-trained scene understanding via world models for autonomous driving,” in Proc. IEEE Conf. Comput. Vis. Pattern Recognit. , 2024, pp. 15 522–15 533. [25] J. Ma, X. Chen, J. Huang, J. Xu, Z. Luo, J. Xu, W. Gu, R. Ai, and H. Wang, “Cam4docc: Benchmark for camera-only 4d occupancy forecasting in autonomous driving applications,” in Proc. IEEE Conf. Comput. Vis. Pattern Recognit. , 2024, pp. 21 486–21 495. [26] J. Yang, S. Gao, Y. Qiu, L. Chen, T. Li, B. Dai, K. Chitta, P. Wu, J. Zeng, P. Luo et al. , “Generalized predictive model for autonomous driving,” in Proc. IEEE Conf. Comput. Vis. Pattern Recognit. , 2024, pp. 14 662–14 672. [27] F. Jia, W. Mao, Y. Liu, Y. Zhao, Y. Wen, C. Zhang, X. Zhang, and T. Wang, “Adriver-i: A general world model for autonomous driving,” 
+
+arXiv preprint arXiv:2311.13549 , 2023. [28] Y. Zhang, S. Gong, K. Xiong, X. Ye, X. Tan, F. Wang, J. Huang, H. Wu, and H. Wang, “Bevworld: A multimodal world model for autonomous driving via unified bev latent space,” arXiv preprint arXiv:2407.05679 ,2024. [29] R. Gao, K. Chen, E. Xie, L. Hong, Z. Li, D.-Y. Yeung, and Q. Xu, “Magicdrive: Street view generation with diverse 3d geometry control,” in Proc. Int. Conf. Learn. Representations , 2024. [30] Y. Wen, Y. Zhao, Y. Liu, F. Jia, Y. Wang, C. Luo, C. Zhang, T. Wang, X. Sun, and X. Zhang, “Panacea: Panoramic and controllable video generation for autonomous driving,” in Proc. IEEE Conf. Comput. Vis. Pattern Recognit. , 2024, pp. 6902–6912. [31] X. Li, Y. Zhang, and X. Ye, “Drivingdiffusion: layout-guided multi-view driving scenarios video generation with latent diffusion model,” in Proc. Eur. Conf. Comput. Vis. , 2024, pp. 469–485. [32] B. Li, J. Guo, H. Liu, Y. Zou, Y. Ding, X. Chen, H. Zhu, F. Tan, C. Zhang, T. Wang et al. , “Uniscene: Unified occupancy-centric driving scene generation,” in Proc. IEEE Conf. Comput. Vis. Pattern Recognit. ,2025, pp. 11 971–11 981. [33] J. Ni, Y. Guo, Y. Liu, R. Chen, L. Lu, and Z. Wu, “Maskgwm: A generalizable driving world model with video mask reconstruction,” in 
+
+Proc. IEEE Conf. Comput. Vis. Pattern Recognit. , 2025, pp. 22 381– 22 391. [34] J. Lu, Z. Huang, Z. Yang, J. Zhang, and L. Zhang, “Wovogen: World volume-aware diffusion for controllable multi-camera driving scene generation,” in Proc. Eur. Conf. Comput. Vis. , 2024, pp. 329–345. [35] Y. Chen, Y. Wang, and Z. Zhang, “Drivinggpt: Unifying driving world modeling and planning with multi-modal autoregressive transformers,” in Proc. IEEE Conf. Comput. Vis. Pattern Recognit. , 2025, pp. 26 890– 26 900. [36] X. Hu, W. Yin, M. Jia, J. Deng, X. Guo, Q. Zhang, X. Long, and P. Tan, “Drivingworld: Constructingworld model for autonomous driving via video gpt,” arXiv preprint arXiv:2412.19505 , 2024. [37] K. Zhang, Z. Tang, X. Hu, X. Pan, X. Guo, Y. Liu, J. Huang, L. Yuan, Q. Zhang, X.-X. Long et al. , “Epona: Autoregressive diffusion world model for autonomous driving,” in Proc. IEEE Int. Conf. Comput. Vis. ,2025, pp. 27 220–27 230. [38] G. Zhao, C. Ni, X. Wang, Z. Zhu, X. Zhang, Y. Wang, G. Huang, X. Chen, B. Wang, Y. Zhang et al. , “Drivedreamer4d: World models are effective data machines for 4d driving scene representation,” in 
+
+Proc. IEEE Conf. Comput. Vis. Pattern Recognit. , 2025, pp. 12 015– 12 026. [39] L. Wang, W. Zheng, Y. Ren, H. Jiang, Z. Cui, H. Yu, and J. Lu, “Occsora: 4d occupancy generation models as world simulators for autonomous driving,” arXiv preprint arXiv:2405.20337 , 2024. [40] S. Gu, W. Yin, B. Jin, X. Guo, J. Wang, H. Li, Q. Zhang, and X. Long, “Dome: Taming diffusion model into high-fidelity controllable occu-pancy world model,” arXiv preprint arXiv:2410.10429 , 2024. [41] B. Agro, Q. Sykora, S. Casas, T. Gilles, and R. Urtasun, “Uno: Unsupervised occupancy fields for perception and forecasting,” in Proc. IEEE Conf. Comput. Vis. Pattern Recognit. , 2024, pp. 14 487–14 496. [42] Z. Huang, J. Zhang, and E. Ohn-Bar, “Neural volumetric world models for autonomous driving,” in Proc. Eur. Conf. Comput. Vis. , 2024, pp. 195–213. [43] Z. Yan, W. Dong, Y. Shao, Y. Lu, H. Liu, J. Liu, H. Wang, Z. Wang, Y. Wang, F. Remondino et al. , “Renderworld: World model with self-supervised 3d label,” in Proc. IEEE Int. Conf. Robotics Automation ,2025, pp. 6063–6070. [44] J. Wei, S. Yuan, P. Li, Q. Hu, Z. Gan, and W. Ding, “Occllama: An occupancy-language-action generative world model for autonomous driving,” arXiv preprint arXiv:2409.03272 , 2024. [45] V. Zyrianov, H. Che, Z. Liu, and S. Wang, “Lidardm: Generative lidar simulation in a generated world,” in Proc. IEEE Int. Conf. Robotics Automation , 2025, pp. 6055–6062. [46] X. Weng, J. Nan, K.-H. Lee, R. McAllister, A. Gaidon, N. Rhinehart, and K. M. Kitani, “S2net: Stochastic sequential pointcloud forecasting,” in Proc. Eur. Conf. Comput. Vis. , 2022, pp. 549–564. [47] T. Khurana, P. Hu, D. Held, and D. Ramanan, “Point cloud forecasting as a proxy for 4d occupancy forecasting,” in Proc. IEEE Conf. Comput. Vis. Pattern Recognit. , 2023, pp. 1116–1124. [48] L. Zhang, Y. Xiong, Z. Yang, S. Casas, R. Hu, and R. Urtasun, “Learning unsupervised world models for autonomous driving via discrete diffusion,” in Proc. Int. Conf. Learn. Representations , 2023. [49] M. Hassan, S. Stapf, A. Rahimi, P. Rezende, Y. Haghighi, D. Br¨ uggemann, I. Katircioglu, L. Zhang, X. Chen, S. Saha et al. ,16 
+
+“Gem: A generalizable ego-vision multimodal world model for fine-grained ego-motion, object dynamics, and scene composition control,” in Proc. IEEE Conf. Comput. Vis. Pattern Recognit. , 2025, pp. 22 404– 22 415. [50] J. Guo, Y. Ding, X. Chen, S. Chen, B. Li, Y. Zou, X. Lyu, F. Tan, X. Qi, Z. Li et al. , “Dist-4d: Disentangled spatiotemporal diffusion with metric depth for 4d driving scene generation,” in Proc. IEEE Int. Conf. Comput. Vis. , 2025, pp. 27 231–27 241. [51] D. Liang, D. Zhang, X. Zhou, S. Tu, T. Feng, X. Li, Y. Zhang, M. Du, X. Tan, and X. Bai, “Seeing the future, perceiving the future: A unified driving world model for future generation and perception,” in Proc. IEEE Int. Conf. Robotics Automation , 2026. [52] T. Xu, H. Lu, X. Yan, Y. Cai, B. Liu, and Y. Chen, “Occ-llm: Enhancing autonomous driving with occupancy-based large language models,” 
+
+arXiv preprint arXiv:2502.06419 , 2025. [53] H. Lu, Z. Liu, G. Jiang, Y. Luo, S. Chen, Y. Zhang, and Y.-C. Chen, “Uniugp: Unifying understanding, generation, and planing for end-to-end autonomous driving,” arXiv preprint arXiv:2512.09864 , 2025. [54] S. Zeng, X. Chang, M. Xie, X. Liu, Y. Bai, Z. Pan, M. Xu, X. Wei, and N. Guo, “Futuresightdrive: Thinking visually with spatio-temporal cot for autonomous driving,” in Proc. Adv. Neural Inf. Process. Syst. ,2025. [55] J. Wu, M. Zhong, S. Xing, Z. Lai, Z. Liu, W. Wang, Z. Chen, X. Zhu, L. Lu, T. Lu et al. , “Visionllm v2: An end-to-end generalist multimodal large language model for hundreds of vision-language tasks,” in Proc. Adv. Neural Inf. Process. Syst. , 2024, pp. 69 925–69 975. [56] Z. Zhang, Y. Ma, E. Zhang, and X. Bai, “Psalm: Pixelwise segmentation with large multi-modal model,” in Proc. Eur. Conf. Comput. Vis. , 2024, pp. 74–91. [57] R. Dong, C. Han, Y. Peng, Z. Qi, Z. Ge, J. Yang, L. Zhao, J. Sun, H. Zhou, H. Wei et al. , “Dreamllm: Synergistic multimodal compre-hension and creation,” in Proc. Int. Conf. Learn. Representations , 2024. [58] J. H. Cho, B. Ivanovic, Y. Cao, E. Schmerling, Y. Wang, X. Weng, B. Li, Y. You, P. Kraehenbuehl, Y. Wang et al. , “Language-image mod-els with 3d understanding,” in Proc. Int. Conf. Learn. Representations ,2025. [59] H. Chi, H.-a. Gao, Z. Liu, J. Liu, C. Liu, J. Li, K. Yang, Y. Yu, Z. Wang, W. Li, L. Wang, X. Hu, H. Sun, H. Zhao, and H. Zhao, “Impromptu vla: Open weights and open data for driving vision-language-action models,” in Proc. Adv. Neural Inf. Process. Syst. , 2025. [60] Y. Zhou, L. Huang, Q. Bu, J. Zeng, T. Li, H. Qiu, H. Zhu, M. Guo, Y. Qiao, and H. Li, “Embodied understanding of driving scenarios,” in 
+
+Proc. Eur. Conf. Comput. Vis. , 2024, pp. 129–148. [61] E. Cui, W. Wang, Z. Li, J. Xie, H. Zou, H. Deng, G. Luo, L. Lu, X. Zhu, and J. Dai, “Drivemlm: aligning multi-modal large language models with behavioral planning states for autonomous driving,” Visual Intelligence , vol. 3, no. 1, p. 22, 2025. [62] J.-J. Hwang, R. Xu, H. Lin, W.-C. Hung, J. Ji, K. Choi, D. Huang, T. He, P. Covington, B. Sapp et al. , “Emma: End-to-end multimodal model for autonomous driving,” Trans. on Mach. Learn. Research ,2024. [63] X. Tian, J. Gu, B. Li, Y. Liu, Y. Wang, Z. Zhao, K. Zhan, P. Jia, X. Lang, and H. Zhao, “Drivevlm: The convergence of autonomous driving and large vision-language models,” in Conf. on robot learn. ,2025, pp. 4698–4726. [64] H. Shao, Y. Hu, L. Wang, G. Song, S. L. Waslander, Y. Liu, and H. Li, “Lmdrive: Closed-loop end-to-end driving with large language models,” in Proc. IEEE Conf. Comput. Vis. Pattern Recognit. , 2024, pp. 15 120–15 130. [65] H. Fu, D. Zhang, Z. Zhao, J. Cui, H. Xie, B. Wang, G. Chen, D. Liang, and X. Bai, “Minddrive: A vision-language-action model for autonomous driving via online reinforcement learning,” arXiv preprint arXiv:2512.13636 , 2025. [66] H. Fu, D. Zhang, Z. Zhao, J. Cui, D. Liang, C. Zhang, D. Zhang, H. Xie, B. Wang, and X. Bai, “Orion: A holistic end-to-end autonomous driving framework by vision-language instructed action generation,” in 
+
+Proc. IEEE Int. Conf. Comput. Vis. , 2025, pp. 24 823–24 834. [67] Y. Li, Z. Ge, G. Yu, J. Yang, Z. Wang, Y. Shi, J. Sun, and Z. Li, “Bevdepth: Acquisition of reliable depth for multi-view 3d object detection,” in Proc. AAAI Conf. Artif. Intell. , vol. 37, no. 2, 2023, pp. 1477–1485. [68] Z. Liu, H. Tang, A. Amini, X. Yang, H. Mao, D. L. Rus, and S. Han, “Bevfusion: Multi-task multi-sensor fusion with unified bird’s-eye view representation,” in Proc. IEEE Int. Conf. Robotics Automation , 2023, pp. 2774–2781. [69] H. Li, C. Sima, J. Dai, W. Wang, L. Lu, H. Wang, J. Zeng, Z. Li, J. Yang, H. Deng et al. , “Delving into the devils of bird’s-eye-view perception: A review, evaluation and recipe,” IEEE Trans. Pattern Anal. Mach. Intell. , vol. 46, no. 4, pp. 2151–2170, 2023. [70] Z. Li, W. Wang, H. Li, E. Xie, C. Sima, T. Lu, Y. Qiao, and J. Dai, “Bevformer: Learning bird’s-eye-view representation from multi-camera images via spatiotemporal transformers,” in Proc. Eur. Conf. Comput. Vis. , 2022, pp. 1–18. [71] C. Yang, Y. Chen, H. Tian, C. Tao, X. Zhu, Z. Zhang, G. Huang, H. Li, Y. Qiao, L. Lu et al. , “Bevformer v2: Adapting modern image backbones to bird’s-eye-view recognition via perspective supervision,” in Proc. IEEE Conf. Comput. Vis. Pattern Recognit. , 2023, pp. 17 830– 17 839. [72] M. Cherti, R. Beaumont, R. Wightman, M. Wortsman, G. Ilharco, C. Gordon, C. Schuhmann, L. Schmidt, and J. Jitsev, “Reproducible scaling laws for contrastive language-image learning,” in Proc. IEEE Conf. Comput. Vis. Pattern Recognit. , 2023, pp. 2818–2829. [73] Z. Liu, H. Mao, C.-Y. Wu, C. Feichtenhofer, T. Darrell, and S. Xie, “A convnet for the 2020s,” in Proc. IEEE Conf. Comput. Vis. Pattern Recognit. , 2022, pp. 11 976–11 986. [74] D. Zhang, D. Liang, Z. Tan, X. Ye, C. Zhang, J. Wang, and X. Bai, “Make your vit-based multi-view 3d detectors faster via token com-pression,” in Proc. Eur. Conf. Comput. Vis. , 2024, pp. 56–72. [75] Z. Chen, W. Wang, H. Tian, S. Ye, Z. Gao, E. Cui, W. Tong, K. Hu, J. Luo, Z. Ma et al. , “How far are we to gpt-4v? closing the gap to commercial multimodal models with open-source suites,” Science China Information Sciences , vol. 67, no. 12, p. 220101, 2024. [76] H. Yang, S. Zhang, D. Huang, X. Wu, H. Zhu, T. He, S. Tang, H. Zhao, Q. Qiu, B. Lin et al. , “Unipad: A universal pre-training paradigm for autonomous driving,” in Proc. IEEE Conf. Comput. Vis. Pattern Recognit. , 2024, pp. 15 238–15 250. [77] H. Zhu, H. Yang, X. Wu, D. Huang, S. Zhang, X. He, H. Zhao, C. Shen, Y. Qiao, T. He et al. , “Ponderv2: Improved 3d representation with a universal pre-training paradigm,” IEEE Trans. Pattern Anal. Mach. Intell. , vol. 47, no. 8, pp. 6550–6565, 2025. [78] P. Wang, L. Liu, Y. Liu, C. Theobalt, T. Komura, and W. Wang, “Neus: Learning neural implicit surfaces by volume rendering for multi-view reconstruction,” in Proc. Adv. Neural Inf. Process. Syst. , 2021, pp. 27 171–27 183. [79] H. Caesar, V. Bankiti, A. H. Lang, S. Vora, V. E. Liong, Q. Xu, A. Krishnan, Y. Pan, G. Baldan, and O. Beijbom, “nuscenes: Amultimodal dataset for autonomous driving,” in Proc. IEEE Conf. Comput. Vis. Pattern Recognit. , 2020, pp. 11 621–11 631. [80] R. Vedantam, C. Lawrence Zitnick, and D. Parikh, “Cider: Consensus-based image description evaluation,” in Proc. IEEE Conf. Comput. Vis. Pattern Recognit. , 2015, pp. 4566–4575. [81] S. Banerjee and A. Lavie, “Meteor: An automatic metric for mt evaluation with improved correlation with human judgments,” in Proc. Annual Meeting of the Association for Computational Linguistics Workshop , 2005. [82] C.-Y. Lin, “Rouge: A package for automatic evaluation of summaries,” in Proc. Annual Meeting of the Association for Computational Linguis-tics Workshop , 2004. [83] T. Qian, J. Chen, L. Zhuo, Y. Jiao, and Y.-G. Jiang, “Nuscenes-qa: A multi-modal visual question answering benchmark for autonomous driving scenario,” in Proc. AAAI Conf. Artif. Intell. , vol. 38, no. 5, 2024, pp. 4542–4550. [84] Z. Zhao, H. Fu, D. Liang, X. Zhou, D. Zhang, H. Xie, B. Wang, and X. Bai, “Extending large vision-language model for diverse interactive tasks in autonomous driving,” arXiv preprint arXiv:2505.08725 , 2025. [85] Y. Yan, Y. Mao, and B. Li, “Second: Sparsely embedded convolutional detection,” Sensors , vol. 18, no. 10, p. 3337, 2018. [86] E. J. Hu, P. Wallis, Z. Allen-Zhu, Y. Li, S. Wang, L. Wang, W. Chen 
+
+et al. , “Lora: Low-rank adaptation of large language models,” in Proc. Int. Conf. Learn. Representations , 2021. [87] X. Weng, J. Wang, S. Levine, K. Kitani, and N. Rhinehart, “Inverting the pose forecasting pipeline with spf2: Sequential pointcloud forecast-ing for sequential pose forecasting,” in Conf. on robot learn. , 2021, pp. 11–20. [88] B. Li, Y. Zhang, D. Guo, R. Zhang, F. Li, H. Zhang, K. Zhang, P. Zhang, Y. Li, Z. Liu et al. , “Llava-onevision: Easy visual task transfer,” Trans. on Mach. Learn. Research , 2025. [89] J. Li, D. Li, S. Savarese, and S. Hoi, “Blip-2: Bootstrapping language-image pre-training with frozen image encoders and large language models,” in Proc. Int. Conf. Mach. Learn. , 2023, pp. 19 730–19 742. [90] S. Yang, J. Liu, R. Zhang, M. Pan, Z. Guo, X. Li, Z. Chen, P. Gao, H. Li, Y. Guo et al. , “Lidar-llm: Exploring the potential of large language models for 3d lidar understanding,” in Proc. AAAI Conf. Artif. Intell. , vol. 39, no. 9, 2025, pp. 9247–9255. 17 
+
+[91] X. Zhou, X. Han, F. Yang, Y. Ma, V. Tresp, and A. Knoll, “Open-drivevla: Towards end-to-end autonomous driving with large vision language action model,” in Proc. AAAI Conf. Artif. Intell. , 2026. [92] OpenDriveLab, “CVPR 2024 autonomous driving challenge: Driv-ing with language,” https://opendrivelab.com/challenge2024/#driving with language, 2024. [93] S. Wang, Y. Liu, T. Wang, Y. Li, and X. Zhang, “Exploring object-centric temporal modeling for efficient multi-view 3d object detection,” in Proc. IEEE Int. Conf. Comput. Vis. , 2023, pp. 3621–3631. [94] J.-T. Zhai, Z. Feng, J. Du, Y. Mao, J.-J. Liu, Z. Tan, Y. Zhang, X. Ye, and J. Wang, “Rethinking the open-loop evaluation of end-to-end autonomous driving in nuscenes,” arXiv preprint arXiv:2305.10430 ,2023. [95] Z. Li, Z. Yu, S. Lan, J. Li, J. Kautz, T. Lu, and J. M. Alvarez, “Is ego status all you need for open-loop end-to-end autonomous driving?” in 
+
+Proc. IEEE Conf. Comput. Vis. Pattern Recognit. , 2024, pp. 14 864– 14 873. [96] S. Hu, L. Chen, P. Wu, H. Li, J. Yan, and D. Tao, “St-p3: End-to-end vision-based autonomous driving via spatial-temporal feature learning,” in Proc. Eur. Conf. Comput. Vis. , 2022, pp. 533–549. [97] Y. Hu, J. Yang, L. Chen, K. Li, C. Sima, X. Zhu, S. Chai, S. Du, T. Lin, W. Wang et al. , “Planning-oriented autonomous driving,” in Proc. IEEE Conf. Comput. Vis. Pattern Recognit. , 2023, pp. 17 853–17 862. [98] B. Jiang, S. Chen, Q. Xu, B. Liao, J. Chen, H. Zhou, Q. Zhang, W. Liu, C. Huang, and X. Wang, “Vad: Vectorized scene representation for efficient autonomous driving,” in Proc. IEEE Int. Conf. Comput. Vis. ,2023, pp. 8340–8350. [99] A. Yang, A. Li, B. Yang, B. Zhang, B. Hui, B. Zheng, B. Yu, C. Gao, C. Huang, C. Lv et al. , “Qwen3 technical report,” arXiv preprint arXiv:2505.09388 , 2025. [100] Meta AI, “Llama 3.2: Revolutionizing edge ai and vision with open, customizable models,” https://ai.meta.com/blog/ llama-3-2-connect-2024-vision-edge-mobile-devices, 2024.

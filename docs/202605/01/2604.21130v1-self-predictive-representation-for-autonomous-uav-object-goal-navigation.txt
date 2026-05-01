@@ -1,0 +1,897 @@
+Title: Self-Predictive Representation for Autonomous UAV Object-Goal Navigation
+
+URL Source: https://arxiv.org/pdf/2604.21130v1
+
+Published Time: Fri, 24 Apr 2026 00:15:43 GMT
+
+Number of Pages: 12
+
+Markdown Content:
+> SUBMITTED TO IEEE TRANSACTIONS ON ROBOTICS 1
+
+# Self-Predictive Representation for Autonomous UAV Object-Goal Navigation 
+
+Angel Ayala 1, Donling Sui 3, Francisco Cruz 2,4, Mitchell Torok 3,Mohammad Deghat 3, and Bruno J. T. Fernandes 1
+
+Abstract —Autonomous Unmanned Aerial Vehicles (UAVs) have revolutionized industries through their versatility with applica-tions including aerial surveillance, search and rescue, agricul-ture, and delivery. Their autonomous capabilities offer unique advantages, such as operating in large open space environments. Reinforcement Learning (RL) empowers UAVs to learn intricate navigation policies, enabling them to optimize flight behavior autonomously. However, one of its main challenge is the in-efficiency in using data sample to achieve a good policy. In object-goal navigation (OGN) settings, target recognition arises as an extra challenge. Most UAV-related approaches use relative or absolute coordinates to move from an initial position to a predefined location, rather than to find the target directly. This study addresses the data sample efficiency issue in solving a 3D OGN problem, in addition to, the formalization of the unknown target location setting as a Markov decision process. Experiments are conducted to analyze the interplay of different state represen-tation learning (SRL) methods for perception with a model-free RL algorithm for planning in an autonomous navigation system. The main contribution of this study is the development of the perception module, featuring a novel self-predictive model named AmelPred. Empirical results demonstrate that its stochastic version, AmelPredSto, is the best-performing SRL model when combined with actor-critic RL algorithms. The obtained results show substantial improvement in RL algorithms’ efficiency by using AmelPredSto in solving the OGN problem. 
+
+Index Terms —state representation learning, autonomous nav-igation, reinforcement learning, unmanned aerial vehicle, quad-copter 
+
+I. I NTRODUCTION 
+
+Autonomous Unmanned Aerial Vehicles (UAVs) are used extensively in tasks such as aerial surveillance, search and rescue missions, agricultural monitoring, and package de-livery [1]–[3]. The UAV control problem, has reregularly been addressed as a two-level controller: 1) the inner-loop controller, which deals with vehicle attitude stabilization, and 2) the outer-loop controller, which deals with the UAV displacement [4]. For attitude control, it is a common practice to use autopilot boards such as Ardupilot or Pixhawk [5], or implement a simple PID controller [6]. The outer-loop controller, in contrast, is responsible for high-level decision making, by processing the current vehicle’s state and raw 
+
+> 1
+
+Angel Ayala and Bruno J. T. Fernandes are with the Escola Polit´ ecnica de Pernambuco, Universidade de Pernambuco, Recife, Brasil aaam, bjtf@ecomp.poli.br 
+
+> 2,4
+
+Francisco Cruz is with the School of Computer Science and Engineering, University of New South Wales, Sydney, Australia and Escuela de Ingenier´ ıa, Universidad Central de Chile, Santiago, Chile f.cruz@unsw.edu.au 
+
+> 3
+
+Donling Sui, Mitchell Torok, and Mohammad Deghat are with the School of Mechanical and Manufacturing Engineering, University of New South Wales, Sydney, Australia 
+
+surrounding information to choose where to move next [7], [8]. As raw sensor data could present incorrect measurements, more advanced sensor processing approaches are required for control [9]. Suitable autonomous outer-loop control methods are chal-lenging when there is no accurate model for vehicle dy-namics due to its non-linearity, in addition to presence of different objects in the environment. Reinforcement Learning (RL) algorithms have successful been proven in autonomous drone control by addressing the problem as Markov Deci-sion Processes (MDP) [10]. Many RL studies use a model-based approach [11] or a reduced action space [12] to fulfill the navigation problem without collision satisfactorily. Other studies utilize deep RL for visual-based observations, which involves a higher complexity level due to the raw-image data dimensionality [13]. However, RL faces open challenges in both MDP and Partially Observed MDP (POMDP), where the agent cannot directly measure some information, heading to sample-data inefficiencies by requiring too much time to achieve a suitable policy. Moreover, the object-goal navigation (OGN) problem re-quires displacing a robot over a particular area to search for a target object [14], [15]. Most OGN studies have focused on embodied indoor systems [16], aiming to achieve a spatial representation from structured scenarios [17], [18]. The ear-liest studies demonstrated that informative features increase performance in solving OGN problems [19]. Current literature proposes decoupling representation from policy learning to improve sample efficiency and learning time [20]. In this regard, representations for OGN must portray the internal vehicle state and the target-related information in a lower-dimensional latent vector [21]. Representation learning is a machine learning process that creates a compact and informative vector in a lower dimen-sion [22]. State Representation Learning (SRL) then com-presses the observation into a state vector in such a way that it attends to the Markov property [23]. One of the first representation methods to enhance RL performance in navigation, named as Relative Line Position Representation (RLPR), transforms laser sensor readings into the distance of different object classes related to color and neighborhood [24]. Later methods, which address transformation over the latent vector obtained from a Variational AutoEncoder [25], known as robotic priors, have proven useful, particularly in unique position target contexts [20], [26]. In current methods, the representation stage is performed by an encoder function that compresses the sensor readings into a latent representation,  
+
+> arXiv:2604.21130v1 [cs.RO] 22 Apr 2026 SUBMITTED TO IEEE TRANSACTIONS ON ROBOTICS 2
+
+commonly designed for visual-based [27]–[29] or multi-modal approaches [30]–[32]. Previous studies have already demonstrated the effective-ness of RL algorithms combined with SRL on classical RL benchmarks, such as Atari and DMControl [33], [34]. This study may be the first to propose an RL-SRL combination for solving OGN problems using an aerial robotics platform, such as a quadcopter. In this regard, this paper first introduces the background of RL algorithms and SRL methods in Section II. Next, our novel SRL architecture, based on the self-predictive approach and experimental settings, is presented in Section III. Subsequently, Section IV details the benchmark environment, followed by the corresponding results report and discussion in Section V. Finally, we summarize our findings and discuss future work in Section VI. The overall contributions of this study can be summarized as:  
+
+> •
+
+A comprehensive study about the effect on self-predictive representations in RL algorithms for solving an object-goal autonomous problem with a quadcopter.  
+
+> •
+
+A novel continuous RL agnostic SRL method for sample-efficient autonomous navigation of a quadrotor system.  
+
+> •
+
+A fully dimensional quadcopter control problem modeled by an intuitive reward function, under an object-goal navigation context.  
+
+> •
+
+A publicly available 3D simulated benchmark for UAV object-goal autonomous navigation on Webots. II. B ACKGROUND AND RELATED WORKS 
+
+Reinforcement learning [10] refers to animal behavior psychology, which defines learning as an iterative trial and error-process. A goal-seeking agent must discover a suitable action policy to solve a given problem at each iteration. Complementarily, state representation learning decouples the representation and policy optimization from the RL frame-work. Representation learning is an extraction process of useful information from raw data input, by enhancing the latent representation from a noisy data source at a lower dimension [22]. Hence, the latent representation should be compact and, at the same time, informative. Therefore, SRL focuses on learning low dimensional features, which evolve through time by the agent’s actions influence [20], improving data-sample efficiency. 
+
+A. Reinforcement learning algorithms 
+
+The RL framework, as a machine learning approach, can efficiently solve Markov decision processes (MDP), where an agent in a given state st ∈ S can perform an action 
+
+at ∈ A, transiting to a new state st+1 ∈ S, and obtaining a reward value rt+1 ∈ R, after which the process repeats. The states, actions, and rewards ( S, A, R ) can be in a discrete or continuous domain. The process of selecting an action is known as policy, which has been proven to converge into an optimal behavior, through Temporal-difference (TD) algorithm. TD(0), the most simple version of TD, enhances the policy by iterating over the approximation function, known as a policy evaluation or prediction problem. A well-known TD algorithm is Q-learning [35], which learns to approximate an action-value function in an off-policy way, formalized by: 
+
+Q(st, a t) ← Q(st, a t)+ αrt+1 +γmax  
+
+> a
+
+Q(st+1 , a )−Q(st, a t),
+
+(1) where α is the learning rate, and γ is a discount factor determining the future rewards importance. These Q-values indicate how much reward will be obtained in the future by choosing that action. Most real-world problems are too complex to learn as finite state-action pairs, so they are approached with parameterized action-value functions instead [36]. The first selected algo-rithm for comparison was deep Q-network (DQN), a multi-layered neural network that outputs action values Q(st, ·; θt)
+
+for a given state st with θ parameters at step t. The neural network then maps an n-dimensional state space to m actions by updating Q(st, a t; θt) towards a TD target value yQt using 
+
+Q-learning, formalized as: Jπ (Q) = Est,a t∼π
+
+yDQN  
+
+> t
+
+− Q(st, a t; θt), (2) where yDQN  
+
+> t
+
+= rt+1 + γmax  
+
+> a
+
+Q(st+1 , a ; θ′
+
+> t
+
+), with θ′ 
+
+> t
+
+being the target network parameters. Most recent algorithms implements actor-critic architecture by first decoupling policy and value functions learning. Hence, the actor model learns a policy for the action selection se-quence, defining the agent’s behavior. In contrast, the critic model learns to estimate a value function, describing how much future reward can be obtained next. Another algorithm used in this study was the Twin-Delayed DDPG (TD3) [37] algorithm, a deterministic approach which learns two Q-value functions through mean square Bellman error minimization, defining the critic loss for non-terminal cases as: 
+
+JQi = E
+
+> (s,a,r,s ′)∼D
+
+(Qθi (s, a ) − yTD3 )2
+
+yTD3 = r + γ min i=1 ,2 Qϕ′ 
+
+> i
+
+(s′, a ′(s′)) , (3) with a′(s′) being a clipped noisy target next action value. Additionally, the policy loss function is then defined by: 
+
+Jπ = E
+
+> s∼D
+
+Qθ1 (s, π (s)) . (4) The last algorithm used was the Soft Actor-Critic (SAC) [38], which optimizes a stochastic policy by maximizing a trade-off between reward and policy entropy by defining the loss function as: 
+
+JQ = E
+
+> (s,a,r,s ′)∼D
+
+ 12
+
+P2
+
+> i=1
+
+(Qθi (s, a ) − ySAC )2
+
+ySAC = r + γ  min j=1 ,2 Qϕtarg ,j (s′, ˜a′) − α log πθ (˜ a′|s′) ,
+
+(5) with ˜a′ ∼ πθ (·| s′) being the next stochastic action. Addition-ally, the policy loss function is then defined by: 
+
+Jπ = E
+
+> s∼D
+
+ min  
+
+> j=1 ,2
+
+Qθj (s, ˜a) − α log π(˜ a|s). (6) 
+
+B. Self-predictive representations 
+
+Self-predictive representation approaches arise from self-supervised learning, which optimizes an encoder model through a similarity measure between a given sample and a positive and negative subset [39]. The core idea behind SUBMITTED TO IEEE TRANSACTIONS ON ROBOTICS 3
+
+the optimization process is to bring the sample closer to the positive subset while keeping it away from the negative subset, as seen in contrastive methods [40], [41]. For example, the BYOL [42] architecture comprises two neural networks, referred to as online and target networks, which learn from each other through interaction. The online network grabs an image sample to predict the target network representation from the sample’s augmented version, as the positive subset. A study has already implemented this architecture with RL, known as Augmented Temporal Contrast (ATC) [43], where the online model processes the current observation and is updated using backpropagation. The target model is applied to the following five observations and updated by a moving average method known as stop-gradient. Recently, a self-predictive representations (SPR) method has been successfully applied in solving Atari-based environments using the Rainbow algorithm [44]. Similar to BYOL and ATC, SPR processes the input using encoder and projection models from both the online and target networks. In contrast, SPR adds an extra model, named the transition model, which receives the current latent vector and action in the online network, located between the encoder and the projection models. The central idea of SPR is to learn a representation in the latent space by minimizing the prediction error. However, error minimization does not ensure a good representation since it suffers from representational collapse, delivering trivial information due to a lack of the true ground-truth [33], [45]. In the study by Ni et al. [45], it is proven both theoretically and empirically that stop-gradient prevents representational col-lapse and proposes a minimalist implementation. Nevertheless, the experimental setting used was MuJoCo continuous control problems, and its implementation was based solely on the TD3 algorithm. In this regard, this study proposes a wider analysis of the performance impact of self-predictive approaches in object-goal navigation problems. 
+
+C. State representation for quadcopter control 
+
+The study of LatentSLAM [46] can be considered an approach of SPR for Simultaneous Localization and Mapping (SLAM), where a generative prior and posterior jointly learn the underlying latent vector in a bootstrapped fashion. Studies related to quadcopter navigation that already use SRL are focused on visual-based observations [28], [47], [48], using a staged approach with a pretrained AutoEncoder model from computer vision datasets or expert demonstrations. However, those studies suffer from the limitations common to deep learning methods, such as limited generalization capabilities conditioned beyond the training data, which can be expensive to collect or may contain wrongly-labeled samples. Addi-tionally, data driven approaches can introduce bias from the object-of-interest features in the training subset, affecting the quality of downstream tasks, such as decision-making. As current SRL literature suggests the use of an SPR approach to enhance sample efficiency in RL algorithms, this study aims to implement a novel SPR architecture to efficiently solve an OGN problem. Station 
+
+> DRL
+> planning
+> SRL
+> perception
+> PID
+> control
+> Motors
+> Sensors
+> RC interface
+> Sensor
+> values
+> Velocity
+> control
+> Latent representation
+> UAV
+> Speed signal
+
+Fig. 1: The overall architecture of Chemamuy ANS for solving control, perception, and planning tasks with a quadrotor. On the UAV side, a PID-based control system deals with the UAV dynamics while continuously transmitting its sensor readings. On the Station side, the sensor data is processed by an SRL-based perception method, creating a latent representation z
+
+further processed by RL. The RL approach sends the desired velocities to displace the UAV towards the target. III. SRL FOR AUTONOMOUS NAVIGATION 
+
+The proposed SRL method was projected as a perception module inside a mapless object-goal Autonomous Navigation System (ANS) named Chemamuy 1. The main purpose of the learning-based perception module is to enhance quad-copter navigation performance by delivering a useful latent information. The overall Chemamuy’s architecture is depicted in Figure 1, comprising two sides. On one side, the UAV handles the control task; on the other, the station handles the planning and perception tasks. A radio communication (RC) interface transports the action signal and sensor values between the station and the UAV. In this regard, Chemamuy’s architecture complies with the Increasing Precision Decreasing Intelligence principle [49], where a PID-based method ad-dresses the vehicle velocity control belonging to the execution level. For the coordination level, the core of our proposal, the Chemamuy’s SRL-based perception method asynchronously processes the sensor data to create a compressed representation 
+
+z about the current vehicle state and surroundings. Finally, at the organizational level, Chemamuy’s RL-based path planning method processes the z vector into the desired velocity control signal and transmits it back to the UAV. In this regard, Chemamuy’s performance considers two main constraints: a limited flight area due to the communication range with the base station and a the real-time control processing for safety assurance.                                    
+
+> 1The name “Chemamuy” was inspired by the Mapuche people, and means “someone is moving towards that.” Chemamuy was derived from the Mapudungun grammar published at https://mapudungun.cl/categories/gramatica.html and processed by an LLM, for searching and processing possible words, resulting in one such meaning that emphasizes intentional movement, autonomy, and adaptive decision-making of an agent towards a target object. SUBMITTED TO IEEE TRANSACTIONS ON ROBOTICS 4Forward
+> Encoder
+> Linear
+> Linear
+> LeakyReLU
+> LayerNorm
+> Linear
+> Tanh
+> LeakyReLU  TransitionModel
+> Linear
+> Linear
+> LeakyReLU
+> LayerNorm
+> Tanh
+> ProjectionModel
+> Linear
+> Linear
+> LeakyReLU
+> Tanh
+> Critic
+> Actor
+> Observation
+> Action
+> Next observation Target Encoder
+
+Fig. 2: AmelPredDet architecture with a deterministic encoder function. 
+
+A. Self-predictive representation 
+
+The proposed self-predictive approach, named AmelPred 2,was inspired by the SPR architecture from [44]. Major differences between SPR and AmelPred are related to the addressed observation space and the problem solved. SPR was projected to process a visual-based observation for Atari-based problems. In contrast, AmelPred processess a vector-based ob-servation for solving an OGN problem. Recent literature also suggests the use of stochastic functions given the uncertainty present in sensor processing and historical experiences [45]. In this regard, a deterministic and stochastic encoder definitions of AmelPred, denoted as AmelPredDet and AmelPredSto, are included. The AmelPred architecture aims to be lightweight and efficient for different RL algorithms, unlike [44] and [45] studies, which only addresses Rainbow-based and TD3-based experiments, respectively. AmelPredDet is depicted in Figure 2, which utilizes an actor-critic algorithm. However, AmelPredDet can also be used with DQN or any other value-based algorithm by replac-ing the critic function with the Q-values estimation function. AmelPredDet comprises a three-layered MLP as the encoder and a two-layered MLP for the transition and projection model. For a smooth learning process, the LeakyReLU activation was used between all layers, except for the last one. In the case of the encoder, a LayerNorm and Tanh process the final layer to produce the latent code zt. Next, the transition model processes the current code zt and current action at
+
+with a LayerNorm and Tanh activation on top. The projection model processes the output with a Tanh activation to infer the next latent code ˆzt+1 bounded ∈ [−1, 1] . Finally, the target encoder model produces the true next code zt+1 from the next observation ot+1 . As a deterministic encoder function, Amel-PredDet optimization used Info Noise Contrastive Estimation (InfoNCE) [40] as a loss function, defined by: 
+
+LSP R = −E
+
+> X
+
+"
+
+log fk(xt+k, ct )
+
+P  
+
+> xj∈X
+
+fk(xj , ct )
+
+#
+
+. (7) 
+
+> 2The name “AmelPred” arises from the Mapudungun word “Amelkantun” that means “to represent something” and the English word “Prediction”.
+
+The stochastic version, AmelPredSto, which similar to its deterministic version, can be used with actor-critic and value-based RL algorithms. The main differences between Amel-PredSto and AmelPredDet lie in the encoder and projection model, which now uses a probability representation of the latent code. The encoder model duplicates the number of units in the output to infer the mean μ and standard deviation σ of a multivariate normal distribution. Next, a Tanh activation bound the latent representation ∈ [−1, 1] . Then, the projection model, similarly to the encoder, produces a probability distribution without the Tanh activation on top. Finally, as both zt+1 
+
+and ˆzt+1 are probabilities, the Kullback-Liebler divergence (KL) [50] was used for AmelPredSto’s optimization, formal-ized as: 
+
+LSP R = DKL (P || Q) = X
+
+> x∈X
+
+P (x) log P (x)
+
+Q(x) . (8) The encoder function of AmelPredDet and AmelPredSto, is jointly optimized with the Q-value estimations. Hence, in Figure 2 the black dense arrow depicts a forward pass, while the dashed colored lines depict the backward pass. The Q’s backward pass from LQ, in blue, affects both its model and the encoder model. The representation backward pass from LSP R 
+
+in color green, affects the encoder, transition, and projection models in an end-to-end manner. The target encoder is a copy of the encoder model updated with Polyak averaging. IV. S IM 2REAL OBJECT -GOAL SCENARIO 
+
+The environment comprises a Crazyflie mini drone 3, with a 2.3 × 2.3 × 2.0 meters delimited flight area, in x, y, and 
+
+z coordinates. The UAV’s main objective is to reach a goal pose near the target location. The entire available flight area was divided into a grid with 3 × 3 × 3 cells, using the center of edge cells’ location to be a target location. Hence, the scenario comprises 24 different target locations with eight target quadrants on three different height level 0.5, 1.025 ,and 1.55 meters of altitude. The OGN problem is considered  
+
+> 3https://www.bitcraze.io/products/crazyflie-2-1-plus SUBMITTED TO IEEE TRANSACTIONS ON ROBOTICS 5
+
+solved when the UAV reaches a safe goal distance and looks towards the objective at the same height. The MDP definition for OGN begins with the action space declaration, which represents the UAV’s local velocity. The UAV’s base action space was in a continuous domain as: 
+
+A = { ˙x, ˙y, ˙z, ˙ψ},
+
+with corresponding translational and rotational velocities as control commands defined by: ˙x, ˙y, ˙z ∈ [−0.5, 0.5] ms and ˙ψ ∈
+
+[−72 , 72] deg s . An additional discrete domain was also defined, using the upper and lower limits of each action component plus a no-action case, totaling nine actions. In this regard, the RL agent can perform a full quadcopter motion in any direction in 3D space. Next, the observation space used two different settings with varying components regards the target location. All settings comprise the common UAV control state as base observation, defined by: 
+
+Obase = {θ, ϕ, ψ, ˙θ, ˙ϕ, ˙ψ, x, y, z, ˙x, ˙y, ˙z}, (9) where x, y, z are the position in the North-East-Up coordi-nate system, and ˙x, ˙y, ˙z its respective translational velocities. 
+
+ϕ, θ, ψ are the roll, pitch, and yaw local Euler angles, and 
+
+˙ϕ, ˙θ, ˙ψ their respective angular velocities. The first observation setting then extends Obase by including the target’s raw-coordinates as: 
+
+OT C = {O base , η, T x,y,z }, (10) where Tx,y,z are the cartesian values for the target location in a 3D space, and η is a north reference towards the target in radians. In the second observation setting, the target coor-dinates are replaced by sensor-based information to perceive where the target is, defined by: 
+
+OT S = {O base , TS 1.. 6}, (11) where TS 1.. 6 is the information from six virtual sensors, computed using current distance, orientation, and altitude differences with respect to the target’s position. Each virtual sensor represents the activation located on the back, left, and right sides, and three others located in front of the quadcopter. All the components in the observation space are normalized 
+
+∈ [−1, 1] .The reward function encodes the OGN problem to be solved, delivering a value conditioned by the goal distance 
+
+Dg and the distance threshold Dthr . Dthr is used with a risk distance value Drisk as an offset for Dg . The overall reward function comprises distance, orientation, pose, and velocity factors, which are defined below.  
+
+> •
+
+The distance component is used to ensure a minimum space between the UAV and the target location, prevent-ing damage to the quadrotor, formalized as: 
+
+Dg = Drisk + Dthr 
+
+2 ,rdist = −| 1 − DT t
+
+Dg
+
+|, rdist ∈ (−∞ , 0] , (12) where DT t is the Euclidean distance between the UAV and the target at moment t. 
+
+> •
+
+The orientation component used the absolute angle dif-ference between the UAV and target orientation, UAV ori 
+
+and T ori , respectively, to define if it is looking towards the target by: 
+
+rori = − UAV ori − Tori |
+
+π , rori ∈ [−1, 0] . (13)  
+
+> •
+
+An elevation component appears to define the perfor-mance with respect to the height difference ∆z and x-y axes distance Dx,y , between the UAV and the target as: 
+
+relev = − arctan( Dx,y , ∆z)
+
+π/ 2 , relev ∈ [−1, 0] . (14)  
+
+> •
+
+The pose term is updated to consider also the elevation term, defined as: 
+
+rpose = rdist + rori + relev , rpose ∈ (−∞ , 0] . (15)  
+
+> •
+
+Finally, the velocity component uses the derivative of the distance d with unbounded values, formalized as: 
+
+rvel = dt − dt+1 
+
+∆t , (16) with ∆t being the actual time difference between mo-ments t and t + 1 .A rpenalty score discourages the agent with a reward signal 
+
+−2 when it goes out of the allowed area, senses a close object, or surpasses the risk zone. Or if the agent somehow turns downwards or remains still for five simulated seconds, the run is ended. When it senses an object but not too close, the penalty value is −1. A success reward value rsuccess = 10 is obtained when the UAV reaches the goal pose or 0 otherwise. The success case is when the agent reaches a goal pose defined by: 
+
+(1 + rdist ) × (1 + rori ) × (1 + relev ) > 0.95 , (17) which indicates if the agent solved the navigation task and must end the run. Hence, the total step reward is formalized by: 
+
+rtotal = rvel + rpose × 0.1 + rpenalty + rsuccess . (18) 
+
+A. Simulated environment 
+
+The simulated UAV scene was projected in an outdoor landscape, using the quadcopter, and the target object. The scene only includes a red barrel as a target object for visual cues during evaluation. At the beginning of each episode, the target location can randomly appear in certain quadrants. Hence, the expected trajectory is a straight line from the initial position to the goal pose near the target location. Additionally, while the UAV is in transit, it should adjust its orientation and altitude accordingly to reach the goal pose near the target. A delimited flight area is also used to prevent the UAV from flying out of range, which is considered the remote control signal distance. The original Crazyflie PID’s firmware was used as a low-level controller, which simplifies further real-world transition. Figure 3 depicts eight target quadrants on the first level at 0.5 meters height. A public GitHub repository hosts the simulated Webots environments 4.  
+
+> 4https://github.com/angel-ayala/gym-webots-drone SUBMITTED TO IEEE TRANSACTIONS ON ROBOTICS 6Q1 Q2 Q3
+> Q5
+> Q4
+> Q6 Q7
+> Q0
+> UAV (0, 0, 1) Target Q4
+> 2.3m
+> 2.3m
+> 2m
+
+Fig. 3: The simulated OGN scene comprises an outdoor landscape with a flight area of 2.3×2.3×2 meters, a Crazyflie quadcopter, and a red barrel as the target object. The target can appear in 24 different locations on three levels, each level comprises 8 grids at 0.5m height, as depicted above. The second and third levels are located at 1.025 and 1.55 meters height, respectively. At each episode, the agent starts from the same initial position at (x = 0 , y = 0 , z = 1) .
+
+B. Real-world settings 
+
+The real-world counterpart comprises a flying arena for autonomous aircraft. The arena comprises a ground station connected to a series of OptiTrack motion capture cameras in a 6 × 6 meters room. Nevertheless, due to the camera’s field of view on the reflection of infrared marker, a reduced space of 2×2 is available for safe flights. Additionally, vertical limits are also needed, from a minimum altitude of 0.5 until 2 meters. A representation of the real-world setup is presented in Figure 4. Real Crazyflie velocities constraint was also considered to prevent control signals from differing too much in magnitude. In this regards, sensor readings are delivered asynchronously by different components on the flying arena. For example, the position and rotational information were obtained from the Motive software of the motion capture system, with respective velocities computed from their deriva-tives. Nevertheless, roll, pitch, and yaw angles and battery level values were obtained from the Crazyflie platform. In this regard, the twelve variables for Obase are available to define the quadcopter state. V. E XPERIMENTAL NAVIGATION RESULTS 
+
+The experimental settings addressed the comparison of the proposed SRL perception module named Amelkantun Predic-tion (AmelPred) with different observation space and RL algo-rithms. Regarding the observation, the raw target coordinates 
+
+OT C and a sensor-based target observation OT S were used. We selected DQN, TD3, and SAC as baseline RL algorithms and evaluated the efficiency improvements achieved with the proposed AmelPred SRL method. The development of the AmelPred architecture was built upon the Stable-Baselines3 library. 6m         
+
+> 6m
+> 1m 2.3m 2m 2.3m Crazyradio PA
+> Ground Station Computer
+> Motion Capture Cameras Agent drone Initial position
+> Q0 Q1 Q2 Q3 Q7 Q8 Q9 Q10 Q11 Q15 Q16 Q17 Q18 Q19 Q23
+
+Fig. 4: Real-world flying arena for autonomous quadcopter setup. A 6 × 6 meters room comprises a serie of OptiTrack motion capture cameras for reading the position and rotational information through the reflection of infrared marker on a Crazyflie drone. Five different seed values were used for each method to learn a suitable navigation policy. As off-policy RL algorithms, the optimization process used a random experience replay buffer with 216 (∼ 65 K) transitions. The first model parameter optimization began after 211 (∼ 2K) steps for memory initialization. The training process consisted of 450 K steps, chunk into episodes of 9K steps each. Default SB3 learning hyperparameters were used, such as Adam learning rate of 
+
+1 × 10 −4 for DQN, 3 × 10 −3 for SAC, and 1 × 10 −3 for TD3. The target network parameters update was achieved through Polyak averaging using τ = 5 × 10 −3, as compared to its original counterpart. Only DQN algorithm used τ = 1 ,updated every 10 K steps. All agents received an observation as input, with a random number of steps ∈ [5 , 7] between consecutive observations. All variants of the AmelPred representation model were optimized using Adam with a learning rate of 1 × 10 −3. Both loss values from the Q-value estimations and the representa-tion models were used for joint optimization of parameters. The target encoder network was also updated through Polyak averaging with τ = 0 .999 . In the case of TD3-AmelPred, the critic and actor models match the SAC architecture, featuring two layers of MLP with 256 units each. The TD3 architecture reduction was the only change made; all the other aspects remain untouched. The training parameters were used for both main AmelPredDet and AmelPredSto variations. The evaluation phase was executed for each trained agent checkpoint at episodes 5, 10, 20, 35, and 50, with 240 iterations each. Additionally, experimental results included two other SRL methods from the literature. The first method was a modified version of SPR [44], which follows a similar archi-tecture proposed by the authors. The original implementation of SPR was used in conjunction with Rainbow for pixel-based observations, whereas this study presents a modified version of SPR for handling vector-based observations. The second method was an unmodified baseline for SRL presented by [45], which comprises the TD3 algorithm and three different techniques for target model updates and loss computation. Among all the technique combinations presented, the L2 loss SUBMITTED TO IEEE TRANSACTIONS ON ROBOTICS 70.50 0.55 0.60 0.65 0.70 
+
+> P(X > Y)
+> TD3
+> SAC
+> DQN
+> Algorithm X
+> TD3/TC
+> SAC/TC
+> DQN/TC
+> Algorithm Y
+
+Fig. 5: Probability of improvement between vanilla algorithms using target sensing and target coordinates in the agent’s observation, with five different seed values. The last ones are denoted with /TC. with the online target model was the only one that showed convergence, named here as TD3-Ni. All RL performance-related metrics were obtained using the RLiable Python library with normalized scores using the TD3 maximum reward value. 
+
+A. Simulated experimental performance 
+
+The first experimental results aimed to compare the per-formance enhancement from replacing the target location in each agent’s observation with a sensor data-related approach. The algorithms labeled as DQN, SAC, and TD3 use the target sensing approach. In contrast, the DQN/TC, SAC/TC, and TD3/TC labeled algorithms use raw target coordinates. The comparison in terms of probability of improvements between each vanilla algorithm is presented in Figure 5. The probability of improvement indicates the likelihood of achieving a higher reward value for algorithm X compared to algorithm Y. In the case of TD3, it is the algorithm that performs better than TD3/TC with a 64% probability. Then, the SAC algorithm has only a 56% probability of achieving a better reward than SAC/TC. Finally, in the case of DQN, it is the algorithm that slightly improves DQN/TC with a 54% probability. The obtained results indicate that using a target sensing approach is more efficient than using target coordinates on all vanilla algorithms. Hence, next experimental results were focused on compar-ing the RL vanilla algorithms against the RL algorithm with AmelPred SRL method. Additionally, for comparison against the state-of-the-art, the unmodified TD3-Ni and the adapted SPR methods were included in the presented results. The first method, named TD3-Ni, utilizes the TD3 algorithm with an L2 distance from the latent space and an online target model for representation loss [45]. The second adapted SPR method is a modified approach designed to be compatible with vector-based observations [44]. The first analysis compares the obtained reward scores of each vanilla algorithm against the AmelPredDet versions, depicted in Figure 6. A remarkable outcome was achieved by DQN-AmelPredDet, which increases the reward score by 6.5 times compared to DQN, surpassing SAC and achieving similar rewards than TD3. In the case of actor-critic algo-rithms, only TD3-AmelPredDet outperforms TD3 in all pre-sented reward values. In contrast, SAC-AmelPredDet achieves nearly the same reward as SAC, with no notable difference. 0.0 0.3 0.6         
+
+> DQN
+> DQN-AmelPredDet
+> DQN-AmelPredSto
+> SAC
+> SAC-AmelPredDet
+> SAC-AmelPredSto
+> TD3
+> TD3-AmelPredDet
+> TD3-AmelPredSto
+> Median
+> 0.0 0.3 0.6
+> IQM
+> 0.00 0.25 0.50 0.75
+> Mean
+> 0.25 0.50 0.75 1.00
+> Optimality Gap
+> Max-TD3 Normalized Score
+
+Fig. 6: Aggregated reward values for comparing vanilla al-gorithm and its AmelPred version, with five different seeds value. 0.2 0.4 0.6 0.8         
+
+> SAC
+> TD3
+> TD3-Ni
+> SAC-SPR
+> SAC-AmelPredSto
+> TD3-SPR
+> TD3-AmelPredSto
+> Median
+> 0.4 0.6 0.8
+> IQM
+> 0.2 0.4 0.6 0.8
+> Mean
+> 0.2 0.4 0.6 0.8
+> Optimality Gap
+> Max-TD3 Normalized Score
+
+Fig. 7: Aggregated reward values for comparing the Amel-PredSto approach against literature methods, with five different seeds value. Therefore, the presented AmelPredDet proposal works fine with deterministic algorithms such as TD3 and DQN. A second analysis compares the AmelPredSto state rep-resentation approach against the AmelPredDet approach. As initially thought, it was expected for AmelPredSto be com-patible with SAC algorithm given the same stochastic na-ture. However, TD3-AmelPredSto achieved the best reward value in comparison to all other methods, obtaining a 0.8 normalized IQM reward value. In second place was the SAC-AmelPredSto method, which achieved better rewards than SAC-AmelPredDet, demonstrating the compatibility of the stochastic processes between AmelPred and the SAC algo-rithm. Unlike TD3, the DQN-AmelPredSto method underper-forms DQN, whereas the DQN-AmelPredDet methods outper-form it, possibly due to the bootstrapped way in computing the targets for Q-values of DQN is more stable with deterministic values. The third analysis from Figure 7 was to compare the performance against state-of-the-art (SOTA) methods. In this regard, only SAC and TD3 algorithms were considered in an attempt at fair comparison against the TD3-Ni method. From the observed results, TD3-AmelPredSto again surpasses all presented methods, with the 0.8 normalized IQM reward value. In second place was the SAC-AmelPredSto method with a normalized IQM reward value of 0.7. The vanilla TD3 and SAC algorithms achieved third and fourth place, respectively. The included SOTA methods were not able to solve the object-navigation problem, achieving lower reward values than SAC. The fifth and sixth places were given to TD3-SPR and SAC-SPR, respectively, achieving IQM reward values of 0.45 and 0.6, respectively. The final place was for the TD3-Ni method, which achieved a 0.2 IQM reward value. In terms of computational cost, as presented in Table I, each method is compared based on the number of floating-point operations (Flops) and the number of parameters. An overall comparison between the algorithm types shows that the SUBMITTED TO IEEE TRANSACTIONS ON ROBOTICS 8
+
+TABLE I: Computational cost comparison using sensor-based target-perception in observation. 
+
+Learning Evaluation Method Flops # Params Flops # Params 
+
+DQN 11.648K 11.922K 5.824K 5.961K 
+
+DQN-AmelPredDet 137.216K 139.538K 33.472K 34.121K 
+
+DQN-AmelPredSto 109.056K 110.706K 34.624K 35.241K 
+
+SAC 357.888K 360.460K 143.616K 144.649K 
+
+SAC-SPR 469.248K 473.420K 179.584K 181.129K 
+
+SAC-AmelPredDet 497.024K 501.644K 177.536K 179.081K 
+
+SAC-AmelPredSto 468.864K 472.812K 178.688K 180.201K 
+
+TD3 773.200K 777.412K 257.500K 258.905K 
+
+TD3-SPR 542.976K 547.660K 178.560K 180.101K 
+
+TD3-AmelPredDet 570.752K 575.884K 176.512K 178.053K 
+
+TD3-AmelPredSto 542.592K 547.052K 177.664K 179.173K 
+
+DQN-based methods are the most lightweight during both the learning and evaluation stages, followed by the SAC and TD3 algorithms. Additionally, during evaluation, all algorithms comprise fewer floating-point operations and parameters, since the target models are not considered. As state representation learning approaches comprise additional models, it is expected that those methods will increase the model’s complexity. For example, when evaluating the best models, it can be observed that DQN-AmelPredDet performs almost 6 times more Flops than DQN. Between SAC-AmelPredSto and SAC, the difference is minor, with the first one comprising 1.2x more Flops than the last. In the case of TD3-AmelPredSto, a complexity reduction of 1.5 times that of TD3 was achieved, primarily due to the reduction in the number of parameters of the policy model. It is expected that SRL methods will improve sample effi-ciency in RL algorithms, as measured by the reward curve and the performance profile, to compare each presented method. The first metric proposes assessing the evolution using the normalized interquartile mean (IQM). Next, the reported per-formance profile shows the empirical tail distribution function of the reward value. Both metrics include a shaded area that represents a 95% pointwise confidence interval based on a stratified bootstrap. The first analysis compared each algorithm group, followed by a comparison of each presented method, described below. Figure 8 presents a comparison between each method type, allowing us to assess the efficiency of each algorithm type. In the case of vanilla methods in Figure 8a, TD3 achieved the highest IQM reward values from the earliest episodes, with a decreasing score from episode 20 compared to SAC. As expected, DQN obtained the lowest IQM scores, requiring more samples to achieve a better outcome, with a constant improvement. Similarly, the AmelPredDet methods presented in Figure 8b, showed that TD3-AmelPredDet got the high-est IQM rewards until episode 20, with SAC-AmelPredDet reaching the same score at the end. Surprisingly, DQN-AmelPredDet achieved the highest score after episode 20, reaching a 1.2 of IQM in episode 35 and a notable reduction to 0.9 in episode 50. For the AmelPredSto methods in Figure 8c, TD3-AmelPredSto reached almost a 0.8 score in episode 10, followed by SAC-AmelPredSto. From episode 20 onwards, 10 20 30 40 50 
+
+> Episodes
+> 0.2
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> IQM Max-TD3 Normalized Score  DQN
+> SAC
+> TD3
+
+(a) Vanilla comparison. 10 20 30 40 50  
+
+> Episodes
+> 0.2
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1.0
+> IQM Max-TD3 Normalized Score  DQN-AmelPredDet
+> SAC-AmelPredDet
+> TD3-AmelPredDet
+
+(b) AmelPredDet comparison. 10 20 30 40 50 
+
+> Episodes
+> 0.2
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> IQM Max-TD3 Normalized Score
+> DQN-AmelPredSto
+> SAC-AmelPredSto
+> TD3-AmelPredSto
+
+(c) AmelPredSto comparison. 
+
+Fig. 8: Interquartile mean (IQM) reward curve comparison of vanilla algorithms and prediction-based methods, with five different seeds value. both SAC-AmelPredSto and TD3-AmelPredSto perform the same. The stochastic version of AmelPredDet was not com-patible with DQN, as DQN-AmelPredSto performed the worst in terms of IQM rewards. The performance profiles of the proposed method types are depicted in Figure 9. For the case of vanilla methods in Figure 9a, TD3 and SAC outperform DQN, with TD3 achiev-ing more runs with higher reward values. In contrast, SAC achieves slightly more runs with scores above 0.8. Regarding AmelPredDet methods in Figure 9b, all three methods perform similarly, with notable differences in higher reward values. For example, TD3-AmelPredDet achieved a larger number of runs with rewards above 0.65, followed by DQN-AmelPredDet and SAC-AmelPredDet. In terms of stochastic AmelPred methods in Figure 9c, the results obtained are notably different. TD3-AmelPredSto performed the best curve, achieving more runs with scores over 0.6, followed by SAC-AmelPredSto. For DQN-AmelPredSto, it was the worst-performing method, with half of the runs achieving scores below 0.5. 
+
+1) Sensor-based navigation performance: The OGN per-formance assessment was done using the distance to success (DTS), and success path length (SPL) metrics. DTS, and SPL allowed the assessment of how far the agent ends from the target, and how efficient the trajectory is. All metrics were obtained by considering a total of 10 trials for each of the 24 target locations, resulting in a total of 240 trials. The figures presented in this section depict the mean value of five different trained agents, represented by a solid colored line, and their corresponding standard deviation, represented by a shaded colored area. Figure 10 reports the DTS-based comparison across meth-ods. DQN and TD3 started from a similar distance around 0.17m with a divergent evolution, as shown in Figure 10a. The first one reached a peak of 0.23m and then stabilized around 0.07m from episode 25 onwards. The last one, which moved to 0.08m at episode 20, ended with a DTS of 0.10m at SUBMITTED TO IEEE TRANSACTIONS ON ROBOTICS 90.0 0.2 0.4 0.6 0.8 1.0 1.2 1.4  
+
+> Max-TD3 Normalized Score ( )
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+> Fraction of runs with score >
+> DQN
+> SAC
+> TD3
+
+(a) Vanilla comparison. 0.0 0.2 0.4 0.6 0.8 1.0 1.2 1.4   
+
+> Max-TD3 Normalized Score ( )
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+> Fraction of runs with score >
+> DQN-AmelPredDet
+> SAC-AmelPredDet
+> TD3-AmelPredDet
+
+(b) AmelPredDet comparison. 0.0 0.2 0.4 0.6 0.8 1.0 1.2 1.4  
+
+> Max-TD3 Normalized Score ( )
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+> Fraction of runs with score >
+> DQN-AmelPredSto
+> SAC-AmelPredSto
+> TD3-AmelPredSto
+
+(c) AmelPredSto comparison. 
+
+Fig. 9: Performance profile comparison of vanilla algorithms and prediction-based methods. 10 20 30 40 50 
+
+> Episodes
+> 0.05
+> 0.00
+> 0.05
+> 0.10
+> 0.15
+> 0.20
+> 0.25
+> 0.30
+> Distance to success (meters)  DQN
+> SAC
+> TD3
+
+(a) Vanilla comparison. 10 20 30 40 50  
+
+> Episodes
+> 0.0
+> 0.1
+> 0.2
+> 0.3
+> 0.4
+> 0.5
+> Distance to success (meters)  DQN-AmelPredDet
+> SAC-AmelPredDet
+> TD3-AmelPredDet
+
+(b) AmelPredDet comparison. 10 20 30 40 50 
+
+> Episodes
+> 0.0
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> Distance to success (meters)  DQN-AmelPredSto
+> SAC-AmelPredSto
+> TD3-AmelPredSto
+
+(c) AmelPredSto comparison. 
+
+Fig. 10: Distance to success (DTS) metric comparison of vanilla algorithms and prediction-based methods. The colored lines depicts the mean value of five agents during evaluation, with the shaded area as the standard deviation. episode 50. SAC had the highest initial DTS and the lowest final DTS, with values of 0.23 and 0.06 meters, respectively. The AmelPredDet methods presented in Figure 10b showed different DTS curves according to each algorithm. However, a DTS value of around 0.05m was obtained in episode 20 by all algorithms, diverging in the evolution of their values. On the one hand, DQN-AmelPredDet had the lowest final DTS, followed by SAC-AmelPredDet and TD3-AmelPredDet. On the other hand, a remarkable evolution with the pro-posed AmelPredSto methods can be observed in Figure 10c. The entire evolution of DTS for the stochastic versions was practically the same, starting and ending with a difference not greater than 0.01m. A notable difference was observed for DQN-AmelPredSto, which initially increases the distance before reducing it to values around 0.17m. 10 20 30 40 50 
+
+> Episodes
+> 0%
+> 20%
+> 40%
+> 60%
+> 80%
+> 100%
+> Success Path Length
+> DQN
+> SAC
+> TD3
+
+(a) Vanilla comparison. 10 20 30 40 50  
+
+> Episodes
+> 0%
+> 20%
+> 40%
+> 60%
+> 80%
+> 100%
+> Success Path Length
+> DQN-AmelPredDet
+> SAC-AmelPredDet
+> TD3-AmelPredDet
+
+(b) AmelPredDet comparison. 10 20 30 40 50 
+
+> Episodes
+> 0%
+> 20%
+> 40%
+> 60%
+> 80%
+> 100%
+> Success Path Length
+> DQN-AmelPredSto
+> SAC-AmelPredSto
+> TD3-AmelPredSto
+
+(c) AmelPredSto comparison. 
+
+Fig. 11: Success path length (SPL) metric comparison of vanilla algorithms and prediction-based methods. The colored lines depicts the mean value of five agents during evaluation, with the shaded area as the standard deviation. The SPL metric focuses on comparing the achieved tra-jectory for each algorithm, presented in Figure 11. Vanilla methods, such as TD3, achieved the best curve, followed by SAC, with both reaching a similar SPL of around 90%, as depicted in Figure 11a. On the other hand, DQN was unable to surpass 20% of SPL. A notable gap between Amel-PredDet methods can be observed in Figure 11b, with TD3-AmelPredDet performing the best, achieving 99% of SPL. SAC-AmelPredDet and DQN-AmelPredDet demonstrated a consistent improvement over time, reaching final SPLs of 70% and 90%, respectively. A very similar outcome between SAC-AmelPredSto and TD3-AmelPredSto can be observed in Figure 11c. Initially, the TD3 version is ahead until episode 20, after which the SAC version takes the lead until episode 35. At the end, TD3-AmelPredSto ends first with 91% of SPL, followed by SAC-AmelPredSto with 90%. DQN-AmelPredSto was unable to surpass a SPL of 10%. In the OGN problem, the autonomous UAV must fly around looking for the target object. The trajectory visualization of each method’s flying pattern evolution was used as a qualitative assessment of the navigation problem. Overall, the DQN algorithm performed the worst at generating a trajectory towards a target. The best trajectory was achieved by the TD3 algorithm with the AmelPredSto method. In second place was the SAC-AmelPredSto method since it took more time to perform a more direct path towards the goal pose. However, more interesting results were obtained in the path obtained by the real-world system to solve the OGN problem described next. 
+
+B. Real-world navigation performance 
+
+Real experiment settings were conducted in a flying arena using remote piloted aircraft. The main focus of real-world experiments was to evaluate the sim2real capability of the proposed method. The evaluation considered three different SUBMITTED TO IEEE TRANSACTIONS ON ROBOTICS 10 1.0 0.5 0.0 0.5 1.0   
+
+> X
+> 1.5
+> 1.0
+> 0.5
+> 0.0
+> 0.5
+> 1.0
+> 1.5
+> Y
+> Top View
+> 0.0 0.5 1.0
+> X
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+> 1.25
+> 1.50
+> 1.75
+> 2.00
+> Z
+> Side View
+> TD3-AmelPredSto trajectory in episode 50
+
+(a) 1.0 0.5 0.0 0.5 1.0   
+
+> X
+> 1.5
+> 1.0
+> 0.5
+> 0.0
+> 0.5
+> 1.0
+> 1.5
+> Y
+> Top View
+> 0.0 0.5 1.0
+> X
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+> 1.25
+> 1.50
+> 1.75
+> 2.00
+> Z
+> Side View
+> TD3-AmelPredSto trajectory in episode 50
+
+(b) 1.0 0.5 0.0 0.5 1.0   
+
+> X
+> 1.5
+> 1.0
+> 0.5
+> 0.0
+> 0.5
+> 1.0
+> 1.5
+> Y
+> Top View
+> 0.0 0.5 1.0
+> X
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+> 1.25
+> 1.50
+> 1.75
+> 2.00
+> Z
+> Side View
+> TD3-AmelPredSto trajectory in episode 50
+
+(c) 
+
+Fig. 12: Real-world trajectories towards the target located at 
+
+(0 .95 , −0.95 , 0.5) for TD3-AmelPredSto. Three different runs are depicted in (a), (b), and (c). target locations with varying altitude levels and positions, focusing on assessing different goal pose aspects such as distance, altitude, and orientation. The best performing TD3-AmelPredSto model in simulation was used for evaluation in the real flying arena. Three runs were performed for a single agent, given the increased time required for its execution. The main bottleneck in the real-world setting was the time required for equipment calibration to acquire accurate positional infor-mation, in addition to battery life. Those aspects were not present in the simulated scenario. Figure 12 depicts the performed trajectory of the real Crazyflie in the flying arena towards the target location 
+
+(0 .95 , −0.95 , 0.5) , for (X, Y, Z ) coordinates. A clear path selection can be observed over multiple time steps, in both visible axes pairs (X, Y ) and (X, Z ) for top and side views, respectively. The goal zone is defined as the ring-shaped region between the outer green circle and the inner pink-shaded disk, which represents the risk zone. During the first two attempts, the obtained trajectory pointed directly towards the target. In contrast, the final attempt struggled to find the correct distance value and expended all the evaluation time. In this regard, a success rate (SR) of 66 .66% was obtained. Similarly, Figure 13 depicts the trajectories of the Crazyflie flying towards the target location (−0.95 , 0.0, 1.02) , for 1.0 0.5 0.0 0.5 1.0   
+
+> X
+> 1.5
+> 1.0
+> 0.5
+> 0.0
+> 0.5
+> 1.0
+> 1.5
+> Y
+> Top View
+> 1.0 0.5 0.0
+> X
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+> 1.25
+> 1.50
+> 1.75
+> 2.00
+> Z
+> Side View
+> TD3-AmelPredSto trajectory in episode 50
+
+(a) 1.0 0.5 0.0 0.5 1.0   
+
+> X
+> 1.5
+> 1.0
+> 0.5
+> 0.0
+> 0.5
+> 1.0
+> 1.5
+> Y
+> Top View
+> 1.0 0.5 0.0
+> X
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+> 1.25
+> 1.50
+> 1.75
+> 2.00
+> Z
+> Side View
+> TD3-AmelPredSto trajectory in episode 50
+
+(b) 1.0 0.5 0.0 0.5 1.0   
+
+> X
+> 1.5
+> 1.0
+> 0.5
+> 0.0
+> 0.5
+> 1.0
+> 1.5
+> Y
+> Top View
+> 1.0 0.5 0.0
+> X
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+> 1.25
+> 1.50
+> 1.75
+> 2.00
+> Z
+> Side View
+> TD3-AmelPredSto trajectory in episode 50
+
+(c) 
+
+Fig. 13: Real-world trajectories towards the target located at 
+
+(−0.95 , 0.0, 1.02) for TD3-AmelPredSto. Three different runs are depicted in (a), (b), and (c). 
+
+(X, Y, Z ) coordinates. The latest run successfully achieved the goal pose. All three attempts performed a very similar action sequence from the initial position, diverging near the goal zone. The first two were capable of keeping the vehicle within the goal zone and orbiting the target location. However, they exceeded the flight area represented by the blue box. The last one was the only one capable of entering with a more correct orientation. Such behavior can result from the reduced motion’s complexity, since the altitude component does not need to be adjusted. Finally, Figure 14 depicts the trajectories of the Crazyflie flying towards the target location (−0.95 , −0.95 , 1.55) , for 
+
+(X, Y, Z ) coordinates. In all three instances, the vehicle cor-rected its altitude and orientation towards the target until it surpassed it and approached the desired pose. In general comparison, correcting the orientation is simpler in cases where the traveled distance is also high. Both target locations 
+
+(−0.95 , −0.95 , 1.55) and (0 .95 , −0.95 , 0.5) were diagonally opposed. Hence, the traveled distance is higher, and TD3-AmelPredSto performed the best. In contrast, for the target location (−0.95 , 0.0, 1.02) , where it must practically change its orientation the most when traveling, TD3-AmelPredSto performed the worst. Overall real-world results obtained, demonstrated a suitable SUBMITTED TO IEEE TRANSACTIONS ON ROBOTICS 11 1.0 0.5 0.0 0.5 1.0   
+
+> X
+> 1.5
+> 1.0
+> 0.5
+> 0.0
+> 0.5
+> 1.0
+> 1.5
+> Y
+> Top View
+> 1.0 0.5 0.0
+> X
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+> 1.25
+> 1.50
+> 1.75
+> 2.00
+> Z
+> Side View
+> TD3-AmelPredSto trajectory in episode 50
+
+(a) 1.0 0.5 0.0 0.5 1.0   
+
+> X
+> 1.5
+> 1.0
+> 0.5
+> 0.0
+> 0.5
+> 1.0
+> 1.5
+> Y
+> Top View
+> 1.0 0.5 0.0
+> X
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+> 1.25
+> 1.50
+> 1.75
+> 2.00
+> Z
+> Side View
+> TD3-AmelPredSto trajectory in episode 50
+
+(b) 1.0 0.5 0.0 0.5 1.0   
+
+> X
+> 1.5
+> 1.0
+> 0.5
+> 0.0
+> 0.5
+> 1.0
+> 1.5
+> Y
+> Top View
+> 1.0 0.5 0.0
+> X
+> 0.00
+> 0.25
+> 0.50
+> 0.75
+> 1.00
+> 1.25
+> 1.50
+> 1.75
+> 2.00
+> Z
+> Side View
+> TD3-AmelPredSto trajectory in episode 50
+
+(c) 
+
+Fig. 14: Real-world trajectories towards the target located at 
+
+(−0.95 , −0.95 , 1.55) for TD3-AmelPredSto. Three different runs are depicted in (a), (b), and (c). sim2real transfer capability without with TD3-AmelPredSto performing a SPL of 65 .90% , and a DTS of 0.10 meters. Therefore, no adjustments or fine-tunning of trained model in simulated environment were required for such real-world tests, achieving a suitable generalization capabilities. Additionally, the use of the Crazyflie’s firmware for low-level control also ensured the sim2real transfer compatibility. VI. C ONCLUSIONS 
+
+Autonomous UAV navigation under an object-goal context is challenging because the flight pattern must ensure vehicle displacement to reach a desired object. SRL aids learning by decoupling representation and policy learning from raw input data, enhancing the sample efficient. In terms of OGN performance, it was observed that continuous actor-critic RL algorithms were the best. Overall, the DQN outcome was not satisfactory, despite the higher reward and efficiency achieved by DQN-AmelPredDet, which surpassed the SPL by 80% compared to its vanilla version. We hypothesize that the reason could be a low DTS achieved between the UAV and the target, given the discrete action signal. The AmelPredSto method was the most sample-efficient, constantly enhancing the number of times each agent reached the goal pose. A positive change was observed for SAC-AmelPredSto, which significantly re-duces the standard deviation in metrics related to navigation. Nevertheless, the AmelPredDet method ultimately diminishes its performance compared to the AmelPredSto methods. Only TD3-AmelPredDet was able to surpass its stochastic version in SPL at the end, possibly due to better compatibility with the policy function. TD3-AmelPredSto achieved a remarkably successful out-come. From the very beginning, it was able to identify and slowly displace the UAV towards the goal pose. A prioritized adjustment in orientation and altitude components of the goal pose can interpret the evolution to a far distance. Ultimately, it can reach a more distant and safe position with a more direct orientation related to the difference between the target’s location and the initial position. This safest behavior is re-sponsible for diminishing the SPL of TD3-AmelPredSto, as proved by the DTS, which prioritizes larger distance values as quickly as possible. So far, TD3-AmelPredSto is the most suitable option for a sample-efficient object-goal autonomous navigation system. Experiments in real-world settings demon-strated a suitable sim2real transferability capable of reaching the goal pose with an SR of 66 .66% , a SPL of 65 .90% , and a DTS of 0.10 meters. Future work should be addressed in large-scale dynamic scenarios including the presence of wind, obstacles, and mov-ing targets to assess more complex navigation settings. Other studies can focus on multi-agent settings where the latent representation must also be aware of other agents in a co-operative or competitive cases. Additionally, the AmelPredSto assessment must be carried out in other benchmark problems such as MuJoCo and Atari. ACKNOWLEDGMENT 
+
+This study was financed in part by the Coordenac ¸ ˜ ao de Aperfeic ¸oamento de Pessoal de N´ ıvel Superior - Brasil (CAPES) - Finance Code 001, Fundac ¸ ˜ ao de Amparo a Ciˆ encia e Tecnologia do Estado de Pernambuco (FACEPE), and Con-selho Nacional de Desenvolvimento Cient´ ıfico e Tecnol´ ogico (CNPq) - Brazilian research agencies. REFERENCES [1] Y. Liu, H.-N. Dai, Q. Wang, M. K. Shukla, and M. Imran, “Unmanned aerial vehicle for internet of everything: Opportunities and challenges,” 
+
+Computer communications , vol. 155, pp. 66–83, 2020. [2] S. A. H. Mohsan, M. A. Khan, F. Noor, I. Ullah, and M. H. Alsharif, “Towards the unmanned aerial vehicles (UAVs): A comprehensive review,” Drones , vol. 6, no. 6, p. 147, 2022. [3] J. del Cerro, C. Cruz Ulloa, A. Barrientos, and J. de Le´ on Rivas, “Unmanned aerial vehicles in agriculture: A survey,” Agronomy , vol. 11, no. 2, p. 203, 2021. [4] G. Sonug¨ ur, “A review of quadrotor UAV: Control and SLAM method-ologies ranging from conventional to innovative approaches,” Robotics and Autonomous Systems , vol. 161, p. 104342, 2023. [5] F. J. Perez-Grau, J. R. Martinez-de Dios, J. L. Paneque, J. J. Acevedo, A. Torres-Gonz´ alez, A. Viguria, J. R. Astorga, and A. Ollero, “Intro-ducing autonomous aerial robots in industrial manufacturing,” Journal of Manufacturing Systems , vol. 60, pp. 312–324, 2021. [6] M.-D. Hua, T. Hamel, P. Morin, and C. Samson, “Introduction to feedback control of underactuated VTOL vehicles: A review of basic control design ideas and principles,” IEEE Control systems magazine ,vol. 33, no. 1, pp. 61–75, 2013. SUBMITTED TO IEEE TRANSACTIONS ON ROBOTICS 12 
+
+[7] J. Rao, B. Li, Z. Zhang, D. Chen, and W. Giernacki, “Position control of quadrotor UAV based on cascade fuzzy neural network,” Energies ,vol. 15, no. 5, p. 1763, 2022. [8] J. A. Cardenas, U. E. Carrero, E. C. Camacho, and J. M. Calderon, “Intelligent position controller for unmanned aerial vehicles (UAV) based on supervised deep learning,” Machines , vol. 11, no. 6, p. 606, 2023. [9] S. Bijjahalli, R. Sabatini, and A. Gardi, “Advances in intelligent and autonomous navigation systems for small UAS,” Progress in Aerospace Sciences , vol. 115, p. 100617, 2020. [10] R. S. Sutton and A. G. Barto, Reinforcement learning: An introduction .MIT press, 2018. [11] A. T. Azar, A. Koubaa, N. Ali Mohamed, H. A. Ibrahim, Z. F. Ibrahim, M. Kazim, A. Ammar, B. Benjdira, A. M. Khamis, I. A. Hameed et al. ,“Drone deep reinforcement learning: A review,” Electronics , vol. 10, no. 9, p. 999, 2021. [12] C. Fu, X. Xu, Y. Zhang, Y. Lyu, Y. Xia, Z. Zhou, and W. Wu, “Memory-enhanced deep reinforcement learning for UAV navigation in 3d environment,” Neural Computing and Applications , vol. 34, no. 17, pp. 14 599–14 607, 2022. [13] Y. Lu, Z. Xue, G.-S. Xia, and L. Zhang, “A survey on vision-based UAV navigation,” Geo-spatial information science , vol. 21, no. 1, pp. 21–32, 2018. [14] A. Ayala, L. Portela, F. Buarque, B. J. Fernandes, and F. Cruz, “UAV control in autonomous object-goal navigation: A systematic literature review,” Artificial Intelligence Review , vol. 57, no. 5, pp. 1–64, 2024. [15] H. Du, L. Li, Z. Huang, and X. Yu, “Object-goal visual navigation via effective exploration of relations among historical navigation states,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , 2023, pp. 2563–2573. [16] K. Kotar, A. Walsman, and R. Mottaghi, “ENTL: Embodied naviga-tion trajectory learner,” in Proceedings of the IEEE/CVF International Conference on Computer Vision , 2023, pp. 10 863–10 872. [17] D. Zhao, Z. Zhang, H. Lu, S. Cheng, B. Si, and X. Feng, “Learning cognitive map representations for navigation by sensory–motor integra-tion,” IEEE Transactions on Cybernetics , vol. 52, no. 1, pp. 508–521, 2020. [18] D. Dugas, J. Nieto, R. Siegwart, and J. J. Chung, “NavRep: Unsuper-vised representations for reinforcement learning of robot navigation in dynamic human environments,” in 2021 IEEE international conference on robotics and automation (ICRA) . IEEE, 2021, pp. 7829–7835. [19] M. Llofriu, G. Tejera, M. Contreras, T. Pelc, J.-M. Fellous, and A. Weitzenfeld, “Goal-oriented robot navigation learning using a multi-scale space representation,” Neural Networks , vol. 72, pp. 62–74, 2015. [20] T. Lesort, N. D´ ıaz-Rodr´ ıguez, J.-F. Goudou, and D. Filliat, “State representation learning for control: An overview,” Neural Networks , vol. 108, pp. 379–392, 2018. [21] J. Sun, J. Wu, Z. Ji, and Y.-K. Lai, “A survey of object goal navigation,” 
+
+IEEE Transactions on Automation Science and Engineering , vol. 22, pp. 2292–2308, 2024. [22] Y. Bengio, A. Courville, and P. Vincent, “Representation learning: A review and new perspectives,” IEEE transactions on pattern analysis and machine intelligence , vol. 35, no. 8, pp. 1798–1828, 2013. [23] C. Allen, N. Parikh, O. Gottesman, and G. Konidaris, “Learning Markov state abstractions for deep reinforcement learning,” Advances in Neural Information Processing Systems , vol. 34, pp. 8229–8241, 2021. [24] L. Frommberger, “A generalizing spatial representation for robot navi-gation with reinforcement learning.” in FLAIRS , 2007, pp. 586–591. [25] R. Jonschkowski and O. Brock, “Learning state representations with robotic priors,” Autonomous Robots , vol. 39, pp. 407–428, 2015. [26] A. Bijman, “State representation learning using robotic priors in con-tinuous action spaces for mobile robot navigation,” Master’s thesis, University of Twente, 2020. [27] D. Hoeller, L. Wellhausen, F. Farshidian, and M. Hutter, “Learning a state representation and navigation in cluttered and dynamic environ-ments,” IEEE Robotics and Automation Letters , vol. 6, no. 3, pp. 5081– 5088, 2021. [28] Z. Xue and T. Gonsalves, “Monocular vision guided deep reinforce-ment learning UAV systems with representation learning perception,” 
+
+Connection Science , vol. 35, no. 1, p. 2183828, 2023. [29] X. Huang, W. Wang, Z. Ji, and B. Cheng, “Representation enhancement-based proximal policy optimization for UAV path planning and obstacle avoidance,” International Journal of Aerospace Engineering , vol. 2023, no. 1, p. 6654130, 2023. [30] H. Huang, V. Jain, H. Mehta, A. Ku, G. Magalhaes, J. Baldridge, and E. Ie, “Transferable representation learning in vision-and-language navigation,” in Proceedings of the IEEE/CVF international conference on computer vision , 2019, pp. 7404–7413. [31] R. Bonatti, R. Madaan, V. Vineet, S. Scherer, and A. Kapoor, “Learning visuomotor policies for aerial navigation using cross-modal representa-tions,” in 2020 IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS) . IEEE, 2020, pp. 1637–1644. [32] S. Vemprala, S. Mian, and A. Kapoor, “Representation learning for event-based visuomotor policies,” Advances in Neural Information Pro-cessing Systems , vol. 34, pp. 4712–4724, 2021. [33] Y. Tang, Z. D. Guo, P. H. Richemond, B. A. Pires, Y. Chandak, R. Munos, M. Rowland, M. G. Azar, C. Le Lan, C. Lyle et al. ,“Understanding self-predictive learning for reinforcement learning,” in 
+
+International Conference on Machine Learning . PMLR, 2023, pp. 33 632–33 656. [34] M. Liu, Y. Zhu, Y. Chen, and D. Zhao, “Enhancing reinforcement learning via transformer-based state predictive representations,” IEEE Transactions on Artificial Intelligence , vol. 5, no. 9, pp. 4364–4375, 2024. [35] C. J. Watkins and P. Dayan, “Q-learning,” Machine learning , vol. 8, pp. 279–292, 1992. [36] V. Mnih, K. Kavukcuoglu, D. Silver, A. A. Rusu, J. Veness, M. G. Bellemare, A. Graves, M. Riedmiller, A. K. Fidjeland, G. Ostrovski 
+
+et al. , “Human-level control through deep reinforcement learning,” 
+
+nature , vol. 518, no. 7540, pp. 529–533, 2015. [37] S. Fujimoto, H. Hoof, and D. Meger, “Addressing function approxi-mation error in actor-critic methods,” in International conference on machine learning . PMLR, 2018, pp. 1587–1596. [38] T. Haarnoja, A. Zhou, K. Hartikainen, G. Tucker, S. Ha, J. Tan, V. Ku-mar, H. Zhu, A. Gupta, P. Abbeel et al. , “Soft actor-critic algorithms and applications,” arXiv preprint arXiv:1812.05905 , 2018. [39] L. Ericsson, H. Gouk, C. C. Loy, and T. M. Hospedales, “Self-supervised representation learning: Introduction, advances, and challenges,” IEEE Signal Processing Magazine , vol. 39, no. 3, pp. 42–62, 2022. [40] A. v. d. Oord, Y. Li, and O. Vinyals, “Representation learning with contrastive predictive coding,” arXiv preprint arXiv:1807.03748 , 2018. [41] Y.-H. H. Tsai, M. Q. Ma, M. Yang, H. Zhao, L.-P. Morency, and R. Salakhutdinov, “Self-supervised representation learning with relative predictive coding,” arXiv preprint arXiv:2103.11275 , 2021. [42] J.-B. Grill, F. Strub, F. Altch´ e, C. Tallec, P. Richemond, E. Buchatskaya, C. Doersch, B. Avila Pires, Z. Guo, M. Gheshlaghi Azar et al. ,“Bootstrap your own latent-a new approach to self-supervised learning,” 
+
+Advances in neural information processing systems , vol. 33, pp. 21 271– 21 284, 2020. [43] A. Stooke, K. Lee, P. Abbeel, and M. Laskin, “Decoupling representation learning from reinforcement learning,” in International conference on machine learning . PMLR, 2021, pp. 9870–9879. [44] M. Schwarzer, A. Anand, R. Goel, R. D. Hjelm, A. Courville, and P. Bachman, “Data-efficient reinforcement learning with self-predictive representations,” arXiv preprint arXiv:2007.05929 , 2020. [45] T. Ni, B. Eysenbach, E. Seyedsalehi, M. Ma, C. Gehring, A. Mahajan, and P.-L. Bacon, “Bridging state and history representations: Under-standing self-predictive RL,” in The Twelfth International Conference on Learning Representations , 2024. [46] O. C ¸ atal, W. Jansen, T. Verbelen, B. Dhoedt, and J. Steckel, “La-tentSLAM: Unsupervised multi-sensor representation learning for lo-calization and mapping,” in 2021 IEEE International Conference on Robotics and Automation (ICRA) . IEEE, 2021, pp. 6739–6745. [47] J. Zhao, Y. Wang, Z. Cai, N. Liu, K. Wu, and Y. Wang, “Learning visual representation for autonomous drone navigation via a contrastive world model,” IEEE Transactions on Artificial Intelligence , vol. 5, no. 3, pp. 1263–1276, 2023. [48] P. Yue, J. Xin, Y. Zhang, Y. Lu, and M. Shan, “Semantic-driven autonomous visual navigation for unmanned aerial vehicles,” IEEE Transactions on Industrial Electronics , vol. 71, no. 11, pp. 14 853– 14 863, 2024. [49] G. N. Saridis, “Analytic formulation of the principle of increasing precision with decreasing intelligence for intelligent machines,” in Robot Control 1988 (Syroco’88) . Elsevier, 1989, pp. 529–534. [50] I. Csisz´ ar, “I-divergence geometry of probability distributions and min-imization problems,” The annals of probability , pp. 146–158, 1975.
