@@ -1,0 +1,884 @@
+Title: Biased Dreams: Limitations to Epistemic Uncertainty Quantification in Latent Space Models
+
+URL Source: https://arxiv.org/pdf/2604.25416v1
+
+Published Time: Wed, 29 Apr 2026 00:53:07 GMT
+
+Number of Pages: 19
+
+Markdown Content:
+Cover Page 
+
+# Biased Dreams: Limitations to Epistemic Uncertainty Quantification in Latent Space Models 
+
+Julia Berger, Bernd Frauenknecht, Sebastian Trimpe, Bastian Leibe 
+
+Keywords: MBRL, latent dynamics models, epistemic uncertainty 
+
+# Summary 
+
+Model-Based Reinforcement Learning distinguishes between physical dynamics models operating on proprioceptive inputs and latent dynamics models operating on high-dimensional image observations. A prominent latent approach is the Recurrent State Space Model used in the Dreamer family. While epistemic uncertainty quantification to inform exploration and mitigate model exploitation is well established for physical dynamics models, its transfer to latent dynamics models has received limited scrutiny. We empirically demonstrate that latent transitions are biased toward well-represented regions of latent space, exhibiting an attractor behavior that can deviate from true environment dynamics. As a result, discrepancies in envi-ronment dynamics may not manifest in latent space, undermining the reliability of epistemic uncertainty estimates. Because these attractors often lie in high-reward regions, latent rollouts systematically overestimate predicted rewards. Our findings highlight key limitations of epis-temic uncertainty estimation in latent dynamics models and motivate more critical evaluation of this method. 
+
+# Contribution(s) 
+
+1. Attractor behavior in latent transitions. We provide empirical evidence that latent dynam-ics models can exhibit an attractor behavior, where latent transitions are biased toward well-represented regions of latent space, causing rollouts to recover from out-of-distribution states, while deviating from true environment dynamics. 
+
+Context: In physical dynamics models, out-of-distribution inputs typically lead to unstable predictions due to compounding errors during prolonged rollouts. 2. Reliability of epistemic uncertainty. We demonstrate that this attractor behavior can mask discrepancies between latent and environment dynamics, causing epistemic uncertainty es-timates in latent space to fail at detecting model errors. 
+
+Context: Epistemic uncertainty quantification is well established for physical dynamics models in MBRL and often transferred directly to latent dynamics models, where it is ap-plied to latent state predictions without careful analysis of its reliability. 3. Systematic reward overestimation. We further observe that attractor regions often coincide with high-reward states, resulting in a systematic overestimation bias of predicted rewards. 
+
+Context: This bias can distort RL updates, as agents may become overconfident in behav-iors that do not correspond to true environment outcomes. 
+
+> arXiv:2604.25416v1 [cs.LG] 28 Apr 2026
+
+# Biased Dreams: Limitations to Epistemic Uncertainty Quantification in Latent Space Models 
+
+Julia Berger 1, ∗
+
+, Bernd Frauenknecht 1, ∗
+
+, Sebastian Trimpe 1, Bastian Leibe 1
+
+{berger,leibe}@vision.rwth-aachen.de {bernd.frauenknecht,sebastian.trimpe}@dsme.rwth-aachen.de 
+
+> 1
+
+RWTH Aachen University  
+
+> ∗
+
+Equal contribution 
+
+Abstract 
+
+Model-Based Reinforcement Learning distinguishes between physical dynamics mod-els operating on proprioceptive inputs and latent dynamics models operating on high-dimensional image observations. A prominent latent approach is the Recurrent State Space Model used in the Dreamer family. While epistemic uncertainty quantification to inform exploration and mitigate model exploitation is well established for physical dynamics models, its transfer to latent dynamics models has received limited scrutiny. We empirically demonstrate that latent transitions are biased toward well-represented regions of latent space, exhibiting an attractor behavior that can deviate from true envi-ronment dynamics. As a result, discrepancies in environment dynamics may not mani-fest in latent space, undermining the reliability of epistemic uncertainty estimates. Be-cause these attractors often lie in high-reward regions, latent rollouts systematically overestimate predicted rewards. Our findings highlight key limitations of epistemic un-certainty estimation in latent dynamics models and motivate more critical evaluation of this method. 
+
+1 Introduction 
+
+Reinforcement Learning (RL) provides a powerful framework for solving complex control prob-lems (Berner et al., 2019; Degrave et al., 2022). Model-Based Reinforcement Learning (MBRL) addresses sample inefficiency of RL by learning a parametric model of the environment dynam-ics to generate artificial interaction data for policy learning. The literature distinguishes between 
+
+“physical” dynamics models (Chua et al., 2018; Janner et al., 2019) operating on proprioceptive inputs and latent dynamics models operating on high-dimensional image observations (Hafner et al., 2019a). The Dreamer family (Hafner et al., 2019a; 2020; 2023) and subsequent extensions (Hansen et al., 2022; 2024) have established latent dynamics models as the state of the art in vision-based MBRL. Despite newer and more complex architectures (Robine et al., 2023; Zhou et al., 2024), the lightweight Recurrent State Space Model ( RSSM ) (Hafner et al., 2019b) remains a strong and com-putationally efficient baseline, particularly in resource-constrained settings. Epistemic uncertainty quantification is a widely adopted component of many MBRL approaches. It is commonly used to mitigate model exploitation (Yu et al., 2020; Frauenknecht et al., 2024; 2025), to guide curios-ity (Sekar et al., 2020), or to promote caution (Seo et al., 2025). While epistemic uncertainty is well understood for physical dynamics models, similar arguments are often transferred to latent dynamics models without careful analysis (Wang et al., 2020; Zhu et al., 2020; Filos et al., 2022; Seyde et al., 2020; Seo et al., 2025). To the best of our knowledge, this work provides the first systematic analysis of epistemic uncer-tainty quantification in latent dynamics models and identifies several key limitations. 1Specifically, we present the following empirical findings (illustratively shown in Fig. 1): 
+
+(i) Latent rollouts of commonly used RSSM models (Hafner et al., 2019b) can exhibit an attractor behavior, where transitions are biased toward well-represented regions, which is not necessar-ily consistent with true environment dynamics. 
+
+(ii) The attractor behavior can mask discrepancies between latent and environment dynamics, causing epistemic uncertainty estimates to fail at detection model errors. 
+
+(iii) Because attractor regions often coincide with high-reward states, latent rollouts exhibit a sys-tematic overestimation bias in predicted rewards. 
+
+Figure 1: Illustrative visualization of our key findings. For RSSM and probabilistic ensemble ( PE ), we show PCA-embedded transition dynamics with an exemplary trajectory initialized from an out-of-distribution state (left), and the corresponding physical discrepancy to true environment dynamics and model uncertainty (right). While the PE trajectory becomes unstable, exhibiting large prediction errors and high uncertainty, the RSSM trajectory converges to familiar latent regions, where uncer-tainty decreases despite elevated physical discrepancy. 
+
+2 Background 
+
+In the following, we introduce foundations of Reinforcement Learning (RL) in fully and partially observable settings in Section 2.1, latent dynamics models in Section 2.2, and epistemic uncertainty quantification in Section 2.3. 
+
+2.1 Reinforcement Learning under Full and Partial Observability 
+
+Reinforcement Learning (RL) addresses sequential decision-making via agent–environment inter-action. For an observable physical environment state st ∈ S , the control problem can be for-mulated as a Markov Decision Process (MDP) (Sutton & Barto, 2018). At each step, the agent selects an action at ∼ π(· | st), after which the environment generates the next state and reward 
+
+st+1 , r t ∼ p(·, · | st, at). The objective is to learn a policy maximizing the expected discounted return Eπ (P∞ 
+
+> t=1
+
+γtrt) with discount factor 0 < γ < 1. In Model-Based Reinforcement Learning (MBRL), a learned model ˜p(st+1 | st, at) approximates the unknown environment dynamics and enables planning or simulated interactions. Early approaches employ Gaussian processes (Deisen-roth & Rasmussen, 2011), local linear models (Levine & Koltun, 2013), and deterministic neural networks (Williams et al., 2017; Nagabandi et al., 2018). Recent successful MBRL methods with physical dynamics models (Chua et al., 2018; Janner et al., 2019; Yu et al., 2020) rely on probabilis-tic ensemble ( PE ) models (Lakshminarayanan et al., 2017). In visual control settings, the underlying state st is not directly observable, and the problem is there-fore formulated as a Partially Observable Markov Decision Process (POMDP) (Sutton & Barto, 2018). At each step, the agent selects an action at ∼ π(· | o≤t, a<t ) conditioned on past ob-servations and actions, after which the environment generates the next observation and reward 
+
+ot+1 , r t+1 ∼ p(·, · | o<t , a<t ). The agent typically maintains a belief state summarizing the history 2of observations and actions used in decision-making. Because modeling dynamics directly in high-dimensional observation space is impractical, many approaches learn a compact latent representation that summarizes this history and enabled predictive transitions. Such models are commonly referred to as latent dynamics models or world models (Ha & Schmidhuber, 2018). 
+
+2.2 Latent Dynamics Modeling via World Models 
+
+The Recurrent State Space Model ( RSSM ) (Hafner et al., 2019b) is a prominent latent dynamics model that learns a compact representation of environment dynamics. RSSMs parametrize a belief state using stochastic state zt and deterministic recurrent state ht, and consist of Representation model: q(zt | zt−1, at−1, ot), (1) Observation model: p(ot | zt), (2) Transition model: p(zt | zt−1, at−1), (3) Reward model: p(rt | zt). (4) For simplicity, we omit explicit dependencies z<t −1, a<t −1 induced by the recurrence of ht. All distributions are modeled as multivariate Gaussians with diagonal covariance. We define three types of latent rollouts starting at some initial state z0. Prior rollouts are generated solely by the transition model (Eq. (3)): 
+
+τ prior = {(zt, at)}T −1 
+
+> t=0
+
+, zt ∼ p(zt | zt−1, at−1). (5) 
+
+Posterior rollouts use latent states from the representation model (Eq. (1)) updated at each step: 
+
+τ post = {(zt, at)}T −1 
+
+> t=0
+
+, zt ∼ q(zt | · ). (6) 
+
+Posterior-informed rollouts perform one-step transition model predictions (Eq. (3)) initialized from posterior latent states: 
+
+τ post-inf = {(zt, at)}T −1 
+
+> t=0
+
+, zt ∼ p(zt | zt−1, at−1) and zt−1 ∼ q(zt−1 | · ). (7) 
+
+RSSMs are Dynamical VAEs ( DVAEs ) (Girin et al., 2022), extending Variational Autoencoders (VAEs ) (Kingma & Welling, 2013) to sequential settings. RSSM training involves maximizing the Evidence Lower Bound (ELBO) (Hafner et al., 2019b) 
+
+log p(o≤T | a≤T ) ≥ X
+
+> t
+
+
+
+Eq(zt|o≤t,a<t ) [log p(ot | zt)] 
+
+| {z }
+
+> reconstruction
+
+− Eq(zt−1|o≤t−1,a<t −1) [DKL (q(zt | zt−1, at−1, ot) ∥ p(zt | zt−1, at−1))] 
+
+| {z }
+
+> regularization
+
+
+
+, (8) with reward model (Eq. (4)) being trained jointly, omitting its likelihood from the reconstruction term for brevity. Dreamer (Hafner et al., 2019a) alternates between (i) training the RSSM on col-lected data via Eq. (8), (ii) optimizing an actor-critic pair using prior rollouts (Eq. (5)) from the learned transition model to generate experience, and (iii) collecting new environment interactions to expand the dataset. DreamerV2/V3 (Hafner et al., 2020; 2023) add a categorical latent space and stability improvements. We additionally consider the categorical RSSM variant, Cat-RSSM , to isolate architectural dependencies from latent representation. 
+
+2.3 Epistemic Uncertainty in World Models 
+
+Uncertainty is commonly divided into an aleatoric component, irreducible environment stochasticity, and an epistemic component, arising from limited data or imperfect learning. In physical dynam-ics models, the PE (Lakshminarayanan et al., 2017) models aleatoric uncertainty via a Gaussian next-state distribution, while epistemic uncertainty is captured by disagreement among M ensemble 3members {pi(st+1 | st, at)}Mi=1 . Converged ensemble predictions indicate a reliable approximation of environment dynamics, given sufficient capacity. Latent dynamics models similarly use ensembles of latent transition predictors described as 
+
+{gi(zt+1 | zt, at)}Mi=1 to measure disagreement in latent space (Sekar et al., 2020). Convergence of the ensemble to a latent state distribution zt+1 for a given (zt, at) indicates that the latent transi-tion model (Eq. (3)) is well-approximated, typically interpreted as evidence that the latent dynamics reflect true environment dynamics (Sekar et al., 2020; Seo et al., 2025). 
+
+3 Related Work 
+
+Compounding model errors are a common challenge in MBRL, observed in both physical dynamics models (Janner et al., 2019; Lai et al., 2020) and latent dynamics models like RSSM (Rybkin et al., 2021; Seo et al., 2025), motivating research on reliable uncertainty estimation. 
+
+Physical Dynamics Models. Physical dynamics models commonly employ ensembles of one-step predictors to quantify uncertainty and bound predictive error. MOPO (Yu et al., 2020) penalizes re-wards in uncertain regions, STEVE (Buckman et al., 2018) down weights uncertain predictions, and 
+
+MACURA (Frauenknecht et al., 2024) truncates uncertain rollouts. Curiosity-driven methods (San-caktar et al., 2022; Sukhija et al., 2023) instead seek high-uncertainty states for exploration. 
+
+Latent Dynamics Models. Similar mechanisms exist in latent dynamics models. Exploitation-mitigation approaches (Wang et al., 2020; Zhu et al., 2020; Seyde et al., 2020; Filos et al., 2022) leverage ensemble or trajectory uncertainty to avoid overconfident policy updates. Curiosity-driven methods (Sekar et al., 2020; Sancaktar et al., 2025) use disagreement as an intrinsic exploration signal, and safety-oriented methods (Seo et al., 2025) detect and compensate out-of-distribution failures via uncertainty. While these latent dynamics approaches assume that epistemic uncertainty in latent space meaning-fully reflects model reliability, we empirically revisit this assumption. 
+
+4 Problem Statement 
+
+Epistemic uncertainty quantification via ensemble disagreement of transition predictors, discussed in Section 2.3, is well established in physical dynamics models. In latent dynamics models (Sekar et al., 2020), this approach is often directly transferred to ensembles of latent transition predictors, implicitly assuming that latent transitions behave similarly to physical dynamics and that ensemble disagreement remains informative about predictive error. In this work, we empirically examine this assumption by: 
+
+(i) analyzing how model-based rollouts evolve from in-distribution and out-of-distribution set-tings, under both latent and physical transition dynamics; 
+
+(ii) investigating whether ensemble-based one-step epistemic uncertainty in latent space correlates with deviations between latent rollouts and environment behavior; and 
+
+(iii) assessing how a potential mismatch affects policy learning via reward predictions. We present empirical evidence that latent dynamics models exhibit an attractor bias, leading to unreliable uncertainty estimates and systematically overestimated reward predictions. 
+
+5 Problem Evaluation 
+
+We empirically examine the assumption that latent transitions behave like physical dynamics, mo-tivating ensemble based epistemic uncertainty in latent dynamics models. To address (i) , in Sec-tion 5.1 we analyze how in-distribution ( ID ) and out-of-distribution ( OOD ) start states shape latent 4and physical trajectories. For (ii) , in Section 5.2 we quantify physical discrepancies in latent roll-outs and relate them to ensemble-based uncertainty. Finally, in Section 5.3 we evaluate the effect of latent-physics misalignment on policy learning (iii) by comparing predicted and environment re-wards. All experiments use RSSM (Hafner et al., 2019b) and are repeated on Cat-RSSM (Hafner et al., 2020; 2023). 
+
+Experimental Setup. Experiments are conduced on 4 DMC Suite tasks (Tassa et al., 2018), Cart-pole Swingup, Cheetah Run, Hopper Hop, and Walker Run, using 5 random seeds. The RSSM im-plementation follows Becker & Neumann (2022), while the Cat-RSSM follows Becker et al. (2024), isolating the categorical latent space by omitting other DreamerV2/V3 modifications. All agents are trained for 1 Mio. environment steps. Physical states are stored in the replay buffer alongside image observations. Additional details are provided in Appendix 8. Posterior rollouts (Eq. (6)) serve as “ground-truth” latent trajectories, since they represent the best-informed trajectories the RSSM can procude, whereas prior rollouts (Eq. (5)) rely solely on the transition model. 
+
+5.1 Attractor Evaluation 
+
+To examine latent dynamics, we compare rollouts from in-distribution ( ID ) and out-of-distribution (OOD ) starting states. We expect trajectories from ID states to follow learned dynamics, while OOD 
+
+trajectories may expose prediction instabilities, as observed in physical dynamics models (Janner et al., 2019). 
+
+RSSM PE                    
+
+> ID OOD ID OOD 1.0 0.5 0.0 0.5 1.0
+> 1.0
+> 0.5
+> 0.0
+> 0.5
+> 1.0
+> 1.0 0.5 0.0 0.5 1.0
+> 0
+> 10
+> 20
+> 30
+> 40
+> 50
+> Sequence Step 1.0 0.5 0.0 0.5 1.0
+> 1.0
+> 0.5
+> 0.0
+> 0.5
+> 1.0
+> 1.0 0.5 0.0 0.5 1.0
+> 0
+> 10
+> 20
+> 30
+> 40
+> Sequence Step
+
+Figure 2: Attractor evaluation for RSSM and PE under ID and OOD start states for Cheetah Run and Halfcheetah tasks, respectively. While the PE trajectory shows unstable OOD predictions, the 
+
+RSSM trajectory is unexpectedly drawn to the dominant transition flow, revealing an attractor that guides it toward well-represented latent regions. 
+
+ID and OOD Start States. Rollouts are initialized from ID and OOD physical start states. The 
+
+ID state is the one closest to its k-nearest neighbors ( k = 100 ) in the replay buffer from the best-performing agent and reused across seeds. OOD states are manually designed per environment to be physically valid, but unlikely under the training distribution. For Cartpole Swingup, we assume full state, so no OOD state is used. See Tab. 1 in Appendix 9.1 for details. 
+
+Embedded Dynamics. To analyze how ID and OOD start states shape latent trajectories, we col-lect 1000 random prior (Eq. (5)) and posterior (Eq. (6)) rollouts per best-performing seed. Rollouts are 50 steps with 3 posterior warm-up steps, after which prior transitions continue without obser-vations. The trajectories are embedded via a 2D PCA projection ˆft of normalized deterministic features ft := ( ht, zm 
+
+> t
+
+), where zm 
+
+> t
+
+is the mean stochastic state in RSSM and the categorical mode in 
+
+Cat-RSSM . One-step displacement ˆft − ˆft−1 are binned to produce vector-field-like visualizations. Exemplary ID and OOD posterior trajectories are overlaid. These vector fields provide a 2D view of model dynamics for both latent and physical dynamics models. For comparison, we additionally analyze the physical dynamics PE from Infoprop (Frauenknecht et al., 2025) in the MuJoCo HalfCheetah environment (Todorov et al., 2012), applying PCA to 5predicted observations. In this setting, ID and OOD trajectories correspond to rollouts with the lowest and highest predictive uncertainty over randomly performed rollouts, respectively. As shown in Fig. 2, the physical dynamics model unsurprisingly exhibits unstable predictions under 
+
+OOD conditions, reflecting error accumulation. In contrast, in RSSM the OOD trajectory converges to the dominant transition flow, highlighting an attractor effect that guides it toward well-represented latent states. The plots for other DMC Suite tasks across both RSSM and Cat-RSSM architectures show similar attractor behavior and can be found in Appendix 9.1. 
+
+5.2 Physical Discrepancy 
+
+Next, we evaluate the physical discrepancy between latent rollouts and true environment behavior. If latent uncertainty is reliable, low uncertainty should align with low discrepancy, and high uncertainty with high discrepancy. 
+
+Physical State Decoder. We augment the latent dynamics model with a physical state decoder 
+
+p(st | zt), trained jointly in the ELBO (8), which predicts environment states, excluding the agent’s 
+
+x-position. While the decoder influences latent shaping during training, we find that without an ex-plicit objective promoting physical structure in latent space, reconstruction quality is poor, consistent with prior work (Peper et al., 2025; Gupta et al., 2021). RL performance differences compared to models without the decoder are negligible across tasks (Fig. 3).           
+
+> 00.20.40.60.81
+> 0
+> 200
+> 400
+> 600
+> 800
+> 1,000
+> Expected Return
+> RSSM
+> w/o PD
+> w/ PD
+> 00.20.40.60.81
+> Cat-RSSM
+> w/o PD
+> w/ PD
+> Environment Steps ( ×10 6)
+
+Figure 3: A Dreamer agent’s performance is largely unchanged by the use of a physical state decoder (PD). Results averaged over 5 seeds across 4 DMC Suite tasks, shaded areas show standard deviation. 
+
+Uncertainty Estimation. We train an ensemble of M = 5 one-step latent transition predic-tors {gi(zt | zt−1, at−1)}Mi=1 on a next-state reconstruction objective, without affecting Dreamer training. At inference, we compute uncertainty using the Geometric Jensen-Shannon diver-gence (Nielsen, 2019) following (Frauenknecht et al., 2024), with alternative Gaussian mea-sures (Sekar et al., 2020) producing similar results. The uncertainty is evaluated on prior rollouts (Eq. (5)). 
+
+Latent Dynamics Rollouts. We compare prior (Eq. (5)) and posterior-informed (Eq. (7)) rollouts. Using posterior-informed states instead of directly propagating posterior states from the represen-tation model (Eq. (1)) decouples transition evaluation from observation noise, allowing a clearer assessment of predictive dynamics. Rollouts are 50 steps long, including 3 warm-up steps. 
+
+Computation of Physical Discrepancy. Physical discrepancy is measured as the mean ℓ1 distance between predicted and ground-truth body positions, where ground truth is obtained by simulating the predicted action sequence from a given start state. Fig. 4 shows physical discrepancies and prior uncertainty, averaged over 5 seeds per task. Since 
+
+RSSM and Cat-RSSM behave similarly, we discuss them jointly. As expected, prior rollouts show steadily increasing discrepancy in both ID and OOD settings, reflecting model error accumulation in 6latent rollouts. Posterior-informed rollouts remain accurate in the ID setting, but under OOD condi-tions, discrepancy rises similarly to prior rollouts. Interestingly, although uncertainty starts high for 
+
+OOD trajectories, it quickly drops to levels comparable to ID rollouts, despite the persistently larger physical errors. We argue that this behavior reflects the attractor effect described in Section 5.1: 
+
+OOD states are drawn toward well-represented latent regions, producing trajectories that appear confident in latent space, even when they diverge from true environment dynamics. Consequently, we observe that ensemble-based uncertainty fails to reliably distinguish ID from OOD initial con-ditions, whereas physical discrepancy clearly indicates predictive error. These findings suggest that the uncertainty estimate is less reliable about true predictive error than expected.             
+
+> RSSM  0
+> 0.5
+> 1
+> 1.5
+> ID  Discrepancy
+> Cartpole Swingup
+> Posterior
+> Prior
+> Cheetah Run
+> Uncertainty
+> Hopper Hop Walker Run
+> 0
+> 7
+> 14
+> 21
+> ID  Uncertainty
+> 0
+> 0.5
+> 1
+> 1.5
+> OOD  Discrepancy
+> N/A
+> 0
+> 7
+> 14
+> 21
+> OOD  Uncertainty
+> Cat-RSSM
+> 0
+> 0.5
+> 1
+> 1.5
+> ID  Discrepancy
+> 0
+> 7
+> 14
+> 21
+> ID  Uncertainty
+> 020 40
+> 0
+> 0.5
+> 1
+> 1.5
+> OOD  Discrepancy
+> N/A
+> 020 40 020 40 020 40 0
+> 7
+> 14
+> 21
+> OOD  Uncertainty
+> Rollout Time Steps
+
+Figure 4: Physical discrepancy versus prior uncertainty for ID and OOD start states, evaluated on 
+
+RSSM and Cat-RSSM . Solid lines are averaged over 5 seeds per task, shaded areas show standard deviation. The gray dashed line marks the end of warm-up steps. As expected, physical discrepancy grows steadily for both ID and OOD prior rollouts. While OOD uncertainty starts high, it quickly drops due to an attractor effect producing latent trajectories that appear confident despite persistent physical errors. 
+
+5.3 Reward Evaluation 
+
+To evaluate reward predictions, we again collect 1000 random prior (Eq. 5) and posterior (Eq. 6) rollouts per seed with rollout length 50, including 3 warm-up steps. We compute step-wise signed reward discrepancy rpred  
+
+> t
+
+− rsim  
+
+> t
+
+, where rpred  
+
+> t
+
+is the model-predicted reward in the latent trajectory and rsim  
+
+> t
+
+is the reward obtained by executing the same action sequence in the environment. As shown in Fig. 5, posterior rollouts accurately predict rewards under observation updates, whereas 
+
+prior rollouts systematically overestimate them. Combined with the attractor behavior observed in Section 5.1, this indicates that the attractor biases trajectories toward well-represented latent regions that also coincide with high-reward states, leading to overly optimistic reward predictions. 70            
+
+> 0.5
+> 1
+> 1.5
+> RSSM
+> Cartpole Swingup
+> Posterior
+> Prior
+> Cheetah Run Hopper Hop Walker Run
+> 020 40
+> 0
+> 0.5
+> 1
+> 1.5
+> Cat-RSSM  Posterior
+> Prior
+> 020 40 020 40 020 40
+> Rollout Time Steps
+
+Figure 5: Signed reward discrepancies rpred  
+
+> t
+
+− rsim  
+
+> t
+
+in prior and posterior rollouts in RSSM and 
+
+Cat-RSSM . Solid lines are averaged over 5 seeds per task, shaded areas show standard deviation. The gray dashed line indicated end of warm-up steps. Prior rollouts systematically overestimate rewards, suggesting the attractors bias toward well-represented, high-reward latent regions. 
+
+6 Discussion and Future Work 
+
+Our results reveal a structural limitation of epistemic uncertainty estimation in latent dynamics mod-els that does not arise in physical dynamics models commonly used in MBRL. Specifically, we find that uncertainty estimates become poorly aligned with true predictive error during prolonged latent rollouts. Our analyses suggest that this issue stems from an attractor behavior in latent space; OOD 
+
+trajectories are rapidly drawn toward well-represented latent regions, which are associated with both low estimated uncertainty and high predicted rewards, effectively masking true model error. We at-tribute this phenomenon to the inductive bias of the DVAE -based latent dynamics architecture of 
+
+RSSMs . These findings highlight a fundamental challenge in relying on latent uncertainty as es-timates for predictive reliability in RSSMs . Addressing this may require structural changes to the latent dynamics architecture, such as latent space restructuring (Li et al., 2024; Becker et al., 2024) or more principled variational inference (Becker & Neumann, 2022), rather than improving uncer-tainty estimators alone. A formal analysis of the causes and mechanisms underlying the attractor behavior is left for future work. 
+
+7 Conclusion 
+
+This work serves as a cautionary tale about uncritical use of epistemic uncertainty in RSSM -based la-tent dynamics models. Unlike in physical dynamics models commonly utilized in MBRL, ensemble-based epistemic uncertainty in latent rollouts is often poorly aligned with true predictive error and fails to identify substantial physical discrepancies. We identify a latent attractor behavior as the underlying cause: Out-of-distribution trajectories are systematically drawn toward well-supported latent regions, producing low estimated uncertainty even when predictions diverge from true dy-namics. These findings challenge the assumption that epistemic uncertainty transfers directly from physical to latent dynamics models, highlighting both limitations in predictive reliability and the risk of overly optimistic reward estimates. Addressing this issue may require architectural modifications and is left for future work. 
+
+References 
+
+Philipp Becker and Gerhard Neumann. On uncertainty in deep state space models for model-based reinforcement learning. Transactions on Machine Learning Research (TMLR) , 2022. 8Philipp Becker, Sebastian Mossburger, Fabian Otto, and Gerhard Neumann. Combining recon-struction and contrastive methods for multimodal representations in rl. Reinforcement Learning Conference (RLC) , 2024. Christopher Berner, Greg Brockman, Brooke Chan, Vicki Cheung, Przemysław D˛ ebiak, Christy Dennison, David Farhi, Quirin Fischer, Shariq Hashme, Chris Hesse, et al. Dota 2 with large scale deep reinforcement learning. arXiv preprint arXiv:1912.06680 , 2019. Jacob Buckman, Danijar Hafner, George Tucker, Eugene Brevdo, and Honglak Lee. Sample-efficient reinforcement learning with stochastic ensemble value expansion. Advances in Neural Information Processing Systems (NeurIPS) , 31, 2018. Kurtland Chua, Roberto Calandra, Rowan McAllister, and Sergey Levine. Deep reinforcement learn-ing in a handful of trials using probabilistic dynamics models. Advances in Neural Information Processing Systems (NeurIPS) , 31, 2018. Jonas Degrave, Federico Felici, Jonas Buchli, Michael Neunert, Brendan Tracey, Francesco Carpanese, Timo Ewalds, Roland Hafner, Abbas Abdolmaleki, Diego de Las Casas, et al. Mag-netic control of tokamak plasmas through deep reinforcement learning. Nature , 602(7897):414– 419, 2022. Marc Deisenroth and Carl E Rasmussen. Pilco: A model-based and data-efficient approach to policy search. In Proceedings of the 28th International Conference on Machine Learning (ICML-11) ,pp. 465–472, 2011. Angelos Filos, Eszter Vértes, Zita Marinho, Gregory Farquhar, Diana Borsa, Abram Friesen, Feryal Behbahani, Tom Schaul, André Barreto, and Simon Osindero. Model-value inconsistency as a signal for epistemic uncertainty. International Conference on Learning Representations (ICLR) ,2022. Bernd Frauenknecht, Artur Eisele, Devdutt Subhasish, Friedrich Solowjow, and Sebastian Trimpe. Trust the model where it trusts itself–model-based actor-critic with uncertainty-aware rollout adaption. International Conference on Machine Learning (ICML) , 2024. Bernd Frauenknecht, Devdutt Subhasish, Friedrich Solowjow, and Sebastian Trimpe. On rollouts in model-based reinforcement learning. International Conference on Learning Representations (ICLR) , 2025. Laurent Girin, Simon Leglaive, Xiaoyu Bie, Julien Diard, Thomas Hueber, and Xavier Alameda-Pineda. Dynamical variational autoencoders: A comprehensive review. Foundations and Trends in Machine Learning , 15(1-2):1–175, 2022. Rushil Gupta, Vishal Sharma, Yash Jain, Yitao Liang, Guy Van den Broeck, and Parag Singla. Towards an interpretable latent space in structured models for video prediction. arXiv preprint arXiv:2107.07713 , 2021. David Ha and Jürgen Schmidhuber. World models. Conference on Neural Information Processing Systems (NeurIPS) , 2(3):440, 2018. Danijar Hafner, Timothy Lillicrap, Jimmy Ba, and Mohammad Norouzi. Dream to control: Learning behaviors by latent imagination. arXiv preprint arXiv:1912.01603 , 2019a. Danijar Hafner, Timothy Lillicrap, Ian Fischer, Ruben Villegas, David Ha, Honglak Lee, and James Davidson. Learning latent dynamics for planning from pixels. In International Conference on Machine Learning (ICML) , pp. 2555–2565. PMLR, 2019b. Danijar Hafner, Timothy Lillicrap, Mohammad Norouzi, and Jimmy Ba. Mastering atari with dis-crete world models. arXiv preprint arXiv:2010.02193 , 2020. 9Danijar Hafner, Jurgis Pasukonis, Jimmy Ba, and Timothy Lillicrap. Mastering diverse domains through world models. arXiv preprint arXiv:2301.04104 , 2023. Nicklas Hansen, Xiaolong Wang, and Hao Su. Temporal difference learning for model predictive control. International Conference on Machine Learning (ICML) , 2022. Nicklas Hansen, Hao Su, and Xiaolong Wang. Td-mpc2: Scalable, robust world models for contin-uous control. International Conference on Learning Representations (ICLR) , 2024. Michael Janner, Justin Fu, Marvin Zhang, and Sergey Levine. When to trust your model: Model-based policy optimization. Advances in Neural Information Processing Systems (NeurIPS) , 32, 2019. Diederik P Kingma and Max Welling. Auto-encoding variational bayes. arXiv preprint arXiv:1312.6114 , 2013. Hang Lai, Jian Shen, Weinan Zhang, and Yong Yu. Bidirectional model-based policy optimization. In International Conference on Machine Learning (ICML) , pp. 5618–5627. PMLR, 2020. Balaji Lakshminarayanan, Alexander Pritzel, and Charles Blundell. Simple and scalable predic-tive uncertainty estimation using deep ensembles. Advances in Neural Information Processing Systems (NeurIPS) , 30, 2017. Sergey Levine and Vladlen Koltun. Guided policy search. In International Conference on Machine Learning (ICML) , pp. 1–9. PMLR, 2013. Chenhao Li, Elijah Stanger-Jones, Steve Heim, and Sangbae Kim. Fld: Fourier latent dynamics for structured motion representation and learning. International Conference on Learning Represen-tations (ICLR) , 2024. Anusha Nagabandi, Gregory Kahn, Ronald S Fearing, and Sergey Levine. Neural network dynamics for model-based deep reinforcement learning with model-free fine-tuning. In 2018 IEEE Interna-tional Conference on Robotics and Automation (ICRA) , pp. 7559–7566. IEEE, 2018. Frank Nielsen. On the jensen–shannon symmetrization of distances relying on abstract means. 
+
+Entropy , 21(5):485, 2019. Jordan Peper, Zhenjiang Mao, Yuang Geng, Siyuan Pan, and Ivan Ruchkin. Four principles for phys-ically interpretable world models. IEEE International Conference on Robotics and Automation (ICRA) , 2025. Jan Robine, Marc Höftmann, Tobias Uelwer, and Stefan Harmeling. Transformer-based world mod-els are happy with 100k interactions. International Conference on Learning Representations (ICLR) , 2023. Oleh Rybkin, Chuning Zhu, Anusha Nagabandi, Kostas Daniilidis, Igor Mordatch, and Sergey Levine. Model-based reinforcement learning via latent-space collocation. In International Con-ference on Machine Learning (ICML) , pp. 9190–9201. PMLR, 2021. Cansu Sancaktar, Sebastian Blaes, and Georg Martius. Curious exploration via structured world models yields zero-shot object manipulation. Advances in Neural Information Processing Systems (NeurIPS) , 35:24170–24183, 2022. Cansu Sancaktar, Christian Gumbsch, Andrii Zadaianchuk, Pavel Kolev, and Georg Martius. Sensei: Semantic exploration guided by foundation models to learn versatile world models. arXiv preprint arXiv:2503.01584 , 2025. Ramanan Sekar, Oleh Rybkin, Kostas Daniilidis, Pieter Abbeel, Danijar Hafner, and Deepak Pathak. Planning to explore via self-supervised world models. In International Conference on Machine Learning (ICML) , pp. 8583–8592. PMLR, 2020. 10 Junwon Seo, Kensuke Nakamura, and Andrea Bajcsy. Uncertainty-aware latent safety filters for avoiding out-of-distribution failures. Conference on Robot Learning (CoRL) , 2025. Tim Seyde, Wilko Schwarting, Sertac Karaman, and Daniela Rus. Learning to plan optimistically: Uncertainty-guided deep exploration via latent model ensembles. Computing Research Reposi-tory (CoRR) , 2020. Bhavya Sukhija, Lenart Treven, Cansu Sancaktar, Sebastian Blaes, Stelian Coros, and Andreas Krause. Optimistic active exploration of dynamical systems. In A. Oh, T. Naumann, A. Glober-son, K. Saenko, M. Hardt, and S. Levine (eds.), Advances in Neural Information Processing Systems , volume 36, pp. 38122–38153. Curran Associates, Inc., 2023. Richard S Sutton and Andrew G. Barto. Reinforcement learning: an introduction. 2018. Yuval Tassa, Yotam Doron, Alistair Muldal, Tom Erez, Yazhe Li, Diego de Las Casas, David Bud-den, Abbas Abdolmaleki, Josh Merel, Andrew Lefrancq, Timothy Lillicrap, and Martin Ried-miller. Deepmind control suite, 2018. Emanuel Todorov, Tom Erez, and Yuval Tassa. Mujoco: A physics engine for model-based control. In 2012 IEEE/RSJ International Conference on Intelligent Robots and Systems , pp. 5026–5033. IEEE, 2012. Junjie Wang, Qichao Zhang, Dongbin Zhao, Mengchen Zhao, and Jianye Hao. Dynamic hori-zon value estimation for model-based reinforcement learning. arXiv preprint arXiv:2009.09593 ,2020. Grady Williams, Nolan Wagener, Brian Goldfain, Paul Drews, James M Rehg, Byron Boots, and Evangelos A Theodorou. Information theoretic mpc for model-based reinforcement learning. In 
+
+2017 IEEE International Conference on Robotics and Automation (ICRA) , pp. 1714–1721. IEEE, 2017. Tianhe Yu, Garrett Thomas, Lantao Yu, Stefano Ermon, James Y Zou, Sergey Levine, Chelsea Finn, and Tengyu Ma. Mopo: Model-based offline policy optimization. Advances in Neural Information Processing Systems (NeurIPS) , 33:14129–14142, 2020. Gaoyue Zhou, Hengkai Pan, Yann LeCun, and Lerrel Pinto. Dino-wm: World models on pre-trained visual features enable zero-shot planning. International Conference on Machine Learning (ICML) , 2024. Guangxiang Zhu, Minghao Zhang, Honglak Lee, and Chongjie Zhang. Bridging imagination and reality for model-based deep reinforcement learning. Advances in Neural Information Processing Systems (NeurIPS) , 33:8993–9006, 2020. 11 Supplementary Materials 
+
+8 Details on Experiment Setup 
+
+Our evaluation code follows Becker & Neumann (2022); Becker et al. (2024), which in turn builds on Hafner et al. (2019a; 2020). For details on Infoprop , see Frauenknecht et al. (2025). 
+
+Latent Dynamics Model. For RSSM , we use a stochastic state size of 30 and a deterministic state size for 200. For Cat-RSSM , the stochastic state is replaced by 32 categoricals with 32 classes each. Independent of architecture, all layers have with 300, with standard encoders and decoders using ReLU. The transition matrix output is transformed via a sigmoid-based function, as described in (Becker & Neumann, 2022). 
+
+Physical Decoder and Ensemble. The physical state decoder mirrors the proprioceptive obser-vation decoder from Becker & Neumann (2022), with 3 layers of size 300 and ELU activation. Each angle θ in the physical state is encoded as (sin θ, cos θ), and reconstructed for evaluation and simulation from arctan2 (y1, y 2) given network angle predictions (y1, y 2). Each member of the en-semble has 5 linear layers of size 300, intermediately normalized with LayerNorm, and activated with ELU. The ensemble predicts the next deterministic state, following standard ensemble-based implementations Seo et al. (2025). 
+
+Loss. RSSM and actor-critic training follows (Hafner et al., 2019a), with an additional reconstruc-tion loss for the physical decoder included in the ELBO (Eq. (8)), when applicable. The ensemble loss is the Gaussian log likelihood of the target state. During ensemble loss computation, inputs and targets are detached to prevent gradient flow through the model and actor. 
+
+Training. We begin training with 5 random episodes and collect one additional episode every 100 model update steps using exploration noise of 0.3. Each update samples 50 subsequences of length 50 uniformly from all collected data. Adam is used with learning rates and gradient clipping as in Hafner et al. (2019a): latent dynamics 6 · 10 −4, actor-critic 8 · 10 −5, gradient norm clipped at 100. Ensemble training follows the latent dynamics model. During training, we additionally collect and save the environment physical states corresponding to the observations. 
+
+Environments. All environments use an action repeat of 2. Images are 64 × 64 pixels with 5-bit color depth, following Hafner et al. (2019b). 12 9 Additional Results 
+
+9.1 Attractor Evaluation 
+
+Tab. 1 specifies the manually designed OOD states that are used for each DMC Suite environment during evaluation. Fig. 6 showcases that the remaining DMC Suite environments exhibit similar latent trajectory patterns in embedded PCA space consistent with those observed in the Cheetah Run evaluation presented in Section 5.1, regardless of chosen latent dynamics architecture. 
+
+RSSM Cat-RSSM 
+
+Cheetah Run Cheetah Run 1.0 0.5 0.0 0.5 1.0             
+
+> 1.0
+> 0.5
+> 0.0
+> 0.5
+> 1.0
+> 1.0 0.5 0.0 0.5 1.0
+> 0
+> 10
+> 20
+> 30
+> 40
+> 50
+> Sequence Step 1.0 0.5 0.0 0.5 1.0
+> 1.0
+> 0.5
+> 0.0
+> 0.5
+> 1.0
+> 1.0 0.5 0.0 0.5 1.0
+> 0
+> 10
+> 20
+> 30
+> 40
+> 50
+> Sequence Step
+
+Cartpole Swingup Cartpole Swingup 1.0 0.5 0.0 0.5 1.0     
+
+> 1.0
+> 0.5
+> 0.0
+> 0.5
+> 1.0
+> N/A
+> 0
+> 10
+> 20
+> 30
+> 40
+> 50
+> Sequence Step 1.0 0.5 0.0 0.5 1.0
+> 1.0
+> 0.5
+> 0.0
+> 0.5
+> 1.0
+> N/A
+> 0
+> 10
+> 20
+> 30
+> 40
+> 50
+> Sequence Step
+
+Hopper Hop Hopper Hop 1.0 0.5 0.0 0.5 1.0             
+
+> 1.0
+> 0.5
+> 0.0
+> 0.5
+> 1.0
+> 1.0 0.5 0.0 0.5 1.0
+> 0
+> 10
+> 20
+> 30
+> 40
+> 50
+> Sequence Step 1.0 0.5 0.0 0.5 1.0
+> 1.0
+> 0.5
+> 0.0
+> 0.5
+> 1.0
+> 1.0 0.5 0.0 0.5 1.0
+> 0
+> 10
+> 20
+> 30
+> 40
+> 50
+> Sequence Step
+
+Walker Run Walker Run 1.0 0.5 0.0 0.5 1.0             
+
+> 1.0
+> 0.5
+> 0.0
+> 0.5
+> 1.0
+> 1.0 0.5 0.0 0.5 1.0
+> 0
+> 10
+> 20
+> 30
+> 40
+> 50
+> Sequence Step 1.0 0.5 0.0 0.5 1.0
+> 1.0
+> 0.5
+> 0.0
+> 0.5
+> 1.0
+> 1.0 0.5 0.0 0.5 1.0
+> 0
+> 10
+> 20
+> 30
+> 40
+> 50
+> Sequence Step
+
+Figure 6: Attractor analysis of RSSM and Cat-RSSM across the Cartpole Swingup, Hopper Hop, and Walker Run environments, shown for both ID (left subplots) and OOD (right subplots) settings. 13 Environment rootx rooty rootz velx vely Interpretation Cartpole Swingup - - - - - -Cheetah Run 100 m 3π 
+
+> 4
+
+−0.2 m 5 m /s 10 rad /s Tripping over front leg Hopper Hop 100 m 3π 
+
+> 4
+
+−0.6 m 5 m /s 5 rad /s Skydiving Walker Run 100 m − π 
+
+> 2
+
+−1.2 m 0 m /s −5 rad /s Lying on back 
+
+Table 1: OOD start states and their interpretation; rootx is body position in forward direction, 
+
+rooty body rotation, rootz vertical body position, velx forward velocity, vely angular velocity of body. 
+
+9.2 Physical Discrepancy 
+
+Fig. 7 we show the RL performances of latent dynamics models RSSM and Cat-RSSM in compari-son to their versions with a physical state decoder, reported separately for each task. Fig. 8 shows the physical state trajectories predicted by Infoprop ’s PE , when simulated in the environment, cor-responding to the exemplary ID and OOD cases discussed in the main text. Figs. 9 and 10 compare exemplary reconstructed image trajectories with ground-truth, while Figs. 11 and 12 compare ex-emplary reconstructed physical trajectories with ground-truth. Overall, the reconstructed image and physical state trajectories are largely consistent with each other. 
+
+0
+
+200 
+
+400 
+
+600 
+
+800 
+
+1,000 
+
+> Expected Return
+
+Cartpole Swingup Cheetah Run Hopper Hop 
+
+RSSM w/o PD 
+
+RSSM w/ PD 
+
+Walker Run 
+
+0 0.2 0.4 0.6 0.8 1
+
+0
+
+200 
+
+400 
+
+600 
+
+800 
+
+1,000 
+
+> Expected Return
+
+0 0.2 0.4 0.6 0.8 1 0 0.2 0.4 0.6 0.8 1
+
+Cat-RSSM w/o PD 
+
+Cat-RSSM w/ PD 
+
+0 0.2 0.4 0.6 0.8 1
+
+Environment Steps ( ×10 6)
+
+Figure 7: RL performance is largely unchanged by the use of the physical state decoder (PD) be-tween approaches. Evaluated over 5 seeds. Pred.                   
+
+> HalfCheetah
+> 1611 16 21 26 31 36 41 46
+> ID Pred.
+> HalfCheetah
+> 1611 16 21 26 31 36 41 46 OOD
+
+Figure 8: Comparison of predicted physical trajectories in ID and OOD settings for physical dy-namics model from Infoprop. 14 Ground 
+
+> Truth
+> Prior
+> Recon.
+> Cartpole  Swingup
+> Post.
+> Recon.
+> Ground
+> Truth
+> Prior
+> Recon.
+> Cheetah  Run
+> Post.
+> Recon.
+> Ground
+> Truth
+> Prior
+> Recon.
+> Hopper  Hop
+> Post.
+> Recon.
+> Ground
+> Truth
+> Prior
+> Recon.
+> Walker  Run
+> Post.
+> Recon.
+
+Context 3 8 13 18 23 28 33 38 43 48 RSSM Ground 
+
+> Truth
+> Prior
+> Recon.
+> Cartpole  Swingup
+> Post.
+> Recon.
+> Ground
+> Truth
+> Prior
+> Recon.
+> Cheetah  Run
+> Post.
+> Recon.
+> Ground
+> Truth
+> Prior
+> Recon.
+> Hopper  Hop
+> Post.
+> Recon.
+> Ground
+> Truth
+> Prior
+> Recon.
+> Walker  Run
+> Post.
+> Recon.
+
+Context 3 8 13 18 23 28 33 38 43 48 Cat-RSSM 
+
+Figure 9: Comparison of reconstructed image trajectories in ID setting for RSSM and Cat-RSSM .15 N/A N/A N/A N/A N/A N/A N/A N/A N/A N/A N/A N/A N/A 
+
+> Ground
+> Truth
+
+N/A N/A N/A N/A N/A N/A N/A N/A N/A N/A N/A N/A N/A 
+
+> Prior
+> Recon.
+> Cartpole  Swingup
+
+N/A N/A N/A N/A N/A N/A N/A N/A N/A N/A N/A N/A N/A 
+
+> Post.
+> Recon.
+> Ground
+> Truth
+> Prior
+> Recon.
+> Cheetah  Run
+> Post.
+> Recon.
+> Ground
+> Truth
+> Prior
+> Recon.
+> Hopper  Hop
+> Post.
+> Recon.
+> Ground
+> Truth
+> Prior
+> Recon.
+> Walker  Run
+> Post.
+> Recon.
+
+Context 3 8 13 18 23 28 33 38 43 48 RSSM N/A N/A N/A N/A N/A N/A N/A N/A N/A N/A N/A N/A N/A 
+
+> Ground
+> Truth
+
+N/A N/A N/A N/A N/A N/A N/A N/A N/A N/A N/A N/A N/A 
+
+> Prior
+> Recon.
+> Cartpole  Swingup
+
+N/A N/A N/A N/A N/A N/A N/A N/A N/A N/A N/A N/A N/A 
+
+> Post.
+> Recon.
+> Ground
+> Truth
+> Prior
+> Recon.
+> Cheetah  Run
+> Post.
+> Recon.
+> Ground
+> Truth
+> Prior
+> Recon.
+> Hopper  Hop
+> Post.
+> Recon.
+> Ground
+> Truth
+> Prior
+> Recon.
+> Walker  Run
+> Post.
+> Recon.
+
+Context 3 8 13 18 23 28 33 38 43 48 Cat-RSSM 
+
+Figure 10: Comparison of reconstructed image trajectories in OOD setting for RSSM and Cat-RSSM .16 Ground 
+
+> Truth
+> Prior
+> Recon.
+> Cartpole  Swingup
+> Post.
+> Recon.
+> Ground
+> Truth
+> Prior
+> Recon.
+> Cheetah  Run
+> Post.
+> Recon.
+> Ground
+> Truth
+> Prior
+> Recon.
+> Hopper  Hop
+> Post.
+> Recon.
+> Ground
+> Truth
+> Prior
+> Recon.
+> Walker  Run
+> Post.
+> Recon.
+
+Context 3 8 13 18 23 28 33 38 43 48 RSSM Ground 
+
+> Truth
+> Prior
+> Recon.
+> Cartpole  Swingup
+> Post.
+> Recon.
+> Ground
+> Truth
+> Prior
+> Recon.
+> Cheetah  Run
+> Post.
+> Recon.
+> Ground
+> Truth
+> Prior
+> Recon.
+> Hopper  Hop
+> Post.
+> Recon.
+> Ground
+> Truth
+> Prior
+> Recon.
+> Walker  Run
+> Post.
+> Recon.
+
+Context 3 8 13 18 23 28 33 38 43 48 Cat-RSSM 
+
+Figure 11: Comparison of reconstructed physical trajectories in ID setting for RSSM and Cat-RSSM .17 N/A N/A N/A N/A N/A N/A N/A N/A N/A N/A N/A N/A N/A 
+
+> Ground
+> Truth
+
+N/A N/A N/A N/A N/A N/A N/A N/A N/A N/A N/A N/A N/A 
+
+> Prior
+> Recon.
+> Cartpole  Swingup
+
+N/A N/A N/A N/A N/A N/A N/A N/A N/A N/A N/A N/A N/A 
+
+> Post.
+> Recon.
+> Ground
+> Truth
+> Prior
+> Recon.
+> Cheetah  Run
+> Post.
+> Recon.
+> Ground
+> Truth
+> Prior
+> Recon.
+> Hopper  Hop
+> Post.
+> Recon.
+> Ground
+> Truth
+> Prior
+> Recon.
+> Walker  Run
+> Post.
+> Recon.
+
+Context 3 8 13 18 23 28 33 38 43 48 RSSM N/A N/A N/A N/A N/A N/A N/A N/A N/A N/A N/A N/A N/A 
+
+> Ground
+> Truth
+
+N/A N/A N/A N/A N/A N/A N/A N/A N/A N/A N/A N/A N/A 
+
+> Prior
+> Recon.
+> Cartpole  Swingup
+
+N/A N/A N/A N/A N/A N/A N/A N/A N/A N/A N/A N/A N/A 
+
+> Post.
+> Recon.
+> Ground
+> Truth
+> Prior
+> Recon.
+> Cheetah  Run
+> Post.
+> Recon.
+> Ground
+> Truth
+> Prior
+> Recon.
+> Hopper  Hop
+> Post.
+> Recon.
+> Ground
+> Truth
+> Prior
+> Recon.
+> Walker  Run
+> Post.
+> Recon.
+
+Context 3 8 13 18 23 28 33 38 43 48 Cat-RSSM 
+
+Figure 12: Comparison of reconstructed physical trajectories in OOD setting for RSSM and Cat-RSSM .18
