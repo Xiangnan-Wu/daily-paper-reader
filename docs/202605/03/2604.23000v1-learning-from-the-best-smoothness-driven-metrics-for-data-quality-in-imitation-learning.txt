@@ -1,0 +1,519 @@
+Title: Learning from the Best: Smoothness-Driven Metrics for Data Quality in Imitation Learning
+
+URL Source: https://arxiv.org/pdf/2604.23000v1
+
+Published Time: Tue, 28 Apr 2026 00:16:37 GMT
+
+Number of Pages: 8
+
+Markdown Content:
+# Learning from the Best: Smoothness-Driven Metrics for Data Quality in Imitation Learning 
+
+Soham Kulkarni 1, Raayan Dhar 1, Yuchen Cui 1
+
+Abstract — In behavioral cloning (BC), policy performance is fundamentally limited by demonstration data quality. Real-world datasets contain trajectories of varying quality due to operator skill differences, teleoperation artifacts, and procedural inconsistencies—yet standard BC treats all demonstrations equally. Existing curation methods require costly policy training in the loop or manual annotation, limiting scalability. We propose RINSE (Ranking and INdexing Smooth Examples), a lightweight framework for scoring demonstrations based on trajectory smoothness that is policy-architecture-agnostic and operates on trajectory data alone, with TED additionally using a phase-boundary/contact signal. Grounded in motor control theory—which establishes smoothness as a hallmark of skilled movement— RINSE uses two complementary metrics: Spectral Arc Length (SAL), a spectral measure of frequency-domain regularity, and Trajectory-Envelope Distance (TED), a spatial measure of contact-aware geometric deviation. We show that smoothness filtering can reduce the conditional action variance of the retained data distribution, with downstream effects that can be amplified by action chunking and compounding error. On RoboMimic benchmarks, SAL filtering achieves 16% higher success using one-sixth of the data. On real-world manipulation, TED filtering achieves 20% improvement with half the data. As a retrieval-stage filter within STRAP on LIBERO-10, RINSE 
+
+re-ranking improves mean success by 5.6%. As soft weights in Re-Mix domain reweighting, RINSE scores produce domain allocations highly correlated with the learned Re-Mix allocations (Spearman ρ ≥ 0.89 ). These results support smoothness as a useful quality signal across filtering, retrieval, and reweighting settings, especially in noisy or heterogeneous data regimes. 
+
+I. I NTRODUCTION 
+
+Behavioral cloning (BC), training a policy to mimic expert demonstrations via supervised learning, remains the dominant paradigm for teaching robots manipulation skills [ 1], [ 2 ]. Its simplicity has made it the backbone of modern robot learning systems, from single-task policies [ 3], [ 4 ] to generalist models [ 5 ]. Yet a persistent bottleneck limits its effectiveness: the quality of training data. Real-world demonstration datasets are inherently het-erogeneous. Human operators vary in skill, fatigue, and strategy; teleoperation interfaces introduce device-specific artifacts; and large-scale collection campaigns amplify these inconsistencies [ 6]. Standard BC treats all demonstrations equally, minimizing a per-step loss under the assumption that every trajectory is equally informative. When noisy or suboptimal demonstrations inflate the conditional action variance , the irreducible noise floor of the training objective,  
+
+> 1Soham Kulkarni, Raayan Dhar, and Yuchen Cui are with the Depart-ment of Computer Science, University of California, Los Angeles, CA 90095, USA.
+
+{sohamkulkarni,yuchencui}@cs.ucla.edu, raayan.dhar@gmail.com 
+
+the resulting policies learn averaged, hesitant behaviors rather than decisive, expert-like motions. Recent work has begun to address data curation for robot learning. Learning-based methods score demonstrations using influence functions [ 7 ], mutual information [ 8], or datamodels [ 9], but these require policy training in the loop or expensive computations over the full dataset. Heuristic filters based on task success or trajectory length [ 6], [ 10 ] fail to dis-tinguish quality differences among successful demonstrations. There is a clear need for metrics that are lightweight , offline ,and usable before any policy is trained, while remaining compatible with different policy architectures. We propose RINSE (Ranking and INdexing Smooth Ex-amples), a framework that filters demonstrations based on trajectory smoothness. Our approach is grounded in motor control theory: skilled human movements are smooth because the motor system minimizes jerk and effort [ 11 ], [ 12 ]. Noisy execution, whether from tremor, hesitation, or device artifacts, manifests as high-frequency energy in the trajectory. Smooth-ness therefore serves as a principled proxy for demonstration quality, rooted in the biomechanics of skilled behavior rather than arbitrary heuristics.  
+
+> RINSE
+
+employs two complementary metrics: Spectral Arc Length (SAL) , a clinically validated smoothness metric from rehabilitation science [ 13 ] that we adapt for robot data curation, and Trajectory-Envelope Distance (TED) ,a novel spatial metric that measures geometric deviation from a contact-aware Bézier-smoothed reference in Cartesian space. Both metrics are reference-free, require no policy training, and run in sub-second time per demonstration in our tested settings. We provide a theoretical analysis showing how smoothness filtering can reduce the conditional action variance of the retained data distribution, with downstream effects that can be amplified by action chunking and compounding error. We validate RINSE in two settings: (1) as a quality diagnostic that ranks datasets and domains without policy training (RTIS modality benchmark [ 14 ], Re-Mix [ 15 ] do-main reweighting), and (2) as a filter for policy learning (RoboMimic [ 6], real-world tasks, STRAP [ 16 ] retrieval on LIBERO-10 [ 17 ]). Our results show that RINSE scores correlate well with both data collection modality quality [ 14 ]and learned domain allocations from Re-Mix. Furthermore, SAL filtering achieves a 16% higher success rate on Transport using 50 out of 300 demonstrations; TED filtering achieves 20% improvement on real-world Push Block with half the data; and RINSE re-ranking improves the success rate of STRAP retrieval by 5.6% on LIBERO-10. Our contributions are: (1) adaptation of Spectral Arc 
+
+> arXiv:2604.23000v1 [cs.RO] 24 Apr 2026
+
+Length (SAL), a clinically validated smoothness metric from rehabilitation science, to robot demonstration curation, paired with a novel spatial metric, Trajectory-Envelope Distance (TED), that captures contact-aware geometric quality; (2) a theoretical analysis connecting smoothness filtering to con-ditional action variance in BC and its downstream impact through compounding error; and (3) empirical validation across standalone filtering, retrieval re-ranking, and domain reweighting, showing that RINSE serves as a versatile plug-in quality signal that often matches or outperforms full-data training with substantially fewer demonstrations. 
+
+II. R ELATED WORK 
+
+Data quality control for robot learning has gained growing attention as demonstration datasets grow in scale. We review key approaches and position RINSE within this landscape. 
+
+a) Learning-based curation.: A growing family of methods assess demonstration quality through learned repre-sentations or policy feedback. Influence-function approaches such as CUPID [ 7 ] rank demonstrations by estimated effect on expected return, achieving strong results but requiring policy rollouts and inverse-Hessian computations. DemInf [ 8]estimates per-trajectory mutual information I(S; A) to rank informativeness, requiring dataset-global statistics and VAE embeddings. DataMIL [ 9 ] trains many models on random subsets to compute data values, capturing interaction effects at high computational cost. Re-Mix [ 15 ] performs distribution-ally robust optimization over domain-level mixing weights. STRAP [ 16 ] retrieves relevant sub-trajectories from a prior pool using subsequence DTW matching. Other methods leverage online rollout signals [ 18 ], self-supervised embed-dings [ 19 ], or importance-weighted retrieval [ 20 ]. While these methods can maximize data utility, they introduce computational overhead and often couple quality assessment with policy learning. 
+
+b) Heuristic-based filtering.: In practice, most datasets are pre-filtered using human-defined rules: task success, trajectory length, or physical checks such as collision counts [ 6], [ 10 ], [ 21 ]. SayCan [ 10 ] collected 276,000 au-tonomous rollouts and retained only 12,000 via success filtering and human review, underscoring the data wastage inherent in coarse heuristics. These heuristics capture coarse quality differences but miss subtle execution fidelity: among successful demonstrations, some are smooth and decisive while others are jittery and hesitant. The key challenge is distinguishing expert-like behavior from noisy execution within the set of task-successful trajectories. 
+
+c) Data quality theory for BC.: Belkhale et al. [ 22 ]formalized data quality for imitation learning through action consistency and state diversity, showing that both axes independently affect downstream policy performance. Lin et al. [ 23 ] established scaling laws for manipulation, finding that environmental diversity matters more than raw quantity. The classical BC regret bound J(ˆ π) − J(π∗) ≤ H2ε [ 2], [ 24 ] is tight under MSE loss, and recent work by Foster et al. [ 25 ] shows that horizon-independent bounds are achievable under log-loss but remain elusive for MSE objectives used in standard practice. These results motivate quality-focused approaches: since the H2 compounding cannot be eliminated algorithmically for MSE-based BC, reducing the per-step error 
+
+ε through better data is the most direct path to improvement. 
+
+d) Smoothness in motor control.: Trajectory smoothness has a long history as a quality indicator. The minimum-jerk model [ 11 ] predicts that skilled reaching follows fifth-order polynomials with bell-shaped velocity profiles. Signal-dependent noise [ 12 ] explains why noisy execution is in-herently non-smooth. In rehabilitation, Spectral Arc Length (SPARC) [13 ] has been validated as the most reliable smoothness metric with intraclass correlation (ICC) exceeding 0.9 [ 26 ], [ 27 ]. Sakr et al. [ 28 ] showed that smoothness-based consistency metrics predict 70–89% of task success rates in robot learning. RINSE brings these validated metrics to data curation, providing a quality signal grounded in decades of motor control research. 
+
+e) Positioning RINSE .: RINSE requires no policy train-ing, rollouts, or dataset-global statistics, and is broadly compatible with different tasks and policy architectures; TED additionally uses a phase-boundary/contact signal. It provides a fast, principled first pass that is complementary to more expensive methods. 
+
+III. RINSE: R ANKING AND IN DEXING SMOOTH 
+
+EXAMPLES 
+
+We present the RINSE framework for evaluating and filtering demonstration quality based on trajectory smoothness. We begin with the BC problem setup and a key decomposition of the training loss (§III-A), introduce two smoothness metrics (§III-B–III-C), and provide theoretical motivation for why smoothness filtering improves BC (§III-D). 
+
+A. Problem Setup and the Noise Floor 
+
+We consider a standard imitation learning setting with continuous state space S ⊂ Rds and action space A ⊂ Rda .A dataset D = {(s(i) 
+
+> t
+
+, a (i) 
+
+> t
+
+)} with t denote the timestep inside the i-th ( i ∈ [0 , N )) demonstration out of a total of N expert demonstrations. m = ∥D∥ is the number of total state-action pairs. D is used to train a parametric policy πθ : S → A via empirical risk minimization: 
+
+ˆθ = arg min 
+
+> θ
+
+1
+
+m
+
+X
+
+> (s,a )∈D
+
+∥πθ (s) − a∥22. (1) The population risk is L(θ) = E(s,a )∼pdemo [∥πθ (s) − a∥22].
+
+Proposition 3.1 ( Noise floor decomposition ): For any policy πθ , the population risk decomposes as: 
+
+L(θ) = Es
+
+∥πθ (s) − μ∗(s)∥2| {z }
+
+> policy error
+
++ Es
+
+Tr  Var[ a | s] | {z } 
+
+> ¯σ2(noise floor)
+
+, (2) where μ∗(s) = E[a | s] is the conditional mean action. 
+
+Proof: Expanding ∥πθ (s) − a∥2 = ∥πθ (s) − μ∗(s) + 
+
+μ∗(s) − a∥2, the cross-term 2⟨πθ (s) − μ∗(s), μ ∗(s) − a⟩
+
+vanishes under E[· | s] because E[a | s] = μ∗(s), yielding the decomposition by the law of total variance. Fig. 1: Smoothness metrics applied to synthetic trajectories. Left to right: 3D trajectory, individual axes, SAL spectral analysis, and TED Bézier curve fitting. Smooth trajectories (top) have steep spectral decay and small Bézier residuals; noisy trajectories (bottom) show flat spectra and large deviations. 
+
+We write the decomposition in terms of states for simplicity; in practice, the same argument applies to observations or local state neighborhoods, where partial observability and local aliasing induce action inconsistency among nearby inputs. The noise floor ¯σ2 is the irreducible per-state action in-consistency; it cannot be reduced by any policy. When demonstrations come from operators of varying skill, ¯σ2
+
+increases because different operators can produce different actions for the same observation or nearby aliased states. The first term, policy error, is what training can minimize. This decomposition is the theoretical foundation for RINSE :by filtering to retain only smooth, high-quality demonstrations, we can reduce the conditional action variance of the retained data distribution, which (i) lowers the loss floor on that retained subset, (ii) reduces gradient variance during training (since gradient noise increases with the residual magnitude), and (iii) produces a cleaner learning signal. 
+
+B. Spectral Arc Length (SAL) 
+
+SAL [ 13 ] quantifies trajectory smoothness in the frequency domain. From each demonstration, we extract a scalar speed signal v[0: T −1] (e.g., the norm of end-effector velocity, sampled at interval ∆t). Let Vk = ˆ v(fk) be its one-sided Fast Fourier Transform (FFT) at frequencies fk = k/ (T ∆t), with log-amplitude Lk = log( |Vk| + ε). The spectral arc length is: 
+
+SAL( v) := −
+
+> T / 2
+
+X
+
+> k=1
+
+p(fk − fk−1)2 + ( Lk − Lk−1)2. (3) A less-negative SAL score (closer to zero) indicates smoother motion. Each summand is the Euclidean line element along the log-spectrum curve; a short total arc length forces the spectrum to decay steeply, penalizing high-frequency energy. SAL is scale-invariant and computable in O(T log T ) (see Figure 1). 
+
+C. Trajectory-Envelope Distance (TED) 
+
+SAL captures global frequency characteristics but ignores Cartesian geometry and the local structure of contact events. We introduce the Trajectory-Envelope Distance (TED), a self-similarity measure quantifying how much distortion is needed to deform a raw demonstration into its smoothest feasible version while respecting contact constraints. 
+
+a) Contact-aware partition.: We consider the propri-oceptive end-effector states of a demonstration trajectory 
+
+τ = {(xt, R t)}Tt=0 with positions xt ∈ R3 and orientations 
+
+Rt ∈ SO(3) is partitioned by gripper contact. Each maximal sub-interval of constant contact status is split into dense 
+
+boundary regions (the first and last r fraction) and a sparse 
+
+interior, with separate smoothing hyperparameters applied to the boundary and interior portions. 
+
+b) Bézier envelope.: For each region, we fit a low-control-point Bézier curve using a greedy refinement proce-dure (see Algorithm 1 and Appendix b) that iteratively inserts control points at locations of maximum residual, keeps the best-scoring envelope under an area-plus-corridor score, and falls back to corridor-based subdivision when needed. Bézier curves of degree K ≪ T cannot represent high-frequency oscillations by construction, making the residual a natural measure of non-smooth content. Boundary-region blending can optionally anchor dense regions more closely to the raw trajectory. Orientations are smoothed in rotation-vector form using sliding-window geodesic averaging (Karcher mean) or related interpolation variants. 
+
+c) Normalized DTW distance.: After concatenating position xt ∈ R3 and rotation-vector orientation rt ∈ R3
+
+into zt = [ x⊤ 
+
+> t
+
+, r ⊤ 
+
+> t
+
+]⊤ ∈ R6, where rt parameterizes Rt, the per-pair cost d(zt, ˜zs) = ( ∥xt − ˜xs∥2 + w2ori θ(Rt, ˜Rs)2)1/2
+
+is fed to FastDTW with alignment path P . The TED score is: 
+
+dTED (τ ) = 1
+
+|P |
+
+X
+
+> (t,s )∈P
+
+d(zt, ˜zs). (4) Lower TED indicates higher intrinsic smoothness. The Bézier envelope acts as an implicit low-pass filter: since low-degree polynomial curves cannot represent high-frequency oscilla-tions, the residual between the raw trajectory and its envelope is dominated by high-frequency content. Consequently, a small TED score indicates that the trajectory already has limited high-frequency energy, consistent with a steep spectral decay (large SAL). TED is computed in O(KT ) (FastDTW is linear in T ), typically tens of milliseconds per trajectory. Critically, TED’s contact-aware partition avoids penalizing natural discontinuities at contact transitions, a key advantage over global metrics for manipulation tasks. 
+
+D. Theoretical Motivation 
+
+We now trace the theoretical case for smoothness-based filtering, building on established results in motor control and learning theory. Rather than attempting to prove that trajectory smoothness directly controls the policy’s function class (a connection that requires strong assumptions on the dynamics mapping [ 2]), we identify a cleaner mechanism through the noise floor. 
+
+a) Smoothness indicates skilled execution.: The minimum-jerk model [ 11 ] predicts that skilled reaching move-ments follow fifth-order polynomial trajectories minimizing R ∥ ... 
+
+x (t)∥2dt , producing bell-shaped velocity profiles. Signal-dependent noise theory [ 12 ] establishes that motor noise scales with control signal magnitude: suboptimal controllers that use larger corrective signals experience proportionally more noise, producing non-smooth trajectories with excess high-frequency energy. These results imply that smoothness is constitutive of skilled behavior, not merely correlated with it. SAL and TED directly measure this property. 
+
+b) Filtering can reduce conditional action variance.: 
+
+Consider a dataset with fraction α of clean demonstrations (within-group variance σ2 
+
+> c
+
+) and 1 − α noisy ones ( σ2 
+
+> n
+
+≫ σ2 
+
+> c
+
+). When both groups target the same conditional mean action 
+
+μ∗(s), the noise floor decomposes as: 
+
+¯σ2 = α σ 2 
+
+> c
+
++ (1 − α) σ2
+
+> n
+
+. (5) In practice, noisy demonstrators may also differ in their mean actions, contributing an additional between-group variance term. In either case, filtering to retain the clean subset can reduce the conditional action variance of the retained data distribution, at the cost of reducing sample size from N to αN .This trade-off is beneficial when the noise reduction outweighs the increased estimation error. This condition holds when the noise gap is large relative to the policy complexity, the typical regime of heterogeneous teleoperation data. More precisely, this benefit is with respect to the retained distribution pkeep :lowering conditional action variance improves the learning signal on the retained subset itself. Improvements on the target task further require that filtering preserve sufficient coverage of task-relevant states or observations; otherwise reduced variance may be offset by reduced support. 
+
+c) Compounding error amplification.: The classical BC regret bound [2] establishes: 
+
+J(ˆ π) − J(π∗) ≤ H2 ε, (6) where ε is the expected per-step imitation error under the expert’s state distribution and H the task horizon. This bound is tight [ 24 ]: no offline algorithm can improve the H2 scaling for MSE-based BC. Horizon-independent bounds have been shown under log-loss [ 25 ], but standard BC uses MSE, where the H2 compounding persists. By Proposition 3.1, the population MSE loss satisfies L(ˆθ) ≥ ¯σ2, so the noise floor constrains how small the per-step error can become. The 
+
+H2 amplification in (6) means that even modest reductions in the irreducible per-step error term can translate into improved rollout performance, especially for long-horizon tasks, under standard BC sensitivity to imitation error. We view (6) as a motivating sensitivity bound rather than as a theorem that, by itself, proves the empirical gains from smoothness filtering. 
+
+d) Action chunking amplification.: Modern architectures predict multi-step action chunks of horizon Hc (typically 8– 16). The chunk-level noise floor is: 
+
+¯σ2 
+
+> chunk
+
+=
+
+> Hc
+
+X
+
+> h=1
+
+Es
+
+Tr  Var[ ah | s] = Hc · ¯σ2
+
+> step
+
+, (7) where the equality holds when per-step noise is approximately stationary and the chunk loss aggregates errors across the prediction horizon. This suggests that chunked predictors can be more sensitive to inconsistent demonstrations than single-step predictors. For Diffusion Policy [ 3], which predicts action sequences rather than single actions, reducing disagreement in the demonstration data can therefore be especially beneficial. Although the diffusion denoising process learns to recover action trajectories from noise, the data-level noise floor ¯σ2
+
+persists as irreducible conditional variance, since the score network can only denoise toward the conditional mean when demonstrations disagree. 
+
+e) Quality vs. quantity.: The interplay between noise reduction and sample loss creates a non-trivial optimum. If k of N demonstrations are retained, the expected error approximately satisfies: 
+
+E(k) ≈ ¯σ2(k)
+
+| {z } 
+
+> decreasing
+
++ C · dkT | {z } 
+
+> increasing
+
+, (8) where ¯σ2(k) decreases as noisier demonstrations are removed. The second term is the standard statistical estimation error: for a policy class of effective complexity d fit to n = kT state-action pairs, excess risk scales as O(d/n ) [ 2]. An interior optimum k∗ exists when ¯σ2 decreases faster than estimation error increases, precisely the regime where RINSE operates, as confirmed by our experiments. 
+
+f) SAL and TED as complementary quality measures.: 
+
+SAL captures global spectral regularity, excelling at detecting high-frequency jitter in free-space motions. TED captures phase-aware geometric coherence, excelling at detecting spa-tial artifacts in contact-rich tasks. While raw jerk ( R ∥ ... 
+
+x ∥2dt )is the natural smoothness proxy from motor control theory, it penalizes contact transitions indiscriminately and is sen-sitive to measurement noise and trajectory duration; SAL’s spectral formulation is ∼10 × more robust to noise than log dimensionless jerk [ 13 ], and TED’s phase-aware segmentation avoids penalizing contact discontinuities. By segmenting at contact boundaries and measuring smoothness within each phase, TED provides a physically meaningful quality signal even for multi-phase tasks. 
+
+IV. E XPERIMENTS 
+
+We evaluate RINSE in two complementary settings: (1) as a quality diagnostic that ranks datasets and domains without any policy training (§IV-A–IV-B), and (2) as a filter that selects demonstrations for improved policy learning (§IV-C–IV-E). 
+
+A. Quality Diagnostic: Data Collection Modality 
+
+We apply RINSE to the RTIS benchmark [ 14 ], which provides five manipulation tasks under three modalities: kinesthetic teaching, VR teleoperation, and spacemouse teleoperation. Both metrics consistently rank kinesthetic > VR > space-mouse (Figure 2; per-variant breakdown in Figure 4), match-ing the downstream policy success ordering reported in [ 14 ]. Kinesthetic teaching produces the smoothest trajectories; rate-controlled spacemouse introduces up to 4× larger TED scores. This validates RINSE as a diagnostic tool for assessing dataset quality before any policy is trained. 
+
+B. Quality Diagnostic: Re-Mix Domain Reweighting 
+
+We apply RINSE as soft quality weights within Re-Mix [ 15 ], which performs Group-DRO-style exponentiated updates on domain sampling weights αi using per-domain excess losses. We modify the estimator by weighting each trajectory’s contribution by w(τ ) = exp( −λ q (τ )) , where q(τ ) is the normalized TED or SAL badness score: 
+
+∆L(w) 
+
+> i
+
+(θ) = 
+
+P  
+
+> τ∈Di
+
+w(τ ) ∆ ℓ(τ ; θ)
+
+P  
+
+> τ∈Di
+
+w(τ ) . (9) We train on 7 Open X-Embodiment domains for 100k steps (details in Appendix f). Table I reports final α values after domain allocation under both z-score and rank normalization. 
+
+> RINSE
+
+-weighted allocations are highly correlated with Re-Mix base allocations (Spearman ρ ≥ 0.89 , cosine ≥
+
+0.989 ). Since Re-Mix allocations are validated to improve downstream policy performance [ 15 ], this indicates that RINSE 
+
+scores, computed offline without any policy training, recover a domain-quality signal known to matter for learning. All variants concentrate weight on the toto domain, which Re-Mix identifies as having the highest marginal training value. 
+
+C. Filtering: RoboMimic Benchmarks 
+
+We apply smoothness-based filtering to three RoboMimic benchmarks [ 6] and train Diffusion Policy (Transformer backbone) [ 3 ] on the filtered subsets. For each task, we select a budget of K demonstrations ranked by TED or SAL, and compare against training on the full dataset. Table II reports mean success rates over 3 seeds after ≥100k gradient steps.                                                                                                                   
+
+> TABLE I: Re-Mix αvalues (%) after domain allocation (mean over 3 seeds). Top: z-score normalization; bottom: rank normalization. Green :>25% relative increase from uniform; red : >25% relative decrease.
+> Domain Uniform Re-Mix Re-Mix+TED Re-Mix+SAL
+> Z-score normalization (ρ∈[0 .893 ,0.964] , cos ∈[0 .989 ,0.999] )autolab_ur5 9.3 3.1 5.8 3.1 cable_routing 3.9 0.7 0.9 0.9 jaco_play 7.4 1.4 2.0 1.7 roboturk 17.9 3.9 4.8 4.4 taco_play 22.6 5.0 11.4 7.7 toto 31.5 82.6 66.5 77.6 viola 7.4 3.2 8.6 4.5
+> Rank normalization (ρ= 1 .000 , cos ∈[0 .997 ,1.000] )autolab_ur5 9.3 1.8 3.3 1.6 cable_routing 3.9 0.4 1.0 0.5 jaco_play 7.4 1.0 2.0 1.2 roboturk 17.9 2.3 4.7 2.5 taco_play 22.6 3.1 8.1 4.0 toto 31.5 90.5 79.2 89.1 viola 7.4 0.8 1.7 1.0 TABLE II: RoboMimic filtering results (% success). Kdemos selected from
+> |D| by TED or SAL vs. full data. mh = multi-human, ph = proficient-human, b–b = better–better.
+> Task Src |D| KTED SAL Full
+> Square mh 300 50 75 72 76
+> better 100 50 82 82 78 Tool Hang ph 200 100 58 71 63 Transport mh 300 50 46 55 39 b–b 50 25 36 54 42
+
+For bimanual Transport, smoothness scores are averaged over both arms. On most tasks, either TED or SAL filtering matches or outperforms the full-data baseline despite using as few as one-sixth of the demonstrations. The gains are most pronounced on Transport, a complex bimanual task with substantial free-space motion where SAL filtering achieves a 16% improvement using 50 of 300 demos. On Tool Hang, SAL with half the demonstrations exceeds full-data performance by 8% . Within the “better” labeled subsets, both metrics further discriminate quality: filtered top-50 reach 82% versus 78% for the full “better” set on Square. The metrics are complementary: SAL excels on tasks with prominent free-space jitter (Transport), while TED captures spatial artifacts in precision contact tasks (Square), consistent with their design (§III-D). Convergence speed also improves with filtering (Appendix d). 
+
+D. Filtering: Real-World Experiments 
+
+We evaluate on a U-Factory xArm 7-DoF robot with two RealSense cameras (Figure 3). We evaluate two tasks: Push Block and Pick and Place . All policies use Diffusion Policy (1D Conv UNet backbone) evaluated at epoch 50 over 25 randomized trials. TED filtering achieves 20% higher success on Push Block with half the data (Table III). At every subset size, Fig. 2: SAL (higher = smoother) and TED (lower = smoother) for Open Drawer from [14]. Scores correlate with policy success across modalities.                               
+
+> Fig. 3: Real-world setup: U-Factory xArm-7 with two RealSense cameras (wrist and side-mounted) for visual observations. TABLE III: Real-world filtering results (% success). Rnd = average of 3 random subsets of equal size (see Appendix c).
+> Task |D| KRnd TED SAL Full
+> Push Block 200 150 64 80 72 68 Push Block 200 100 59 88 84 68 Push Block 200 50 52 84 84 68 Pick & Place 80 40 55 76 68 76
+
+TED outperforms random subsets by 16–32 percentage points ; SAL outperforms by 8–32 pp , confirming that 
+
+> RINSE
+
+’s ranking, not subset size, drives improvement. On Pick and Place ( |D| =80 ), TED matches full-data performance, consistent with a smaller, relatively clean dataset where filtering has less room to improve. SAL scores also correlate with operator-reported task difficulty (Appendix g). 
+
+E. Filtering: Retrieval-Augmented Learning 
+
+We integrate RINSE into the STRAP retrieval frame-work [ 16 ] on LIBERO-10 [ 17 ], a suite of 10 language-conditioned manipulation tasks. STRAP segments target demonstrations into sub-trajectories and retrieves similar segments from a prior pool via subsequence DTW (SDTW) over DINOv2 visual embeddings. Our variant takes the top 
+
+R=400 SDTW candidates per query, re-ranks by TED or SAL, and retains the top K=200 (details in Appendix e). All methods train a language-conditioned BC Transformer; Table IV reports the mean over 3 seeds of each seed’s best checkpoint under the common evaluation protocol. TED+STRAP and SAL+STRAP improve aggregate success by 5.6% and 4.4% respectively over pure STRAP retrieval, although the per-task outcomes remain mixed. Some tasks regress relative to pure SDTW retrieval, while others improve substantially, indicating that smoothness-aware re-ranking is most helpful when the retrieved pool contains quality variation that SDTW alone does not resolve. The metrics are complementary: TED excels on contact-sensitive tasks (Cream-Cheese-Butter: +32%), while SAL excels on tasks                                    
+
+> TABLE IV: LIBERO-10 success rates (%). RINSE re-ranking of STRAP-retrieved sub-trajectories improves aggregate performance. Best per-task in
+> bold .
+> Mug-MW
+> Moka 2
+> Soup-S
+> CCB
+> Mug-P
+> Stove-M
+> Bowl-C
+> Soup-C
+> Mug 2
+> Book-C
+> Avg
+> STRAP 16 040 16 22 84 76 24 48 80 40.6 +TED 14 032 48 38 72 92 34 48 84 46.2
+> +SAL 14 044 834 68 84 40 58 100 45.0
+
+with free-space motion (Book-Caddy: +20%). This demon-strates that RINSE scores are effective as a secondary ranking signal within retrieval pipelines, not only as a standalone filter. 
+
+V. C ONCLUSION 
+
+We presented RINSE , a lightweight framework for evalu-ating and filtering demonstration quality based on trajectory smoothness. By adapting Spectral Arc Length (SPARC; SAL) from rehabilitation science and introducing TED, both grounded in motor control theory, RINSE provides a principled quality signal that is broadly compatible with different policy architectures, with TED additionally using a phase-boundary/contact signal. Our theoretical analysis shows that smoothness filtering can reduce the conditional action variance of the retained data distribution, with downstream effects that can be amplified by action chunking and compounding error. Experiments across RoboMimic, real-world manipulation, LIBERO-10 retrieval augmentation, and Re-Mix domain reweighting show improvements across filtering, retrieval, and reweighting settings, with the largest gains in noisy or heterogeneous data regimes. 
+
+Limitations. Smoothness is necessary but not sufficient for quality: smooth yet suboptimal trajectories may exist.  
+
+> RINSE
+
+assumes pre-filtering for task success and operates on proprioceptive signals, though it could be combined with state-coverage metrics; all policies in our experiments use image observations, showing proprioceptive filtering complements visual policy learning. TED’s phase-aware segmentation mitigates but does not eliminate the risk of penalizing task-necessary abrupt motions. Future work should explore integrating smoothness with diversity-aware metrics and real-time quality feedback during data collection. 
+
+APPENDIX 
+
+a) SAL hyperparameters.: The sampling interval ∆t
+
+matches the control frequency (e.g., ∆t = 0 .05 s at 20 Hz), Fig. 4: SAL violin plots across five metric variants and three modalities for three tasks from [ 14 ]. Kinesthetic teaching consistently produces higher (smoother) SAL. 
+
+Algorithm 1 Greedy Bézier envelope with corridor fallback (TED) 
+
+Require: Raw positions {xi}n−1 
+
+> i=0
+
+, corridor width ϵ, area budget Abudget ,refinement threshold τref , max iterations Mref , initial control-point indices I0, numerical tolerance ϵnum 
+
+1: c ← { xj | j ∈ I0}
+
+2: Bbest ← ∅, sbest ← +∞
+
+3: for m = 1 to Mref do 
+
+4: B ← BEZIER FIT (c)
+
+5: di ← ∥ xi − B(i/ (n − 1)) ∥, i = 0 , . . . , n − 1
+
+6: Acur ← 1
+
+> n−1
+
+Pn−1 
+
+> i=0
+
+di
+
+7: Pcur ← Pn−1 
+
+> i=0
+
+[max(0 , d i − ϵ)] 2
+
+8: scur ← Acur + Pcur 
+
+9: if scur < s best then 
+
+10: Bbest ← B, sbest ← scur 
+
+11: if Acur ≤ Abudget and Pcur ≤ ϵnum then 
+
+12: break 
+
+13: j⋆ ← arg max i di
+
+14: if dj⋆ ≤ τref then 
+
+15: break 
+
+16: c ← c ∪ { xj⋆ }; sort c in temporal order 17: Bcorr ← CORRIDOR FALLBACK ({xi}n−1 
+
+> i=0
+
+, ϵ, A budget )
+
+18: dcorr  
+
+> i
+
+← ∥ xi − Bcorr (i/ (n − 1)) ∥
+
+19: scorr ← 1
+
+> n−1
+
+P 
+
+> i
+
+dcorr  
+
+> i
+
++ P
+
+> i
+
+max(0 , d corr  
+
+> i
+
+− ϵ)2
+
+20: if scorr < s best then 
+
+21: return {Bcorr (i/ (n − 1)) }n−1
+
+> i=0
+
+22: else 
+
+23: return {Bbest (i/ (n − 1)) }n−1
+
+> i=0
+
+setting fN = 1 /(2∆ t). All frequencies from DC to fN are included without additional pre-filtering. A regularization constant ε = 10 −5 prevents numerical issues. SAL requires no task-specific tuning; for high-frequency tasks (e.g., ham-mering), a higher control rate ensures task-relevant oscillations fall below the Nyquist cutoff. 
+
+b) TED algorithm and hyperparameters.: Algorithm 1 describes TED’s greedy refine-and-keep-best heuristic with corridor fallback. Each contact phase is split into dense boundary regions and sparse interior ( r = 0 .2). Dense and sparse regions use separate corridor widths and initialization settings: εdense = 0.10 , εsparse = 0.05 , K0,dense = 10 ,
+
+K0,sparse = 12 , and Mref = 20 . Orientations are smoothed via sliding-window geodesic averaging ( w = 4 timesteps). DTW orientation weight wori = 0 .25 . All values are tunable but were set once and used across all experiments without task-specific tuning. Here Acur is an interval-normalized residual surrogate (not a physical area), and τref controls when further control-point insertion stops; in our implementation, we set τref = Abudget .
+
+c) Random subset comparison.: To confirm gains are due to quality selection, we trained Diffusion Policy (1D Conv UNet; batch 64, AdamW lr 10 −4, 100 DDPM / 16 DDIM steps, ResNet-18) on random K-sized subsets (3 seeds). Table V shows TED and SAL outperform random by 
+
+8–40 pp .
+
+TABLE V: Random subsets vs. RINSE filtering (% success). 
+
+Task K Rnd-42 Rnd-371 Rnd-970 TED SAL 
+
+Push Block 50 52 60 44 84 84 
+
+Push Block 100 60 56 60 88 84 
+
+Push Block 150 64 68 60 80 72 Pick & Place 40 56 48 60 76 68 
+
+d) Convergence analysis.: Table VI summarizes con-vergence and top-vs-bottom ablations. RoboMimic uses Diffusion Policy (Transformer) [ 3 ] (obs. 2, action 8, pred. 16). Smoothness-ranked subsets achieve 10–35% gains even 
+
+within high-quality labels. 
+
+TABLE VI: Convergence and ablation results (% success). 
+
+Task (Source) Metric Top K Bottom K
+
+Square (better, 100) TED, K=50 82% 47% Tool Hang (ph, 200) SAL, K=100 71% ≤61% Transport (b–b, 50) SAL, K=25 54% ≤44% 
+
+Convergence: On Square (mh, 300), the filtered top-50 reaches 75% in 
+
+≈40k steps; the full 300-demo model needs ≈450k steps ( >10 × speed-up ). 
+
+e) LIBERO-10 training details.: STRAP retrieves can-didates via SDTW over DINOv2 (ViT-B/14) embeddings (L2). We take top R=400 per query, re-rank by TED or SAL, retain top K=200 (⌊K/Q ⌋ per query, remainder round-robin). Policy: BC Transformer, context 5, dim 256, 8 layers, 4 heads, GMM head (5 modes), ResNet-18 + SpatialSoftmax. Training: 300 epochs, batch 32, AdamW lr 10 −4, eval every 20 epochs (25 episodes), 5 demos/task. 
+
+f) Re-Mix integration details.: We weight each trajectory by w(τ ) = exp( −λ q (τ )) where q(τ ) is a normalized badness score. Z-score: q(z) 
+
+> i
+
+= ( qi − μi)/σ i; rank: q(rank)  
+
+> i
+
+= (rank i −
+
+1) /(Ni − 1) . Lambda calibrated so w90 /w 10 = 10 : z-score 
+
+λTED = 0 .883 , λSAL = 0 .965 ; rank λ = 2 .876 . Training: 7 OXE domains, 100k steps, batch 8, η = 0 .2, γ = 0 .05 , 3 seeds. RTIS: scores only (no training). 
+
+g) Operator difficulty analysis.: Figure 5 shows SAL distributions stratified by operator-reported difficulty. Trajec-tories rated easier consistently have higher SAL, confirming 
+
+RINSE scores align with human-perceived execution quality. 
+
+Fig. 5: SAL distributions stratified by operator-reported difficulty for Push Block (top) and Pick and Place (bottom). Easier trajectories have higher SAL (smoother). 
+
+All experiments use NVIDIA L40S GPUs. 
+
+REFERENCES 
+
+[1] D. A. Pomerleau, “ALVINN: An autonomous land vehicle in a neural network,” in Advances in Neural Information Processing Systems (NeurIPS) , 1989. [2] S. Ross and D. Bagnell, “Efficient reductions for imitation learning,” in 
+
+Proceedings of the thirteenth international conference on artificial intel-ligence and statistics . JMLR Workshop and Conference Proceedings, 2010, pp. 661–668. [3] C. Chi, S. Feng, Y. Du, Z. Xu, E. Cousineau, B. Burchfiel, and S. Song, “Diffusion policy: Visuomotor policy learning via action diffusion,” in 
+
+Proceedings of Robotics: Science and Systems (RSS) , 2023. [4] T. Z. Zhao, V. Kumar, S. Levine, and C. Finn, “Learning fine-grained bimanual manipulation with low-cost hardware,” arXiv preprint arXiv:2304.13705 , 2023. [5] Octo Model Team, D. Ghosh, H. Walke, K. Pertsch, K. Black, O. Mees, S. Dasari, J. Hejna, C. Xu, J. Luo, T. Kreiman, Y. Tan, L. Y. Chen, P. Sanketi, Q. Vuong, T. Xiao, D. Sadigh, C. Finn, and S. Levine, “Octo: An open-source generalist robot policy,” in Proceedings of Robotics: Science and Systems , Delft, Netherlands, 2024. [6] A. Mandlekar, D. Xu, J. Wong, S. Nasiriany, C. Wang, R. Kulkarni, L. Fei-Fei, S. Savarese, Y. Zhu, and R. Martín-Martín, “What matters in learning from offline human demonstrations for robot manipulation,” in arXiv preprint arXiv:2108.03298 , 2021. [7] C. Agia, R. Sinha, J. Yang, R. Antonova, M. Pavone, H. Nishimura, M. Itkina, and J. Bohg, “CUPID: Curating data your robot loves with influence functions,” Conference on Robot Learning (CoRL) , 2025. [8] J. Hejna, S. Mirchandani, A. Balakrishna, A. Xie, A. Wahid, J. Tompson, P. Sanketi, D. Shah, C. Devin, and D. Sadigh, “Robot data curation with mutual information estimators,” in arXiv preprint arXiv:2502.08623 ,2025, https://arxiv.org/abs/2502.08623. [9] S. Dass, A. Khaddaj, L. Engstrom, A. Madry, A. Ilyas, and R. Martin-Martin, “DataMIL: Selecting data for robot imitation learning with datamodels,” Conference on Robot Learning (CoRL) , 2025. [10] M. Ahn, A. Brohan, N. Brown, D. Kappler, A. Herzog, T. Haarnoja, C. Finn, and S. Levine, “Do as i can, not as i say: Grounding language in robotic affordances,” in Robotics: Science and Systems (RSS) , 2022, https://arxiv.org/abs/2204.01691. [11] T. Flash and N. Hogan, “The coordination of arm movements: An ex-perimentally confirmed mathematical model,” Journal of Neuroscience ,vol. 5, no. 7, pp. 1688–1703, 1985. [12] C. M. Harris and D. M. Wolpert, “Signal-dependent noise determines motor planning,” Nature , vol. 394, pp. 780–784, 1998. [13] S. Balasubramanian, A. Melendez-Calderon, and E. Burdet, “A robust and sensitive metric for quantifying movement smoothness,” IEEE Transactions on Neural Systems and Rehabilitation Engineering , vol. 20, no. 3, pp. 288–297, 2012. [14] H. Li, Y. Cui, and D. Sadigh, “How to train your robots? the impact of demonstration modality on imitation learning,” in Proceedings of the IEEE International Conference on Robotics and Automation (ICRA) ,2025, https://arxiv.org/abs/2503.07017. [15] J. Hejna, C. A. Bhateja, Y. Jiang, K. Pertsch, and D. Sadigh, “Remix: Optimizing data mixtures for large scale imitation learning,” in 8th Annual Conference on Robot Learning , 2024. [16] M. Memmel, A. Mandlekar, Y. Gao, and D. Fox, “Strap: Robot sub-trajectory retrieval for augmented policy learning,” arXiv preprint arXiv:2412.15182 , 2024. [17] B. Liu, Y. Zhu, C. Gao, Y. Feng, Q. Liu, Y. Zhu, and P. Stone, “Libero: Benchmarking knowledge transfer for lifelong robot learning,” in Advances in Neural Information Processing Systems (NeurIPS) ,2023. [18] A. S. Chen, A. M. Lessing, Y. Liu, and C. Finn, “Curating demonstra-tions using online experience,” Robotics: Science and Systems (RSS) ,2025. [19] Y. Zhang, Y. Xie, H. Liu, R. Shah, M. Wan, L. Fan, and Y. Zhu, “SCIZOR: A self-supervised approach to data curation for large-scale imitation learning,” IEEE International Conference on Robotics and Automation (ICRA) , 2026. [20] M. Du, S. Nair, D. Sadigh, and C. Finn, “Behavior retrieval: Few-shot imitation learning by querying unlabeled datasets,” in Proceedings of Robotics: Science and Systems (RSS) , 2023. [21] A. Shukla, S. Tao, and H. Su, “Maniskill-hab: A benchmark for low-level manipulation in home rearrangement tasks,” arXiv preprint arXiv:2412.13211 , 2024. [22] S. Belkhale, Y. Cui, and D. Sadigh, “Data quality in imitation learning,” 
+
+Advances in Neural Information Processing Systems , vol. 36, 2024. [23] F. Lin et al. , “Data scaling laws in imitation learning for robotic manipulation,” International Conference on Learning Representations (ICLR) , 2025. [24] N. Rajaraman, L. F. Yang, J. Jiao, and K. Ramchandran, “Toward the fundamental limits of imitation learning,” Advances in Neural Information Processing Systems (NeurIPS) , 2020. [25] D. J. Foster, A. Block, and D. Misra, “Is behavior cloning all you need? understanding horizon in imitation learning,” Advances in Neural Information Processing Systems (NeurIPS) , 2024. [26] S. Balasubramanian, A. Melendez-Calderon, A. Roby-Brami, and E. Burdet, “On the analysis of movement smoothness,” Journal of NeuroEngineering and Rehabilitation , vol. 12, p. 112, 2015. [27] G. Cornec et al. , “Re-evaluating movement smoothness metrics: Exper-imental validation,” Journal of NeuroEngineering and Rehabilitation ,2024. [28] M. Sakr, L. Kondepudi, and D. P. Losey, “Consistency matters: Defining demonstration data quality metrics in robot learning from demonstration,” ACM Transactions on Human-Robot Interaction , 2025.

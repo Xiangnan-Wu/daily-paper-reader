@@ -1,0 +1,664 @@
+Title: FreqCache: Accelerating Embodied VLN Models with Adaptive Frequency-Guided Token Caching
+
+URL Source: https://arxiv.org/pdf/2604.24391v1
+
+Published Time: Tue, 28 Apr 2026 01:53:58 GMT
+
+Number of Pages: 10
+
+Markdown Content:
+# FreqCache: Accelerating Embodied VLN Models with Adaptive Frequency-Guided Token Caching 
+
+# Zihao Zheng 1, Xingyue Zhou 3, Zhihao Mao 4, Songyu Sun 5, Lingyue Zhang 6, Yulong Ao 2, Yupu Feng 2, Qiongqiong Zhang 2, Yonghua Lin 2, Xiang Chen 1 
+
+> 1
+
+School of Computer Science, Peking University  
+
+> 2
+
+Beijing Academy of Artificial Intelligence, BAAI  
+
+> 3
+
+School of Artificial Intelligence and Automation, Huazhong University of Science and Technology  
+
+> 4
+
+School of Computer Science, China University of Geosciences (Wuhan)  
+
+> 5
+
+College of Computer Science and Electronic Engineering, Hunan University  
+
+> 6
+
+School of EECS, Peking University 
+
+## Abstract 
+
+Vision-Language-Navigation (VLN) models exhibit excellent nav-igation accuracy but incur high computational overhead. Token caching has emerged as a promising training-free strategy to re-duce this cost by reusing token computation results; however, ex-isting token caching approaches rely on visual domain methods for cacheable token selection, leading to challenges when adapted to VLN models. 1) Visual domain methods become invalid when there is viewpoint migration. 2) Visual domain methods neglect critical edge information without the aid of additional algorithms. 3) Visual domain methods overlook the temporal variation of scenarios and lack adjustability in cache budgets. In this paper, we develop de-tailed analyses and find that the impacts of these challenges exhibit invariance and analyzability in the frequency domain. Based on these, we propose a frequency-guided token caching framework, called FreqCache . Utilizing the inherent properties of the frequency domain, FreqCache achieves optimal token cache establishment, refreshment, and adaptive adjustment. Experiments show that Fre-qCache achieves 1.59 × speedup with ignorable overhead, showing the effect of integrating frequency domain methods in VLN token caching. 
+
+## 1 Introduction 
+
+Vision-Language Navigation (VLN) models showcase amazing per-formance on navigation tasks by aligning first-person visual streams with natural language instructions [ 4, 23 ]. Driven by the widespread adoption of large Vision-Language Models (VLMs), modern VLN models now leverage profound commonsense priors and advanced spatial reasoning to achieve unprecedented generalization [ 15 , 33 ]. Despite achieving strong performance, VLN models are not only parameter-heavy but also pose a significant computational chal-lenge [ 13 ]. During the complex navigation tasks, robots must re-peatedly invoke expensive model inference at each timestep to predict physical actions [ 5, 6]. In scenarios demanding real-time interaction, this exorbitant computational cost constitutes a core bottleneck hindering system deployment and application. To address this, some studies explore the acceleration and op-timization of VLN models, which can be divided into four types: architecture redesign (e.g., Uni-NaVid [ 32 ], Efficient-VLN [ 34 ], ETP-R1 [ 31 ] and StreamVLN [ 26 ]) to mitigate long-horizon overhead; model compression (e.g., MiniVLN [ 42 ]) to minimize computation overhead; runtime optimization (e.g., NAP [ 18 ], KERV [ 37 ] and HeiSD [ 38 ]) to curb redundant computation; and collaborative de-ployment (e.g., RAPID [ 40 ] and RoboECC [ 36 ]) to dynamically ad-just load and overhead. Among these methods, token caching has emerged as a highly promising runtime optimization technique [ 22 ]. By selectively reusing similar visual token representations across time steps, this method eliminates temporal redundancy while re-maining fully training-free and plug-and-play, thereby offering a deployment-friendly acceleration strategy. Existing token caching methods generally fall into three cate-gories: exact reuse of stable historical tokens (e.g., VLA-Cache [ 28 ]), selective compression via merging or pruning under budget con-straints (e.g., VL-Cache [ 24 ], AirCache [ 11 ]), and system-coordinated scheduling to reduce overhead(e.g., Strata [ 27 ]). Despite being promptly categorized into different types, these efforts share a common feature: reliance on visual domain methods to screen cacheable tokens. However, these visual-domain-based token caching strategies are not fit for VLN models, due to the following reasons: 1) View-point migration occurs in navigation tasks, causing structural shifts in images. Visual domain methods struggle to identify such shifts, leading to the omission of some cacheable tokens. 2) Without assis-tance from additional algorithms or models, visual domain methods cannot perceive critical edges (which determine collision occur-rence), leading to the erroneous reuse of edge-related tokens. 3) In navigation, the complexity of scenes exhibits temporal variations, which visual domain methods fail to describe and track, resulting in fixed and relatively static cache budget presets. Overall, vision domain token caching has limitations; although some studies at-tempt to address these issues [ 39 ], they remain constrained by the inherent drawbacks of the visual domain, resulting in suboptimal performance. In this paper, we demonstrate that beyond the visual domain, there exists another domain highly suitable for guiding VLN token cache, namely the frequency domain . For viewpoint migration, the resulting image shift introduces no distortion to the magnitude spectrum in the frequency domain, and its offset can be derived via deduction. For edge unawareness, the frequency domain enables convenient identification of edges based on the inherent energy of the frequency spectrum. For temporal variations, the frequency domain can utilize spectrum entropy to indirectly reflect the sce-nario variations and then achieve adjustments. We develop detailed                          
+
+> arXiv:2604.24391v1 [cs.RO] 27 Apr 2026 Zihao Zheng 1, Xingyue Zhou 3, Zhihao Mao 4, Songyu Sun 5, Lingyue Zhang 6, Yulong Ao 2, Yupu Feng 2, Qiongqiong Zhang 2, Yonghua Lin 2, Xiang Chen 1①Viewpoint Migration:
+> Spatial Shifts Break Position -
+> Wise Matching
+> ②Edge Unawareness:
+> Critical Obstacle Edges
+> Are Erroneously Cached
+> ③Temporal Variation:
+> Static Budget Fails
+> Dynamic Complexity
+> Challenges of
+> Adapting Token
+> Cache in VLN
+> Step Step Step Step
+> Frequency Domain FreqCache Existing Visual -Domain Methods
+> ①Position -Wise
+> Matching
+> ③Struggle to Capture Temporal
+> Scenario Variation
+> ②Edge
+> Unawareness
+> ①Migration Aware and Select Cacheable Tokens
+> ②Identify Critical Edge and Prevent Over -reuse
+> ③Capture Temporal Variation and Set Budget
+> Step Step Step Step
+> Start
+> Point
+> End
+> Point
+
+## ☹ "  
+
+> ①②③
+
+## ☹ ☹
+
+## ☹
+
+## " " "
+
+Figure 1: VLN Token Caching Challenges and Comparison between Visual Domain Methods and the Proposed FreqCache 
+
+analyses to reveal the discrepancies between the frequency domain and visual domain, and conclude insights for token caching designs. Based on these, we propose a frequency-guided token caching framework, which is called FreqCache . Specifically, FreqCache in-tegrates a migration-aware token cache establishment module to select cacheable tokens under viewpoint migration. It also inte-grates an edge-related token identification module to capture crit-ical edge information, thereby preventing the incorrect reuse of corresponding tokens. Moreover, it uses an adaptive cache budget determination module to adjust tokens based on temporal scenario variations. We also present a detailed system-level implementation, along with our considerations and specific hardware designs. We conduct diverse experiments to demonstrate the advancement and superiority of FreqCache . Overall, our contributions are threefold: 
+
+• We reveal the differences between the frequency domain and visual domain, and find that the inherent properties of the frequency domain are highly suitable for implementing token selection in complex navigation tasks. 
+
+• Based on these, we propose a frequency-guided token caching framework called FreqCache . FreqCache utilizes frequency domain properties to achieve optimal token cache estab-lishment, refreshment and cache budget adjustment. 
+
+• We develop hardware-related optimization for FreqCache 
+
+and evaluate it by various experiments. We believe Freq-Cache will play a role in future VLN model applications. Experiments show that FreqCache achieves 1.59 × speedup with only 2.54ms overhead. And it incurs a strictly negligible degradation in accuracy, confirming that this prominent acceleration is achieved at essentially no cost to navigation reliability. 
+
+## 2 Background 2.1 Vision-Language-Navigation Models 
+
+2.1.1 Model Architecture . Visual-Language Navigation (VLN) models typically comprise three components: a visual encoder, an LLM backbone, and an action decoder [ 21 , 35 ]. The visual encoder, often a Vision Transformer (ViT), processes the robot’s RGB obser-vation at each step, converting it into a sequence of tokens [ 7, 19 ]. The LLM backbone fuses visual tokens with language instructions and achieves intelligent reasoning. Finally, the action decoder, usu-ally a Diffusion Transformer, maps the reasoning results into the action space, predicting the robot’s next action [41]. 
+
+2.1.2 Generation Paradigms . VLN models rely on a multi-step generation paradigm [ 1, 9]. Specifically, VLN models generate a complete action at each step, where each action comprises multiple degrees of freedom (DoFs), and each DoF is generated autoregres-sively by the VLN model [ 3, 43 ]. In each step, VLN models perceive the environment through the visual encoder and follow the same linguistic instruction. This results in high similarity between the in-put tokens of its previous and next steps, thereby enabling potential acceleration via token caching [5]. 
+
+## 2.2 Token Caching in Model Inference 
+
+2.2.1 Conventional Token Caching . Token caching is a training-free runtime optimization that accelerates inference by reusing stable visual tokens across timesteps [ 22 ]. Existing methods include exact reuse (e.g., VLA-Cache [ 28 ]) based on observational similarity, selective compression (e.g., VL-Cache [ 24 ], AirCache [ 11 ]) via filter-ing or merging informative tokens, and system-level collaboration for holistic pipeline efficiency(e.g., Strata [ 27 ]). All these methods rely on visual domain similarity detection to achieve acceleration. 
+
+2.2.2 Token Caching for VLN Models . However, existing vi-sual domain methods cannot be directly transferred to VLN models due to the following challenges: 1) Viewpoint Migration. VLN models lead to image patches with high feature similarity yet posi-tional variations, and existing visual-domain methods fail to identify these patches, resulting in redundant recalculations of cacheable ones [ 12 ]. 2) Edge Unawareness. In navigation tasks, perceiving obstacle edges is critical to task success, yet visual-domain meth-ods tend to misidentify such edges as cacheable regions [ 14 ]. 3) Temporal Variation. Existing methods pre-design a fixed cache budget [ 24 ] and fail to adjust the cache budget dynamically accord-ing to the temporal dynamics during navigation. Overall, visual domain token cache methods are unsuitable for VLN models, re-quiring innovative design and optimization. FreqCache: Accelerating Embodied VLN Models with Adaptive Frequency-Guided Token Caching 
+
+## 2.3 Frequency-Based Optimization 
+
+2.3.1 Frequency Domain Properties . Compared with the visual domain, the frequency domain exhibits highly favorable proper-ties, thus becoming the focus of our attention [ 8]. First, per the Fourier Shift Theorem, the amplitude spectrum exhibits translation invariance, rendering it robust to viewpoint migration [ 20 ]. Second, frequency components are orthogonally decoupled: low frequen-cies encode global structures, whereas high frequencies capture fine details such as edges, enabling sensitive edge matching [ 16 ]. Third, the spectral energy in the frequency domain changes with time, which well characterizes the temporal dynamics of the environment and tasks [10]. 
+
+2.3.2 Frequency-Based Inference Acceleration . Some studies have incorporated frequency domain methods into model inference optimization. Fourier-VLM [ 25 ] compresses visual tokens via DCT. FlashCache [ 30 ] identifies performance-critical spectral outliers. E-AdaPrune [ 10 ] allocates pruning budgets based on spectral en-ergy. Moreover, FAST [ 17 ] compresses continuous action sequences in frequency space. The success of these efforts thus focuses our exploration of token caching on the frequency domain. 
+
+## 3 Visual-Frequency Domain Discrepancies 
+
+Based on frequency domain properties, we perform detailed anal-yses to identify discrepancies between the visual and frequency domains from three key challenges, deriving insights for the design of VLN token caching. 
+
+## 3.1 Discrepancy I: In Viewpoint Migration 
+
+3.1.1 Viewpoint Migration in Visual Domain . As aforemen-tioned in Sec. 2, one of the core issues limiting VLN token caching is viewpoint migration. Specifically, during navigation, viewpoint migration refers to the significant visual translation and perspec-tive distortion induced by a robot’s continuous translational and rotational motions, which, from a visual domain perspective, leads to location shifts of patches. As shown in the upper left of Fig. 2, viewpoint migration shifts the positions of semantically continuous structures (e.g., the region in the red box) within the image. In the visual domain, viewpoint migration-induced shifts result in suboptimal token caching strategies. Existing visual-domain to-ken caching strategies generally rely on position-wise matching, thus overlooking image patches with structural and informational similarity that undergo positional shifts during cacheable token identification. As illustrated in the upper left of Fig. 2, a specific patch (white box) located at coordinates (𝑖, 𝑗 ) in the previous frame may shift to (𝑖 + Δ𝑥, 𝑗 + Δ𝑦 ) following a robot’s rotation. How-ever, when calculating image similarity, visual domain methods can only perform computations based on identical spatial locations, as shown in Eq. (1) . Here, 𝑝 denotes an image patch, O represents the spatial observation coordinate, and 𝑡 indicates the step count. 
+
+𝑒𝑚𝑏 (·) means the embedding feature function, which transforms visual patches into embeddings. Spatial shifts caused by viewpoint migration result in extremely low similarity among patches, leading to repeated computations of patches. 
+
+𝑆𝑖𝑚 spa (𝑡 ; 𝑡 + 1) =
+
+> O
+
+∑︁ 
+
+> 𝑖,𝑗
+
+𝑒𝑚𝑏 (𝑝 𝑡   
+
+> (𝑖,𝑗 )
+
+) · 𝑒𝑚𝑏 (𝑝 𝑡 +1  
+
+> (𝑖,𝑗 )
+
+)|| 𝑒𝑚𝑏 (𝑝 𝑡   
+
+> (𝑖,𝑗 )
+
+)|| 2 · || 𝑒𝑚𝑏 (𝑝 𝑡 +1  
+
+> (𝑖,𝑗 )
+
+)|| 2
+
+. (1) Visual  Domain                         
+
+> 0.2
+> 0.4
+> 0.6
+> 0.8
+> 1
+> 37 ->3 8 38 ->3 9 39 ->4 0 40 ->4 1 41 ->4 2 42 ->4 3 43 ->4 4 44 ->4 5 45 ->4 6 46 ->4 7
+> Spatial Sim.
+> Frequency Sim .
+> 100
+> 50
+> 150
+> 200
+> 250
+> 300
+> 100
+> 150
+> 200
+> 250
+> 300
+> -3
+> -2
+> -1
+> 0
+> 1
+> 2
+> 3
+> -2
+> -1
+> 0
+> 1
+> 2
+> 3
+> Step 42
+> Step 43
+> Step 42
+> Step 43 Step 43
+> Step 42
+> 50 -3
+> High Discrepancy
+> between Two Domains
+> Viewpoint Migration
+> Frequency  Domain
+> High Similarity
+> Patch Shift Can
+> Be Deduced
+> from Phase Shift
+> Phase Shift
+> Amp .
+> Amp.
+> Phase
+> Phase
+> ✅
+> Spatial Domain
+> Frequency Domain
+> Similarity
+> Step
+> (i+Δi, j+ Δj)
+> (i, j)
+> Amplitude Invariance
+> ✅
+
+Figure 2: Domain Discrepancy in Viewpoint Migration 
+
+3.1.2 Viewpoint Migration in Frequency Domain . In contrast, the frequency domain provides a more robust theoretical founda-tion for handling viewpoint migrations. Specifically, we utilize the 2D Discrete Fourier Transform (DFT) [ 8 ] to obtain the amplitude spectrum A ( 𝑢, 𝑣 ) and phase spectrum Φ(𝑢, 𝑣 ), as shown in Eq. (2) .Here, the variables 𝑢 and 𝑣 represent the spatial frequencies along the horizontal and vertical axes, respectively. 𝑅 (𝑢, 𝑣 ) and 𝐼 (𝑢, 𝑣 )
+
+mean the real part and imaginary part of the overall spectrum. 
+
+A ( 𝑢, 𝑣 ) =√︁ 𝑅 (𝑢, 𝑣 )2 + 𝐼 (𝑢, 𝑣 )2, Φ(𝑢, 𝑣 ) = arctan 
+
+ 𝐼 (𝑢, 𝑣 )
+
+𝑅 (𝑢, 𝑣 )
+
+
+
+. (2) According to the Fourier Shift Theorem [ 8], a spatial coordinate translation manifests strictly as a linear phase shift in the frequency domain, leaving the amplitude spectrum invariant. As illustrated in Fig. 2, the amplitude spectrum (top-middle) exhibits high similarity within its low-frequency core, whereas the phase spectrum (top-right) demonstrates a distinct phase difference between the two frames. Therefore, we can exploit these properties to assess whether the position of the patches has been altered, and subsequently derive the exact spatial displacement via the phase shift (which will be detailed in Sec. 4). Based on these, we define the frequency domain similarity 𝑆𝑖𝑚 freq , as shown in Eq. (3). 
+
+𝑆𝑖𝑚 freq (𝑡 ; 𝑡 + 1) = A𝑡 (𝑢, 𝑣 ) · A 𝑡 −1 (𝑢, 𝑣 )) ∥A 𝑡 (𝑢, 𝑣 )∥ 2 · ∥A 𝑡 −1 (𝑢, 𝑣 )∥ 2
+
+. (3) As shown at the bottom of Fig. 2, visual-domain similarity ex-hibits fluctuation when facing viewpoint migration. Conversely, frequency-domain similarity demonstrates remarkable robustness, maintaining consistently high levels. This confirms that the fre-quency domain is more suitable for the selection and design of token caches, as it mitigates the impact of viewpoint migration. 
+
+Insight ①: Visual-domain methods depend on rigid, position-wise matching, which easily fails under viewpoint variation. In contrast, the frequency domain converts spatial shifts into phase shifts, preserving the amplitude spectrum’s invariance to such variation. Thus, the frequency domain can identify patches with ambiguous similarity in the visual domain, ren-dering it more suitable for token caching design. 
+
+## 3.2 Discrepancy II: In Edge Identification 
+
+3.2.1 Edge Unawareness in Visual Domain . VLN models’ crit-ical path planning depends on fine-grained yet essential edges (e.g., Zihao Zheng 1, Xingyue Zhou 3, Zhihao Mao 4, Songyu Sun 5, Lingyue Zhang 6, Yulong Ao 2, Yupu Feng 2, Qiongqiong Zhang 2, Yonghua Lin 2, Xiang Chen 1Visual  Domain          
+
+> Frequency  Domain Step 10
+> Step 11
+> Step 10
+> Step 11
+> The Critical Edges Is
+> Cached Incorrectly!
+> Step 10
+> Step 11
+> Using Energy Spectrum
+> to Identify the Edges
+> Identify Edges, Evict
+> Them from The Cache
+> Energy Spectrum
+> In Frequency Domain
+> Energy Spectrum
+> In Frequency Domain
+> Cache
+> Cache
+> Cache
+> Cache
+> Cloud not Identify
+> Critical Edges
+
+🤖 ❓ Incorrectly Cache 
+
+> Based on Similarity
+> High Energy Parts
+> Are Edges !
+
+🤖 ✅ Evict Edges from   
+
+> Cache for Accuray!
+> Edge Unawareness
+> Edge Unawareness
+> Edge Awareness
+
+🤖 ✅🤖 ❓
+
+Figure 3: Domain Discrepancy in Edge Identification 
+
+obstacle edges, door frames). Though these details usually account for a small proportion of the overall image, their variations are critical for accurate navigation. If the caching system’s similarity evaluation mechanism fails to sensitively detect such variations, it is highly likely to cause decision errors. We collectively refer to col-lisions and task failures caused by the ignoring of edge information as the edge unawareness issue. As shown in the left part of Fig. 3, in the visual domain, existing visual domain methods rely on global similarity to select cached patches and lack the ability to identify patches containing critical edge information. Consequently, under conditions of high global similarity, the system struggles to identify changes in critical edges, leading to the erroneous caching of tokens associated with these edges. We find that this incorrect caching will lead to a significantly heightened risk of physical collisions, which is a main reason for ac-curacy degradation. Unfortunately, current visual domain methods struggle to effectively identify changes in such edge information without a pre-defined model or additional processing (e.g., specifi-cally designed edge detection algorithms). 
+
+3.2.2 Edge Identification in Frequency Domain . Fortunately, we find the circumstances are different in the frequency domain. Within the frequency domain, the image’s visual information un-dergoes a natural orthogonal decoupling. Due to the absence of severe texture variations, the energy of large-scale smooth back-grounds is tightly locked within the direct current component and extremely low-frequency channels. Conversely, critical edges like door frames and obstacle outlines will elicit pronounced energy responses across specific high-frequency bands. To get the edges’ energy spectrum, we partition the image into a grid of patches 𝑝 (𝑖,𝑗 ) ∈ R𝑃 ×𝑃 and apply a block-wise 2D Discrete Cosine Transform (DCT), denoted as D ( 𝑝 𝑖,𝑗 ). Then we design a high-pass Filter 𝐻 (𝑢, 𝑣 ) that zeroes out the top-left low-frequency quadrant bounded by a cutoff threshold, as shown in Eq. (4) . The energy spectrum for each specific patch 𝐸 (𝑖,𝑗 ) is then rigorously extracted by summing the squared masked coefficients, like Eq. (5) .
+
+𝐻 (𝑢, 𝑣 ) =
+
+(
+
+0, if 𝑢 < max  1, ⌊ 𝑃  
+
+> 4
+
+⌋ and 𝑣 < max  1, ⌊ 𝑃  
+
+> 4
+
+⌋ ,
+
+1, otherwise . (4) 
+
+𝐸 (𝑖,𝑗 ) = 
+
+> 𝑃 −1
+
+∑︁  
+
+> 𝑢 =0
+> 𝑃 −1
+
+∑︁ 
+
+> 𝑣 =0
+
+
+
+𝐻 (𝑢, 𝑣 )D 𝑝 (𝑖,𝑗 ) (𝑢, 𝑣 )
+
+2
+
+. (5) 0.5                                    
+
+> 0.6
+> 0.7
+> 0.8
+> 24 27 30 33 36 39 42 45 48 51 54 57 60 63
+> Spe ctral Entropy
+> Step 27 Step 30 Step 33 Step 36 Step 39 Step 42
+> Step 45 Step 48 Step 51 Step 54 Step 57 Step 60
+> Temporal Variation
+> Scenario 1: Hallway Scenario 2:Living Room Scenario 3: Dining Hall
+> Middle Scenario
+> Complexity Low Scenario
+> Complexity
+> High Scenario
+> Complexity
+> Spectral Entropy’s Changes Can Correspond to Scenario Temporal Variations !
+
+Figure 4: Domain Discrepancy in Temporal Variation 
+
+By specifically tracking this high-frequency energy surge, we can precisely pinpoint critical edge transitions. As shown in Fig. 3, with the help of the energy spectrum, edges are obvious and easy to identify. This acute awareness allows the system to avoid incorrect caching, ensuring safe and reactive navigation. 
+
+Insight ②: Visual domain methods struggle to identify critical edge information. Conversely, the frequency domain enables orthogonal decoupling, which confines background energy to low frequencies while isolating edges as distinct surges in specific high-frequency channels. Therefore, the energy spectrum provides a model-free method to identify edges without requiring additional algorithms. 
+
+## 3.3 Discrepancy III: In Temporal Variation 
+
+3.3.1 Temporal Variation in visual Domain . In the navigation process, the visual information density and semantic complexity within the robot’s field of view experience significant and non-stationary fluctuations over time. This phenomenon is termed as temporal variation, which poses a fundamental challenge to exist-ing token caching methods. Most existing token caching methods adopt a static cache budget and overlook temporal variation [ 24 ]. While a few studies have introduced an adaptive cache budget, their adaptive mechanisms do not stem from effective estimation of temporal variation [ 29 ]. Moreover, at information-dense critical decision points, a rigid budget cap results in insufficient updates of crucial visual cues, thereby severely impairing navigation per-formance. Consequently, there is an urgent need for an adaptive mechanism capable of acutely perceiving scene complexity and dynamically orchestrating the cache budget accordingly. In the visual domain, raw representations lack a direct and in-trinsic correlation with temporal variation in information density. Assessing overall scene complexity from visual data inherently relies on the heavy intervention of external models or auxiliary heuristic algorithms. Without these computationally expensive ad-ditions, the visual domain lacks a stable and lightweight metric capable of reliably quantifying information redundancy. Conse-quently, it fails to provide a model-free and efficient foundation for dynamically orchestrating the cache budget. 
+
+3.3.2 Temporal Variation in Frequency Domain . Differently, we find that the frequency domain provides a fundamental solution to handling temporal variations. Specifically, the distribution state FreqCache: Accelerating Embodied VLN Models with Adaptive Frequency-Guided Token Caching 
+
+of visual signals in the frequency domain (spectral entropy) serves as a natural dimensionality-reduced representation of their intrinsic information structure. 
+
+P𝑡 (𝑢, 𝑣 ) = A𝑡 (𝑢, 𝑣 )2
+
+Í𝑢,𝑣 A𝑡 (𝑢, 𝑣 )2 (6) To clarify this, we compute the normalized spectral intensity dis-tribution P𝑡 (𝑢, 𝑣 ) derived from the amplitude spectrum A𝑡 (𝑢, 𝑣 ).Based on this, the spectral entropy Ψ𝑡 can be calculated as Eq. 6. Spectral analysis of the navigation video stream reveals a distinct physical pattern: in structurally simple scenes, spectral intensity is highly concentrated in a few low-frequency components, yielding a low spectral entropy; conversely, in detail-rich complex scenes, this intensity significantly diffuses into high-frequency bands, resulting in an elevated spectral entropy. This confirms that spectral entropy can capture the temporal variation of visual information density. To empirically validate this correlation, we analyze the variation of spectral entropy along a continuous navigation trajectory. As depicted in Fig. 4, the spectral entropy remains relatively low while the robot navigates a structurally simple hallway, but exhibits a pronounced increase upon entering a visually complex living room. This strongly demonstrates that spectral entropy can serve as a ro-bust intrinsic proxy for scene visual complexity, thereby providing a reliable metric for adaptively allocating the token cache budget. 
+
+Insight ③: Raw visual representations lack a direct metric for temporal variation, requiring heavy reliance on exter-nal models or auxiliary heuristic algorithms for assessment. In contrast, the frequency domain inherently captures the visual complexity of scenes via spectral entropy, thereby pro-viding a direct approach to identifying temporal variations. 
+
+## 4 FreqCache Framework 
+
+Building upon the insights developed in Sec. 3, we detail a frequency-domain driven framework designed to overcome the core limita-tions of visual-domain token caching in VLN, as shown in Fig. 5. 
+
+## 4.1 Module I: Migration-Aware Token Cache Establishment 
+
+To address the failure of visual-domain methods in handling token reuse under viewpoint migration (based on Insight ①), we introduce the frequency-domain 2D Fast Fourier Transform (FFT) into the visual feature processing pipeline and propose the Migration-Aware Token Cache Establishment module. Given visual feature maps of two consecutive frames, we first obtain their amplitude and phase spectrum via 2D FFT and calculate the similarity of the global amplitude spectrum 𝑆𝑖𝑚 freq (like Eq. (2) and (3) ). After that, we introduce a preset threshold 𝜏 mig . If 𝑆𝑖𝑚 freq < 𝜏 mig , it indicates a severe scene transition (e.g., the robot entering a new room or encountering severe occlusion). In such cases, the cache is flushed, and all tokens are recomputed by the visual encoder. Conversely, if 𝑆𝑖𝑚 freq ≥ 𝜏 mig , the main scene structure is considered stable, providing a foundation for token reuse. Then, we propose phase correlation to estimate the precise spa-tial displacement (Δ𝑖, Δ𝑗 ) between adjacent feature maps. Specifi-cally, we first compute the cross-power spectrum C, and then apply the Inverse Fourier Transform to C and locate the peak of the re-sponse to solve for the precise spatial displacement, as shown in Eq. (7) . F (·) denotes the 2D Discrete Fourier Transform, and ⊙
+
+represents the Hadamard (element-wise) product. 
+
+C = F ( F𝑡 −1) ⊙ F ( F𝑡 )∗
+
+|F ( F𝑡 −1) ⊙ F ( F𝑡 )∗ | , (Δ𝑖, Δ𝑗 ) = arg max   
+
+> (𝑖,𝑗 )
+
+F −1 (C) (7) Using this displacement (Δ𝑖, Δ𝑗 ), we spatially align the frames to define an aligned region 𝑅 align , establishing the foundation for fine-grained token reuse. Patches outside the alignment boundary (i.e., newly entered regions in the field of view) lack historical references and are therefore scheduled for recomputation. Formally, we define a binary alignment mask 𝑀𝑎𝑠𝑘 align , shown in Eq. (8). 
+
+𝑀𝑎𝑠𝑘 align (𝑖, 𝑗 ) =
+
+(
+
+1, if (𝑖, 𝑗 ) ∈ 𝑅 align ,
+
+0, otherwise , (8) where 𝑀𝑎𝑠𝑘 align (𝑖, 𝑗 )=1 indicates that the token at position (𝑖, 𝑗 ) is within the aligned region and has a corresponding feature repre-sentation in the history frame, making it eligible for potential reuse. By establishing this rigorous frequency-guided spatial alignment, this module effectively mitigates the impact of viewpoint migration and drastically reduces false refreshes caused by positional shifts. 
+
+## 4.2 Module II: Edge-Information-Related Token Identification and Cache Refresh 
+
+From Insight ②, to tackle edge unawareness in visual-domain meth-ods — where critical edge information is poorly identified, leading to erroneous token over-reuse — we incorporate block-wise DCT and high-pass filtering into the visual feature pipeline and propose the Edge-Related Token Identification and Cache Refresh module. Given the current frame, we partition it into patches and per-form block-wise 2D DCT, followed by a high-pass filter to retain high-frequency coefficients and calculate the high-frequency en-ergy 𝐸 (𝑖,𝑗 ) for each patch (as shown in Eq. (4) and (5) ). Instead of relying on a rigid, empirical preset threshold, we introduce a statistically adaptive edge-awareness mechanism to accommodate the varying illumination and textural density across different VLN environments. Specifically, we formulate the binary refresh mask 
+
+𝑀𝑎𝑠𝑘 fresh using an indicator function I(·) governed by the spatial statistics of the high-frequency energy, as shown in Eq. (9). 
+
+𝑀𝑎𝑠𝑘 fresh (𝑖, 𝑗 ) = I  𝐸 (𝑖,𝑗 ) > 𝜇 𝐸 + 𝜆 · 𝜎 𝐸 
+
+ . (9) 
+
+𝜇 𝐸 and 𝜎 𝐸 represent the spatial mean and standard deviation of the high-frequency energy across all 𝑁 patches in the current frame, respectively, and 𝜆 is a tunable sensitivity scalar. Consequently, when 𝑀𝑎𝑠𝑘 fresh (𝑖, 𝑗 ) = 1, it indicates that patch 𝑝 𝑖,𝑗 contains critical edge information and is marked for a mandatory cache refresh. By specifically tracking high-frequency energy surges, this module effectively prevents token over-reuse. This acute edge awareness allows the system to avoid incorrect caching and the heightened risk of physical collisions, ensuring safe and reactive navigation. 
+
+## 4.3 Module III: Temporal Adaptive Cache Budget Determination 
+
+Based on Insight ③, since visual-domain statistics struggle to ef-ficiently characterize the temporal variation in scene complexity Zihao Zheng 1, Xingyue Zhou 3, Zhihao Mao 4, Songyu Sun 5, Lingyue Zhang 6, Yulong Ao 2, Yupu Feng 2, Qiongqiong Zhang 2, Yonghua Lin 2, Xiang Chen 1Optimal  
+
+> Token
+> Cache? Sorted By High -Freq Energy
+> K
+
+… …               
+
+> Spectral Entropy
+> Step t -1
+> Step t
+> Potential Cacheable Token
+> Candidate Cacheable Token
+> Token With Edges (Can’t
+> Be Cached!)
+> Actual Cacheable Token
+> Migration -Aware Token Cache Establishment
+> Edge -Related Token Identification and Cache Refresh
+> Temporal Adaptive Cache
+> Budget Determination
+> DCT
+> Safe Reuse!
+> 𝑆𝑖 𝑚 !"#$ (∆𝑖 ,∆𝑗 )
+> 𝐸 (&,()
+> Result Merge
+> FFT
+> Temporal Variation
+> View Migration
+> Potential
+> Cacheable
+> Tokens
+> Token
+> With
+> Edges
+> Robot Nav
+> Candidate Cacheable Token
+
+Figure 5: Details of the proposed FreqCache Framework 
+
+during navigation, we introduce spectral entropy Ψ𝑡 as an intrinsic proxy for scene complexity and propose the Temporal Adaptive Cache Budget Determination module. As analyzed in Sec. 3, spectral entropy’s changes can correspond to scenario temporal variations. In structurally simple hallway stages, energy concentrates in low frequencies (low spectral en-tropy), favoring aggressive reuse; whereas in detail-rich complex areas like living rooms (high spectral entropy), a higher refresh rate is required to ensure navigation safety. Thus, we employ a monotonically decreasing exponential function to map spectral entropy Ψ𝑡 to a dynamic reuse budget 𝛼 𝑡 , as shown in Eq. (10). 
+
+𝛼 𝑡 = 𝛼 min + ( 𝛼 max − 𝛼 min )𝑒 −Ψ𝑡 
+
+(10) where 𝛼 max and 𝛼 min define the upper and lower bounds of the reuse ratio. The resulting cache budget is 𝐾 reuse = ⌊𝛼 𝑡 × 𝑁 ⌋, where 𝑁 is the total number of visual tokens. By utilizing spectral entropy as a robust intrinsic proxy, this module provides a reliable metric for adaptively allocating the token cache budget. This dynamic budget adjustment ensures guaranteed refresh rates in visually complex areas while maximizing efficiency in structurally simple stages. 
+
+## 4.4 Overall Fusion 
+
+Integrating the mechanisms described in Sec. 4.1 and 4.2, we establish the necessary and sufficient conditions for a token to be 
+
+Algorithm 1 Adaptive Frequency-Guided Token Caching                                                                                   
+
+> 1: Input: Frames {𝐹 𝑡 −1, 𝐹 𝑡 }, total tokens 𝑁 , thresholds {𝜏 mig , 𝜆 }
+> 2: Output: Pfinal
+> 3: Parallel Frequency-Guided Modules:
+> 4: Module I: Compute 𝑆𝑖𝑚 freq , displacement (Δ𝑖, Δ𝑗 ), and 𝑀𝑎𝑠𝑘 align
+> 5: Module II: Compute patch energy 𝐸 via block DCT , 𝜇 𝐸 ←mean (𝐸 ), 𝜎 𝐸 ←
+> std (𝐸 )and 𝑀𝑎𝑠𝑘 fresh =I(𝐸 >𝜇 𝐸 +𝜆𝜎 𝐸 )
+> 6: Module III: Compute spectral entropy Ψ𝑡 and cache budget 𝐾 reuse =⌊𝛼 𝑡 ×𝑁 ⌋
+> 7: Synchronize and Token Selection:
+> 8: Pfinal ← ∅
+> 9: if 𝑆𝑖𝑚 freq ≥𝜏 mig then
+> 10: C ← { 𝑝 |𝑀𝑎𝑠𝑘 align (𝑝 )=1∧𝑀𝑎𝑠𝑘 fresh (𝑝 )=0}
+> 11: Pfinal ←TopK_Ascending ( C ,key =𝐸, 𝑘 =𝐾 reuse )
+> 12: end if
+> 13: Return Pfinal
+
+safely considered for reuse:it must be located within the inter-frame aligned region and not contain critical edge information—satisfying both 𝑀𝑎𝑠𝑘 align (𝑖, 𝑗 ) = 1 and 𝑀𝑎𝑠𝑘 fresh (𝑖, 𝑗 ) = 0. All tokens meeting this dual criterion are defined as candidate reusable tokens, with their total count denoted as 𝐾 candidate . These tokens proceed to the next budget-constrained selection stage, while all other tokens are assigned directly to the recomputation queue. Given the dynamic cache budget 𝐾 reuse determined in Sec . 4.3, we select which of the candidate reusable tokens will be reused. To prioritize the reuse of stable tokens with less edge energy, we sort the candidate reusable tokens in ascending order based on their high-frequency energy 𝐸 (𝑖,𝑗 ) and select the top 𝐾 reuse tokens. If the allocated budget exceeds the number of candidates(i.e., 𝐾 reuse >
+
+𝐾 candidate ), all candidate tokens are reused. Consequently, the actual number of tokens reused in a time step is given by: 
+
+𝐾 final = min (𝐾 reuse , 𝐾 candidate ). (11) Integrating three complementary modules, the proposed Freq-Cache fundamentally addresses the limitations of visual-domain approaches; This orthogonal yet synergistic design significantly al-leviates the inference cost bottleneck, enabling substantial speedups while preserving competitive navigation success rates. The com-plete caching pipeline is illustrated in Alg. 1, which details the par-allel frequency-guided modules and token selection process. This design demonstrates an effective pathway for achieving efficient and reliable inference acceleration in dynamic VLN scenarios. 
+
+## 5 Implementation 
+
+In this section, we will detail how we implement the FreqCache 
+
+framework, explore its most efficient hardware mapping, and then clarify the overall computation flow for the optimal system perfor-mance. 
+
+## 5.1 Hardware Selection and Core Mapping 
+
+FreqCache encompasses three primary types of computation: VLN model inference, frequency domain processing, and token selection operations, as shown in the left part of Fig. 6. Among these patterns, VLN model inference exhibits the highest overhead. Given the FreqCache: Accelerating Embodied VLN Models with Adaptive Frequency-Guided Token Caching SM                  
+
+> L1 Cache L2 Cache
+> Global Memory (DRAM)
+> GPU
+> Register File
+> 1
+> Computational
+> Pattern
+> VLN Model
+> Inference
+> 2
+> 3
+> Frequency
+> Domain
+> Processing
+> Token
+> Selection
+> Operations 123Computational Patterns:
+> Mapping
+> Tensor Core CUDA Core
+> Tensor Core
+> CUDA Core
+> for 1
+> 23for and
+> Core
+> Mapping
+> 2
+> Module1
+> Module2
+> Module3
+> Using
+> Pointer
+> for
+> Forced
+> Sync .
+> Process
+> Dispatch
+
+Figure 6: System Implementation of FreqCache Framework 
+
+requirement for real-time navigation, we select GPU as the primary computing device. We use almost 5000 lines of code to implement 
+
+FreqCache , based on Pytorch library and CUDA architecture. For the other two patterns, we also implement them on GPUs rather than CPUs to avoid the high CPU-GPU data transfer over-head. Given the computational characteristics, tensor cores are em-ployed for the large-scale, computationally expensive VLN model inference. CUDA cores are utilized in frequency domain processing and token selection operations, as Fig. 6 shown. This implemen-tation identifies the most suitable computing core for each com-putation pattern, which is the optimal hardware mapping for the proposed FreqCache Framework. 
+
+## 5.2 Process Dispatch and Computation Flow 
+
+We isolate three computational patterns on the GPU by configuring three independent processes to handle the three respective tasks. We set VLN reasoning as the first process, implementing its com-putation using PyTorch’s built-in operators. The second process is designated for frequency domain processing, with efficient compu-tation achieved via the CuFFT library. For the third process, which handles token selection operations, we have developed processing operators tailored to the SIMT architecture. Notably, the proposed modules in Sec. 4 operate in parallel for frequency domain processing, as shown in the bottom-right of Fig. 6. Rigorously designed synchronization pointers are employed to enforce synchronization of these three modules prior to final fusion. Based on these results, token selection operations achieve token caching. After that, the VLN model uses this caching for inference optimization. This process partitioning approach and computational flow ensure the optimal execution efficiency of the entire system. 
+
+## 6 Experiments 6.1 Setup 
+
+To evaluate FreqCache , we deploy it on InternVLA-N1 [ 23 ], a 7B-parameter VLA built on Qwen2.5-VL [ 2 ]. Experiments are con-ducted on the R2R dataset [ 1 ] within the VLN-CE continuous envi-ronment simulator [ 12 ]. For comparative analysis, we establish two baselines: VLN-cache [ 39 ], an SOTA spatial domain token caching approach, and a naive frequency-based token caching method. To ensure a comprehensive evaluation, we configure VLN-Cache with multiple sets of hyperparameters. And for the naive baseline, we directly replace traditional visual features with amplitude spectra by partitioning the image into patches, computing the position-wise 2D FFT amplitude similarity, and statically reusing tokens that exceed a fixed threshold. All experiments are conducted on a single 
+
+Table 1: Navigation Accuracy Comparison on R2R-CE                                          
+
+> Method NE ↓OS ↑SR ↑SPL ↑
+> w/o Token Cache 4.05 70.7 64.3 58.5 VLN-Cache ( 𝜏 𝑣 =0.85 ,𝜏 𝑠 =0.70 )3.93 71.4 63.1 57.6 VLN-Cache ( 𝜏 𝑣 =0.80 ,𝜏 𝑠 =0.70 )3.86 72.2 61.1 53.7 VLN-Cache ( 𝜏 𝑣 =0.85 ,𝜏 𝑠 =0.60 )5.12 59.5 54.6 49.3 Naive Freq-based Method 5.42 65.2 53.4 48.5
+> FreqCache (Ours) 4.05 76.0 63.0 57.2
+
+NVIDIA A100 (40GB) GPU. We assess navigation performance us-ing Navigation Error (NE), Oracle Success (OS), Success Rate (SR), and Success weighted by Path Length (SPL). Concurrently, infer-ence efficiency is evaluated through per-step latency, episode-level wall-clock speedup, and token reuse ratio. 
+
+## 6.2 Main Results 
+
+As demonstrated in Tab. 1, FreqCache maintains high navigation ac-curacy while significantly reducing computational overhead. Specif-ically, it achieves the highest Oracle Success (OS) of 76.0%, along with a highly competitive Success Rate (SR) of 63.0% and SPL of 57.2%. Compared to the baseline VLN-Cache, which suffers from accuracy degradation due to its inability to handle viewpoint migra-tion and edge unawareness, FreqCache leverages frequency-domain inherent properties to avoid these pitfalls. Specifically, by using the amplitude spectrum for robust structural matching, it mitigates erroneous flushes under viewpoint migration. Moreover, its high-frequency energy monitoring prevents the over-reuse of tokens containing critical edges, which is crucial for collision avoidance. 
+
+Inference Efficiency. As detailed in Tab. 2, by fundamentally addressing the limitations of visual-domain approaches, FreqCache 
+
+eliminates temporal redundancy and accelerates inference. Exper-iments show that FreqCache achieves substantial speedups with negligible computation overhead, reducing the per-step inference latency from 637 ms to just 401 ms. This translates to an impressive 1.59 × speedup at the step and episode levels. By applying parallel frequency-domain processing and selecting average actual reused tokens of 53.5%, the system establishes efficient model inference without sacrificing competitive navigation success rates. 
+
+## 6.3 Ablation Study 
+
+To verify the effectiveness of each component in FreqCache , we conduct ablation experiments on the three core modules. As shown in Tab. 3. Removing Module I (the Migration-Aware Token Cache Establishment module) and replacing it with a naive position-wise matching mechanism causes a sharp drop in performance during robot navigation (SR -2.8%, SPL -2.7%), as the system fails to align tokens across spatial shifts, leading to excessive cache flushes and 
+
+Table 2: Inference Efficiency Comparison on R2R-CE                                             
+
+> Methods Latency ↓Step Episode Token (ms/step) Speedup Speedup Reuse
+> w/o Token Cache 637 1.00 ×1.00 ×0% VLN-Cache ( 𝜏 𝑣 =0.85 ,𝜏 𝑠 =0.70 )419 1.52 ×1.52 ×31% VLN-Cache ( 𝜏 𝑣 =0.80 ,𝜏 𝑠 =0.70 )415 1.53 ×1.52 ×33% VLN-Cache ( 𝜏 𝑣 =0.85 ,𝜏 𝑠 =0.60 )412 1.55 ×1.55 ×36% Naive Freq-based Method 588 1.08 ×1.09 ×15.2%
+> FreqCache (Ours) 401 1.59 ×1.59 ×53.5% Zihao Zheng 1, Xingyue Zhou 3, Zhihao Mao 4, Songyu Sun 5, Lingyue Zhang 6, Yulong Ao 2, Yupu Feng 2, Qiongqiong Zhang 2, Yonghua Lin 2, Xiang Chen 1
+
+Refresh 
+
+Reuse 
+
+Reuse Ratio=0.596 Reuse Ratio=0.575 Reuse Ratio=0.676 Reuse Ratio =0.676 Reuse Ratio =0.545 Reuse Ratio =0.575 
+
+Navigation Timestep 
+
+Figure 7: Token Reuse Visualization on an Episode from R2R-CE Table 3: Ablation Studies of FreqCache                                  
+
+> Configuration SR ↑SPL ↑Step Speedup Token Reuse
+> w/o Module I 60.2 ↓2.8 54.0 ↓2.7 1.05 ×↓0.54 ×19.8% ↓33.7%
+> w/o Module II 58.8 ↓4.2 52.3 ↓4.4 1.62 ×↑0.03 ×57.0% ↑3.5%
+> w/o Module III 62.3 ↓0.7 55.8 ↓0.9 1.52 ×↓0.07 ×38.6% ↓14.9%
+> FreqCache (Full) 63.0 57.2 1.59 ×53.5%
+
+redundant recalculations. The reuse rate and speedup also decrease significantly, showing the effect of Module I. Disabling Module II (the Edge-Information-Related Token Iden-tification and Cache Refresh module) leads to a significantly height-ened risk of physical collisions. The SR drops by 4.2%, and the SPL drops by 4.4%, confirming that tracking high-frequency energy is essential for identifying critical edges like door frames, thereby preventing collisions. Replacing the dynamic budget with a fixed 30% reuse ratio re-sults in suboptimal efficiency, yielding a speedup of 1.52 ×. A static budget inflexibly wastes computation in structurally simple hall-ways—where more aggressive token reuse is safe—while providing insufficient token updates in detail-rich, complex areas. This high-lights the critical role of spectral entropy as a real-time proxy for scene complexity in guiding dynamic resource allocation. 
+
+## 6.4 Discussion 
+
+6.4.1 Overhead . The computational cost of the FreqCache frame-work is minimal. The parallel execution of FFT (for Module I and III) and block-wise DCT (for Module II) on the GPU is highly optimized. The total additional processing time for the frequency-domain mod-ules averages less than 2.54 ms per step, which is negligible com-pared to the hundreds of milliseconds saved by caching, resulting in a net positive acceleration. 
+
+6.4.2 Hyperparameters . FreqCache involves several hyperpa-rameters: the migration threshold 𝜏 mig , the tunable sensitivity scalar for edge detection 𝜆 ,the upper and lower bounds of the reuse ratio 
+
+𝛼 max and 𝛼 min . We evaluate FreqCache ’s performance across various hyper-parameter values on the R2R-CE benchmark, with results 44 0              
+
+> 46 0
+> 48 0
+> 50 0
+> 0.5
+> 0.55
+> 0.6
+> 0.65
+> 12345
+> SPL
+> La te ncy
+> 45 5
+> 65 5
+> 85 5
+> 0.52
+> 0.57
+> 0.62
+> 123456
+> SPL
+> La te ncy
+> SPL
+> Latency
+> SPL
+> Latency
+> 45 5
+> 55 5
+> 65 5
+> 0.52
+> 0.62
+> 0.72
+> 123
+> SPL
+> La te ncy
+> 45 5
+> 55 5
+> 65 5
+> 0.52
+> 0.62
+> 0.72
+> 123
+> SPL
+> La te ncy
+> SPL
+> Latency
+> SPL
+
+𝛼 !"# 
+
+> Latency
+
+𝜏 !$% 𝜆 
+
+𝛼 !$&              
+
+> 0.08 0.10 0.12 0.14 0.16 0.00 0.25 0.5 0.75 1.00 1.25
+> 0.3 0.4 0.5 0.05 0.08 0.11
+
+Figure 8: Discussion of Hyperparameters in FreqCache 
+
+presented in Fig. 8. The results indicate that overly aggressive pa-rameters (e.g., high 𝜏 mig or 𝛼 min ) degrade accuracy (SPL), while overly conservative settings penalize efficiency (Latency). By ana-lyzing the inflection points in both the SPL bar charts and Latency line graphs, we identify the configurations that maximize token reuse without compromising obstacle awareness. To strike an opti-mal balance between navigation success rate and inference latency, we empirically set these hyperparameters as follows: the migration threshold 𝜏 mig = 0.12 , the edge detection sensitivity 𝜆 = 0.25 , and the dynamic reuse bounds 𝛼 max = 0.5 and 𝛼 min = 0.08 .
+
+6.4.3 Hardware Implementation . Our implementation utilizes a three-process parallel dispatch configuration on the GPU: one for the core VLA model inference, one for the parallel frequency-domain processing (FFT, DCT, entropy calculation), and one for the final token selection and cache update. This design, depicted in Fig. 6, ensures that the expensive VLM computation is the only critical path. The lightweight frequency analysis and token selection are overlapped and complete before the VLM requires the cache mask, resulting in near-ideal hardware utilization and the reported latency savings. FreqCache: Accelerating Embodied VLN Models with Adaptive Frequency-Guided Token Caching 
+
+## 7 Conclusion 
+
+In this paper, we develop a detailed analysis to reveal the dis-crepancies between the visual domain and frequency domain for VLN model token caching. Based on these, we propose the Freq-Cache framework, utilizing frequency domain inherent properties to achieve optimal token caching for VLN models. Experiments show that FreqCache achieves 1.59 × speedup with ignorable over-head, showing the effect of integrating frequency domain methods in VLN token caching. We develop hardware-related optimization for FreqCache and evaluate it by various experiments. We believe 
+
+FreqCache will play a role in future VLN model applications. Zihao Zheng 1, Xingyue Zhou 3, Zhihao Mao 4, Songyu Sun 5, Lingyue Zhang 6, Yulong Ao 2, Yupu Feng 2, Qiongqiong Zhang 2, Yonghua Lin 2, Xiang Chen 1
+
+## References 
+
+[1] Peter Anderson, Qi Wu, Damien Teney, Jake Bruce, Mark Johnson, Niko Sünder-hauf, Ian Reid, Stephen Gould, and Anton Van Den Hengel. 2018. Vision-and-language navigation: Interpreting visually-grounded navigation instructions in real environments. In Proceedings of the IEEE conference on computer vision and pattern recognition . 3674–3683. [2] S. Bai, K. Chen, X. Liu, J. Wang, W. Ge, S. Song, K. Dang, P. Wang, S. Wang, J. Tang, H. Zhong, Y. Zhu, M. Yang, Z. Li, J. Wan, P. Wang, W. Ding, Z. Fu, Y. Xu, J. Ye, X. Zhang, T. Xie, Z. Cheng, H. Zhang, Z. Yang, H. Xu, and J. Lin. 2025. qwen25vl. arXiv:2502.13923 [cs.CV] [3] Anthony Brohan, Noah Brown, Justice Carbajal, Yevgen Chebotar, Joseph Dabis, Chelsea Finn, Keerthana Gopalakrishnan, Karol Hausman, Alex Herzog, Jasmine Hsu, et al . 2022. Rt-1: Robotics transformer for real-world control at scale. arXiv preprint arXiv:2212.06817 (2022). [4] Jiaqi Chen, Bingqian Lin, Ran Xu, Zhenhua Chai, Xiaodan Liang, and Kwan-Yee Wong. 2024. Mapgpt: Map-guided prompting with adaptive path planning for vision-and-language navigation. In Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) . 9796–9810. [5] Liang Chen, Haozhe Zhao, Tianyu Liu, Shuai Bai, Junyang Lin, Chang Zhou, and Baobao Chang. 2024. An image is worth 1/2 tokens after layer 2: Plug-and-play inference acceleration for large vision-language models. In European Conference on Computer Vision . Springer, 19–35. [6] Shizhe Chen, Pierre-Louis Guhur, Cordelia Schmid, and Ivan Laptev. 2021. History aware multimodal transformer for vision-and-language navigation. Advances in neural information processing systems 34 (2021), 5834–5847. [7] Alexey Dosovitskiy, Lucas Beyer, Alexander Kolesnikov, Dirk Weissenborn, Xi-aohua Zhai, Thomas Unterthiner, Mostafa Dehghani, Matthias Minderer, Georg Heigold, Sylvain Gelly, et al . 2020. An image is worth 16x16 words: Transformers for image recognition at scale. arXiv preprint arXiv:2010.11929 (2020). [8] Rafael C Gonzalez. 2009. Digital image processing . Pearson education india. [9] Jing Gu, Eliana Stefani, Qi Wu, Jesse Thomason, and Xin Wang. 2022. Vision-and-language navigation: A survey of tasks, methods, and future directions. In Proceedings of the 60th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers) . 7606–7623. [10] Jialuo He and Huangxun Chen. 2026. Energy-Driven Adaptive Visual Token Pruning for Efficient Vision-Language Models. arXiv preprint arXiv:2603.05950 
+
+(2026). [11] Kai Huang, Hao Zou, Bochen Wang, Ye Xi, Zhen Xie, and Hao Wang. 2025. AirCache: Activating Inter-modal Relevancy KV Cache Compression for Effi-cient Large Vision-Language Model Inference. In Proceedings of the IEEE/CVF International Conference on Computer Vision . 23958–23967. [12] Jacob Krantz, Erik Wijmans, Arjun Majumdar, Dhruv Batra, and Stefan Lee. 2020. Beyond the Nav-Graph: Vision-and-Language Navigation in Continuous Environments. In European Conference on Computer Vision (ECCV) .[13] Yanwei Li, Chengyao Wang, and Jiaya Jia. 2024. Llama-vid: An image is worth 2 tokens in large language models. In European Conference on Computer Vision .Springer, 323–340. [14] Rui Liu, Xiaohan Wang, Wenguan Wang, and Yi Yang. 2023. Bird’s-Eye-View Scene Graph for Vision-Language Navigation. In Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) .[15] Yuxing Long, Wenzhe Cai, Hongcheng Wang, Guanqi Zhan, and Hao Dong. 2024. Instructnav: Zero-shot system for generic instruction navigation in unexplored environment. arXiv preprint arXiv:2406.04882 (2024). [16] Stéphane Mallat. 1999. A wavelet tour of signal processing . Elsevier. [17] Karl Pertsch, Kyle Stachowicz, Brian Ichter, Danny Driess, Suraj Nair, Quan Vuong, Oier Mees, Chelsea Finn, and Sergey Levine. 2025. Fast: Efficient action tokenization for vision-language-action models. arXiv preprint arXiv:2501.09747 
+
+(2025). [18] Wenda Qin, Andrea Burns, Bryan A Plummer, and Margrit Betke. 2025. Walk and Read Less: Improving the Efficiency of Vision-and-Language Navigation via Tuning-Free Multimodal Token Pruning. In Proceedings of the 2025 Conference on Empirical Methods in Natural Language Processing . 23567–23581. [19] Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sand-hini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, et al .2021. Learning transferable visual models from natural language supervision. In 
+
+International conference on machine learning . PmLR, 8748–8763. [20] B Srinivasa Reddy and Biswanath N Chatterji. 1996. An FFT-based technique for translation, rotation, and scale-invariant image registration. IEEE transactions on image processing 5, 8 (1996), 1266–1271. [21] Dhruv Shah, Błażej Osiński, Sergey Levine, et al . 2023. Lm-nav: Robotic naviga-tion with large pre-trained models of language, vision, and action. In Conference on robot learning . pmlr, 492–504. [22] Kele Shao, TAO Keda, Kejia Zhang, Sicheng Feng, Mu Cai, Yuzhang Shang, Haoxuan You, Can Qin, Yang Sui, and Huan Wang. [n. d.]. A Survey of Token Compression for Efficient Multimodal Large Language Models. Transactions on Machine Learning Research ([n. d.]). [23] InternNav Team. 2025. InternVLA-N1: An Open Dual-System Navigation Foun-dation Model with Learned Latent Plans. [24] Dezhan Tu, Danylo Vashchilenko, Yuzhe Lu, and Panpan Xu. 2024. VL-cache: Sparsity and modality-aware KV cache compression for vision-language model inference acceleration. arXiv preprint arXiv:2410.23317 (2024). [25] Huanyu Wang, Jushi Kai, Haoli Bai, Lu Hou, Bo Jiang, Ziwei He, and Zhouhan Lin. 2025. Fourier-vlm: Compressing vision tokens in the frequency domain for large vision-language models. arXiv preprint arXiv:2508.06038 (2025). [26] Meng Wei, Chenyang Wan, Xiqian Yu, Tai Wang, Yuqiang Yang, Xiaohan Mao, Chenming Zhu, Wenzhe Cai, Hanqing Wang, Yilun Chen, et al . 2025. Streamvln: Streaming vision-and-language navigation via slowfast context modeling. arXiv preprint arXiv:2507.05240 (2025). [27] Zhiqiang Xie, Ziyi Xu, Mark Zhao, Yuwei An, Vikram Sharma Mailthody, Scott Mahlke, Michael Garland, and Christos Kozyrakis. 2025. Strata: Hierarchi-cal context caching for long context language model serving. arXiv preprint arXiv:2508.18572 (2025). [28] Siyu Xu, Yunke Wang, Chenghao Xia, Dihao Zhu, Tao Huang, and Chang Xu. 2025. VLA-Cache: Efficient Vision-Language-Action Manipulation via Adaptive Token Caching. arXiv preprint arXiv:2502.02175 (2025). [29] Siyu Xu, Yunke Wang, Chenghao Xia, Dihao Zhu, Tao Huang, and Chang Xu. 2025. VLA-Cache: Efficient Vision-Language-Action Manipulation via Adaptive Token Caching. arXiv preprint arXiv:2502.02175 (2025). [30] Yaoxin Yang, Peng Ye, Xudong Tan, Chongjun Tu, Maosen Zhao, Jia Hao, and Tao Chen. 2025. Revisiting Multimodal KV Cache Compression: A Frequency-Domain-Guided Outlier-KV-Aware Approach. arXiv preprint arXiv:2511.16786 
+
+(2025). [31] Shuhao Ye, Sitong Mao, Yuxiang Cui, Xuan Yu, Shichao Zhai, Wen Chen, Shunbo Zhou, Rong Xiong, and Yue Wang. 2025. ETP-R1: Evolving Topological Planning with Reinforcement Fine-tuning for Vision-Language Navigation in Continuous Environments. arXiv preprint arXiv:2512.20940 (2025). [32] Jiazhao Zhang, Kunyu Wang, Shaoan Wang, Minghan Li, Haoran Liu, Songlin Wei, Zhongyuan Wang, Zhizheng Zhang, and He Wang. 2024. Uni-navid: A video-based vision-language-action model for unifying embodied navigation tasks. arXiv preprint arXiv:2412.06224 (2024). [33] Jiazhao Zhang, Kunyu Wang, Rongtao Xu, Gengze Zhou, Yicong Hong, Xiaomeng Fang, Qi Wu, Zhizheng Zhang, and He Wang. 2024. Navid: Video-based vlm plans the next step for vision-and-language navigation. arXiv preprint arXiv:2402.15852 
+
+(2024). [34] Duo Zheng, Shijia Huang, Yanyang Li, and Liwei Wang. 2025. Efficient-VLN: A Training-Efficient Vision-Language Navigation Model. arXiv preprint arXiv:2512.10310 (2025). [35] Duo Zheng, Shijia Huang, Lin Zhao, Yiwu Zhong, and Liwei Wang. 2024. To-wards learning a generalist model for embodied navigation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition . 13624–13634. [36] Zihao Zheng, Hangyu Cao, Jiayu Chen, Sicheng Tian, Chenyue Li, Maoliang Li, Xinhao Sun, Guojie Luo, and Xiang Chen. 2026. RoboECC: Multi-Factor-Aware Edge-Cloud Collaborative Deployment for VLA Models. arXiv preprint arXiv:2603.20711 (2026). [37] Zihao Zheng, Zhihao Mao, Maoliang Li, Jiayu Chen, Xinhao Sun, Zhaobo Zhang, Donggang Cao, Hong Mei, and Xiang Chen. 2026. Kerv: Kinematic-rectified speculative decoding for embodied vla models. arXiv preprint arXiv:2603.01581 
+
+(2026). [38] Zihao Zheng, Zhihao Mao, Sicheng Tian, Maoliang Li, Jiayu Chen, Xinhao Sun, Zhaobo Zhang, Xuanzhe Liu, Donggang Cao, Hong Mei, et al . 2026. HeiSD: Hybrid Speculative Decoding for Embodied Vision-Language-Action Models with Kinematic Awareness. arXiv preprint arXiv:2603.17573 (2026). [39] Zihao Zheng, Zhihao Mao, Xingyue Zhou, Jiayu Chen, Maoliang Li, Xinhao Sun, Hailong Zou, Zhaobo Zhang, Xuanzhe Liu, Donggang Cao, et al . 2026. VLN-Cache: Enabling Token Caching for VLN Models with Visual/Semantic Dynamics Awareness. arXiv preprint arXiv:2603.07080 (2026). [40] Zihao Zheng, Sicheng Tian, Hangyu Cao, Chenyue Li, Jiayu Chen, Maoliang Li, Xinhao Sun, Hailong Zou, Guojie Luo, and Xiang Chen. 2026. RAPID: Redundancy-Aware and Compatibility-Optimal Edge-Cloud Partitioned Infer-ence for Diverse VLA models. arXiv preprint arXiv:2603.07949 (2026). [41] Gengze Zhou, Yicong Hong, and Qi Wu. 2024. Navgpt: Explicit reasoning in vision-and-language navigation with large language models. In Proceedings of the AAAI Conference on Artificial Intelligence , Vol. 38. 7641–7649. [42] Junyou Zhu, Yanyuan Qiao, Siqi Zhang, Xingjian He, Qi Wu, and Jing Liu. 2025. Minivln: Efficient vision-and-language navigation by progressive knowledge distillation. In 2025 IEEE International Conference on Robotics and Automation (ICRA) . IEEE, 97–103. [43] Brianna Zitkovich, Tianhe Yu, Sichun Xu, Peng Xu, Ted Xiao, Fei Xia, Jialin Wu, Paul Wohlhart, Stefan Welker, Ayzaan Wahid, et al . 2023. Rt-2: Vision-language-action models transfer web knowledge to robotic control. In Conference on Robot Learning . PMLR, 2165–2183.

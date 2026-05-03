@@ -1,0 +1,382 @@
+Title: Multi-Robot Motions in Milliseconds: Vector-Accelerated Primitives for Sampling-Based Planning
+
+URL Source: https://arxiv.org/pdf/2604.23960v1
+
+Published Time: Tue, 28 Apr 2026 01:36:29 GMT
+
+Number of Pages: 9
+
+Markdown Content:
+# Multi-Robot Motions in Milliseconds: Vector-Accelerated Primitives for Sampling-Based Planning 
+
+James D. Motes 1, Marco Morales 1,2, and Nancy M. Amato 1
+
+Abstract — In this paper, we extend the recent Vector-Accelerated Motion Planning ( VAMP ) framework to multi-robot motion planning (MRMP ). We develop two vector-accelerated primitives, multi-robot MOTION VALIDATION (MOT -VAL ) and FIND FIRST CONFLICT (FFC ), which exploit SIMD 
+
+parallelism within the multi-robot domain. On pure multi-robot motion validation tests, this achieves over 1100X speedup in validation time. Additionally, we modify a representative set of MRMP algorithms to use these new primitives. The relative speedup for each algorithm is studied on scenarios with manipulator, rigid body, and heterogeneous teams with some instances producing multi-robot solutions in the order of milliseconds and, in many cases, shows planning time speedups of over 850X. 
+
+I. I NTRODUCTION 
+
+In this paper, we explore efficient adaptations of the recent single robot Vector-Accelerated Motion Planning (VAMP) [1] techniques to the multi-robot domain. VAMP accelerates sampling-based motion planning (SBMP) by exploiting single instruction/multiple data (SIMD) forward kinematics (FK) and collision checking (CC) operations to validate multiple configurations in parallel on the CPU and produces speedups of up to 500X on standard plan-ning algorithms. While much of this speedup comes from the parallelization (and the simplified sphere-based robot representation that facilitates it [2]), a significant portion comes from intelligently exploiting parallel state validation to increase early termination during motion validation. It is this key insight that we use to guide our design of vector-accelerated multi-robot motion planning (MRMP). In this paper, we develop two MRMP validation primi-tives: M OTION VALIDATION (M OT VAL ), for boolean valida-tion, and F IND FIRST CONFLICT (FFC), for discovering the earliest conflict. Boolean validity is an extension of single robot validation with the additional concern of robot-robot collision at timesteps along synchronized motions in addition to standard robot-obstacle collisions. A collision of any kind at any timestep invalidates the motion, and early termination can occur upon discovery of any collision. Finding the first conflict is required by many algorithms which plan paths independently and then look for the earliest robot-robot collision to refine the paths [3], [4], [5]. As replanning paths can change the motions after a conflict, it is typically wasted effort to address conflicts occurring later in paths before  
+
+> 1James D. Motes, Marco Morales, and Nancy M. Amato are with the Parasol Lab, School of Computing and Data Science, University of Illinois at Urbana Champaign, Champaign, IL, 61820 USA.
+
+jmotes2, moralesa, namato@illinois.edu 
+
+> 2Marco Morales is also with the Department of Computer Science at Instituto Tecnol´ ogico Aut´ onomo de M´ exico (ITAM), Mexico City, M´ exico.
+
+TABLE I: MRMP Algorithms and Selected Results                                  
+
+> Algorithm Composite RRT-C PP-ST-RRT MR-dRRT ST-CBS ARC Representation CDDDHSearch CDCHHValidity Query MV MV MV FFC MV/FFC Manipulator (4) 864X 338X 453X 874X 178X Rigid Body (8) 9X 3X 6X 8X 5X Heterogeneous (12) —138X ——130X
+
+Representation/Search: Coupled (C), Decoupled (D), Hybrid (H) Validity Query: MOTION VALIDATION (MV), FIND FIRST CON - 
+
+> FLICT
+
+(FFC) Manipulator, Rigid Body, Heterogeneous: Selected algorithmic speedups from vector-acceleration for problems with (#) robots. See Sec. IV for details. 
+
+(a) Rake - No collision (b) Rake - Collision 
+
+Fig. 1: The multi-robot MOT VAL primitive utilizes the rake 
+
+technique to check for robot-robot collisions in parallel between configurations at timesteps distributed in time over the motions. The paths of the blue and yellow robots are shown with the gradient indicating later timesteps in darker colors. Fig. 1a shows the initial rake simultaneously checking timesteps in the batch 
+
+{0, tmax  
+
+> 4
+
+, 2tmax  
+
+> 4
+
+, 3tmax  
+
+> 4
+
+} for robot-robot collision. Fig. 1b shows a conflict in orange discovered quickly on the third step of the rake, at a timestep in the second half of the motion. 
+
+resolving earlier conflicts which may remove or alter the later conflicts. As such, discovering a single collision witness does not allow for early termination, as all timesteps before this collision must be checked to ensure it is the earliest conflict. For both primitives, we develop strategies to improve early termination while exploiting SIMD parallelism for FK and CC operations. We integrate these primitives into a set of MRMP methods representative of the different uses of validation and evaluate the impact on manipulator, rigid body, and heterogeneous team scenarios. The primitives reduce pure motion validation time by up to 1109X and, in many cases, produce algorithm speedups exceeding 850X. The included methods (and selected results) are listed in Table I. In summary, our contributions are:  
+
+> •
+
+Vector-accelerated multi-robot primitives: M OT VAL and FFC  
+
+> •
+
+Integration of these primitives into representative sampling-based MRMP algorithms  
+
+> •
+
+Empirical evaluation across manipulator, rigid body, and 
+
+> arXiv:2604.23960v1 [cs.RO] 27 Apr 2026
+
+heterogeneous robot teams  
+
+> •
+
+Open-source release of the vector-accelerated imple-mentations (upon acceptance) II. B ACKGROUND AND RELATED WORK 
+
+In this section, we define the motion planning and multi-robot motion planning (MRMP) problems and discuss algo-rithms and vector-acceleration for both. 
+
+A. Motion Planning 
+
+A robot configuration is defined by its degrees-of-freedom (DOF s). The configuration space Cspace is the set of all robot configurations in an environment [6]. Motion planning seeks a continuous path through the free space Cf ree . Representing 
+
+Cspace explicitly is intractable in the general case [7], [8]. Sampling-based motion planning (SBMP) instead samples random configurations and motions between them to search for a path [9], [10]. Configurations are validated by per-forming forward kinematics (FK) and collision checking (CC), and motions are validated by discretizing them into intermediate configurations which are then validated. Within SBMP, for both single start/goal query algo-rithms [10] and multi-query algorithms [9], the motion vali-dation process has historically been the bottleneck. Methods like the recursive midpoint bisection checking [11] propose strategies on where to check which aim to quickly find a witness collision and improve early termination. Others choose when to check , often deferring validation until a motion is known to be required [12]. Finally, some methods improve how many checks can be done at once [1]. We pull insights from all three for the multi-robot domain. 
+
+B. Vector-Accelerated Motion Planning 
+
+Vector-Accelerated Motion Planning (VAMP) [1] intro-duced fine-grained parallelism to SBMP by exploiting SIMD operations in primitive functions common to SBMP algorithms. Much of the SIMD modification focused on FK and CC where batches of configurations can be processed in parallel on the CPU, enabling high throughput with low latency. These SIMD FK and CC operations are enabled by adopting a sphere-based representation of a robot (which can be generated with [2]). This sphere-based representation is then given to a tracing compiler which builds specialized SIMD kernels for that specific robot’s FK and CC oper-ations. In addition to enabling the SIMD operations, this simplified geometric representation contributes to the overall speedup demonstrated in [1]. Beyond the speedup from processing batches of configu-rations simultaneously, VAMP proposes intelligent construc-tion of these batches to increase early termination during mo-tion validation. Instead of linearly scanning from one end of a motion to the other in batches of consecutive configurations, batches are created from configurations spatially distributed 
+
+evenly along the motion. The validation of these distributed batches is referred to as a rake . This is an application of the insights from prior sequential validation methods that collisions can be discovered faster by distributing CC along the motion to the batch processing offered by SIMD operations. More details are provided in the multi-robot application of the rake approach in Sec. III-A and Fig. 1. 
+
+C. Multi-robot Motion Planning 
+
+Multi-robot motion planning (MRMP) seeks to find a collision-free path through the composite configuration space 
+
+Ccomp which is the Cartesian product of the individual robot Cspaces . Most MRMP papers focus on addressing the exponential growth of Ccomp with the number of robots. Here, instead we focus on the cost of validation. A composite configuration is invalid if any individual robot configuration is in collision with an obstacle, itself, or another robot. This cost quickly gets dominated by the robot-robot CCs which scale quadratically with the number of robots while robot-obstacle CCs scale linearly. Multi-robot motion validation is still computed by discretizing individual motions into intermediate configurations. However, each discrete intermediate corresponds to one timestep as robot-robot collisions occur in both space and time. There are two primary multi-robot validity queries: binary validity and find the first conflict. The binary validity query simply returns a boolean true/false validity for the entirety of the set of synchronized robot motions. This is primarily used by methods which directly apply single robot SBMP to the multi-robot domain either by directly searching Ccomp [13], [14], or treating other robots as dynamic obstacles [15]. These motions can be invalidated by either robot-obstacle or robot-robot collisions. Some methods consider these si-multaneously [13], while others first compute decoupled representations valid in the individual robot Cspaces and constrain multi-robot motions to compositions of these [14], decoupling robot-obstacle and robot-robot validation (decid-ing when to validate ). Methods which query for the first conflict typically com-pute entire paths valid in the individual robot Cspaces and then use robot-robot collisions (and the timesteps they occur at) to guide either search [16], [5] or representation construc-tion [4], [5]. This validity query assumes individual validity and only checks for synchronized robot-robot collisions, so no robot-obstacle CCs are needed. It requires the first conflict in the set of paths as conflict resolution often de-synchronizes later portions of the paths, undoing prior resolution effort. Thus, a single robot-robot witness is insufficient, and all timesteps prior to a conflict must be validated before a conflict can be determined to be the earliest. It is from the difference between these two validity queries that we claim the need for two distinct multi-robot validity primitives: MOT VAL and FFC based on their query and use of validity information, and categorize MRMP algorithms by which of these they use (Table I). We find that this category naturally extends the typical taxonomy of MRMP methods into coupled, decoupled, or hybrid approaches to either representation construction or search (Table I). In fact, the validity primitive is central to the implementation of these other design choices. For example, all coupled searches must use M OT VAL to validate any motion segment in Ccomp [13] (even when individual validity is computed separately in decoupled representations [14]). Even decoupled searches like prioritized planning still use a variant of M OT VAL to ensure their individual paths do not collide with higher priority robot motions [15]. Meanwhile, hybrid methods which typically start decoupled and then 
+
+decide when to couple often use conflict information to guide these decisions [17], [4], [5]. When the representations stay decoupled [16], [5], only FFC is needed, but when hybrid approaches build representations in different compositions of individual robot Cspaces , M OT VAL is again needed to validate the motion segments in the representation [17], [4]. The set of methods in Table I provides a representative for each combination of these design choices with vary-ing strategies for computing robot-obstacle and robot-robot validity. In Sec. III-C we describe the application of the new M OT VAL and FFC (and existing VAMP) primitives to these methods and evaluate the impact in Sec. IV. Many of these methods have extensions and improvements, but we attempted to choose a method representing the root of a method family and believe the improvements will generalize across most of their variants. 
+
+D. Vector-Accelerated Multi-Robot Motion Planning 
+
+At the time of this submission, we are aware of one workshop paper [18] which has studied the straightforward application of VAMP to Composite RRT-C and the speedup of a hybrid search multi-agent pathfinding method adapted to MRMP [16]. While these naturally use the M OT VAL and FFC primitives, no such distinction is made in [18], and only a discussion of vectorized state validity is provided. Additionally, we consider not only the straightforward appli-cation of this state validity to sequences of states (in raked or linear scans) but different strategies for the ordering of robot-obstacle vs robot-robot CC across the motion. In this manuscript, in addition to providing distinct vector-accelerated primitive functions for the two classes, we study the impact of those functions across a set of MRMP al-gorithms representative of the different ways robot-obstacle and robot-robot CCs are performed. Additionally, while the workshop paper [18] studies the impact of vector-accelerated state validity for multi-robot systems on several manipulator domains (including impressive results on multi-arm assem-bly), we study the difference in impact on planning times for manipulators, rigid body, and heterogeneous teams with increasing numbers of robots. We are not aware of any peer-reviewed publication studying the adaptation of VAMP [1] to the multi-robot domain. III. M ETHODOLOGY 
+
+In this section, we provide two vector-accelerated MRMP primitives: M OT VAL (Sec. III-A) and FFC (Sec. III-B). We then describe how a representative set of MRMP algorithms can utilize these modified primitives (Sec. III-C). 
+
+A. Motion Validation 
+
+The multi-robot M OT VAL primitive (Alg. 1) is used when the algorithm cares only for the boolean validity of a set of robot paths P . As described in Section II-C, this is usually in coupled approaches where the movement of all robots is being considered at once. A variant of it is also used in decoupled, prioritized planning when the validity of motion segments for a single robot need to be checked against the already planned motions of higher priority robots (discussed in Section III-C.2). In either case, the objective is to discover a witness collision as early as possible if one exists, optimizing early termination. This can be achieved by either a robot-obstacle collision or a robot-robot collision. During empirical evaluation, we have seen the likelihood of which collision type can be discovered faster vary with the number of robots and the density of obstacles, so we present two different strategies: combined and hierarchical .The combined approach checks robot-obstacle and robot-robot validity for each batch of timesteps before moving onto the next batch of timesteps (this is a straightforward application of the state-based validation discussed in [18]). Hierarchical first performs all robot-obstacle validation and then all robot-robot validation. Intuitively, robot-obstacle collisions are more likely when there are more obstacles or more robots to collide with those obstacles. Note that robot-obstacle validation also checks the robot for self-collision. We provide a study of the different strategies in Sec. IV-B.1. Alg. 1 uses a set of underlying VAMP functions. P ACK -CFG BATCH takes in a path pi, a batch index b, and a 
+
+packing strategy (either rake or linear ). The rake strategy temporally distributes timesteps evenly along the path (as is done with the spatial distribution in VAMP [1]). For batch index b and num batches = total timesteps batch size , this would result in Bi consisting of the configurations along pi at timesteps 
+
+b, b + num batches , b + num batches ∗ 2, ..., b + num batches ∗
+
+(batch size − 1) . The linear strategy results in the batch packed with configurations at consecutive timesteps in pi,
+
+Bi = {b ∗ batch size , b ∗ batch size + 1 , ...b ∗ batch size +
+
+batch size −1}. See Fig. 1 for an example of the rake strategy. Regardless of packing strategy, S PHERES FK takes batches of configurations and uses the robot-specific FK kernel to return the positions of each sphere Si (from the sphere-based robot representation) for every configuration in Bi. The CC function then checks each set of spheres in Si for collision with obstacles (or itself), returning true if any configuration in the batch is in collision. With some abuse of notation, we also use CC to indicate checking two batches of sphere configurations Si, Sj for collision with each other. Alg. 1 begins with the switch on hierarchical behavior on line 3 after computing the total number of batches needed to cover the set of paths (line 2). In the hierarchical strategy, the validation rakes through all paths simultaneously, checking validity of each robot for the configurations at the timesteps in batch Bi before incrementing the batch (lines 4-9). Any Algorithm 1 MOTION VALIDATION (M OT VAL )
+
+Input: Paths P = {p1, . . . , p n}, environment E, batch size ,
+
+hierarchical , check environment  
+
+> 1:
+
+tmax ← max pi∈P |pi| 
+
+> 2:
+
+num batches ←
+
+ tmax 
+
+batch size 
+
+ 
+
+> 3:
+
+if hierarchical and check environment then  
+
+> 4:
+
+for b ∈ { 0, . . . , num batches − 1} do  
+
+> 5:
+
+for i ∈ { 1, . . . , n } do  
+
+> 6:
+
+Batch Bi ← PACK CFG BATCH (pi, b, rake ) 
+
+> 7:
+
+Spheres Si ← SPHERES FK (ri, B i) 
+
+> 8:
+
+if collision ← CC (Si, E ) then  
+
+> 9:
+
+return false  
+
+> 10:
+
+for b ∈ { 0, . . . , num batches − 1} do  
+
+> 11:
+
+if not hierarchical and check environment then  
+
+> 12:
+
+for i ∈ { 1, . . . , n } do  
+
+> 13:
+
+Batch Bi ← PACK CFG BATCH (pi, b, rake ) 
+
+> 14:
+
+Spheres Si ← SPHERES FK (ri, B i) 
+
+> 15:
+
+if collision ← CC (Si, E ) then  
+
+> 16:
+
+return false  
+
+> 17:
+
+for i ∈ { 1, . . . , n − 1} do  
+
+> 18:
+
+Batch Bi ← PACK CFG BATCH (pi, b, rake ) 
+
+> 19:
+
+Spheres Si ← SPHERES FK (ri, B i) 
+
+> 20:
+
+for j ∈ { i + 1 , . . . , n } do  
+
+> 21:
+
+Batch Bj ← PACK CFG BATCH (pj , b, rake ) 
+
+> 22:
+
+Spheres Sj ← SPHERES FK (rj , B j ) 
+
+> 23:
+
+if collision ← CC (Si, S j ) then  
+
+> 24:
+
+return false  
+
+> 25:
+
+return true 
+
+discovered collision results in early termination (lines 8, 9). Both strategies then iterate over all batches (line 10). The combined strategy first validates all individual configurations (lines 12-16), terminating early upon any discovered colli-sion. Both strategies then check for robot-robot collision be-tween all pairs ri, r j for the temporally distributed timesteps of batch b packed using the rake strategy (lines 18, 21), terminating early if any collision is found (line 24). If all validation checks pass, the algorithm returns true (line 25). There is an additional design choice of iterating over entire paths or pairs of paths for individual or robot-robot validation instead of raking across all paths at once. Empirically, we found that the simultaneous rake makes a large difference for the individual validation and a smaller, but still meaningful difference for the robot-robot validation. Future work may examine mixed strategies which identify pairs of robots that are likely to collide (e.g., adjacent fixed-base manipulators), and prioritize those pairs before broader validation. Note, for fixed-base robots, the SPHERES FK calls on lines 7 and 14 return the robot’s representation spheres in the robot reference frame and the environment obstacles are transformed into this frame (in practice, the obstacle transformations are computed once and cached for each robot). The S PHERES FK calls on lines 19, 22 return the robots’ representation spheres in the world frame, so they can be checked against each other. This approach is also discussed in [18]. 
+
+Algorithm 2 FIND FIRST CONFLICT (FFC) 
+
+Input: Paths P = {p1, . . . , p n}, batch size  
+
+> 1:
+
+tmax ← max pi∈P |pi| 
+
+> 2:
+
+num batches ←
+
+ tmax 
+
+batch size 
+
+ 
+
+> 3:
+
+Conflict C ← null  
+
+> 4:
+
+for b ∈ { 0, . . . , num batches − 1} do  
+
+> 5:
+
+tbatch start ← b · batch size  
+
+> 6:
+
+for i ∈ { 1, . . . , n − 1} do  
+
+> 7:
+
+Batch Bi ← PACK CFG BATCH (pi, t batch start , linear ) 
+
+> 8:
+
+Spheres Si ← SPHERES FK (ri, B i) 
+
+> 9:
+
+for j ∈ { i + 1 , . . . , n } do  
+
+> 10:
+
+Batch Bj ← PACK CFG BATCH (pj , t batch start , linear ) 
+
+> 11:
+
+Spheres Sj ← SPHERES FK (rj , B j ) 
+
+> 12:
+
+tconflict ← CC (Si, S j , t batch start ) ▷ returns first collision timestep in the batch, offset by tbatch start  
+
+> 13:
+
+if tconflict ̸ = null then  
+
+> 14:
+
+if C = null or C.t > t conflict then  
+
+> 15:
+
+C ← { tconflict , r i, r j } 
+
+> 16:
+
+if C̸ = null then  
+
+> 17:
+
+return C 
+
+> 18:
+
+return null 
+
+B. Find First Conflict 
+
+The FFC primitive is used when collision information is required to guide either representation construction or search (typically a hybrid method of some kind). This requires discovering the first timestep at which any robot-robot collision occurs in the set of paths P (rather than any collision witness). In addition to the return type, there are two main distinc-tions between M OT VAL in Alg. 1 and FFC in Alg. 2. First, FFC does not consider robot-obstacle collisions. It assumes that all paths are free of robot-obstacle collisions and is only searching for robot-robot collisions (all S PHERES FK calls return spheres in the world frame). Second, it uses the linear strategy for packing configura-tion batches (lines 7, 10). As a conflict at timestep tconflict 
+
+can only be confirmed as the first conflict if all timesteps 
+
+t < t conflict are collision-free, validation must be performed for timesteps 0, ..., t conflict . Thus, employing the rake strategy which temporally distributes timestep batches evenly along the paths will result in validation effort spent on timesteps 
+
+t > t conflict (with the exception of tconflict = tmax ). Taking a linear packing approach ensures the minimum number of timestep batches are validated before discovering tconflict .For simplicity of notation, we leave the extraction of the individual timestep tconflict within the batch of consecutive configurations in the CC function call. 
+
+C. Application in MRMP Algorithms 
+
+Here we provide a brief description of how the represen-tative set of algorithms in Table I use our new multi-robot primitives or primitives from single robot VAMP [1]. The “Validity Query” row in Table I provides a quick summary for which algorithms use either M OT VAL or FFC. 
+
+1) Composite RRT-C: Composite RRT-C is a direct ap-plication of the single robot RRT-C [19] in Ccomp . The implementation mirrors the RRT-C implementation in [1] with the multi-robot M OT VAL primitive replacing the single robot version. 
+
+2) PP-ST-RRT: Prioritized planning [20] with Space Time RRT [21] plans for robots sequentially in a fixed priority or-der (referred to as PP-ST-RRT) [15]. Higher priority paths are treated as dynamic obstacles for lower priority paths using ST-RRT. The M OT VAL primitive in ST-RRT is replaced with a modified version of Alg. 1. As PP-ST-RRT plans for one robot at a time, the outer loop on line 17 is replaced with only the current robot and the inner loop on line 20 iterates over only higher priority robots. We simplify the implementation of ST-RRT here and do not include the rewiring mechanisms as many of the other algorithms seek only to find a valid path, though we expect the relative performance gains to hold. 
+
+3) ST-CBS: ST-CBS [5] modifies the ST-RRT [21] logic to work within the Conflict-Based Search (CBS) frame-work [3]. CBS builds a constraint tree (CT) where nodes contain sets of constraints for each robot and paths which ad-here to those constraints. The search evaluates the paths in a node for conflicts, and, if none are discovered, returns a valid solution. Upon discovering a conflict between robots ri, r j ,a constraint is generated for each, and the CT branches, creating two new nodes, one with an additional constraint for ri and one with an additional constraint for rj .ST-CBS utilizes a unidirectional ST-RRT (UST-RRT) method to generate the individual paths. We point the reader to the manuscript for the algorithmic details [5], but the basic primitives function the same as those in ST-RRT with constraints forming obstacles in space-time which can be represented as instantaneous (or short-lived) dynamic obstacles. Additionally, the new FFC primitive is employed to search for conflicts between paths when evaluating nodes in the CT. 
+
+4) MR-dRRT: MR-dRRT [14] begins by building roadmaps for each individual robot. All relevant primitives here are replaced by VAMP [1]. The discrete RRT search over the tensor product graph of the roadmaps uses the multi-robot M OT VAL primitive to validate composite edges (skipping robot-obstacle CC). Finally, the connect-to-target function (extend a composite state directly to the goal) uses the M OT VAL with robot-obstacle CC. 
+
+5) ARC: ARC [4] first builds a path for each individual robot. The original manuscript uses PRM, but we replace this with a VAMP RRT-C. The FFC primitive is then repeatedly called on these paths. Upon discovering a conflict, local subproblems are introduced to replan the conflicting paths in the conflicting region. The original manuscript proposes a configurable hierarchy of methods for solving the subprob-lems. We use a single instance of Composite RRT-C. IV. E VALUATION 
+
+We conduct a set of experiments to evaluate the impact of the vector-acclerated multi-robot primitives on both pure validation and MRMP algorithm performance. Section IV-A describes our experimental design and Section IV-B reports the results of each experiment.    
+
+> (a) C AGE Scenario (b) H ETEROGENEOUS Scenario
+
+Fig. 2: (a) 16 Panda manipulators in the CAGE environment resembling a floor and ceiling mounted multi-robot team operated in a shared workspace (e.g., automotive manufacturing). A random start and goal position is sampled for each manipulator with the end effector inside the cage. (b) 8 Panda manipulators form a corridor. A random start is sampled for each manipulator, and a goal pose is selected with the end-effector inside the corridor. 16 flying sphere robots, split into two groups, must swap places on either side of the corridor. The corridor is limited to the reachable volume of the manipulators. 
+
+A. Experimental Design 
+
+The experiments are designed to evaluate the three claims made in this paper: (i) vector-accelerated multi-robot prim-itives improve validation time, (ii) they improve MRMP algorithm runtimes, and (iii) M OT VAL and FFC should be distinct primitives. For (i) and (iii), we include a validation timing experiment in Section IV-B.1 which isolates the runtime of validating a set of randomly generated motions for a group of panda manipulators in an environment depicted in Fig. 2. The per-formance of the different M OT VAL strategies and baselines using the Flexible Collision Library (FCL) [22] and sphere-based validation are compared to characterize the impact of each design choice. For (ii), we include planning problems with manipulator, rigid body, and heterogeneous teams (Sec. IV-B.2, IV-B.3, and IV-B.4). For each of these, we report the runtimes of the representative set of algorithms listed in Table I, each with the new primitives enabled and the baseline FCL and sphere-based CC implementations. The different team compositions demonstrate the difference in impact based on robot complexity and coordination requirements. Results for these scenarios are reported in Fig. 5. Addi-tionally, the relative speedup for each algorithm is reported in Fig. 4 and 6. These report the average speedup across trials for which an algorithm was successful with both collision backends (VAMP vs FCL, VAMP vs Sphere). This is to avoid penalizing faster configurations for solving harder problems (which can be obscured in the plots). The new vector-accelerated primitives, the baseline FCL and sphere-based CC implementations, and the MRMP algorithm implementations are written in C++ and build on the recently released OMPL 2.0 [23] with native VAMP integrations. The implementations will be made open-source upon acceptance of this paper to maintain a double-blind review. All experiments were conducted on a single Linux workstation (x86 64, kernel 6.8) equipped with an Intel Core i7-14700F CPU (up to 5.4 GHz) and 32 GB of RAM. 
+
+B. Results Fig. 3: This table reports the percentage of validation effort performed before early termination out of the total number of CCs available for a set of 1000 randomly generated multi-robot motions in the C AGE scenario shown in Fig. 2. Four M OT VAL strategies are included with choices of combined or hierarchical robot-obstacle and robot-robot validation and linear or rake packing strategies for configuration batches. Each cell reports the percentage of validation effort performed before termination (lower is better) and the relative speedup to both FCL and the sphere-based baselines (higher is better). The values for tests with and without obstacles are split left and right. The bottom column labels indicate the number of robots. Note that the number of invalid motions increased with both robots and the presence of obstacles. For either 16 robot case, all 1000 randomly sampled motion were invalid. 
+
+1) Validation Timing: In order to isolate the evaluation of the validation performance, we consider 1000 randomly sampled motions for 2, 4, 8, and 16 Panda manipulators in the C AGE environment depicted in Fig. 2. We also consider the same manipulator arrangements without obstacles to isolate the computation of robot-robot collision checking. We evaluate the performance of both hierarchical and com-bined robot-obstacle and robot-robot validation strategies. Additionally, we test both approaches with rake and linear packing strategies to measure the impact of the different design decisions. We report the percentage of validation effort performed by each variant as the number of CC calls made before early termination out of all possible CCs for the motions. The same motions are validated with baseline FCL and sphere-based CC implementations with sequential linear scans to measure the relative performance (Fig. 3). The two most impressive results come from the 1109X speedup over FCL by the combined rake approach for 4 robots with obstacles and the 0.2% evaluation before termination achieved by the hierarchical rake for either 16 robot variation. Overall, we see significant performance gains compared to FCL. All strategies show a speedup from the sphere-based approach, and either implementation of the rake packing strategy outperformed the linear approach, demon-strating the impact of both SIMD batching and the rake packing strategy for multi-robot validation. Additionally, the linear packing approach is equivalent to adding robot-obstacle validation to the FFC primitive, demonstrating the benefit of maintaining a distinct M OT VAL primitive with strategies like raking. The presence of obstacles has a greater impact on the hier-archical strategy, as expected, with the evaluated percentage being notably lower in the tests with obstacles, as individ-ual validation is still conducted to check for self-collision. Though, as the number of robots increases, the probability of at least one self-collision occurring increases to the point where individual validation again leads to early termination. While both the hierarchical and combined strategies can ter-minate early from individual robot collisions, the hierarchical strategy rakes through the linearly increasing robot-obstacle CCs first, while the combined strategy incurs the cost of the quadratically increasing robot-robot CCs to reach the same individual collision. The benefit of this behavior is reversed when early batches contain robot-robot collisions as hierarchical performs all robot-obstacle validation before checking for any robot-robot collision. Additionally, Fig. 3 shows improving early termination as the number of robots increase. While not included in the table, the hierarchical rake validation of the 16 manipulator scenarios reported the smallest total validation time despite the highest number of robots. We use the hierarchical rake MOT VAL strategy for the rest of the evaluation. 
+
+2) Manipulator Coordination: Two rows of Panda manip-ulators have randomly sampled start and goal poses with their end-effectors inside the cage (Fig. 2). Conflicts often emerge between manipulators adjacent or across from each other. Five random start and goal sets (or tasks) are generated, and each algorithm configuration is run with the same ten seeds on each task for a total of 50 trials each. Each trial is given 1000s. Variance between configurations of the same algorithm is limited to validation effort. Figs. 5a and 5b shows the performance of each algorithm planning for 4 and 8 Panda manipulators. As expected, there is a significant improvement in planning time and success rate across all algorithms. Composite RRT-C and ST-CBS demonstrate the greatest improvement with a speedup of over 850X (Fig. 4a). The other methods also experience significant speedups for the 4 manipulator scenario (338X, 453X, and 178X for PP-ST-RRT, MR-dRRT, and ARC respectively). As ARC (with vector-accelerated primitives) was the only method to solve a significant percentage of the 8 manipulator tasks, we tested it with 16 robots (as depicted in Fig. 2) over five tasks run with three seeds each. It solved 5/6 trials on two of the tasks (and none for the others) with a median solve time of 9.4s. The small solve times on the successful trials and failure to solve the other tasks within the 1000s indicates the difficulty lies in the search for these large problems rather than the validation cost. 
+
+3) Rigid Body Coordination: Two lines of flying sphere robots must swap places with each other. This arrangement naturally induces N 
+
+> 2
+
+conflicts for N robots. Subsequent con-flicts emerge as a result of conflict resolution and avoidance. Each algorithm configuration is run with the same set of 30 random seeds. Each trial is given 100s. (a) Manipulator Speedups (b) Rigid Body Speedups 
+
+Fig. 4: Per algorithm speedups using the SIMD primitives vs baseline FCL or sphere-based CC implementations. Speedup color range is in log scale. Scenarios where one or both methods failed to solve any trials are left empty. † denotes sparse estimates (trials pairs < 10 ). 
+
+(a) 4 Panda Manipulators (b) 8 Panda Manipulators 
+
+(c) 4 Flying Sphere Robots (d) 8 Flying Sphere Robots 
+
+(e) 16 Flying Sphere Robots (f) 32 Flying Sphere Robots 
+
+(g) 4 Pandas–8 Flying Spheres (h) 8 Pandas–16 Flying Spheres 
+
+Fig. 5: Cumulative distribution of planning times for all three scenarios. Each algorithm is run with three validation strategies: multi-robot adaptation of VAMP, FCL, and the sphere-based representation (indicated by different line types). (a,b) The C AGE scenario with 5 random tasks with 10 trials each. (c-f) The C ROSS scenario with 30 trials. (g,h) The H ETEROGENEOUS scenario with 10 trials. 
+
+Fig. 5c-5f shows the performance of each algorithm for problems with 4, 8, 16, and 32 robots. Here we see a smaller impact using the primitives compared to the manipulator scenario as CC is cheap for the flying sphere robots and thus makes up a smaller portion of the planning time. There is still an improvement of up to 10X as seen in the per-algorithm improvements reported in Fig. 4b. Interestingly, we see the relative speedup increase as the number of robots increase for all algorithms except PP-ST-RRT. In addition to the exponential growth Composite RRT-C and MR-dRRT experience in their composite Cspace as the number of robots increases, the number of robot-robot CCs increases quadratically in every extension attempt in the coupled search. This quadratic increase in validation effort Fig. 6: H ETEROGENEOUS Per Algorithm Speedups also applies to the effort to find conflicts in ST-CBS and ARC (in addition to ARC’s use of Composite RRT-C as a local subplanner). Thus as the number of robots increases, a greater portion of effort is spent on validation and thus the greater potential for speedup. The one exception is PP-ST-RRT which plans for individual robot Cspaces sequentially while still checking for robot-robot collisions, and we can see the speedup remain relatively constant as the number of robots increases. As ARC again demonstrated the fastest planning times as the number of robots increased ( < 1s for 32 robots), we evaluate the same scenario with 64 and 128 robots (still with the 100s time limit). It successfully solved all 30 trials for both with median runtimes of 13.5s and 84.5s. 
+
+4) Heterogeneous Coordination: Two groups of flying sphere robots must pass through a corridor of Panda ma-nipulators as described in Fig. 2b. We ran 10 trials with each method configuration with a 1000s time limit. The planning times, success rates, and algorithm speedups are reported in Figs. 5g, 5h, and 6. The methods which attempt higher levels of coordination struggle here with PP-ST-RRT significantly outperforming the other methods. The priority order here is a significant design choice. We planned first for the manipulators and then for the flying spheres. Reversing this priority order results in PP-ST-RRT failing to find any solutions within the time limit. The significance of the speedup provided by the primitive is evident here with the 130-150X speedup for PP-ST-RRT resulting in plans in less than a second for the 4 Panda–8 flying sphere scenario. As with ARC in the prior two scenarios, we push PP-ST-RRT on larger teams, testing it with 16 Panda manipulators and 32 flying spheres. It was able to solve 6/30 trials with a median runtime of 16.3s with vector-accelerated primitives and 67.2s with the sphere-based representation. V. C ONCLUSION 
+
+In this paper, we have demonstrated that how you apply vector-acceleration to multi-robot validation matters, devel-oped several strategies for doing so, and evaluated the relative speedup they offers across a representative set of algorithms on varied problem settings. We see two avenues for future work: (i) further investigation of when , where , and how many 
+
+to validate including how to leverage further parallelization with the GPU as has been done in the single robot domain, and (ii) take advantage of decreased validation costs to use validity as a signal, expanding on the conflict-driven planning of approaches like ARC [4]. Open-source code of the vector-accelerated primitives and MRMP algorithms will be made available upon paper acceptance. REFERENCES [1] W. Thomason, Z. Kingston, and L. E. Kavraki, “Motions in mi-croseconds via vectorized sampling-based planning,” in 2024 IEEE international conference on robotics and automation (ICRA) . IEEE, 2024, pp. 8749–8756. [2] S. Coumar, G. Chang, N. Kodkani, and Z. Kingston, “Foam: A tool for spherical approximation of robot geometry,” arXiv preprint arXiv:2503.13704 , 2025. [3] G. Sharon, R. Stern, A. Felner, and N. R. Sturtevant, “Conflict-based search for optimal multi-agent pathfinding,” Artificial Intelligence , vol. 219, pp. 40–66, 2015. [4] I. Solis, J. Motes, M. Qin, M. Morales, and N. M. Amato, “Adaptive robot coordination: A subproblem-based approach for hybrid multi-robot motion planning,” IEEE Robotics and Automation Letters , vol. 9, no. 8, pp. 7238–7245, 2024. [5] J. Sim, S. Lim, and C. Nam, “St-cbs: Spatio-temporal conflict based search in continuous space for multi-agent pathfinding,” in Proceed-ings of the 40th ACM/SIGAPP Symposium on Applied Computing ,2025, pp. 815–822. [6] T. Lozano-P´ erez and M. A. Wesley, “An algorithm for planning collision-free paths among polyhedral obstacles,” Communications of the ACM , vol. 22, no. 10, pp. 560–570, Oct. 1979. [7] J. T. Schwartz and M. Sharir, “On the “piano movers” problem. ii. general techniques for computing topological properties of real algebraic manifolds,” Advances in applied Mathematics , vol. 4, no. 3, pp. 298–351, 1983. [8] J. F. Canny, The Complexity of Robot Motion Planning . Cambridge, MA: MIT Press, 1988. [9] L. E. Kavraki, P. ˇ Svestka, J. C. Latombe, and M. H. Overmars, “Prob-abilistic roadmaps for path planning in high-dimensional configuration spaces,” IEEE Trans. Robot. Automat. , vol. 12, no. 4, pp. 566–580, Aug. 1996. [10] S. M. LaValle and J. J. Kuffner, “Randomized kinodynamic planning,” in Proc. IEEE Int. Conf. Robot. Autom. (ICRA) , 1999, pp. 473–479. [11] G. S´ anchez and J.-C. Latombe, “A single-query bi-directional prob-abilistic roadmap planner with lazy collision checking,” in Robotics Research: The Tenth International Symposium . Springer, 2003, pp. 403–417. [12] R. Bohlin and L. E. Kavraki, “Path planning using lazy prm,” in Proc. IEEE Int. Conf. Robot. Autom. (ICRA) , Apr. 2000. [13] G. Sanchez and J.-C. Latombe, “Using a prm planner to compare centralized and decoupled planning for multi-robot systems,” in Proc. IEEE Int. Conf. Robot. Autom. (ICRA) , vol. 2, 2002, pp. 2112–2119. [14] K. Solovey, O. Salzman, and D. Halperin, “Finding a needle in an exponential haystack: Discrete rrt for exploration of implicit roadmaps in multi-robot motion planning,” The International Journal of Robotics Research , vol. 35, no. 5, pp. 501–513, 2016. [15] N. Kerimov, A. Onegin, and K. Yakovlev, “Si-rrt and st-rrt* for prioritized multi-manipulator planning: Empirical evaluation,” in Inter-national Conference on Interactive Collaborative Robotics . Springer, 2025, pp. 371–384. [16] I. Solis, J. Motes, R. Sandstr¨ om, and N. M. Amato, “Representation-optimal multi-robot motion planning using conflict-based search,” 
+
+IEEE Robotics and Automation Letters , vol. 6, no. 3, pp. 4608–4615, 2021. [17] G. Wagner and H. Choset, “Subdimensional expansion for multirobot path planning,” Artificial Intelligence , vol. 219, pp. 1–24, 2015. [18] P. Huang, C. Gao, and J. Li, “Vamp-mr: Vector-accelerated mo-tion planning and execution for multi-robot-arms,” https://github.com/ vamp-mr/vamp-mr, 2026, aAAI 2026 Workshop on Multi-Agent Path Finding (WoMAPF), project website. [19] J. J. Kuffner and S. M. LaValle, “Rrt-connect: An efficient approach to single-query path planning,” in Proceedings 2000 ICRA. Millennium conference. IEEE international conference on robotics and automa-tion. Symposia proceedings (Cat. No. 00CH37065) , vol. 2. IEEE, 2000, pp. 995–1001. [20] J. van den Berg and M. Overmars, “Prioritized motion planning for multiple robots [conference presentation]. 2005 ieee,” in RSJ Interna-tional Conference on Intelligent Robots and Systems, Edmonton, AB, Canada. https://doi. org/10.1109/IROS , 2005. [21] F. Grothe, V. N. Hartmann, A. Orthey, and M. Toussaint, “St-rrt*: Asymptotically-optimal bidirectional motion planning through space-time,” in 2022 International Conference on Robotics and Automation (ICRA) . IEEE, 2022, pp. 3314–3320. [22] J. Pan, S. Chitta, and D. Manocha, “Fcl: A general purpose library for collision and proximity queries,” in 2012 IEEE international conference on robotics and automation . IEEE, 2012, pp. 3859–3866. [23] I. A. S ¸ ucan, M. Moll, and L. E. Kavraki, “The Open Motion Planning Library,” IEEE Robotics & Automation Magazine , vol. 19, no. 4, pp. 72–82, December 2012, https://ompl.kavrakilab.org.

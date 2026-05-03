@@ -1,0 +1,777 @@
+Title: Dreaming Across Towns: Semantic Rollout and Town-Adversarial Regularization for Zero-Shot Held-Out-Town Fixed-Route Driving in CARLA
+
+URL Source: https://arxiv.org/pdf/2604.27994v1
+
+Published Time: Fri, 01 May 2026 01:08:35 GMT
+
+Number of Pages: 16
+
+Markdown Content:
+> 1
+
+# Dreaming Across Towns: Semantic Rollout and Town-Adversarial Regularization for Zero-Shot Held-Out-Town Fixed-Route Driving in CARLA 
+
+Feeza Khan Khanzada, Student Member, IEEE, and Jaerock Kwon, Member, IEEE 
+
+Abstract —Learned driving agents often degrade when deployed in unseen environments. This paper studies a deliberately bounded instance of that problem in the CARLA simulator: zero-shot transfer of a closed-loop fixed-route driving agent from Town05 and Town06 to unseen Town03 and Town04. The study isolates struc-tural town shift by keeping weather fixed to ClearNoon and removing traffic and pedestrians. We build on a Dreamer-style latent world-model agent and add two training-only auxiliary losses: multi-horizon prediction of future visual-semantic embeddings along imagined rollouts and town-adversarial supervision on a semantic projection of the recurrent latent state. A causal context feature conditions the semantic rollout predictor, while the actor and critic retain the standard control feature. The policy receives no navigation command, route polyline, goal pose, or map input; the reference route is used only by the environment for reward, progress, success, and termination. Across the evaluated held-out towns, the proposed model achieves the highest mean success rate among the included Dreamer-family methods. Secondary safety and lane-keeping metrics are mixed across towns. These results support a bounded conclusion: in this controlled fixed-weather CARLA setting, semantic rollout supervision combined with town-adversarial regularization improves mean held-out-town route completion. 
+
+Index Terms —Autonomous driving, route following, model-based reinforcement learning, world models, domain generalization, domain-adversarial learning, semantic representation learning, CLIP, CARLA. 
+
+I. Introduction 
+
+Learned driving agents often degrade when deployed in environments that differ from those seen during training. This paper studies a deliberately bounded instance of that problem in the CARLA simulator [1] i.e zero-shot held-out-town transfer for route-unconditioned fixed-route closed-loop driving. Training uses only Town05 and Town06, and evaluation is performed without target-domain adaptation on unseen Town03 and Town04 under fixed ClearNoon weather and without traffic or pedestrians. The scope is deliberately restricted. Training is per-formed on source towns only, and evaluation is performed in held-out towns without target-domain adaptation. Weather is held fixed, and the environment contains only the 
+
+> Feeza Khan Khanzada, and Jaerock Kwon are with the Depart-ment of Electrical and Computer Engineering, University of Michi-gan–Dearborn, Dearborn, MI 48128 USA (e-mail: feezakk@umich.edu; jrkwon@umich.edu).
+
+ego vehicle and its attached sensors, without traffic or pedestrians. The goal is therefore not to claim broad robustness to all forms of autonomous-driving distribution shift, but to test whether a learned route-following agent can retain route-relevant competence when town layout and lane topology change. Existing strategies only partially address this problem. Image augmentation can improve invariance to low-level appearance changes, but it does not explicitly regular-ize imagined future representations. Domain-adversarial learning [2] can reduce town-predictive information, and se-mantic supervision can encourage route-relevant structure, but either mechanism alone may be insufficient. This is therefore a route-unconditioned fixed-route setting rather than a command-conditioned or map-conditioned urban driving benchmark. We study this question within a DreamerV3-style [3] world-model reinforcement-learning framework. We aug-ment the agent with two training-time auxiliary objectives: multi-horizon prediction of frozen OpenCLIP [4] image embeddings along imagined rollouts, and town-adversarial supervision on a semantic projection of the deterministic RSSM state. A history-conditioned context feature condi-tions the semantic rollout predictor. In the primary model, the actor and critic retain the standard Dreamer feature, so the semantic/context branches act as auxiliary regularizers rather than replacing the control input. These auxiliary signals are used only during training; deployment in held-out towns is zero-shot and uses no further adaptation. Our claims are deliberately bounded. We do not claim robustness to weather, traffic, pedestrians, sensor cor-ruption, or real-world deployment. Instead, we evaluate whether these training-time auxiliaries improve held-out-town transfer in a fixed-weather CARLA route-following setting using task-completion, safety, lane-keeping, and speed metrics. The contributions of this paper are threefold.  
+
+> •
+
+We define a controlled CARLA protocol for zero-shot held-out-town fixed-route driving that isolates structural shift in town layout and lane topology by fixing weather and removing traffic and pedestrians.  
+
+> •
+
+We augment a Dreamer-style latent world-model agent with two training-only auxiliaries: multi-horizon prediction of future visual-semantic embeddings and town-adversarial regularization on a semantic latent projection.  
+
+> arXiv:2604.27994v1 [cs.RO] 30 Apr 2026 2
+> •
+
+Within this benchmark, the auxiliary-only semantic design achieves the highest mean held-out-town success among the included Dreamer-family methods, while direct semantic-policy control is weaker. The comparisons below are descriptive mean ± standard deviation across three independently trained seeds; the paper does not claim formal statistical significance from these runs alone. 
+
+II. Related Work 
+
+This section reviews prior work most relevant to the present study: learning-based autonomous driving, world-model-based driving, domain-invariant representation learn-ing, structured representations for transfer, vision-language supervision, and CARLA evaluation protocols. 
+
+A. Learning-based Autonomous Driving Policies 
+
+End-to-end driving policies learn a direct mapping from observations to control, often with additional conditioning or structure to mitigate ambiguity. Conditional Imitation Learning (CIL) conditions policies on high-level commands to reduce multimodality in demonstrations and improve controllability across maneuvers [5]. Learning by Cheating (LbC) leverages privileged information available in simula-tion to train a privileged “teacher” and distill behavior into a vision-based student, aiming to inherit robustness while deploying only standard sensory inputs [6]. Related efforts seek to reduce reliance on dense labels by learning compact visual abstractions that support driving control with less annotation burden [7]. In parallel, RL-based driving has been explored as an alternative to imitation when rewards and interaction are available, including recent end-to-end RL formulations in urban driving settings [8]. Hybrids that combine imitation with reinforcement learning objectives have also been proposed to exploit demonstration priors while still improving through interaction [9]. These works primarily improve the policy mapping from perception to control, using supervision, RL, or hybrid objectives. In contrast, our paper studies how latent structure inside a world-model agent affects zero-shot transfer under held-out-town shift. 
+
+B. World Models and Latent Planning for Driving 
+
+World models aim to learn a compact latent dynamics representation that enables planning, imagination, or model-based value learning from high-dimensional observa-tions. Early latent dynamics approaches for planning from pixels established the core idea: learn a probabilistic latent transition model and plan in latent space [10]. Dreamer-style agents operationalize this by training a world model and optimizing behavior via imagined rollouts, enabling model-based RL without explicit online planning at every step [11]. DreamerV3 scales this paradigm across diverse domains through architectural and optimization refine-ments, strengthening the case for general-purpose world-model agents [3]. In autonomous driving, Think2Drive [12] formulates CARLA-v2 driving as model-based reinforce-ment learning with a latent world model used as a neural simulator for planning, illustrating the relevance of latent imagination for driving control. Within autonomous driving, multiple works explore how to instantiate world-model ideas under the constraints of closed-loop control, safety-critical dynamics, and rich visual scenes. Learning to Drive from a World on Rails uses learned predictive structure to support driving-relevant reasoning under constrained dynamics and perception [13]. MILE jointly learns a world model and a driving policy for urban driving and reports transfer to unseen towns and weather, making it a close driving-specific precedent for world-model-based transfer [14]. SEM2 likewise ar-gues for filtering world-model features toward driving-relevant semantics through a semantic masked recurrent world model [15]. More recent driving-focused world-model systems argue for aligning learned dynamics with driving semantics and controllable factors; for example, Raw2Drive formulates end-to-end autonomous driving in a model-based RL framework and emphasizes aligned world models for sample efficiency and performance under varying conditions [16]. Prior driving world-model papers mainly emphasize predictive fidelity, planning efficiency, or control perfor-mance. Our paper instead studies whether semantic rollout regularization and town-adversarial regularization on a semantic projection improve zero-shot transfer under held-out-town shift within a DreamerV3-style route-following agent. 
+
+C. Domain Shift, Domain Randomization, and Adversarial Invariance 
+
+Robustness to domain shift is a central theme in learning-based robotics. Domain randomization popularized the strategy of varying textures, lighting, and other simulator parameters during training to encourage invariance and transfer [17]. Dynamics randomization extends this idea to physical parameters, showing that broadening the range of simulated dynamics can improve transfer of control policies [18]. When explicit randomization is insufficient or expensive, adaptation mechanisms aim to infer latent environment parameters online. Rapid Motor Adaptation (RMA) learns to adapt behavior via a learned latent “context” inferred from recent history, supporting fast adaptation to changing dynamics [19]. Another family of approaches targets domain shift by enforcing domain invariance in learned representations. Domain-adversarial training uses a gradient reversal layer to learn features predictive for the task but uninformative about the domain [20]. Invariant Risk Minimization (IRM) formalizes the goal of learning predictors that remain optimal across environments, motivating invariance as a principle for out-of-distribution generalization [21]. For RL specifically, domain adaptation has been studied through shared representations or unified latent dynamics across domains, aiming to transfer behaviors learned in one environment to another [22]. 3
+
+Our setting is domain generalization within simulation under held-out-town shift. Rather than broadening the training distribution through randomization, we retain a fixed training distribution and apply domain-adversarial supervision to a semantic projection inside a DreamerV3-style world model. A history-conditioned context feature conditions the semantic rollout predictor, while the actor and critic retain the standard Dreamer feature. Relative to prior adversarial and invariance-based methods, the contribution here is the placement of these constraints inside a driving world model for held-out-town transfer. 
+
+D. Structured Representations for Transfer 
+
+Disentangled representation learning seeks factors that correspond to distinct underlying generative causes, with the hope that separating stable content from nuisance variation improves transfer. Domain Separation Networks explicitly split representations into shared and private com-ponents to isolate domain-invariant features from domain-specific ones [23]. InfoGAN introduces an information-theoretic objective to encourage latent variables to capture interpretable factors in generative models [24]. In robotics and RL, DARLA argues that learning disentangled rep-resentations (with unsupervised objectives) before policy learning can improve zero-shot transfer [25]. Further work studies how factorization choices and inductive biases im-pact disentanglement properties [26], and how identifiability constraints can be used to make learned factors more stable and useful under domain shifts [27]. More recently, “disentangled world models” have been proposed to transfer semantic knowledge by separating semantics from other visual variation inside predictive models [28]. Our method is related to this line of work in that it introduces structure into the latent representation, but it does not claim a full semantic–style disentanglement result. Instead, it uses a semantic projection of the deterministic RSSM state and a separate history-conditioned context feature that conditions semantic rollout prediction. The goal is pragmatic: encourage route-relevant semantics while reducing town-predictive information in the semantic branch. 
+
+E. Semantic and Vision–Language Priors for Driving Representations 
+
+Semantic abstraction is a recurring strategy for robust-ness: if the representation emphasizes geometry and agents rather than textures or lighting, policies may generalize bet-ter. A prominent example is using privileged or structured signals in simulation to learn robust policies that deploy with standard sensors [6]. More recently, vision–language models (VLMs) such as CLIP provide large-scale semantic priors learned from image–text pairs, enabling semantically meaningful embeddings that can be reused for downstream tasks [29]. Several robotics and RL works leverage CLIP-like embeddings as supervision or as a mechanism to connect behavior to high-level semantics; RoboCLIP argues that CLIP-aligned representations can reduce demonstra-tion requirements by transferring semantic structure from pretraining [30]. CLIP-derived similarity has also been used as an RL reward signal to encourage goal-aligned behavior, including in driving [31]. Under distribution shifts, there is also interest in adapting frozen VLMs efficiently for domain adaptation settings [32]. Related directions use CLIP as a training signal for temporally grounded motion understanding [33]. We use CLIP [4] differently from reward-shaping ap-proaches. Rather than converting CLIP similarity into re-ward, we use frozen OpenCLIP image embeddings as multi-horizon semantic targets for imagined rollouts, thereby regularizing the predictive model rather than the policy objective directly. 
+
+F. Robustness and Evaluation Protocols in Simulated Driv-ing 
+
+Evaluation methodology matters disproportionately un-der distribution shift: small changes in town layout, traffic patterns, or sensing can produce qualitatively different failure modes. CARLA provides a widely used simulation platform for developing and benchmarking autonomous driving policies [1], and the CARLA Leaderboard and associated challenges formalize standardized tasks and metrics for closed-loop driving evaluation [34]. Earlier, NoCrash evaluated generalization to unseen towns and conditions in CARLA and is a more direct precedent for the present held-out-town setting than generic sim-ulator citations alone [35]. More recently, Bench2Drive and Bench2Drive-R emphasize difficult long-horizon driving scenarios and robustness stress tests to better separate methods that merely fit training distributions from those that generalize [36], [37]. We do not propose a new benchmark or a new planning stack. Instead, this paper combines multi-horizon semantic rollout supervision with town-adversarial regularization in-side a DreamerV3-style route-following agent and evaluates that combination under a focused held-out-town CARLA protocol. 
+
+III. Methodology 
+
+A. Problem Formulation and Setting 
+
+We formulate the task as fixed-route closed-loop naviga-tion over predefined start-goal route instances in CARLA. The reference route is used only by the environment to compute progress, reward, success, and termination; no explicit navigation command, route waypoint, goal pose, or map input is provided to the policy. Each episode instantiates a route defined by a start pose and an end pose, and terminates upon success (reaching the goal) or failure conditions (e.g., collision, persistent offroad/wrong-lane, being stuck, or timeout). Throughout this paper, ‘route following’ denotes environment-evaluated completion of predefined fixed routes; it does not imply command-conditioned navigation or route-geometry input to the policy. 4…       
+
+> 𝑣
+> 𝝍
+> ℒ
+> ℒℒ𝝀 ℒ𝝀 ℒ
+> v̂ s̃
+> ℒ
+> ŷ𝛄
+> ℒ
+> f̃
+> Training on Source Domains
+> ē
+> ē
+> Fig. 1: Overview of the proposed framework. The model is trained on source-domain rollouts using a world model, a semantic auxiliary branch, a policy-learning branch, and a domain-adversarial branch. A frozen OpenCLIP image encoder provides target semantic embeddings, while the learned latent representation supports imagined rollouts, semantic prediction, and domain-invariant learning. During unseen target domain, the learned policy is deployed directly in an unseen target domain without target-domain adaptation.
+
+a) Town as domain: We study zero-shot held-out-town route following in CARLA. Let Dsrc denote the set of source towns used for training and Dtgt a held-out target town used only at evaluation. Training uses trajectories collected in Dsrc only, and the learned policy is evaluated zero-shot in Dtgt without target-domain adaptation. Weather is held fixed across training and evaluation so that the study isolates structural shift induced by town layout and lane geometry. 
+
+b) Time and control frequency: The simulator runs in synchronous mode with fixed time step ∆t = 0 .05 s,corresponding to a 20 Hz control frequency. We index time by t = 0 , 1, . . . , T , where episodes terminate upon success or one of the predefined failure conditions, and are truncated after a maximum of Tmax control steps. 
+
+c) Observation Space: At each control step, the agent observes ot = {It, b col  
+
+> t
+
+, b lane  
+
+> t
+
+}, where It ∈ R128 ×128 ×3 is the front-facing RGB image, bcol  
+
+> t
+
+∈ { 0, 1} is a step event indicating whether a new collision was registered at step 
+
+t, and blane  
+
+> t
+
+∈ { 0, 1} indicates whether a new lane-invasion event occurred at step t. These event bits are included uniformly for all methods as part of the environment observation interface; they are not privileged signals unique to the proposed model. During training, each replayed transition additionally carries a frozen OpenCLIP image embedding vt ∈ R512 and a source-domain label ydom t .These auxiliary quantities are excluded from the world-model encoder/decoder and from actor/critic inputs, and are used only for auxiliary supervision. 
+
+d) Action Space: The action space is discrete and factorized into steering and longitudinal control: 
+
+A = S × L ,
+
+where |S| = 7 steering bins and |L| = 21 longitudinal bins. Given a discrete action index at, the corresponding control pair is obtained as 
+
+it =
+
+⌊ at
+
+|S| 
+
+⌋
+
+, jt = at mod |S| ,ulong  
+
+> t
+
+= L[it], usteer  
+
+> t
+
+= S[jt].ulong  
+
+> t
+
+> 0 is mapped to throttle = ulong  
+
+> t
+
+, whereas 
+
+ulong  
+
+> t
+
+< 0 is mapped to brake magnitude = −ulong  
+
+> t
+
+.
+
+Policy and objective A stochastic policy πθ (at | o≤t)
+
+is trained using a DreamerV3-style world model with latent imagination. The full training objective, including the auxiliary semantic and domain losses, is defined in Section III-D. 
+
+B. Overview of the Proposed Approach 
+
+The proposed model augments a DreamerV3-style world model with two training-time auxiliary losses: multi-horizon prediction of frozen OpenCLIP image embeddings and town-adversarial supervision on a semantic projection of the deterministic RSSM state. A history-conditioned context feature summarizes encoder embeddings observed up to time t and conditions the semantic rollout predictor, preserving online causality Figure 1 summarizes the proposed framework. The observation stream is processed by a DreamerV3-style world model with recurrent latent dynamics. From the latent state, the model predicts observations, reward, and continuation, while two auxiliary branches regularize the learned representation: a semantic rollout branch predicts future frozen OpenCLIP embeddings over multiple horizons, and a town-adversarial branch discourages source-town 5
+
+identity from being encoded in the semantic feature. The actor and critic are trained on imagined latent trajectories, and the learned policy is evaluated zero-shot in held-out towns without any target-domain adaptation. 
+
+C. Model / Architecture 
+
+We use a DreamerV3-style latent world model built from an observation encoder, a recurrent state-space model (RSSM), and prediction heads for observation reconstruc-tion, reward, and continuation. Let 
+
+xt = ( dt, z t)
+
+denote the RSSM latent state, where dt is the deterministic recurrent state and zt is the stochastic state. Given obser-vation ot and previous action at−1, the encoder produces 
+
+et = Eψ (ot).
+
+The RSSM defines a prior and posterior over latent states as 
+
+pψ (xt | xt−1, a t−1), qψ (xt | xt−1, a t−1, e t).
+
+As in a standard RSSM, dt denotes the deterministic recurrent state, while zt denotes the stochastic latent state inferred from the prior or posterior conditioned on the current transition.To construct an auxiliary semantic rep-resentation, we map the deterministic state to a semantic feature 
+
+st = Psem (dt).
+
+Let ft denote the standard Dreamer feature derived from 
+
+xt. This semantic feature is used by the auxiliary semantic prediction and adversarial branches. Unless otherwise stated in a dedicated ablation, the actor and critic consume 
+
+ft; only semantic-policy ablations consume st.In parallel, we construct a causal context feature directly from encoder embeddings rather than from the RSSM state. Let ¯et denote an episode-reset exponential moving average, 
+
+¯et =
+
+
+
+et, if is _first t = 1 ,α¯et−1 + (1 − α)et, otherwise ,
+
+where is _f irst t ∈ { 0, 1} indicates whether step t is the first step of a new episode, and α ∈ [0 , 1) is a smoothing coefficient. The context feature is then 
+
+ct = Mctx (¯ et).
+
+where Mctx is a learnable mapping from the EMA encoder summary to the context feature. By construction, 
+
+ct depends only on observations up to time t and therefore preserves online causality. To regularize the latent representation with semantic supervision, we use multi-horizon latent rollouts. Starting from the posterior state at time t, the RSSM is rolled forward under the logged action sequence at:t+h−1. For horizon h ∈ H , this produces an imagined latent state 
+
+˜xt+h|t = ( ˜dt+h|t, ˜zt+h|t), where H = {h1, . . . , h m} denotes the set of semantic rollout horizons. Let 
+
+˜st+h|t = Psem ( ˜dt+h|t)
+
+denote the semantic feature of the imagined state. A horizon-specific predictor then estimates the frozen visual-semantic target vt+h as 
+
+ˆvt+h|t = qh
+
+([˜ st+h|t; ct]) ,
+
+where qh denotes a horizon-specific predictor head. This auxiliary branch encourages the imagined latent dynamics to preserve predictive semantic content while allowing appearance variation to be captured by the causal context branch. To discourage source-domain identity from being encoded in the semantic representation, we attach a domain classifier to st through a gradient-reversal layer: 
+
+ˆydom  
+
+> t
+
+= Dadv (GRL γ (st)) ,
+
+where ydom  
+
+> t
+
+denotes the source-domain label and γ controls the adversarial strength. The gradient-reversal operator 
+
+GRL γ leaves the forward pass unchanged and multiplies the backward gradient by −γ. This branch encourages 
+
+st to remain predictive for the semantic auxiliary task while being less informative about source-domain identity. In the primary model, both control modules consume the imagined Dreamer feature ˜ft; only semantic-policy ablations consume ˜st.
+
+D. Learning Objective and Optimization 
+
+The agent is trained from a scalar task reward rt provided by the environment. Since the detailed reward shaping is task-specific rather than architectural, we treat rt as part of the environment definition and report its exact composition in the experimental setup. 
+
+a) World-model objective: Let K index the recon-structable observation channels, and let o(k) 
+
+> t
+
+denote channel 
+
+k. Let ft denote the standard Dreamer feature defined in Section C. The world model is trained with the standard DreamerV3-style objective 
+
+Lwm = λdyn Ldyn + λrep Lrep 
+
++ ∑
+
+> k∈K
+
+λk E
+
+[
+
+− log pϕ
+
+(
+
+o(k) 
+
+> t
+
+| ft
+
+)] 
+
++ λr E[− log pϕ(rt | ft)] + λκ E[− log pϕ(κt | ft)] .
+
+(1) where κt denotes the continuation target, and 
+
+λdyn , λ rep , λ k, λ r , and λκ are fixed loss weights. Unless otherwise stated, the dynamics and representation terms follow the standard DreamerV3 objective. 
+
+b) Semantic rollout loss: Let H = {h1, ..., h m} denote the set of semantic rollout horizons. For rollout horizons 
+
+h ∈ H , the semantic auxiliary loss is 
+
+Lsem = 1
+
+|H| 
+
+∑
+
+> h∈H
+
+E
+
+[
+
+mepi 
+
+> t,h
+
+(1 − cos(ˆ vt+h|t, v t+h))]
+
+, (2) where vt+h is the frozen OpenCLIP target embedding, 
+
+ˆvt+h|t is the horizon-h prediction defined in III-C , and mepi 
+
+> t,h
+
+masks rollouts that cross episode boundaries. Gradients from Lsem update the RSSM rollout, Psem , Mctx , and qh,but not the frozen OpenCLIP encoder. 6
+
+c) Domain-adversarial loss: Let mdom  
+
+> t
+
+∈ { 0, 1} indi-cate whether a source-domain label is available for sample 
+
+t. The adversarial domain loss is 
+
+Ladv = E[mdom  
+
+> t
+
+CE (Dadv (GRL γ (st)) , y dom 
+
+> t
+
+)] , (3) where CE (·, ·) denotes cross-entropy and GRL γ is agradient-reversal layer with strength γ. During source-town training, mdom  
+
+> t
+
+= 1 only for samples carrying a source-town label ydom  
+
+> t
+
+; no target-town samples contribute to Ladv .
+
+d) Model objective: The world model and auxiliary heads are optimized by minimizing 
+
+Lmodel = Lwm + λsem Lsem + λadv Ladv . (4) Eq. 4 defines the primary model. Variant-specific abla-tions may add or remove auxiliary terms as described in the compared-methods section. In particular, Ladv updates 
+
+Dadv and, through gradient reversal, the semantic branch that produces st.Some ablation variants additionally enable a context-side town-classification loss on the context feature ct; this term is not part of the primary model objective and is used only in the ablations summarized in Tables I, II. 
+
+e) Actor-critic optimization: Training alternates be-tween minimizing Lmodel on replayed trajectories and updating the actor and critic on imagined latent rollouts. Posterior latent states inferred from replay are used as start states for imagination. From each start state, the RSSM is rolled forward for horizon Himg under actions sampled from the actor, producing imagined Dreamer features ˜ft,semantic features ˜st, predicted rewards ˆrt, and continuation probabilities ˆκt. The critic is trained on λ-returns computed from imagined rewards and continuation: 
+
+ˆGλt = ˆ rt + ˆ κt
+
+(
+
+(1 − λ)Vη− ( ˜ft+1 ) + λ ˆGλt+1 
+
+)
+
+, (5) where Vη− is a slowly updated target critic and Himg 
+
+denotes the imagination horizon. In the primary model, both actor and critic consume the imagined Dreamer fea-ture ˜ft; only dedicated semantic-policy ablations replace ˜ft
+
+with ˜st. The actor objective otherwise follows the standard DreamerV3-style formulation with entropy regularization. Overall, optimization follows the standard DreamerV3-style alternation between world-model updates on replayed sequences and behavior learning on imagined latent trajec-tories. 
+
+IV. Experimental Setup 
+
+A. Simulator and Held-Out-Town Protocol 
+
+We conduct all experiments in the CARLA simulator [1] under synchronous simulation with a fixed control step of 0.05 s , corresponding to a nominal control frequency of 20 Hz . The study focuses on zero-shot held-out-town. transfer: all training is performed on source towns only, and evaluation is performed in closed loop on towns that are never seen during training. The source route pools contain 8 fixed routes in Town05 and 8 fixed routes in Town06. These source route pools are 
+
+> (a) Town06 (Training)
+> (b) Town05 (Training)
+> (c) Town03 (Held-out evaluation)
+> (d) Town04 (Held-out evaluation)
+> Fig. 2: Route maps for the towns used in our experiments. Town06 and Town05 are source training towns; Town03 and Town04 are held-out evaluation towns. Green overlays illustrate the route sets used in the current study.
+
+used for training. The held-out evaluation pools contain 8 fixed routes in Town03 and 8 fixed routes in Town04. During training, episodes are sampled uniformly over source towns and then uniformly over routes within each source-town pool. To isolate structural generalization induced by changes in town layout and lane geometry, the town-shift experiments keep weather fixed across source and target towns. Unless otherwise stated, all reported held-out-town experiments use the ClearNoon setting. In addition, the town-shift environment contains only the ego vehicle and its attached sensors, without background traffic participants or pedes-trians. This isolates held-out-town. generalization from other sources of distribution shift such as traffic density or weather variation. Figure 2 visualizes the fixed source and held-out route sets used in Town05, Town06, Town03, and Town04. Held-out Town03 and Town04 routes are used only for final evaluation and are never used for training or checkpoint selection. 
+
+B. Observations and Action Space 
+
+The ego vehicle is a Tesla Model 3 controlled directly through CARLA vehicle commands. The primary obser-vation is a single front-facing RGB camera mounted on the ego vehicle at approximately x = 1 .5 m , z = 1 .6 m ,with pitch −5◦ and field of view 110 ◦. The camera stream is rendered at 512 × 512 resolution and downsampled to 
+
+128 × 128 before being passed to the learning agent. 7
+
+TABLE I: Compared method variants. All methods share the same simulator, route sets, camera configuration, world-model backbone, replay pipeline, action space, and evaluation protocol. They differ only in the actor/critic input and enabled auxiliary components.                                                    
+
+> Variant Input Sem. /ctx. Active differential components Ctx town Purpose
+> Dreamer-Std ft✗none ✗base world-model RL baseline Dreamer-Aug ft✗RGB augmentation only ✗augmentation-only baseline Dreamer-DANN ft✗base-feature town adversary ✗adversarial baseline without semantic rollout Sem+Adv-Aux (Ours) ft✓semantic rollout + semantic-feature town adversary
+> ✗primary proposed model SemSty-NoLoss ft✓none ✗architecture-only ablation Sem-Rollout-Aux ft✓semantic rollout only ✗rollout-only ablation Full-Aux ft✓semantic rollout + semantic-feature town adversary
+> ✓effect of extra context-side supervision Policy-Sem-NoLoss st✓none ✗semantic-policy ablation without auxiliary anchoring Small-GRL Semantic Policy st✓semantic rollout + semantic-feature town adversary
+> ✓semantic-policy ablation with weak GRL Large-GRL Semantic Policy st✓semantic rollout + semantic-feature town adversary
+> ✓semantic-policy ablation with strong GRL
+
+ft: standard Dreamer feature; st: semantic feature. Sem./ctx. indicates whether the semantic/context branch is present. Ctx town indicates whether context-side town supervision is enabled. ✓ enabled; ✗ disabled. TABLE II: Exact component switches for all compared variants. Common components shared by all methods are omitted for brevity.                                                                                           
+
+> Variant Input Sem. proj. Ctx feat. Rollout Base adv. Sem adv. Ctx town RGB aug. Comment
+> Dreamer-Std ft✗✗✗✗✗✗✗Plain Dreamer baseline. Dreamer-Aug ft✗✗✗✗✗✗✓Dreamer baseline with image-space augmentation only. Dreamer-DANN ft✗✗✗✓✗✗✗Adversarial town supervision on the base Dreamer feature. Sem+Adv-Aux (Ours)
+> ft✓✓✓✗✓✗✗Primary proposed model; semantic/context branch is auxiliary-only. SemSty-NoLoss ft✓✓✗✗✗✗✗Architecture-only ablation with auxiliary losses disabled. Sem-Rollout-Aux ft✓✓✓✗✗✗✗Rollout-only ablation without adversarial town regularization. Full-Aux ft✓✓✓✗✓✓✗Adds context-side town supervision to the primary model. Policy-Sem-NoLoss
+> st✓✓✗✗✗✗✗Semantic-policy ablation without semantic or adversarial anchoring. Small-GRL Semantic Policy
+> st✓✓✓✗✓✓✗Semantic-policy ablation with weak GRL strength. Large-GRL Semantic Policy
+> st✓✓✓✗✓✓✗Semantic-policy ablation with strong GRL strength.
+
+3 enabled; 7 disabled. Input = actor/critic input. Sem. proj. = semantic projection head. Ctx feat. = context feature. Rollout = semantic rollout loss. Base adv. = town adversary on base feature. Sem adv. = town adversary on semantic feature. Ctx town = context-side town loss. 
+
+At each control step, the environment returns the current RGB image together with step-wise event indicators for collision and lane invasion. These event channels are included for all methods. For methods that use auxiliary visual-semantic supervision or domain supervision, the transition data additionally include a 512 -dimensional unit-normalized image embedding extracted from a frozen Open-CLIP ViT-B/32 encoder and domain metadata (domain id, domain mask). These auxiliary fields are available only to the corresponding models and are not treated as part of the common baseline observation interface. The control space is discrete and contains 147 actions, constructed as the Cartesian product of 7 steering bins and 21 longitudinal-command bins. The steering set is 
+
+[−0.5, −0.25 , −0.1, 0.0, 0.1, 0.25 , 0.5] ,
+
+and the longitudinal command set is 
+
+[−1.0, −0.9, . . . , 0.9, 1.0] .
+
+Positive longitudinal commands are mapped to throttle and negative longitudinal commands are mapped to brake magnitude before applying the resulting control to the simulator. This yields a fixed discrete-action interface shared across all reported methods. No navigation command, route polyline, goal pose, or map input is provided to the agent; all methods use the same route-unconditioned observation interface. 
+
+C. Reward and Episode Termination 
+
+The task reward is defined directly in the CARLA environment and is shared across all compared methods. At each control step t, the reward is 
+
+rt = 50∆ ρt − 10 min( dlat  
+
+> t
+
+, 1.5) 2 − 20 ⊮wl (t)
+
+− 50 min( ehead  
+
+> t
+
+, 0.5) 2
+
+−
+
+(
+
+|v∥ 
+
+> t
+
+− 5.0| + 2 |v⊥ 
+
+> t
+
+| + 2 ⊮[v∥ 
+
+> t
+
+< −0.5] 
+
+)
+
++ rslow 
+
+> t
+
+− 20 ⊮off (t) − 5ninv  
+
+> t
+
+− 500 ncol 
+
+> t
+
++ 200 ⊮goal (t) − 0.05 .
+
+(6) where ρt denotes progress along a fixed reference waypoint obtained by tracing the spawn lane toward the goal, and 
+
+∆ρt = clip (ρt − ρt−1, −0.5, 0.5) is the clipped progress increment. Here, dlat  
+
+> t
+
+is the lateral distance from the ego vehicle to the reference polyline, ehead  
+
+> t
+
+is the normalized heading error with respect to the local reference tangent, 8
+
+and v∥ 
+
+> t
+
+and v⊥ 
+
+> t
+
+are the longitudinal and lateral velocity components in the reference-lane frame. The binary term 
+
+⊮wl (t) indicates a wrong-lane condition, implemented as a geometric lane-change proxy when the lateral deviation exceeds 1.8 m while the vehicle is not off-road. The binary term ⊮off (t) indicates off-road driving, triggered when the vehicle is outside a driving lane and more than 2.2 m from the projected lane centerline. The event counts ninv  
+
+> t
+
+and 
+
+ncol  
+
+> t
+
+denote the numbers of new lane-invasion and collision events at the current step, respectively. The goal indicator 
+
+⊮goal (t) is activated when the distance to the goal falls below 2.0 m. The low-speed term is defined piecewise as 
+
+rslow  
+
+> t
+
+= −50 if the vehicle has remained below 1 km/h for at least 10 s, rslow  
+
+> t
+
+= −2 while it remains below that threshold before timeout, and rslow  
+
+> t
+
+= 0 otherwise. The reported experiments use the coefficients shown in Eq. 6 without override. A legacy waypoint reward term is set to zero and is therefore omitted from the equation. Episodes terminate upon goal completion, collision, persistent off-road behavior, persistent wrong-lane behavior, persistent low-speed/stuck behavior, past-goal overshoot, or timeout. In the reported experiments, lane-based ter-mination uses a 1.0 s grace period after reset, after which the episode terminates after 1.0 s of continuous off-road behavior, 3.0 s of continuous wrong-lane behavior, 10 s below the low-speed threshold, or 2000 control steps. 
+
+D. Compared Methods and Ablations 
+
+All compared agents are implemented within the same DreamerV3-style world-model reinforcement-learning framework and share the same simulator, route sets, action space, camera configuration, replay pipeline, and episode termination conditions. The comparisons differ only in whether the semantic projection and context branch are enabled, whether the actor and critic consume the standard Dreamer feature ft or the semantic feature st, and which auxiliary losses are active. 
+
+Scope of comparison: The goal of the empirical comparison is controlled mechanism isolation rather than leaderboard-style cross-paradigm ranking. We therefore keep the simulator, fixed route sets, camera observa-tion interface, action discretization, replay pipeline, and DreamerV3-style world-model backbone fixed, and vary only the latent regularization mechanisms under study. Several strong CARLA systems discussed in Section II belong to materially different problem settings, includ-ing command-conditioned imitation policies, privileged-teacher/student pipelines, and planner- or world-model systems evaluated with different conditioning signals, supervision, or benchmark protocols. Evaluating such methods with their original inputs would introduce ad-ditional confounds beyond the proposed auxiliaries, while re-engineering them to fit the present route-unconditioned fixed-route interface would materially change the methods themselves. For this reason, the primary comparison is restricted to matched Dreamer-family variants, and broader cross-paradigm benchmarking is left to future work. 
+
+a) Primary baselines: We use the following primary comparison methods.  
+
+> •
+
+Dreamer-Std : the standard DreamerV3-style agent without RGB augmentation, without visual-semantic supervision, and without domain supervision.  
+
+> •
+
+Dreamer-Aug : the same base Dreamer agent trained with image-space data augmentation only. In the current configuration, this includes random brightness, contrast, and gamma perturbations, Gaussian blur, and additive image noise.  
+
+> •
+
+Dreamer-DANN : the base Dreamer agent with town-domain adversarial supervision applied to the standard Dreamer feature ft through gradient reversal. This baseline uses town labels but does not use the semantic rollout auxiliary branch.  
+
+> •
+
+Sem+Adv-Aux (Ours): semantic projection and context branch are enabled together with seman-tic rollout supervision and semantic-branch town-adversarial supervision. The actor and critic retain the standard Dreamer feature ft, so the semantic/context branch acts as an auxiliary regularizer rather than replacing the base control state. The context-side town-classification loss is disabled. 
+
+b) Targeted ablations: To isolate the contribution of each design choice, we also evaluate the following ablations.  
+
+> •
+
+SemSty-NoLoss: semantic projection and context branch are enabled, but all semantic and domain auxiliary losses are disabled. This tests whether the architectural change alone affects performance.  
+
+> •
+
+Sem-Rollout-Aux: semantic projection and context branch are enabled and the semantic rollout loss is active, but all domain-related losses are disabled. This isolates the effect of visual-semantic future supervision alone.  
+
+> •
+
+Full-Aux: extends Sem+Adv-Aux (Ours) by addi-tionally enabling context-side town classification while keeping the actor and critic on the standard Dreamer feature ft. This tests whether the extra context-side domain objective improves over the primary proposed model.  
+
+> •
+
+Policy-Sem-NoLoss: semantic projection and con-text branch are enabled and the actor/critic consume the semantic feature st directly, but all semantic and domain auxiliary losses are disabled. This tests whether simply changing the policy input to the semantic branch is sufficient.  
+
+> •
+
+Small-GRL Semantic Policy: uses semantic-policy inputs together with semantic rollout supervision, semantic-branch town-adversarial supervision, and context-side town classification, with a weak maximum gradient-reversal strength.  
+
+> •
+
+Large-GRL Semantic Policy: is identical to the previous variant except for a strong maximum gradient-reversal strength. For town-labeled methods, Town05 and Town06 define the source-domain labels. Held-out-town episodes are not used for optimization; if evaluation rollouts are logged, 9
+
+their domain mask is set to 0 so that no domain-related loss is computed. 
+
+E. Training Protocol 
+
+All agents are trained exclusively on source-town expe-rience. In the current multi-town training setup, source data are collected from Town05 and Town06, and the held-out towns are excluded from gradient updates throughout training. For methods that use town supervision, the source-domain labels are defined by the source-town identity, i.e., Town05 and Town06 correspond to the two supervised town classes used during training. All compared methods share the same base DreamerV3-style optimization pipeline, including the same world-model backbone, replay mechanism, imagined-rollout actor–critic updates, camera preprocessing, discrete action interface, and episode termination rules. The methods differ only in the auxiliary components enabled for training: RGB augmentation, semantic projection and context branch, semantic rollout supervision, town-adversarial supervision, and context-side town supervision. This controlled protocol ensures that performance differences are attributable to the proposed regularization mechanisms rather than to unrelated changes in optimizer or simulator configuration. Each method is trained from scratch under three random seeds. In the current training script, the seeds are {2, 3, 4},and each seed corresponds to a separate run with its own log directory and checkpoint history. For methods using semantic rollout supervision, replayed transitions additionally carry frozen OpenCLIP image embeddings. For methods using town supervision, replayed transitions carry the corresponding source-town label and domain mask. Methods that do not use a given auxiliary signal are trained with the corresponding inputs and losses disabled. Training uses the variant definitions from Section IV-D ;the primary proposed method is Sem+Adv-Aux (Ours) .Auxiliary loss weights are fixed across seeds. The semantic-rollout weight is 0.3 in the main auxiliary models, the adversarial town loss weight is 1.0 when enabled, the context-side town-classification weight is either 0 or 1.0 de-pending on the variant, and the maximum gradient-reversal coefficient is set to 0, 0.1, or 1.0 according to the method definition. RGB augmentation is used only in Dreamer-Aug. No target-town data are used for optimization, fine-tuning, or adaptation at any stage. For each seed, model selection used source-only validation episodes sampled from the same Town05 and Town06 route pools used during training; no disjoint source-route validation split was used. Checkpoints were evaluated every 10K training steps on 20 closed-loop source-only validation episodes in total, sampled from the Town05 and Town06 route pools. The checkpoint with the highest mean source-only validation success was selected; ties were broken by lower collision rate. No held-out-town data were used for model selection. Table III summarizes the shared training and evaluation protocol, including route counts, rollout horizons, optimiza-                                                        
+
+> TABLE III: Training and evaluation protocol summary.
+> Protocol item Value
+> Source towns Town05, Town06 Held-out towns Town03, Town04 Weather ClearNoon Traffic / pedestrians None (ego vehicle only; no background traffic participants or pedestrians) Route conditioning to policy None. No navigation command, route polyline, goal pose, or map input is provided to the policy. Train route count per source town Town05: 8, Town06: 8 Distinct held-out routes per town Town03: 8, Town04: 8 Evaluation route sampling rule For each held-out town and seed, 64 evaluation episodes are generated by uniformly sampling from the corre-sponding 8 fixed held-out routes Training route sampling rule uniform over source towns and then uniform over routes within each town Checkpoint-selection split None. Source-only validation episodes are sampled from the same Town05/Town06 route pools used during training Checkpoint-selection frequency every 10K training steps Checkpoint-selection episodes per checkpoint 20 total Camera resolution Rendered at 512 ×512 ; downsampled to 128 ×128 for the agent Control step 0.05 s ( 20 Hz) Action space size 147 discrete actions ( 7steering bins ×
+> 21 longitudinal-command bins) Training seeds {2,3,4}
+> Total training steps 500,000 Replay sequence length 8Imagination horizon Himg = 5
+> Semantic rollout horizons H={1,2,3,4,5}
+> Optimizer Adam, lr 3×10 −5,ϵ= 10 −5, clip 100 Batch size 64 Checkpoint used for evalua-tion best checkpoint by mean source-only validation success (ties: lower collision rate) Evaluation episodes per town per seed
+> 64
+
+tion settings, checkpoint selection, and evaluation episode counts. 
+
+F. Evaluation Protocol and Metrics 
+
+Evaluation is performed in closed loop on held-out target-town routes without any target-domain adaptation, fine-tuning, or test-time update. Each trained model is evaluated for 64 closed-loop episodes per held-out town under the same simulator and control settings used during training. For each episode, one route is sampled uniformly from the corresponding 8-route held-out evaluation pool. When multiple held-out towns are considered, results are reported separately for each target town. An evaluation episode terminates when the agent reaches the goal, collides, remains persistently off-road, remains persistently in the wrong lane, becomes stuck, passes beyond the goal, or reaches the timeout horizon. In the current environment, success is defined as reaching the 10                                                                                                                               
+
+> TABLE IV: Town 3 evaluation: task performance and safety (mean ±std across 3 training seeds; 64 sampled evaluation episodes per town per seed).
+> Method Distance [km / 64 eps] Success [%] ↑Coll./km ↓Lane inv./km ↓
+> Sem+Adv-Aux (Ours) 5.1712 ±0.2771 36.65 ±4.86 0.0533 ±0.0915 99.4554 ±9.4400 Dreamer-Aug 4.5658 ±0.1619 29.55 ±1.47 0.0407 ±0.0907 126.1667 ±5.7667 Dreamer-DANN 5.2906 ±0.3501 28.27 ±3.92 0.0000 ±0.0000 114.8427 ±10.9614 Sem-Rollout-Aux 5.0610 ±0.1815 12.50 ±2.88 0.7540 ±0.4358 112.6831 ±5.0790 SemSty-NoLoss 4.1118 ±0.2636 10.51 ±5.46 0.0000 ±0.0000 114.7719 ±6.9283 Full-Aux 4.1518 ±0.4788 8.24 ±2.62 0.0431 ±0.0970 166.7966 ±11.4579 Dreamer-Std 3.9744 ±0.1488 5.26 ±2.35 0.0243 ±0.0806 120.7991 ±7.8367 Small-GRL Semantic Policy 4.7416 ±0.1801 3.12 ±1.98 0.6166 ±0.4333 136.1744 ±8.3964 Large-GRL Semantic Policy 4.0718 ±0.1858 0.71 ±1.07 0.6669 ±0.2784 142.1853 ±8.3245 Policy-Sem-NoLoss 3.5186 ±0.1275 0.14 ±0.47 0.0000 ±0.0000 141.9239 ±8.5080
+
+goal within a 2 m radius, and the timeout horizon is 2000 
+
+control steps. We report two groups of metrics. The first group captures task completion and safety:  
+
+> •
+
+Distance [km over 64 eval episodes]: total distance traveled by the ego vehicle accumulated over all 64 evaluation episodes of a seed; the paper reports mean 
+
+± std across seeds;  
+
+> •
+
+Success [%]: 100 × #successful episodes  
+
+> #evaluation episodes
+
+. The paper re-ports mean ± std in percentage points across training seeds;  
+
+> •
+
+Collisions/km : total number of collision events divided by the total traveled distance in kilometers;  
+
+> •
+
+Lane invasions/km : total number of lane-invasion events divided by the total traveled distance in kilo-meters. The second group captures lane-keeping and speed behavior:  
+
+> •
+
+Lane invasions/100 m : total number of lane-invasion events normalized by traveled distance in units of 
+
+100 m ; 
+
+> •
+
+Off-centre error [m]: mean lateral deviation from the reference lane/path, averaged over time within each episode and then over episodes;  
+
+> •
+
+Heading error [rad]: mean heading deviation from the reference direction, averaged over time within each episode and then over episodes;  
+
+> •
+
+Mean speed [km/h]: episode-averaged vehicle speed, averaged over evaluation episodes;  
+
+> •
+
+Max speed [km/h]: episode-wise maximum speed, averaged over evaluation episodes. All reported values are first computed for each inde-pendently trained seed over the 64 sampled evaluation episodes of each held-out town, and the paper reports the mean and standard deviation across training seeds. For distance-normalized event rates, event counts and traveled distance are accumulated over all evaluation episodes of a seed before normalization. This avoids distortions caused by averaging per-episode ratios with widely different path lengths. In the reported experiments, each seed is evaluated for 64 closed-loop episodes per held-out town. These episodes are generated by uniformly sampling from the 8 fixed held-out routes of that town. 
+
+V. Results 
+
+We evaluate zero-shot held-out-town transfer in closed loop under fixed ClearNoon weather, without target-town adaptation, fine-tuning, or test-time update. Tables IV, V, VI, and VII report the task-level, safety, lane-keeping, and speed metrics on Town03 and Town04, while Figs. 3 and 4 provide compact visual summaries of failure composition and the actor/critic-input ablation pattern. This regrouping should be read as a descriptive summary rather than as a strict causal isolation of actor/critic input, since the plotted methods also differ in auxiliary losses. Nevertheless, the figure is useful because it highlights a robust pattern already present in Tables IV, V, VI, and VII: simply routing control through the semantic feature st does not improve transfer, whereas the strongest results arise when the semantic/context branch is used to regularize training while the actor and critic remain on the standard Dreamer feature ft.
+
+A. Main Held-Out-Town Transfer Results 
+
+Tables IV and VI summarize the main task-level results on the held-out towns. Across both Town03 and Town04, the proposed semantic auxiliary + domain-adversarial model (Sem+Adv-Aux (Ours)) attains the highest success rate among all compared methods. On Town04, the proposed method reaches 85 .62% 
+
+success, exceeding both Dreamer-DANN ( 82 .50% ) and Dreamer-Aug ( 80 .00% ). It also achieves the largest traveled distance ( 6.62 km), slightly above Dreamer-DANN ( 6.60 
+
+km) and clearly above Dreamer-Aug ( 6.35 km), while maintaining 0.00 collisions per kilometer. These results indicate that, on the easier held-out town, the proposed auxiliary training scheme improves route completion and sustained progress. At the same time, its lane-invasion rate on Town04 is not the lowest among all methods, so the gain should be interpreted as improved closed-loop completion rather than uniform dominance across every task-level metric. On Town03, which is the harder held-out town in the current study, the same method again gives the best success rate, reaching 36 .65% , compared with 29 .55% for Dreamer-Aug and 28 .27% for Dreamer-DANN. It also lowers lane invasions per kilometer to 99 .46 , compared with 126 .17 for Dreamer-Aug and 114 .84 for Dreamer-DANN. However, the proposed model does not dominate every Town03 metric: Dreamer-DANN travels slightly farther ( 5.29 km versus 11 
+
+TABLE V: Town 3 evaluation: lane keeping and speed statistics (mean ± std across 3 training seeds; 64 sampled evaluation episodes per town per seed). 
+
+Method Lane inv. /100m ↓
+
+Off-center error [m] ↓
+
+Heading err. [rad] ↓
+
+Mean speed [km/h] Max speed [km/h] 
+
+Sem+Adv-Aux (Ours) 9.9455 ± 0.9440 1.0845 ± 0.0487 0.0371 ± 0.0015 14.9833 ± 0.2616 23.4427 ± 0.3076 Dreamer-Aug 12.6167 ± 0.5767 1.4263 ± 0.0270 0.0419 ± 0.0010 16.1226 ± 0.3636 25.8468 ± 0.4990 Dreamer-DANN 11.4843 ± 1.0961 1.5098 ± 0.0918 0.0420 ± 0.0023 16.0746 ± 0.2675 24.6957 ± 0.5233 Sem-Rollout-Aux 11.2683 ± 0.5079 1.3794 ± 0.0626 0.0302 ± 0.0016 20.7613 ± 0.3174 31.8572 ± 0.7259 SemSty-NoLoss 11.4772 ± 0.6928 1.2554 ± 0.0452 0.0295 ± 0.0014 19.9542 ± 0.2897 31.4246 ± 0.4820 Full-Aux 16.6797 ± 1.1458 1.6636 ± 0.1163 0.0425 ± 0.0019 14.8929 ± 0.3867 23.3710 ± 0.5001 Dreamer-Std 12.0799 ± 0.7837 2.0228 ± 0.0864 0.0381 ± 0.0011 20.9367 ± 0.3130 31.7317 ± 0.7147 Small-GRL Semantic Policy 13.6174 ± 0.8396 1.8987 ± 0.1423 0.0428 ± 0.0026 21.6257 ± 0.3964 32.6903 ± 0.8071 Large-GRL Semantic Policy 14.2185 ± 0.8325 1.8379 ± 0.0823 0.0376 ± 0.0018 20.2279 ± 0.3855 32.2553 ± 0.6799 Policy-Sem-NoLoss 14.1924 ± 0.8508 1.3066 ± 0.0724 0.0430 ± 0.0013 12.2873 ± 0.4235 19.3256 ± 0.3367 
+
+TABLE VI: Town 4 evaluation: task performance and safety (mean ± std across 3 training seeds; 64 sampled evaluation episodes per town per seed).                                                                                                                             
+
+> Method Distance [km / 64 eps] Success [%] ↑Coll./km ↓Lane inv./km ↓
+> Sem+Adv-Aux (Ours) 6.6201 ±0.0853 85.62 ±1.31 0.0000 ±0.0000 109.6860 ±7.4652 Dreamer-DANN 6.6027 ±0.1077 82.50 ±2.57 0.0000 ±0.0000 108.3240 ±7.0857 Dreamer-Aug 6.3543 ±0.0596 80.00 ±2.04 0.0000 ±0.0000 105.7210 ±12.2684 Full-Aux 4.8544 ±0.1311 56.87 ±1.78 0.0000 ±0.0000 133.6494 ±9.1355 SemSty-NoLoss 6.1891 ±0.1174 54.69 ±2.21 1.5500 ±0.3855 114.8551 ±4.3764 Large-GRL Semantic Policy 5.9948 ±0.1393 53.75 ±3.42 0.6980 ±0.2106 104.1081 ±4.6246 Sem-Rollout-Aux 5.3022 ±0.0526 53.44 ±2.57 0.1130 ±0.1032 97.7523 ±6.4002 Small-GRL Semantic Policy 5.2235 ±0.0832 49.06 ±2.10 0.0000 ±0.0000 106.5505 ±5.7883 Policy-Sem-NoLoss 4.8511 ±0.0579 38.75 ±2.57 0.0000 ±0.0000 115.4828 ±5.5420 Dreamer-Std 5.1259 ±0.1176 33.44 ±0.86 0.0000 ±0.0000 87.7548 ±4.2342
+
+TABLE VII: Town 4 evaluation: lane keeping and speed statistics (mean ± std across 3 training seeds; 64 sampled evaluation episodes per town per seed). 
+
+Method Lane inv. /100m ↓
+
+Off-center error [m] ↓
+
+Heading err. [rad] ↓
+
+Mean speed [km/h] Max speed [km/h] 
+
+Sem+Adv-Aux (Ours) 10.9686 ± 0.7465 0.5696 ± 0.0198 0.0181 ± 0.0004 17.3739 ± 0.1351 27.4020 ± 0.3937 Dreamer-DANN 10.8324 ± 0.7086 0.6812 ± 0.0287 0.0158 ± 0.0011 18.6691 ± 0.2419 27.1261 ± 0.6260 Dreamer-Aug 10.5721 ± 1.2268 0.5505 ± 0.0211 0.0150 ± 0.0005 21.6781 ± 0.1129 33.9046 ± 0.4868 Full-Aux 13.3649 ± 0.9135 0.8911 ± 0.0203 0.0226 ± 0.0006 17.1500 ± 0.2382 25.5268 ± 0.3941 SemSty-NoLoss 11.4855 ± 0.4376 1.0373 ± 0.0188 0.0228 ± 0.0006 27.2898 ± 0.2563 42.0166 ± 0.5374 Large-GRL Semantic Policy 10.4108 ± 0.4625 0.9813 ± 0.0271 0.0194 ± 0.0006 28.2909 ± 0.1795 44.1612 ± 0.6310 Sem-Rollout-Aux 9.7752 ± 0.6400 0.9010 ± 0.0262 0.0168 ± 0.0007 19.7006 ± 0.2464 28.3862 ± 0.4364 Small-GRL Semantic Policy 10.6550 ± 0.5788 0.9687 ± 0.0222 0.0190 ± 0.0005 22.9476 ± 0.4447 33.7862 ± 0.4960 Policy-Sem-NoLoss 11.5483 ± 0.5542 1.0086 ± 0.0141 0.0188 ± 0.0004 18.0109 ± 0.2534 24.9748 ± 0.2347 Dreamer-Std 8.7755 ± 0.4234 1.1913 ± 0.0259 0.0187 ± 0.0002 25.2792 ± 0.2527 39.3332 ± 0.6433 
+
+5.17 km) and records a lower collision rate. The main result on Town03 is therefore not uniform superiority on all safety statistics, but rather a better conversion of route progress into successful closed-loop completion under stronger town shift. Taken together, the main comparison supports a mea-sured conclusion. Under fixed-weather cross-town trans-fer, combining semantic rollout supervision with domain-adversarial regularization improves route-completion per-formance more consistently than standard Dreamer train-ing, image augmentation alone, or adversarial domain regularization alone. Figure 3 provides a descriptive breakdown of how the compared methods fail on the held-out towns when episodes do not terminate successfully. On Town03, failures are split mainly between wrong-lane and off-road terminations, with collisions contributing more visibly for Sem-Rollout-Aux than for the stronger baselines. On Town04, failed episodes are dominated by wrong-lane terminations across the plotted methods, with relatively little evidence of collision-driven failure in this subset. Because the figure is normalized among failed episodes only, it should be interpreted together with the success rates in Tables IV and VI. 
+
+B. Lane-Keeping and Speed Behavior 
+
+Tables V and VII provide a more fine-grained view of how the compared methods behave under town shift. On the harder held-out town, Town03, the proposed method Sem+Adv-Aux (Ours) achieves the strongest lateral track-ing among all reported methods: it records the lowest lane-invasion rate per 100 m (9.95 ) and the lowest mean off-centre error ( 1.08 m ). Relative to the strongest task-level baselines, this corresponds to a substantial reduction in off-centre deviation compared with Dreamer-Aug ( 1.43 m ) and Dreamer-DANN ( 1.51 m ), together with a clear reduction in lane invasions per 100 m (12 .62 for Dreamer-Aug and 11 .48 
+
+for Dreamer-DANN). These improvements are consistent with the lower lane-invasion rate already observed in the task-level metrics and indicate tighter geometric control on the harder test town. At the same time, the Town03 lane-keeping results show that the proposed model is not uniformly best on every low-level statistic. In particular, some weaker ablations, such as Sem-Rollout-Aux and SemSty-NoLoss, report lower heading-error values than the proposed model, yet they 12 
+
+> Fig. 3: Failure-mode composition on held-out Town03 and Town04, pooled across the already evaluated episodes from the three training seeds and normalized among failed episodes only. Bars therefore show how each method tends to fail when it does not succeed; the number of failed episodes contributing to each bar is annotated above it. This figure is descriptive and should be interpreted together with Tables IV and VI, since methods contribute different numbers of failed episodes.
+
+remain far worse in route success. The most plausible interpretation is therefore not that the proposed method optimizes every surrogate driving metric individually, but that it achieves a better overall balance between lane adherence, stability, and successful closed-loop completion under stronger town shift. On Town04, the picture is more mixed. The proposed method still gives the best overall route-completion result in the main comparison, but it does not dominate every low-level lane-keeping statistic. For example, Dreamer-Aug achieves a slightly lower off-centre error ( 0.55 m versus 
+
+0.57 m ) and a lower heading error, while Sem-Rollout-Aux and Dreamer-Std obtain lower lane-invasion rates per 100 m 
+
+(9.78 and 8.78 , respectively, versus 10 .97 for the proposed model). However, these methods also achieve substantially lower success than the proposed model. This shows that stronger performance on an isolated lane-keeping statistic does not necessarily translate into better end-to-end route completion on the held-out town. A further pattern is that the gains of the proposed method cannot be explained simply by a more aggressive speed profile. On Town03, the proposed model drives more slowly on average ( 14 .98 km /h) than both Dreamer-Aug (16 .12 km /h) and Dreamer-DANN ( 16 .07 km /h), yet it still achieves the highest success rate. The same pattern appears on Town04, where Dreamer-Aug and Dreamer-Std drive substantially faster on average ( 21 .68 km /h and 25 .28 km /h,respectively) than the proposed model ( 17 .37 km /h), but do not match its route-completion performance. Taken together, these results suggest that the observed gains are more consistent with improved route adherence and control stability than with higher-speed or more aggressive driving. 
+
+C. Ablation Results 
+
+The ablation study shows that the gains of the proposed model are not produced by any single auxiliary ingredient in isolation. Rather, the strongest transfer performance arises from a specific combination of semantic rollout supervision and domain-adversarial regularization. First, semantic rollout supervision alone (Sem-Rollout-Aux) improves substantially over the plain Dreamer base-line, but it remains far below the proposed combined model on both held-out towns. On Town04, it raises success from 33 .44% (Dreamer-Std) to 53 .44% , yet still trails the proposed model by more than 32 percentage points ( 85 .62% ). On Town03, it improves success from 
+
+5.26% to 12 .50% , but this is still much lower than the 
+
+36 .65% achieved by Sem+Adv-Aux (Ours). Moreover, on Town03 the semantic-rollout-only variant incurs a much higher collision rate ( 0.754 /km ) than the proposed model (0.053 /km ). These results indicate that future semantic supervision is useful, but insufficient on its own for robust cross-town transfer. Second, domain-adversarial regularization alone Dreamer-DANN is a strong baseline, especially on Town04, where it reaches 82 .50% success and 6.60 km traveled distance. However, it still underperforms the proposed combined model on both held-out towns, and the gap is most visible on the harder Town03 transfer task, where Dreamer-DANN reaches 28 .27% success compared with 
+
+36 .65% for Sem+Adv-Aux (Ours). This suggests that domain invariance is important, but that adversarial town regularization alone does not fully solve the transfer problem without additional semantic supervision on imagined latent rollouts. Third, architectural changes without aligned auxiliary supervision are not sufficient. The semsty_noloss variant, 13 Dreamer-Std         
+
+> Dreamer-Aug
+> Dreamer-DANN
+> SemSty-
+> NoLoss
+> Sem-Rollout-
+> Aux
+> Full-Aux
+> Sem+Adv-
+> Aux
+> Policy-Sem-
+> NoLoss
+> Small-GRL
+> Sem. Policy
+> Large-GRL
+> Sem. Policy
+> 0
+> 20
+> 40
+> 60
+> 80
+> Success [%]
+> ftst
+> Town03 held-out success
+> Dreamer-Std
+> Dreamer-Aug
+> Dreamer-DANN
+> SemSty-
+> NoLoss
+> Sem-Rollout-
+> Aux
+> Full-Aux
+> Sem+Adv-
+> Aux
+> Policy-Sem-
+> NoLoss
+> Small-GRL
+> Sem. Policy
+> Large-GRL
+> Sem. Policy
+> Success [%]
+> ftst
+> Town04 held-out success
+> Actor/critic consume standard Dreamer feature ftActor/critic consume semantic feature st
+> Fig. 4: Held-out-town success rates on Town03 and Town04, regrouped by whether the actor and critic consume the standard Dreamer feature
+> ftor the semantic feature st. Values are copied directly from Tables IV and VI; this figure is therefore a reorganization of existing results rather than an additional experiment. The strongest results occur when the semantic/context branch is used as an auxiliary regularizer while control remains on ft. This grouping is descriptive rather than a strict causal isolation of actor/critic input, since the methods also differ in auxiliary losses.
+
+which enables the semantic/context branch while disabling its auxiliary losses, improves over dreamer_std but remains far below the proposed model ( 10 .51% vs. 36 .65% success on Town03; 54 .69% vs. 85 .62% on Town04). An even clearer failure mode is Policy-Sem-NoLoss, which routes actor and critic inputs through the semantic branch without semantic or domain supervision: it collapses to 0.14% 
+
+success on Town03 and reaches only 38 .75% on Town04. These results indicate that the semantic branch is beneficial only when it is properly anchored by auxiliary training; simply replacing the base Dreamer control state with an unsupervised semantic branch input does not yield a useful transfer representation. Figure 4 makes the same ablation pattern visually explicit: the strongest held-out-town transfer is obtained when the semantic/context branch remains auxiliary-only and the actor/critic retain the standard Dreamer feature ft,whereas the direct semantic-policy variants are consistently weaker, especially on Town03. Finally, the broader auxiliary configurations do not consistently help. The more heavily loaded Full-Aux variant performs substantially worse than the proposed model on both Town03 ( 8.24% vs. 36 .65% success) and Town04 (56 .87% vs. 85 .62% ). The GRL-sensitivity variants are also clearly weaker: Small-GRL Semantic Policy and Large-GRL Semantic Policy reach only 3.12% and 0.71% success on Town03, respectively, and remain well below the proposed model on Town04 as well ( 49 .06% and 53 .75% versus 
+
+85 .62% ). The large-GRL setting is slightly stronger than the small-GRL setting on Town04, but worse on Town03, so simply increasing adversarial strength does not recover the missing performance. Overall, the ablations support a targeted conclusion: the best transfer performance comes from combining semantic rollout supervision with domain-adversarial regularization, rather than from semantic/con-text architecture alone, adversarial regularization alone, or a more heavily loaded auxiliary objective. 
+
+D. Discussion 
+
+Across both held-out towns, the most defensible conclu-sion from the current study is that combining semantic rollout supervision with domain-adversarial latent regular-ization improves zero-shot held-out-town route-following performance more reliably than standard Dreamer training, image augmentation alone, or domain-adversarial training alone. The main result is higher mean held-out-town success within the evaluated protocol, not uniform superiority on every safety or lane-keeping metric. This advantage is expressed most clearly in successful closed-loop route completion on unseen town layouts, while the lane-keeping statistics further suggest improved route adherence on the harder held-out town. At the same time, the proposed method does not dominate every secondary driving metric on every town, so the evidence supports a measured improvement in transfer performance rather than uniform superiority across all operating points. The scope of this conclusion should remain explicit. The present experiments isolate fixed-weather town shift in a controlled CARLA route-following setting and do not test broader sources of distribution shift such as dynamic traffic, pedestrians, or weather variation. Accordingly, the results should be interpreted as evidence for improved held-out-town generalization within this benchmark, not as a general claim of robust autonomous driving under all out-of-distribution conditions. 
+
+E. Limitations and Threats to Validity 
+
+This study has several important limitations. First, the evaluation isolates structural cross-town variation under 14 
+
+fixed ClearNoon weather and without traffic or pedestrians, so the results do not establish robustness to dynamic agents or weather shift. Second, the task is route-unconditioned: the policy receives no navigation command, route polyline, goal pose, or map input, and the reference route is used only by the environment for reward and termination. Third, all methods observe collision and lane-invasion event bits as part of the common observation interface. Finally, the study uses only two source towns and two held-out towns. The findings should therefore be interpreted as evidence for improved transfer within this controlled CARLA benchmark rather than as a general autonomous-driving claim. A further limitation is that the study does not in-clude broader cross-family baselines such as command-conditioned imitation-learning systems or planner-based CARLA pipelines. This omission is intentional and re-flects the question being asked: the present paper tests whether semantic rollout supervision and town-adversarial regularization improve held-out-town transfer within a fixed Dreamer-style route-unconditioned agent, not whether that agent family dominates other driving paradigms that use different conditioning signals, supervision, or task definitions. A broader cross-family study would be valuable, but making it fair would require either harmonizing those additional inputs and supervision across methods or accepting a less controlled comparison with multiple simultaneous confounds. 
+
+VI. Conclusion 
+
+This paper studied zero-shot held-out-town transfer for route-unconditioned fixed-route closed-loop driving in CARLA under a deliberately controlled protocol. Train-ing was performed only on Town05 and Town06, while evaluation was carried out zero-shot on held-out Town03 and Town04 under fixed weather and without traffic or pedestrians. Within a DreamerV3-style world-model agent, we introduced two training-time auxiliary losses: multi-horizon prediction of frozen OpenCLIP image embeddings along imagined rollouts, and town-adversarial supervision on a semantic projection of the deterministic RSSM state. A history-conditioned context feature was used to condition the semantic rollout predictor, while the actor and critic retained the standard Dreamer feature so that the semantic/context branch acted as an auxiliary regularizer rather than replacing the control input. Across both held-out towns, the combined Sem+Adv-Aux model achieved the highest mean route success among the compared Dreamer-family methods. Taken together, the results indicate that combining semantic rollout super-vision with town-adversarial regularization can improve mean held-out-town transfer in this controlled CARLA setting. At the same time, the evidence is deliberately bounded: the gains are not uniform across all secondary safety and lane-keeping metrics, and the proposed model should not be interpreted as dominating every aspect of closed-loop driving performance. The present study should therefore be read as a fo-cused simulation-based analysis rather than as evidence of broad autonomous-driving robustness or as a cross-paradigm CARLA ranking. The experiments do not es-tablish robustness to weather variation, background traffic, pedestrians, sensor corruption, or real-world deployment, and they do not address richer command-conditioned or map-conditioned driving settings. Future work should test whether the same auxiliary design remains useful under broader sources of distribution shift, larger sets of held-out towns and routes, and stronger cross-family baselines evaluated under a carefully harmonized protocol. 15 
+
+References 
+
+[1] A. Dosovitskiy, G. Ros, F. Codevilla, A. López, and V. Koltun, “CARLA: An Open Urban Driving Simulator,” in Proceedings of the 1st Annual Conference on Robot Learning , ser. Proceedings of Machine Learning Research, vol. 78. PMLR, 2017, pp. 1–16. [2] Y. Ganin, E. Ustinova, H. Ajakan, P. Germain, H. Larochelle, F. Laviolette, M. Marchand, and V. Lempitsky, “Domain-Adversarial Training of Neural Networks,” in Domain Adaptation in Computer Vision Applications , G. Csurka, Ed. Cham: Springer International Publishing, 2017, pp. 189–209, series Title: Advances in Computer Vision and Pattern Recognition. [Online]. Available: http://link.springer.com/10.1007/978-3-319 -58347-1_10 [3] D. Hafner, J. Pasukonis, J. Ba, and T. Lillicrap, “Mastering Diverse Domains through World Models,” Apr. 2024, arXiv:2301.04104 [cs]. [Online]. Available: http://arxiv.org/abs/2301.04104 [4] M. Cherti, R. Beaumont, R. Wightman, M. Wortsman, G. Il-harco, C. Gordon, C. Schuhmann, L. Schmidt, and J. Jitsev, “Reproducible Scaling Laws for Contrastive Language-Image Learning,” in Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) , 2023, pp. 2818–2829. [5] F. Codevilla, M. Müller, A. López, V. Koltun, and A. Dosovitskiy, “End-to-End Driving via Conditional Imitation Learning,” in 
+
+2018 IEEE International Conference on Robotics and Automa-tion (ICRA) . IEEE, 2018, pp. 4693–4700. [6] D. Chen, B. Zhou, V. Koltun, and P. Krähenbühl, “Learning by Cheating,” Dec. 2019, arXiv:1912.12294 [cs]. [Online]. Available: http://arxiv.org/abs/1912.12294 [7] A. Behl, K. Chitta, A. Prakash, E. Ohn-Bar, and A. Geiger, “Label Efficient Visual Abstractions for Autonomous Driving,” in 
+
+2020 IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS) . IEEE, 2020, pp. 2338–2345. [8] D. Coelho, M. Oliveira, and V. Santos, “RLAD: Reinforcement Learning from Pixels for Autonomous Driving in Urban En-vironments,” IEEE Transactions on Automation Science and Engineering , vol. 21, no. 4, pp. 7427–7435, 2024. [9] R. Chekroun, M. Toromanoff, S. Hornauer, and F. Moutarde, “GRI: General Reinforced Imitation and its Application to Vision-Based Autonomous Driving,” May 2022, arXiv:2111.08575 [cs]. [Online]. Available: http://arxiv.org/abs/2111.08575 [10] D. Hafner, T. Lillicrap, I. Fischer, R. Villegas, D. Ha, H. Lee, and J. Davidson, “Learning Latent Dynamics for Planning from Pixels,” in Proceedings of the 36th International Conference on Machine Learning , ser. Proceedings of Machine Learning Research, vol. 97. PMLR, 2019, pp. 2555–2565. [11] D. Hafner, T. Lillicrap, J. Ba, and M. Norouzi, “Dream to Con-trol: Learning Behaviors by Latent Imagination,” in International Conference on Learning Representations , 2020. [12] Q. Li, X. Jia, S. Wang, and J. Yan, “Think2Drive: Efficient Reinforcement Learning by Thinking with Latent World Model for Autonomous Driving (in CARLA-V2),” in Computer Vision – ECCV 2024 , A. Leonardis, E. Ricci, S. Roth, O. Russakovsky, T. Sattler, and G. Varol, Eds. Cham: Springer Nature Switzerland, 2025, vol. 15103, pp. 142–158, series Title: Lecture Notes in Computer Science. [Online]. Available: https://link.springer.com/10.1007/978-3-031-72995-9_9 [13] D. Chen, V. Koltun, and P. Krähenbühl, “Learning to drive from a world on rails,” in 2021 IEEE/CVF International Conference on Computer Vision (ICCV) . Montreal, QC, Canada: IEEE, 2021, pp. 15 570–15 579. [14] A. Hu, G. Corrado, N. Griffiths, Z. Murez, C. Gurau, H. Yeo, A. Kendall, R. Cipolla, and J. Shotton, “Model-Based Imitation Learning for Urban Driving,” in Advances in Neural Information Processing Systems , vol. 35, 2022, pp. 20 703–20 716. [15] Z. Gao, Y. Mu, C. Chen, J. Duan, S. E. Li, P. Luo, and Y. Lu, “Enhance Sample Efficiency and Robustness of End-to-End Urban Autonomous Driving via Semantic Masked World Model,” IEEE Transactions on Intelligent Transportation Systems , vol. 25, no. 10, pp. 13 067–13 079, 2024. [16] Z. Yang, X. Jia, Q. Li, X. Yang, M. Yao, and J. Yan, “Raw2Drive: Reinforcement Learning with Aligned World Models for End-to-End Autonomous Driving (in CARLA v2),” in Advances in Neural Information Processing Systems , vol. 38, 2025. [17] J. Tobin, R. Fong, A. Ray, J. Schneider, W. Zaremba, and P. Abbeel, “Domain Randomization for Transferring Deep Neural Networks from Simulation to the Real World,” in 2017 IEEE/RSJ International Conference on Intelligent Robots and Systems (IROS) . IEEE, 2017, pp. 23–30. [18] X. B. Peng, M. Andrychowicz, W. Zaremba, and P. Abbeel, “Sim-to-Real Transfer of Robotic Control with Dynamics Ran-domization,” in 2018 IEEE International Conference on Robotics and Automation (ICRA) , 2018, pp. 3803–3810. [19] A. Kumar, Z. Fu, D. Pathak, and J. Malik, “RMA: Rapid Motor Adaptation for Legged Robots,” in Robotics: Science and Systems , 2021. [20] Y. Ganin and V. Lempitsky, “Unsupervised Domain Adaptation by Backpropagation,” in Proceedings of the 32nd International Conference on Machine Learning , ser. Proceedings of Machine Learning Research, vol. 37. PMLR, 2015, pp. 1180–1189. [21] M. Arjovsky, L. Bottou, I. Gulrajani, and D. Lopez-Paz, “Invariant Risk Minimization,” Mar. 2020, arXiv:1907.02893 [stat]. [Online]. Available: http://arxiv.org/abs/1907.02893 [22] J. Xing, T. Nagata, K. Chen, X. Zou, E. Neftci, and J. L. Krichmar, “Domain Adaptation in Reinforcement Learning via Latent Unified State Representation,” Proceedings of the AAAI Conference on Artificial Intelligence , vol. 35, no. 12, pp. 10 452– 10 459, 2021. [23] K. Bousmalis, G. Trigeorgis, N. Silberman, D. Krishnan, and D. Erhan, “Domain Separation Networks,” in Advances in Neural Information Processing Systems , vol. 29, 2016. [24] X. Chen, Y. Duan, R. Houthooft, J. Schulman, I. Sutskever, and P. Abbeel, “InfoGAN: Interpretable Representation Learning by Information Maximizing Generative Adversarial Nets,” in 
+
+Advances in Neural Information Processing Systems , vol. 29, 2016. [25] I. Higgins, A. Pal, A. A. Rusu, L. Matthey, C. P. Burgess, A. Pritzel, M. Botvinick, C. Blundell, and A. Lerchner, “DARLA: Improving Zero-Shot Transfer in Reinforcement Learning,” in 
+
+Proceedings of the 34th International Conference on Machine Learning , ser. Proceedings of Machine Learning Research, vol. 70. PMLR, 2017, pp. 1480–1490. [26] H. Kim and A. Mnih, “Disentangling by Factorising,” in Proceed-ings of the 35th International Conference on Machine Learning ,ser. Proceedings of Machine Learning Research, vol. 80. PMLR, 2018, pp. 2649–2658. [27] Y.-R. Liu, B. Huang, Z. Zhu, H. Tian, M. Gong, Y. Yu, and K. Zhang, “Learning World Models with Identifiable Factoriza-tion,” in Advances in Neural Information Processing Systems ,vol. 36, 2023. [28] Q. Wang, Z. Zhang, B. Xie, X. Jin, Y. Wang, S. Wang, L. Zheng, X. Yang, and W. Zeng, “Disentangled World Models: Learning to Transfer Semantic Knowledge from Distracting Videos for Reinforcement Learning,” in Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV) , 2025, pp. 2599–2608. [29] A. Radford, J. W. Kim, C. Hallacy, A. Ramesh, G. Goh, S. Agarwal, G. Sastry, A. Askell, P. Mishkin, J. Clark, G. Krueger, and I. Sutskever, “Learning Transferable Visual Models From Natural Language Supervision,” in Proceedings of the 38th International Conference on Machine Learning , ser. Proceedings of Machine Learning Research, vol. 139. PMLR, 2021, pp. 8748–8763. [30] S. A. Sontakke, J. Zhang, S. M. R. Arnold, K. Pertsch, E. Bıyık, D. Sadigh, C. Finn, and L. Itti, “RoboCLIP: One Demonstration Is Enough to Learn Robot Policies,” in Advances in Neural Information Processing Systems , vol. 36, 2023. [31] E. Doroudian and H. Taghavifar, “CLIP-RLDrive: Human-Aligned Autonomous Driving via CLIP-Based Reward Shaping in Reinforcement Learning,” arXiv preprint arXiv:2412.16201 ,2024. [Online]. Available: https://arxiv.org/abs/2412.16201 [32] Z. Chi, L. Gu, H. Liu, Z. Wang, Y. Wu, Y. Wang, and K. N. Plataniotis, “Learning to Adapt Frozen CLIP for Few-Shot Test-Time Domain Adaptation,” in The Thirteenth International Conference on Learning Representations , 2025. [33] X. Dang, S. Edelkamp, and N. Ribault, “CLIP-Motion: Learning Reward Functions for Robotic Actions Using Consecutive Observations,” arXiv preprint arXiv:2311.03485 , 2023. [Online]. Available: https://arxiv.org/abs/2311.03485 [34] CARLA Team, “CARLA Autonomous Driving Leaderboard,” 2026. [Online]. Available: https://leaderboard.carla.org/ 16 
+
+[35] F. Codevilla, E. Santana, A. López, and A. Gaidon, “Exploring the Limitations of Behavior Cloning for Autonomous Driving,” in 
+
+2019 IEEE/CVF International Conference on Computer Vision (ICCV) . Seoul, Korea (South): IEEE, 2019, pp. 9328–9337. [36] X. Jia, Z. Yang, Q. Li, Z. Zhang, and J. Yan, “Bench2Drive: Towards Multi-Ability Benchmarking of Closed-Loop End-To-End Autonomous Driving,” in Advances in Neural Information Processing Systems Datasets and Benchmarks Track , 2024. [37] J. You, X. Jia, Z. Zhang, Y. Zhu, and J. Yan, “Bench2Drive-R: Turning Real World Data into Reactive Closed-Loop Autonomous Driving Benchmark by Generative Model,” 
+
+arXiv preprint arXiv:2412.09647 , 2024. [Online]. Available: https://arxiv.org/abs/2412.09647 
+
+Feeza Khan Khanzada received the B.E. degree in computer systems engineering from Mehran University of Engineering and Tech-nology, Pakistan, and the M.S. degree in computer and information engineering. She is currently a graduate student research assis-tant and Ph.D. candidate at the University of Michigan–Dearborn. Her research interests include robotics, autonomous vehicles, deep learning for perception and control, proba-bilistic modeling, reinforcement learning, and robust decision-making in complex environments. She previously held research positions at Freie Universität Berlin and the University of Bath, working on machine learning, computer vision, and intelligent systems. Prior to her academic research roles, she was a software programmer with Fateh Motors Ltd., where she contributed to software development and system integration. 
+
+Jaerock Kwon (Senior Member, IEEE) re-ceived the B.S. and M.S. degrees in Electronic Communication Engineering from Hanyang University, Seoul, South Korea, in 1992 and 1994, respectively, and the Ph.D. degree in Computer Engineering from Texas A&M Uni-versity, College Station, USA, in 2009. From 1994 to 2004, he worked at LG Electronics, SK Teletech, and Qualcomm Internet Services. From 2009 to 2010, he was a Professor at the Department of Electrical and Computer Engi-neering, Kettering University, Flint, MI, USA. Since 2010, he has been a Professor at the Department of Electrical and Computer Engineering, University of Michigan–Dearborn, MI, USA. His research interests in-clude mobile robotics, autonomous vehicles, and artificial intelligence. His awards and honors include the Outstanding Researcher Award, the Faculty Research Fellowship (Kettering University), and the SK Excellent Employee (SK Teletech). He served as the President for Korean Computer Scientists and Engineers Association in America (KOCSEA), in 2020, 2021, and 2025.

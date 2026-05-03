@@ -1,0 +1,807 @@
+Title: Judge, Then Drive: A Critic-Centric Vision Language Action Framework for Autonomous Driving
+
+URL Source: https://arxiv.org/pdf/2604.27366v1
+
+Published Time: Fri, 01 May 2026 00:30:45 GMT
+
+Number of Pages: 32
+
+Markdown Content:
+# Judge, Then Drive: A Critic-Centric Vision Language Action Framework for Autonomous Driving 
+
+Lijin Yang * 1 Jianing Huang * 1 Zhongzhan Huang * 1 Shu Liu 1 Hao Yang 1
+
+## Abstract 
+
+Recent advances in vision language action (VLA) models have shown remarkable potential for au-tonomous driving by directly mapping multi-modal inputs to control signals. However, pre-vious VLA-based methods have not explicitly exploited the critic capability of VLAs to refine driving decisions, even though such capability has been well demonstrated in other LLM-based domains, thereby limiting their performance in complex closed-loop scenarios. In this work, we present a theoretically inspired two-stage frame-work, CriticVLA, which extends the role of VLAs from acting to judging. CriticVLA first generates a rough trajectory and then refines it through mul-timodal evaluation and single-step optimization guided by a VLA-based critic, yielding higher-quality driving behaviors. To support this process, we construct a large-scale synthetic dataset of 12.9 million annotated trajectories covering diverse driving scenarios, which enhances the critic’s rea-soning and refinement abilities. Extensive closed-loop experiments on the Bench2Drive benchmark show that CriticVLA significantly surpasses state-of-the-art baselines, achieving a 73.33% total suc-cess rate and delivering about 30% improvement in challenging scenarios. 
+
+## 1. Introduction 
+
+Recent advances in vision language action (VLA) models have shown remarkable potential for autonomous driving by directly mapping multimodal sensory inputs and linguis-tic instructions to driving actions (Jiang et al., 2025b; Ma et al., 2024; Sapkota et al., 2025; Zhou et al., 2024; Jia et al., 2024; Wang et al., 2024b; Caesar et al., 2020; Wilson et al., 2023; Sun et al., 2020; Chi et al., 2025; Fu et al., 
+
+> *
+
+Equal contribution 1Bosch Research. Correspondence to: Lijin Yang <yli6sgh@bosch.com >.
+
+Preprint. (a) Previous VLA-based driving     
+
+> (b) Ours CriticVLA
+> Reuse
+> LLM backbone Generator Param. Critic Param.
+> Stage 1 Stage 2
+
+Figure 1. Conceptual diagram of the VLA-based autonomous driving model (ADM). (a) The common paradigm of existing VLA-based ADM. (b) Our CriticVLA: in Stage-1 a VLA-based ADM generates a rough trajectory A without language output, in Stage-2 the same VLA is reused to generate judgment and refinement to obtain final action A′.
+
+2025; Zhang et al., 2025; Jiang et al., 2025a). Leveraging large-scale pretraining and unified multimodal representa-tions, VLAs promise to integrate perception, reasoning, and control within a single framework, paving the way toward more interpretable and instruction-following Autonomous Driving Models (ADMs). However, most existing VLA-based approaches still treat the model purely as an action generator that maps multi-modal inputs directly to control signals. This generation-only paradigm overlooks the evaluative capability of the VLA’s LLM backbone, namely its ability to reason about dynamic scenes and provide constructive feedback, a ca-pability that has been extensively demonstrated in other domains (Zheng et al., 2023; Zhong et al., 2024a; Huang et al., 2025b; Wang et al., 2023; Chiang & Lee, 2023; Wang et al., 2025). In safety-critical situations such as highway merging, unprotected turns, or negotiating with aggressive vehicles, the lack of an explicit critic limits the model’s capacity to detect potential risks and refine its own actions, thereby hindering robust closed-loop driving. To address this gap, we propose CriticVLA , a theoretically inspired two-stage framework based on a “judge, then drive” 
+
+1
+
+> arXiv:2604.27366v1 [cs.CV] 30 Apr 2026 Judge, Then Drive: A Critic-Centric Vision Language Action Framework for Autonomous Driving
+
+philosophy. Instead of directly outputting control signals (Figure 1a), CriticVLA first produces an initial rough tra-jectory (Figure 1b). It then deploys the same VLA model, now as a multimodal critic, to systematically evaluate this plan given the current scene and generate refinements. Con-cretely, the critic generates structured natural-language risk analyses and action suggestions, which are consumed by a refinement head to produce high-quality final action. We further construct CriticDrive , a large-scale synthetic dataset comprising 12.9 million annotated trajectories under diverse driving conditions to enhance the critic’s evalua-tive and refinement abilities. CriticDrive aggregates failed first-stage trajectories and perturbed ground-truth trajecto-ries, providing structured annotations that include six key risk types, natural-language critiques, and refined trajecto-ries. This design explicitly aligns perception, language, and action modalities and equips the VLA with strong critic capabilities beyond pure action generation. In Section 4, we conduct extensive closed-loop experiments on the challenging Bench2Drive (Jia et al., 2024) bench-mark. CriticVLA significantly outperforms existing state-of-the-art ADMs, achieving a 73.33% total success rate and delivering about 30% improvement in challenging scenarios , while maintaining competitive driving efficiency. Multi-ability analysis further shows consistent gains in com-plex capabilities such as overtaking, merging, and handling non-signalized intersections, highlighting our “judge, then drive” paradigm in redefining how VLA models reason about and improve driving behavior. In summary, our main contributions are threefold: • We formalize the importance of the critic role in VLA-based autonomous driving and derive a theoretically inspired two-stage paradigm, termed CriticVLA; • We introduce CriticDrive, a large-scale synthetic dataset with 12.9 million annotated trajectories de-signed to enhance the critic model’s reasoning and refinement abilities; • We demonstrate the superior closed-loop performance and applicability of CriticVLA on Bench2Drive, show-ing results consistent with our theoretical findings. 
+
+## 2. Related Work 
+
+VLA in Autonomous Driving. VLA models unify percep-tion, language-conditioned reasoning, and control in a single model, improving decision making under ambiguous obser-vations and diverse traffic contexts (Ma et al., 2024; Sapkota et al., 2025). Enabled by large-scale multimodal pretraining (Oquab et al., 2023; Liu et al., 2025a), they show strong generalization across benchmarks such as Bench2Drive, nuScenes, Argoverse2, and Waymo (Caesar et al., 2020; Wilson et al., 2023; Sun et al., 2020; Jia et al., 2024). Re-cent progress further incorporates instruction grounding (Li et al., 2023b), instruction-to-trajectory computation (Yuan et al., 2024; Fu et al., 2025), interpretable reasoning (Wang et al., 2024a; Cui et al., 2025), and diffusion or hybrid con-trol (Jiang et al., 2025a), with growing emphasis on safety and instruction awareness (Kim et al., 2024; Zhang et al., 2025). In this work, we build on this line by using the same VLA as an explicit critic to refine driving signals. 
+
+The Critic ability of LLM. Many traditional auto-matic metrics, such as BLEU (Papineni et al., 2002), ROUGE (Lin, 2004), BERTScore (Zhang et al., 2020), and BARTScore (Yuan et al., 2021), are limited for open-ended evaluation and can miss nuanced qualities like helpfulness or fairness (Sun et al., 2022; Zhu et al., 2024). With stronger LLMs (Achiam et al., 2023; Jaech et al., 2024; Zhong et al., 2024b; Huang et al., 2025c;a; Zhong et al., 2022; Liu et al., 2025b), the “LLM as a judge” paradigm has become popular (Zheng et al., 2023; Wang et al., 2023; Chiang & Lee, 2023; Wang et al., 2025; Lee et al., 2024; Chen et al.; Pan et al., 2024). Prior work shows that, with structured prompts or pairwise comparisons, LLMs can provide fine-grained scor-ing, ranking, and selection beyond pure generation quality (Li et al., 2023a; Bai et al., 2023), and they are increasingly used in alignment, reasoning, and agentic decision mak-ing (Lee et al., 2023; Liang et al., 2023; Sun et al., 2024; Yang et al., 2023). Considering the strong critic capability of LLMs, in this paper we leverage this property to guide action refinement. 
+
+## 3. Methodology 
+
+3.1. Preliminary 
+
+We first introduce the basic notations and mild assumptions used throughout this paper. 
+
+Notation. For VLA model, Let V denote the visual input space, representing all possible visual observations, and L
+
+the language input space, representing all possible language instructions. The action space A is defined as a metric space of trajectories equipped with a distance function d :
+
+A × A → R that measures the difference between actions. We define a value function Q : V × L × A → R, where 
+
+Q(V, L, A ) indicates the quality of action A under visual input V and language input L. In autonomous driving sce-narios, Q typically corresponds to driving scores or suc-cess rates, and d(·, ·) can be instantiated as an Euclidean norm over trajectories, while A represents trajectory sig-nals such as speed and steering. For simplicity, we write 
+
+Q(A) = Q(V, L, A ) when (V, L ) are fixed. The optimal 2Judge, Then Drive: A Critic-Centric Vision Language Action Framework for Autonomous Driving The LLM backbone  
+
+> Image Language
+> "The target points is <TARGET>, the current speed is ......"
+> Rough Trajectory Queries
+> Rough
+> Rough
+> Critique
+> Critique
+> Refinement Trajectory Queries
+> Refined
+> ......
+> Collision risk: False Speed risk: True Pedestrian risk:False
+> ......
+> Collision risk: False Speed risk: True Pedestrian risk:False
+
+Figure 2. Overview of the proposed CriticVLA framework for autonomous driving. Stage-1: we encode the image, language instruction, and rough trajectory queries as input to an LLM to get a rough action without language output. Stage-2: the rough action is then additionally encoded and processed by LLM to generate language output as critics. Refined action is then generated from the critics and refinement trajectory queries. The LLM backbone is shared by Stage-1 and 2. 
+
+value is defined as 
+
+Q∗ ≡ Q∗(V, L ) = sup 
+
+> A∈A
+
+Q(V, L, A ). (1) A VLA model is represented by a function f : V × L → A 
+
+that generates an initial action A0 = f (V, L ). The critic model is defined as c : V × L × A → A , which takes 
+
+(V, L, A ) as input. For fixed (V, L ), we define C(A) = 
+
+c(V, L, A ). The training set for the critic is denoted by 
+
+S ⊂ V × L × A , and the corresponding set of training actions is 
+
+T = {A ∈ A : ∃(V, L ) such that (V, L, A ) ∈ S}. (2) For any action a ∈ A , its distance to the training set T can be defined as 
+
+ρ(a) = min  
+
+> A∈T
+
+d(a, A ). (3) 
+
+Assumption 3.1. (Critic Improvement) The critic is as-sumed to have a guaranteed improvement ratio β ∈ (0 , 1) 
+
+on the training set, i.e., for all A ∈ training set T ,
+
+Q(C(A)) − Q(A) ≥ β [Q∗(V, L ) − Q(A)] . (4) This means the critic can improve the value of any action by at least a fraction β of its gap to the optimal value. A larger value of β indicates a better ability of the critic. 
+
+Assumption 3.2. (Lipschitz Continuity) There exists a con-stant LQ > 0 such that for all A(1) , A (2) ∈ A ,
+
+|Q(A(1) ) − Q(A(2) )| ≤ LQ d(A(1) , A (2) ), (5) ensuring that small changes in actions lead to bounded changes in value. For critic function, there exists a con-stant LC > 0 such that for all A(1) , A (2) ∈ A ,
+
+d(C(A(1) ), C (A(2) )) ≤ LC d(A(1) , A (2) ), (6) which indicates that the critic’s refinement of actions is smooth and stable. In practice, Assumptions 3.1 and 3.2 are mild. First, As-sumption 3.1 is stated only on the critic training action set 
+
+T , and thus can be reasonably approached as long as the critic is sufficiently trained on T . The parameter β reflects the critic’s improvement capability: any β > 0 implies a guaranteed (possibly small) positive refinement effect rel-ative to the initial action, and our method does not rely on near-perfect critics (i.e., β → 1). Empirically, for our method, we observe an average β esti-mate of roughly β ≈ 0.1, suggesting that even a moderate critic can yield measurable gains. Moreover, in ADM sce-narios, the Assumption 3.2 is readily satisfied in practice, and see Appendix for more empirical evidences of these assumptions. 
+
+3.2. Our CriticVLA 
+
+In this section, using the definitions and assumptions from Section 3.1, we derive Theorem 3.3, which is a performance analysis of action refinement. Inspired by the Theorem 3.3, we propose our critic-centric VLA framework for au-tonomous driving with two stages, called CriticVLA, as shown in Fig. 1 (b) and Fig. 2. 
+
+Theorem 3.3. For fixed visual input V and language input 
+
+L, let A0 denote the initial action. Suppose the critic model satisfies Assumption 3.1 (critic improvement on the training set) and Assumption 3.2 (Lipschitz continuity). Let ρ0 =
+
+ρ(A0) denote the distance from A0 to the training set T like Eq. (3). Then, the value of the improved action A1 = C(A0)
+
+3Judge, Then Drive: A Critic-Centric Vision Language Action Framework for Autonomous Driving 
+
+is lower bounded by 
+
+Q(A1) ≥ βQ ∗+ (1 − β) Q(A0)
+
+| {z }
+
+> For Stage-1 in Sec. 3.2.1
+
+− ρ0LQ(1 − β + LC )
+
+| {z }
+
+> For Stage-2 in Sec. 3.2.2
+
+,
+
+(7) 
+
+where Q∗ is the upper bound value for given V, L and the corresponding optimal action as defined in Eq. (1). Proof. (See Appendix for details). The empirical verification of Theorem 3.3 will be shown in Section 5. Actually, the Theorem 3.3 reveals an important insight: to obtain a satisfying A1 with large Q(A1), the following two conditions are indispensable. 
+
+(1) The critic model must generalize well. Since (1 −β) ∈
+
+(0 , 1) and Q(A0) > 0, obtaining a large Q(A1) requires a small ρ0, i.e., A0 should not lie far from the training action set T . Equivalently, T must cover a broad range of rough trajectories. 
+
+(2) The rough trajectory A0 should not be too bad. 
+
+Eq. (16) shows that Q(A0) directly contributes to the lower-bound estimate of Q(A1). Therefore, if A0 is severely suboptimal, even a well-generalized critic with small ρ0
+
+may still be unable to yield a high Q(A1).Therefore, inspired by these two conditions, our framework is designed with two corresponding stages. On one hand, we can leverage various existing advanced technologies, including models and data, to obtain an good initial ADM for Stage-1, as detailed in Sections 3.2.1; on the other hand, we can reuse the Stage-1 prediction from the initial ADM and further synthesize large scale virtual driving data to enhance refinement ability of the critic model, which is elaborated in Sections 3.2.2. 3.2.1. S TAGE -1: R OUGH TRAJECTORY GENERATION 
+
+The first stage aims to generate a rough trajectory A0 that provides a rough yet reasonable initialization for subse-quent refinement. We build an initial VLA fgen by equip-ping an InternVL2-1B (Chen et al., 2024) backbone with LoRA (Hu et al., 2022) and DETR (Carion et al., 2020) mod-ules. Following established post-training pipelines (Renz et al., 2025; Liu et al., 2023; 2024), we fine-tune this VLA on a multi-scenario base dataset D with over 2.02 million frames collected from CARLA (Dosovitskiy et al., 2017), DriveLM (Sima et al., 2024), and additional high-quality safe-driving data (Renz et al., 2025). For efficiency and sim-plicity, the model produces no textual output in this stage. Instead, the learnable DETR (Carion et al., 2020) queries are directly mapped to driving actions, yielding 
+
+A0 = fgen (I; LoRA , DETR ), (8) Future Risk  Analysis  Action  Suggestion 
+
+> Collision Risk : <True/False>
+> Directrion Risk : < True/False>
+> Stop Sign Risk : <True/False>
+> Speed : <SUGGESTION>
+> Direction : <SUGGESTION>
+> Speed Risk : <True/False>
+> Pedestrian Risk : <True/False>
+> Traffic Light Risk : <True/False>
+
+Figure 3. The template of critique cr .
+
+where I = ( V, L ) denote the visual and language inputs, and = ( LoRA , DETR ) denote the learnable generator parameters from LoRA and DETR, respectively, as shown in Fig. 1(b). The implementation details of Stage-1, includ-ing dataset organization, instruction design, and training configurations, are provided in the Appendix. 3.2.2. S TAGE -2: C RITIC AND REFINEMENT BY VLA Based on the rough A0 generated in Stage-1, we consider further refining it using a critique to produce a better action. As shown in Eq. (9), we first require the model to generate a high-quality and interpretable critique cr for A0. The template of cr is in Fig. 3. Using this cr as an refinement instruction, we further employ DETR (Carion et al., 2020) with learnable queries, similar to Eq. (8), to generate the final refined action A1.
+
+( cr = fgen (A0, I ; LoRA ) ,A1 = fgen (cr , A 0, I ; LoRA , DETR ) ,
+
+(9) where the additional denote the learnable parameters in Stage-2, as shown in Fig. 1 (b). Specifically, based on the analysis in Theorem 3.3, in Stage-2, we should enhance critic’s refinement capability as much as possible to reduce 
+
+ρ0, thereby achieving better refinement of A0.In practice, we reuse the VLA model fine-tuned in Stage-1 as the starting point for Stage-2 training. For critique cr gen-eration, an additional set of LoRA parameters is introduced. These parameters are combined with the LoRA parame-ters LoRA in Eq. (8) to form LoRA . Meanwhile, for generation of A1, additional learnable queries DETR are introduced. 
+
+3.3. CriticDrive Dataset 
+
+Theorem 3.3 states that critic-based refinement requires a diverse training set T such that any rough trajectory from Stage-1 lies within a small distance ρ0 from T and the critic exhibits positive improvement ratio β on actions in 
+
+T . CriticDrive is explicitly constructed to meet these data requirements through two complementary subsets. We first construct a Model-Generated Subset (MGS) by collect-ing 2,023 ,499 rough trajectories A0 produced by the Stage-1 model, enabling the critic to achieve a stable improve-ment ratio β over the Stage-1 model. In addition, an Extra Perturbation-Augmented Subset (EPAS) is constructed 4Judge, Then Drive: A Critic-Centric Vision Language Action Framework for Autonomous Driving                                                                                           
+
+> Table 1. Results on Bench2Drive Closed-loop Benckmark. C/L refers to camera/LiDAR, * denote using expert feature distillation. DS represents Driving Score, SR is short for Success Rate. We conduct three independent trials with different seeds and report the mean and variance of the results.
+> Method Modality Venue Closed-loop Metric
+> DS ↑SR(%) ↑Efficiency ↑Comfortness ↑
+> TCP* (Wu et al., 2022) CNeurIPS’ 22 40.70 15.00 54.26 47.80 TCP-traj* CNeurIPS’ 22 59.90 30.00 76.54 18.08 UniAD-Base (Hu et al., 2023) CCVPR’ 23 45.81 16.36 129.21 43.58 ThinkTwice* (Jia et al., 2023b) CCVPR’ 23 62.44 31.23 69.33 16.22 VAD (Jiang et al., 2023) CICCV’ 23 42.35 15.00 157.94 46.01 DriveAdaptor* (Jia et al., 2023a) C+L ICCV’ 23 64.22 33.08 70.22 16.01 GenAD (Zheng et al., 2024) CECCV’ 24 44.81 15.90 --DriveTrans (Jia et al., 2025) CICLR’ 25 63.46 35.01 100.64 20.78 TransFuser++ (Zimmerlin et al., 2024) C+L arXiv’ 24 84.21 67.27 --MomAD (Song et al., 2025) CCVPR’ 25 44.54 16.71 170.21 48.63
+> ORION (Fu et al., 2025) CICCV’ 25 77.74 54.62 151.48 17.38 Simlingo (Renz et al., 2025) CCVPR’ 25 85.07 67.27 259.23 33.67 CriticVLA ( Ours )C-88.02 ±0.17 73.33 ±0.27 269.24 ±2.59 36.45 ±0.50
+
+from 1,058 ,349 ground-truth trajectories by appling diverse perturbations (e.g., longitudinal speed scaling, forced lateral offsets, explicit collision synthesis), yielding 10 ,895 ,598 
+
+additional high-risk rough trajectories. This substantially enlarges the support of the action set T and effectively re-duces ρ0 in practice. Each rough trajectory is evaluated against the expert route and scene context to automatically derive structured anno-tations cr using a four-step risk assessment pipeline based on deviation from ground-truth and safety consideration (details in Appendix): (1) lateral risk (angular deviations, route offset), (2) longitudinal risk (speed limit compliance, speed deviation, intent classification), (3) collision risk (3D oriented bounding boxes and separating-axis theorem tests against nearby agents and static obstacles), and (4) environ-mental compliance (complexity, traffic rules, right-of-way, pedestrians, adverse conditions). This pipeline outputs the True/False risk analysis as in Fig. 3 and refined action that serve as the learning target for the Stage-2 critique. We consider two configurations in training: (1) Base Crit-icDrive , which emphasizes MGS and mixes in 15% unper-turbed GT data to teach the critic when to output near-zero deltas, stabilizing β on in-distribution samples; and (2) Full CriticDrive , which samples (MGS+GT) and EPAS in 1:1 ratio to maximize exposure to diverse high-risk trajectories. Please refer to Table 2 for the experimental results. 
+
+## 4. Experiment 
+
+4.1. Experiment Settings 
+
+In this section, we evaluate all methods on Bench2Drive (Jia et al., 2024), a widely used challenging closed-loop au-tonomous driving benchmark built on CARLA v0.9.15. Bench2Drive provides 220 test routes, each approximately 150 meters in length, covering diverse scenarios such as dense urban traffic, unprotected turns, highway merging, etc. Unlike open-loop benchmarks, the closed-loop setup requires the agent to continuously interact with other traffic participants and to update its decisions based on the evolving scene state. This makes it particularly suitable for assessing whether a critic can reliably detect potential risks and refine trajectories in highly interactive situations. Following the official protocol, we report four standard metrics: Driving Score (DS) and Success Rate (SR) as primary indicators of task completion and safety, and Efficiency (speed perfor-mance) and Comfortness (motion smoothness) as secondary indicators of driving quality. 
+
+4.2. Main Results 
+
+Table 1 compares CriticVLA with previous methods on Bench2Drive. CriticVLA attains a new state-of-the-art per-formance, reaching a Driving Score of 88.02 and a Success Rate of 73.33%. Crucially, these gains in safety and task completion are achieved without sacrificing driving quality. Beyond primary metrics, CriticVLA also exhibits strong Efficiency and competitive Comfortness, indicating that the proposed “judge, then drive” paradigm effectively mitigates the typical safety–efficiency trade-off in end-to-end models. This balanced behavior is enabled by our two-stage architec-ture, where decoupled refinement for speed and direction al-lows the critic to provide precise, actionable guidance rather than vague commands (e.g., “be careful”). As a result, the model can execute complex maneuvers while maintaining safe interactions and reasonable velocity. Fig. 4 provides qualitative evidence of the refinement ability. 5Judge, Then Drive: A Critic-Centric Vision Language Action Framework for Autonomous Driving Prompt: Current speed: -0.0 m/s. Target waypoin: <TARGET POINT><TARGET POINT>. What should the ego do next? Answer: Future risk analysis: (collision risk: False, speed risk: True, direction risk: False.pedestrian risk: False, stop sign risk: False, traffic light risk: False} Action: speed: reduce speed from 0.8 m/s to 0.0 m/s direction: maintain direction Refined Waypoints:<WAYPOINTS> Prompt: Current speed: 0.0 m/s. Target waypoint: <TARGET POINT><TARGET POINT>. What should the ego do next? Answer: Future risk analysis: collision risk: True, speed risk: True, direction risk: False, pedestrian risk: False, stop sign risk: False, trafic light risk: False} Action: speed: reduce speed from 1.4 m/s to 0.0 m/s direction: maintain direction Refined Waypoints:<WAYPOINTS> Prompt: Current speed: 8.2 m/s. Target waypoint: <TARGET POINT><TARGET POINT>. What should the ego do next? Answer: Future risk analysis: {collision risk: False, speed risk: False, direction risk: True,pedestrian risk: False, stop sign risk: False, traffic light risk: False} Action: speed: maintain speed at 8.9 m/s direction: adjust direction to the left Refined Waypoints:<WAYPOINTS> Prompt: Current speed: 10.3 m/s. Target waypoint: <TARGET POINT><TARGET POINT>., What should the ego do next? Answer: Future risk analysis: collision risk: False, speed risk: False, direction risk: True,pedestrian risk: False, stop sign risk: False, traffic light risk: False} Action: speed: maintain speed at 9.0 m/s direction: adjust direction to the left Refined Waypoints:<WAYPOINTS> 
+
+（a） （b）（c） （d）
+
+Target Point Rough Route Traj. Refined Route Traj. 
+
+Target Point Rough Route Traj. Refined Route Traj. 
+
+Target Point Rough Speed Traj. Refined Speed Traj. 
+
+Target Point Rough Speed Traj. Refined Speed Traj. 
+
+Figure 4. The Visualization of CriticVLA’s refinement effect. The two blue points represent the current and next target points, respectively: (a) and (b) demonstrate the refinement of route waypoints leading to successful correction of steering to the highway entrance, (c) and (d) illustrate the adjustment of speed waypoints that control the future speed to avoid collision. The gray boxes display generated critiques. 
+
+Table 2. Ablation of critic model on Bench2Drive. 
+
+Model Variant DS ↑ SR (%) ↑
+
+Stage-1 only 87.48 ( ±0.72) 70.6 ( ±1.45) 
+
+Implicit critic 87.49 ( ±0.54) 71.06 ( ±0.53) 
+
+CriticVLA ( Base CriticDrive ) 87.97 ( ±0.29) 72.27 ( ±0.46) 
+
+CriticVLA ( Full CriticDrive ) 88.02 ( ±0.17) 73.33 ( ±0.27) 
+
+The visualizations show that our critic model successfully detects and rectifies significant errors in the initial rough trajectories. These results confirm that our method can effectively reason about and correct both lateral risk and collision risk in closed-loop driving. 
+
+## 5. Analysis 
+
+In this section, we conduct a deeper analysis of the proposed CriticVLA, with a particular focus on its ability to refine actions in challenging scenarios. (1) How to design a more effective critic model? Table 2 presents an ablation of our critic design on Bench2Drive, comparing four variants that progressively introduce (1) an explicit language critic and (2) Extra Perturbation-Augmented Subset from CriticDrive. The first row is the Stage-1 only baseline, whereas Implicit critic (Row 2) reuses the Stage-1 architecture to take its own coarse trajectory as input and directly output a refined trajectory, without generating any language critique. This configuration can be viewed as an implicit critic without language. 
+
+Importance of language critic: Row 2 and Row 3 share the same training data and hyperparameter, and the only dif-ference between these two variants is the present of explicit language critic. The language critic can articulate collision, speed, and direction risks and provide targeted corrections, rather than relying on implicit feature-level adjustments. Their relative SR improvement to Stage-1 (+0.46 vs. +1.67) supports our design choice that an explicit, language-based critic is more effective than an implicit critic without lan-guage. This also indicates that making the refinement sig-nal linguistically explicit helps the model focus on safety-critical failure modes and deliver more targeted trajectory 6Judge, Then Drive: A Critic-Centric Vision Language Action Framework for Autonomous Driving 
+
+Table 3. Multi-Ability Results on Bench2Drive Closed-loop Benchmark. C/L refers to camera/LiDAR, * denote using expert feature distillation. We conduct three independent trials with different seeds and report the mean and variance of the results.                                                                                                  
+
+> Method Modality Venue Ability (%) ↑
+> Merging Overtaking Emergency Brake Give Way Traffic Sign Mean TCP* (Wu et al., 2022) CNeurIPS’ 22 16.18 20.00 20.00 10.00 6.99 14.63 TCP-traj* CNeurIPS’ 22 8.89 24.29 51.67 40.00 46.28 34.22 UniAD-Base (Hu et al., 2023) CCVPR’ 23 14.10 17.78 21.67 10.00 14.21 15.55 ThinkTwice* (Jia et al., 2023b) CCVPR’ 23 27.38 18.42 35.82 50.00 54.23 37.17 VAD (Jiang et al., 2023) CICCV’ 23 8.11 24.44 18.64 20.00 19.15 18.07 DriveAdaptor* (Jia et al., 2023a) C+L ICCV’ 23 28.82 26.38 48.76 50.00 56.43 42.08 DriveTrans (Jia et al., 2025) CICLR’ 25 17.57 35.00 48.36 40.00 52.10 38.60 TransFuser++ (Zimmerlin et al., 2024) C+L arXiv’ 24 58.75 57.77 83.33 40.00 82.11 64.39 ORION (Fu et al., 2025) CICCV’ 25 25.00 71.11 78.33 30.00 69.15 54.72 Simlingo (Renz et al., 2025) CCVPR’ 25 54.01 57.04 88.33 53.33 82.45 67.03 CriticVLA ( Ours )C-61.28 ±1.30 76.30 ±1.28 88.33 ±0.00 50.00 ±0.00 81.06 ±0.91 71.39 ±0.26
+
+corrections under the same training setup. 
+
+Necessity of using Full CriticDrive : combining the Extra Perturbation-Augmented Subset with the Model-Generated Subset (Row 4) yields the best overall performance. EPAS provides more diverse critiques, including aggressive speed profiles, lane intrusions, and synthetic collision trajecto-ries, which broadens the critic’s understanding of risk and enhance its ability to refine actions. Consequently, Crit-icVLA trained on Full CriticDrive attains higher SR with remarkably low variance across runs, indicating stronger robustness in closed-loop interactions with other traffic par-ticipants. This empirically validates the insights from The-orem 3.3 regarding the necessity of expanding the action set T to achieve a small ρ0 while maintaining a positive improvement ratio β.(2) What difficult scenarios does the proposed Crit-icVLA specifically address? Table 3 evaluates five advanced driving capabilities and com-pares CriticVLA with prior methods. CriticVLA achieves particularly large gains on Merging and Overtaking , im-proving success rates by 7.27% and 19.26% over SimLingo, respectively. Both abilities pertain to highly interactive sce-narios where failures often stem from rear-end collision or unsafe lateral maneuvers. Under these scenarios, Crit-icVLA’s dynamic risk analysis and subsequent action refine-ment play a crucial role in coping with interaction without becoming excessively aggressive or conservative, thereby resulting in a safe and efficient driving policy. To get a better understanding of what scenarios CriticVLA specifically address, we further perform a scenario - wise analysis by grouping Bench2Drive routes according to their scenario type and report per -scenario success rates in Fig.5. CriticVLA achieves the largest relative gain in scenarios that demand strict safety compliance and precise longitudi-nal control. In InterurbanActorFlow (SR 20% →100%) ,longitudinal risk is identified and appropriate speed adjust-
+
+Figure 5. The performance of CriticVLA in difficult scenarios. 
+
+ments are suggested to help the agent match the surrounding traffic flow instead of either stalling or merging aggres-sively. For NonSignalizedJunctionLeft/RightTurn (SR 60% →100%) , lateral risk analysis detects lateral deviations that would lead to cutting corners or drifting into opposite lanes and refines the trajectory back to the lane. In most of these scenarios, Full CriticDrive further improves suc-cess rates over the Base CriticDrive variant, indicating that exposing the critic to a richer set of high-risk perturbed tra-jectories translates into better generalization on challenging cases. (3) Can the proposed CriticVLA be applied iteratively to further optimize driving decisions? To enable fine-grained diagnosis, we construct a compact core-set Dcore from the full Bench2Drive routes by retaining the most challenging route from each scenario (See Ap-pendix for details), yielding 44 routes in total. This core-set preserves the diversity while serving as a rigorous proxy for evaluating driving policies. Consequently, all subsequent analysis is conducted on it. Since Sections 3 and 4 have established the effectiveness of CriticVLA for one-step refinement of action, we now analyze whether it can be applied iteratively. 
+
+Theorem 5.1. For the initial action A0 under given input 
+
+V and L in Theorem 3.3, Let Ak = C(Ak−1), k ≥ 1, and 
+
+7Judge, Then Drive: A Critic-Centric Vision Language Action Framework for Autonomous Driving 
+
+ρk = ρ(Ak) denote the distance from Ak to the training set T like Eq. (3). A sufficient condition for the sequence 
+
+{Q(Ak)} to be monotonically increasing is that 
+
+ρk ≤ cβ · [Q∗ − Q(Ak)] , (10) 
+
+where Q∗ is the upper bound value for given V, L and the corresponding optimal action as defined in Eq. (1). cβ > 0
+
+is the constant related to β.Proof. (See Appendix for details). If the proposed CriticVLA can iteratively refine the rough driving A0, this implies that 
+
+Q(A0) ≤ Q(A1) ≤ · · · ≤ Q(A∞) → Q∗, (11) i.e., {Q(Ak)} is monotonically increasing and converges to the upper bound Q∗. Theorem 5.1 shows that this requires Eq. (10) to hold, which in turn implies 
+
+min  
+
+> A∈T
+
+d(Ak, A ) ≤ cβ · [Q∗ − Q(Ak)] ≤ cβ ϵ. (12) for any ϵ > 0 and all sufficiently large k. Hence, repeated refinement would force min A∈T d(Ak, A ) → 0, meaning the training set T must effectively cover all refined actions 
+
+Ak and even the optimal action A∗. In practice, constructing such a training set for autonomous driving is infeasible, even with large synthetic datasets like CriticDrive, as it would require T to nearly cover the entire test distribution. The empirical results in Table 4 show that the first refinement step produces a substantial performance gain, while the second step offers only a marginal additional improvement with diminishing returns, consistent with the theoretical analysis above. Balancing effectiveness and computational cost, we recommend one-step refinement with CriticVLA as the preferred operating mode.   
+
+> Table 4. Multi-step refinements on core-set.
+
+Multi-step DS ↑ SR(%) ↑
+
+0 82.58 61.36 1 (ours) 88.24 72.73 2 88.75 75.00 
+
+3 88.13 70.45 
+
+(4) Is the main Theorem empirically valid in au-tonomous driving scenarios? In Theorem 3.3, we revealed that both better quality of the rough A0 and stronger refinement ability of the critic model can enhance the performance of our proposed CriticVLA. In this section, we will further conduct numerical verification of these conclusions in the autonomous driving scenario based on core-set Dcore . Specifically, 
+
+(a) Quality of A0: We consider ˜A0 = A0 + δa to simulate the quality of rough decisions, where δa ∼ N (0, σ I) and 
+
+σ ∈ R+ represents the level of perturbation applied to rough trajectories. This additive Gaussian perturbation provides a controlled way to mimic errors from Stage-1 trajectory gen-eration (e.g., imperfect perception or planning uncertainty). The larger the value of σ, the worse the quality of ˜A0, and the more difficult it becomes for the critic to recover a safe and feasible trajectory within one refinement step. The re-sults in Table 5 illustrate that the quality of A0 is crucial for CriticVLA and directly impacts the final closed-loop driving performance. 
+
+(b) Refinement ability of the critic model : During train-ing, each epoch samples a fixed-size minibatch from the 
+
+Full CriticDrive dataset, so CriticVLA is exposed to more training samples by increasing the number of epochs, effec-tively improving the refinement ability. The results in Table 6 confirm that the refinement ability of the critic model is crucial in the framework we proposed.    
+
+> Table 5. Ablation on Quality of A0on core-set.
+
+Quality of A0 DS ↑ SR(%) ↑
+
+σ = 1 .0 85.18 62.79 
+
+σ = 0 .5 86.57 70.45 without noise 88.24 72.73   
+
+> Table 6. Ablation of refinement ability of critic model on core-set. “e” denotes epoch.
+
+Critic model DS ↑ SR(%) ↑
+
+base (e=0) 82.58 61.36 critic (e=5) 84.04 65.91 critic (e=9) 86.43 70.45 critic (e=13) 88.24 72.73 
+
+## 6. Conclusion 
+
+In this work, we introduce CriticVLA, a novel two-stage framework that redefines the role of Vision-Language-Action (VLA) models in autonomous driving. We move beyond simple action generation by explicitly leveraging the VLA’s critic capability. Our paradigm first generates an initial trajectory and then refines it via VLA-based multi-modal critique, leading to high-quality driving behaviors. To support this, we construct CriticDrive, a large-scale syn-thetic dataset with 12.9 million annotated trajectories to en-hance critic generation. Extensive closed-loop evaluations on Bench2Drive demonstrate CriticVLA’s superior perfor-mance over state-of-the-art baselines. Our theoretical and empirical analyses confirm that the critic mechanism signif-icantly improves decision quality, establishing a promising “judge, then drive” paradigm for complex real-world driving. 8Judge, Then Drive: A Critic-Centric Vision Language Action Framework for Autonomous Driving 
+
+## Impact Statement 
+
+This work advances the field of Machine Learning by proposing a novel critic-driven paradigm for autonomous driving. The developed framework, CriticVLA, and its ac-companying dataset aim to enhance the safety and decision-making reliability of autonomous vehicles by enabling self-critical refinement of driving trajectories. While the direct societal impact is the potential improvement of autonomous driving systems, broader deployment would necessitate care-ful consideration of real-world safety validation, ethical implications of automated decision-making in critical sce-narios, and the societal consequences of widespread au-tonomous vehicle adoption. 
+
+## References 
+
+Achiam, J., Adler, S., Agarwal, S., Ahmad, L., Akkaya, I., Aleman, F. L., Almeida, D., Altenschmidt, J., Altman, S., Anadkat, S., et al. Gpt-4 technical report. arXiv preprint arXiv:2303.08774 , 2023. Bai, Y., Ying, J., Cao, Y., Lv, X., He, Y., Wang, X., Yu, J., Zeng, K., Xiao, Y., Lyu, H., Zhang, J., Li, J., and Hou, L. Benchmarking foundation models with language-model-as-an-examiner. In Oh, A., Naumann, T., Globerson, A., Saenko, K., Hardt, M., and Levine, S. (eds.), Advances in Neural Information Processing Systems 36: Annual Conference on Neural Information Processing Systems 2023, NeurIPS 2023, New Orleans, LA, USA, December 10 - 16, 2023 , 2023. Caesar, H., Bankiti, V., Lang, A. H., Vora, S., Liong, V. E., Xu, Q., Krishnan, A., Pan, Y., Baldan, G., and Beijbom, O. nuscenes: A multimodal dataset for autonomous driving. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pp. 11621–11631, 2020. Carion, N., Massa, F., Synnaeve, G., Usunier, N., Kirillov, A., and Zagoruyko, S. End-to-end object detection with transformers. In European conference on computer vision ,pp. 213–229. Springer, 2020. Chen, D., Chen, R., Zhang, S., Wang, Y., Liu, Y., Zhou, H., Zhang, Q., Wan, Y., Zhou, P., and Sun, L. Mllm-as-a-judge: Assessing multimodal llm-as-a-judge with vision-language benchmark. In Forty-first International Conference on Machine Learning .Chen, Z., Wu, J., Wang, W., Su, W., Chen, G., Xing, S., Zhong, M., Zhang, Q., Zhu, X., Lu, L., et al. Internvl: Scaling up vision foundation models and aligning for generic visual-linguistic tasks. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pp. 24185–24198, 2024. Chi, H., Gao, H.-a., Liu, Z., et al. CoVLA: Comprehensive vision-language-action dataset for autonomous driving. In WACV , 2025. Chiang, C.-H. and Lee, H.-y. A closer look into automatic evaluation using large language models. arXiv preprint arXiv:2310.05657 , 2023. Cui, Y., Lin, H., Yang, S., Wang, Y., Huang, Y., and Chen, H. Chain-of-thought for autonomous driving: A com-prehensive survey and future prospects. arXiv preprint arXiv:2505.20223 , 2025. Dosovitskiy, A., Ros, G., Codevilla, F., Lopez, A., and Koltun, V. Carla: An open urban driving simulator. In 
+
+Conference on robot learning , pp. 1–16. PMLR, 2017. Fu, H., Zhang, D., Zhao, Z., Cui, J., Liang, D., Zhang, C., Zhang, D., Xie, H., Wang, B., and Bai, X. Orion: A holis-tic end-to-end autonomous driving framework by vision-language instructed action generation. arXiv preprint arXiv:2503.19755 , 2025. Gao, Z., Chen, Z., Cui, E., Ren, Y., Wang, W., Zhu, J., Tian, H., Ye, S., He, J., Zhu, X., et al. Mini-internvl: a flexible-transfer pocket multi-modal model with 5% parameters and 90% performance. Visual Intelligence , 2(1):32, 2024. Hu, E. J., Shen, Y., Wallis, P., Allen-Zhu, Z., Li, Y., Wang, S., Wang, L., Chen, W., et al. Lora: Low-rank adaptation of large language models. ICLR , 1(2):3, 2022. Hu, Y., Yang, J., Chen, L., Li, K., Sima, C., Zhu, X., Chai, S., Du, S., Lin, T., Wang, W., et al. Planning-oriented autonomous driving. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition ,pp. 17853–17862, 2023. Huang, Z., Ling, G., Lin, Y., Chen, Y., Zhong, S., Wu, H., and Lin, L. Routereval: A comprehensive benchmark for routing llms to explore model-level scaling up in llms. 
+
+arXiv preprint arXiv:2503.10657 , 2025a. Huang, Z., Ling, G., Zhong, S., Wu, H., and Lin, L. Mini-longbench: The low-cost long context understanding benchmark for large language models. arXiv preprint arXiv:2505.19959 , 2025b. Huang, Z., Zhong, S., Zhou, P., Gao, S., Zitnik, M., and Lin, L. A causality-aware paradigm for evaluating creativity of multimodal large language models. IEEE Transactions on Pattern Analysis and Machine Intelligence , 2025c. Jaech, A., Kalai, A., Lerer, A., Richardson, A., El-Kishky, A., Low, A., Helyar, A., Madry, A., Beutel, A., Car-ney, A., et al. Openai o1 system card. arXiv preprint arXiv:2412.16720 , 2024. 9Judge, Then Drive: A Critic-Centric Vision Language Action Framework for Autonomous Driving 
+
+Jia, X., Gao, Y., Chen, L., Yan, J., Liu, P. L., and Li, H. Driveadapter: Breaking the coupling barrier of percep-tion and planning in end-to-end autonomous driving. In 
+
+Proceedings of the IEEE/CVF International Conference on Computer Vision , pp. 7953–7963, 2023a. Jia, X., Wu, P., Chen, L., Xie, J., He, C., Yan, J., and Li, H. Think twice before driving: Towards scalable decoders for end-to-end autonomous driving. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pp. 21983–21994, 2023b. Jia, X., Yang, Z., Li, Q., Zhang, Z., and Yan, J. Bench2drive: Towards multi-ability benchmarking of closed-loop end-to-end autonomous driving. arXiv preprint arXiv:2406.03877 , 2024. Jia, X., You, J., Zhang, Z., and Yan, J. Drivetransformer: Unified transformer for scalable end-to-end autonomous driving. arXiv preprint arXiv:2503.07656 , 2025. Jiang, A., Gao, Y., Sun, Z., et al. Diffvla: Vision-language guided diffusion planning for autonomous driving. arXiv preprint arXiv:2505.19381 , 2025a. Jiang, B., Chen, S., Xu, Q., Liao, B., Chen, J., Zhou, H., Zhang, Q., Liu, W., Huang, C., and Wang, X. Vad: Vectorized scene representation for efficient autonomous driving. In Proceedings of the IEEE/CVF International Conference on Computer Vision , pp. 8340–8350, 2023. Jiang, S., Huang, Z., Qian, K., Luo, Z., Zhu, T., Zhong, Y., Tang, Y., Kong, M., Wang, Y., Jiao, S., et al. A survey on vision-language-action models for autonomous driving. 
+
+arXiv preprint arXiv:2506.24044 , 2025b. Kim, M. J., Pertsch, K., Karamcheti, S., Xiao, T., Balakr-ishna, A., Nair, S., Rafailov, R., Foster, E., Lam, G., San-keti, P., et al. Openvla: An open-source vision-language-action model. arXiv preprint arXiv:2406.09246 , 2024. Lee, H., Phatale, S., Mansoor, H., Mesnard, T., Ferret, J., Lu, K., Bishop, C., Hall, E., Carbune, V., Ras-togi, A., et al. Rlaif: Scaling reinforcement learning from human feedback with ai feedback. ArXiv preprint ,abs/2309.00267, 2023. URL https://arxiv.org/ abs/2309.00267 .Lee, S., Kim, S., Park, S., Kim, G., and Seo, M. Prometheus-vision: Vision-language model as a judge for fine-grained evaluation. In Findings of the association for computa-tional linguistics ACL 2024 , pp. 11286–11315, 2024. Li, R., Patel, T., and Du, X. Prd: Peer rank and dis-cussion improve large language model based evalua-tions. ArXiv preprint , abs/2307.02762, 2023a. URL 
+
+https://arxiv.org/abs/2307.02762 .Li, Y., Chen, L., Han, X., et al. Drivelm: Driving with graph visual question answering. arXiv preprint arXiv:2312.14140 , 2023b. Liang, T., He, Z., Jiao, W., Wang, X., Wang, Y., Wang, R., Yang, Y., Tu, Z., and Shi, S. Encouraging divergent thinking in large language models through multi-agent debate. ArXiv preprint , abs/2305.19118, 2023. URL 
+
+https://arxiv.org/abs/2305.19118 .Lin, C.-Y. ROUGE: A package for automatic evaluation of summaries. In Text Summarization Branches Out , pp. 74–81, Barcelona, Spain, 2004. Association for Compu-tational Linguistics. URL https://aclanthology. org/W04-1013 .Liu, H., Li, C., Wu, Q., and Lee, Y. J. Visual instruction tun-ing. Advances in neural information processing systems ,36:34892–34916, 2023. Liu, H., Li, C., Li, Y., and Lee, Y. J. Improved baselines with visual instruction tuning. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition , pp. 26296–26306, 2024. Liu, S., Chen, W., Li, W., Wang, Z., Yang, L., Huang, J., Zhang, Y., Huang, Z., Cheng, Z., and Yang, H. Bridgedrive: Diffusion bridge policy for closed-loop tra-jectory planning in autonomous driving. arXiv preprint arXiv:2509.23589 , 2025a. Liu, Y., Zhao, W., Zhong, S., Qin, J., Liang, M., Huang, Z., and Wen, W. Associam: A benchmark for evaluating association thinking while circumventing ambiguity. In 
+
+Proceedings of the 2025 Conference on Empirical Meth-ods in Natural Language Processing , pp. 5203–5219, 2025b. Loshchilov, I. and Hutter, F. Decoupled weight decay regu-larization. arXiv preprint arXiv:1711.05101 , 2017. Ma, Y., Song, Z., Zhuang, Y., Hao, J., and King, I. A survey on vision-language-action models for embodied ai. arXiv preprint arXiv:2405.14093 , 2024. Oquab, M., Darcet, T., Moutakanni, T., Vo, H., Szafraniec, M., Khalidov, V., Fernandez, P., Haziza, D., Massa, F., El-Nouby, A., et al. Dinov2: Learning robust visual features without supervision. arXiv preprint arXiv:2304.07193 ,2023. Pan, Q., Ashktorab, Z., Desmond, M., Cooper, M. S., John-son, J., Nair, R., Daly, E., and Geyer, W. Human-centered design recommendations for llm-as-a-judge. 
+
+arXiv preprint arXiv:2407.03479 , 2024. Papineni, K., Roukos, S., Ward, T., and Zhu, W.-J. Bleu: a method for automatic evaluation of machine translation. 10 Judge, Then Drive: A Critic-Centric Vision Language Action Framework for Autonomous Driving 
+
+In Isabelle, P., Charniak, E., and Lin, D. (eds.), Pro-ceedings of the 40th Annual Meeting of the Association for Computational Linguistics , pp. 311–318, Philadel-phia, Pennsylvania, USA, 2002. Association for Com-putational Linguistics. doi: 10.3115/1073083.1073135. URL https://aclanthology.org/P02-1040 .Rasley, J., Rajbhandari, S., Ruwase, O., and He, Y. Deep-speed: System optimizations enable training deep learn-ing models with over 100 billion parameters. In Proceed-ings of the 26th ACM SIGKDD international conference on knowledge discovery & data mining , pp. 3505–3506, 2020. Renz, K., Chen, L., Arani, E., and Sinavski, O. Sim-lingo: Vision-only closed-loop autonomous driving with language-action alignment. In Proceedings of the Com-puter Vision and Pattern Recognition Conference , pp. 11993–12003, 2025. Sapkota, R., Cao, Y., Roumeliotis, K. I., and Kar-kee, M. Vision-language-action models: Concepts, progress, applications and challenges. arXiv preprint arXiv:2505.04769 , 2025. Sima, C., Renz, K., Chitta, K., et al. Drivelm: Driving with graph visual question answering. ECCV , 2024. Song, Z., Jia, C., Liu, L., Pan, H., Zhang, Y., Wang, J., Zhang, X., Xu, S., Yang, L., and Luo, Y. Don’t shake the wheel: Momentum-aware planning in end-to-end au-tonomous driving. In Proceedings of the Computer Vision and Pattern Recognition Conference , pp. 22432–22441, 2025. Sun, P., Kretzschmar, H., Dotiwalla, X., Chouard, A., Pat-naik, V., Tsui, P., Guo, J., Zhou, Y., Chai, Y., Caine, B., et al. Scalability in perception for autonomous driving: Waymo open dataset. In Proceedings of the IEEE/CVF conference on computer vision and pattern recognition ,pp. 2446–2454, 2020. Sun, T., He, J., Qiu, X., and Huang, X.-J. Bertscore is unfair: On social bias in language model-based metrics for text generation. In Proceedings of the 2022 Conference on Empirical Methods in Natural Language Processing , pp. 3726–3739, 2022. Sun, Z., Shen, Y., Zhang, H., Zhou, Q., Chen, Z., Cox, D. D., Yang, Y., and Gan, C. Salmon: Self-alignment with instructable reward models. In The Twelfth International Conference on Learning Representations , 2024. Team, Q. et al. Qwen2 technical report. arXiv preprint arXiv:2407.10671 , 2(3), 2024. Wang, J., Liang, Y., Meng, F., Sun, Z., Shi, H., Li, Z., Xu, J., Qu, J., and Zhou, J. Is chatgpt a good nlg evaluator? a pre-liminary study. In Proceedings of the 4th New Frontiers in Summarization Workshop , pp. 1–11, 2023. Wang, T., Xie, E., Chu, R., Li, Z., and Luo, P. Drivecot: Integrating chain-of-thought reasoning with end-to-end driving. arXiv preprint arXiv:2403.16996 , 2024a. Wang, X., Li, C., Yang, J., Zhang, K., Liu, B., Xiong, T., and Huang, F. Llava-critic-r1: Your critic model is secretly a strong policy model. arXiv preprint arXiv:2509.00676 ,2025. Wang, Y., Cheng, K., He, J., Wang, Q., Dai, H., Chen, Y., Xia, F., and Zhang, Z.-X. Drivingdojo dataset: Advancing interactive and knowledge-enriched driving world model. 
+
+Advances in Neural Information Processing Systems , 37: 13020–13034, 2024b. Wilson, B., Qi, W., Agarwal, T., Lambert, J., Singh, J., Khandelwal, S., Pan, B., Kumar, R., Hartnett, A., Pontes, J. K., et al. Argoverse 2: Next generation datasets for self-driving perception and forecasting. arXiv preprint arXiv:2301.00493 , 2023. Wu, P., Jia, X., Chen, L., Yan, J., Li, H., and Qiao, Y. Trajectory-guided control prediction for end-to-end au-tonomous driving: A simple yet strong baseline. Ad-vances in Neural Information Processing Systems , 35: 6119–6132, 2022. Yang, H., Yue, S., and He, Y. Auto-gpt for online de-cision making: Benchmarks and additional opinions. 
+
+ArXiv preprint , abs/2306.02224, 2023. URL https: //arxiv.org/abs/2306.02224 .Yuan, J., Sun, S., Omeiza, D., Zhao, B., Newman, P., Kunze, L., and Gadd, M. Rag-driver: Generalisable driving explanations with retrieval-augmented in-context learning in multi-modal large language model. arXiv preprint arXiv:2402.10828 , 2024. Yuan, W., Neubig, G., and Liu, P. Bartscore: Evaluat-ing generated text as text generation. In Ranzato, M., Beygelzimer, A., Dauphin, Y. N., Liang, P., and Vaughan, J. W. (eds.), Advances in Neural Information Processing Systems 34: Annual Conference on Neural Information Processing Systems 2021, NeurIPS 2021, December 6-14, 2021, virtual , pp. 27263–27277, 2021. Zhang, J., Yang, X., Wang, T., Yao, Y., Petiushko, A., and Li, B. Safeauto: Knowledge-enhanced safe autonomous driv-ing with multimodal foundation models. arXiv preprint arXiv:2503.00211 , 2025. 11 Judge, Then Drive: A Critic-Centric Vision Language Action Framework for Autonomous Driving 
+
+Zhang, T., Kishore, V., Wu, F., Weinberger, K. Q., and Artzi, Y. Bertscore: Evaluating text generation with BERT. In 8th International Conference on Learning Representations, ICLR 2020, Addis Ababa, Ethiopia, April 26-30, 2020 . OpenReview.net, 2020. URL https: //openreview.net/forum?id=SkeHuCVFDr .Zheng, L., Chiang, W.-L., Sheng, Y., Zhuang, S., Wu, Z., Zhuang, Y., Lin, Z., Li, Z., Li, D., Xing, E., et al. Judging llm-as-a-judge with mt-bench and chatbot arena. Ad-vances in neural information processing systems , 36: 46595–46623, 2023. Zheng, W., Song, R., Guo, X., Zhang, C., and Chen, L. Genad: Generative end-to-end autonomous driving. In 
+
+European Conference on Computer Vision , pp. 87–104. Springer, 2024. Zhong, S., Qin, J., Huang, Z., and Li, D. Cem: Machine-human chatting handoff via causal-enhance module. In 
+
+Proceedings of the 2022 Conference on Empirical Meth-ods in Natural Language Processing , pp. 3242–3253, 2022. Zhong, S., Gao, S., Huang, Z., Wen, W., ˇZitnik, M., and Zhou, P. Moextend: Tuning new experts for modality and task extension. In Proceedings of the 62nd Annual Meeting of the Association for Computational Linguistics (Volume 4: Student Research Workshop) , pp. 494–505, 2024a. Zhong, S., Huang, Z., Gao, S., Wen, W., Lin, L., Zitnik, M., and Zhou, P. Let’s think outside the box: Exploring leap-of-thought in large language models with creative humor generation. In Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition , pp. 13246– 13257, 2024b. Zhou, X., Liu, M., Yurtsever, E., Zagar, B. L., Zimmer, W., Cao, H., and Knoll, A. C. Vision language models in autonomous driving: A survey and outlook. IEEE Transactions on Intelligent Vehicles , 2024. Zhu, B., Frick, E., Wu, T., Zhu, H., Ganesan, K., Chiang, W.-L., Zhang, J., and Jiao, J. Starling-7b: Improving help-fulness and harmlessness with rlaif. In First Conference on Language Modeling , 2024. Zimmerlin, J., Beißwenger, J., Jaeger, B., Geiger, A., and Chitta, K. Hidden biases of end-to-end driving datasets. 
+
+arXiv preprint arXiv:2412.09602 , 2024. 12 Judge, Then Drive: A Critic-Centric Vision Language Action Framework for Autonomous Driving 
+
+CriticVLA.mp4 demonstrates examples where CriticVLA successfully performs direction correction and speed correction. Meanwhile, it presents a comparative analysis of the performance among CriticVLA, Simlingo, and the Stage-1 model. For further details, refer to the attached video. 
+
+## A. Proof 
+
+A.1. The proof of Theorem 1 Assumption 3.1 (Critic Improvement) The critic is assumed to have a guaranteed improvement ratio β ∈ (0 , 1) on the training set, i.e., for all A ∈ training set T ,
+
+Q(C(A)) − Q(A) ≥ β [Q∗(V, L ) − Q(A)] . (13) This means the critic can improve the value of any action by at least a fraction β of its gap to the optimal value. A larger value of β indicates a better ability of the critic. 
+
+Assumption 3.2 (Lipschitz Continuity) There exists a constant LQ > 0 such that for all A(1) , A (2) ∈ A ,
+
+|Q(A(1) ) − Q(A(2) )| ≤ LQ d(A(1) , A (2) ), (14) ensuring that small changes in actions lead to bounded changes in value. For critic function, there exists a constant LC > 0
+
+such that for all A(1) , A (2) ∈ A ,
+
+d(C(A(1) ), C (A(2) )) ≤ LC d(A(1) , A (2) ), (15) which indicates that the critic’s refinement of actions is smooth and stable. 
+
+Theorem A.1. For fixed visual input V and language input L, let A0 denote the initial action. Suppose the critic model satisfies Assumption 3.1 (critic improvement on the training set) and Assumption 3.2 (Lipschitz continuity). Let 
+
+ρ0 = ρ(A0) denote the distance from A0 to the training set T . Then, the value of the improved action A1 = C(A0) is lower bounded by 
+
+Q(A1) ≥ βQ ∗ + (1 − β) Q(A0) − ρ0LQ(1 − β + LC ), (16) 
+
+where Q∗ is the upper bound value for given V, L and the corresponding optimal action. Proof. Since ρ0 = min A∈T d(A0, A ) and the training set T contains finite samples, we can find ˆA ∈ T such that 
+
+ρ0 = d(A0, ˆA) = min  
+
+> A∈T
+
+d(A0, A ). (17) Next, by the Lipschitz continuity assumption of the critic function C in Assumption 3.2, we have 
+
+d(C(A0), C ( ˆA)) ≤ LC · d(A0, ˆA) = LC · ρ0. (18) Furthermore, from Eq. (18) and Assumption 3.2 (which also states that Q is LQ-Lipschitz continuous), we obtain 
+
+|Q(C(A0)) − Q(C( ˆA)) | ≤ LQd(C(A0), C ( ˆA)) 
+
+≤ LQ · LC · d(A0, ˆA) Since Eq. (18) 
+
+= LQ · LC · ρ0,
+
+(19) Therefore, we have 
+
+Q(C(A0)) ≥ Q(C( ˆA)) − LQLC ρ0, (20) Subsequently, as ˆA ∈ T , the condition in Assumption 3.1 gives 
+
+Q(C( ˆA)) − Q( ˆA) ≥ β [Q∗(V, L ) − Q( ˆA)] . (21) Moreover, we rewrite the inequality in Eq. (20), 
+
+Q(C(A0)) ≥ Q(C( ˆA)) − LQLC ρ0 Since Eq. (20) 
+
+≥ Q( ˆA) + β [Q∗(V, L ) − Q( ˆA)] − LQLC ρ0 Since Eq. (21) 
+
+= (1 − β)Q( ˆA) + βQ ∗ − LQLC ρ0.
+
+(22) 13 Judge, Then Drive: A Critic-Centric Vision Language Action Framework for Autonomous Driving 
+
+where Q∗ = Q∗(V, L ). Note that A1 = C(A0), we further have 
+
+Q(A1) = Q(C(A0)) 
+
+≥ (1 − β)Q( ˆA) + βQ ∗ − LQLC ρ0 Since Eq. (22) 
+
+≥ (1 − β) · [Q(A0) − LQρ0] + βQ ∗ − LQLC ρ0 Assumption 3.2 
+
+= βQ ∗ + (1 − β) Q(A0)
+
+| {z }
+
+> For Stage-1
+
+− ρ0LQ(1 − β + LC )
+
+| {z }
+
+> For Stage-2
+
+.
+
+(23) 
+
+A.2. The proof of Theorem 2 Theorem A.2. For the initial action A0 under given input V and L in Theorem 3.3, Let Ak = C(Ak−1), k ≥ 1, and 
+
+ρk = ρ(Ak) denote the distance from Ak to the training set T . A sufficient condition for the sequence {Q(Ak)} to be monotonically increasing is that 
+
+ρk ≤ cβ · [Q∗ − Q(Ak)] , (24) 
+
+where Q∗ is the upper bound value for given V, L and the corresponding optimal action. cβ is the constant related to 
+
+β and cβ > 0.Proof. Since ρk = ρ(Ak), using Theorem 1, we can derive the following lower bound estimate for the k-th improvement: 
+
+Q(Ak+1 ) ≥ βQ ∗ + (1 − β)Q(Ak) − ρkLQ(1 − β + LC ), (25) where k ≥ 0. To require the sequence {Q(Ak)} to be monotonically increasing means that for all k,
+
+Q(Ak) ≤ Q(Ak+1 ). (26) According to Eq. (25), we only need to satisfy a sufficient condition: 
+
+Q(Ak+1 ) ≥ βQ ∗ + (1 − β)Q(Ak) − ρkLQ(1 − β + LC ) ≥ Q(Ak). (27) Thus, we have 
+
+βQ ∗ + (1 − β)Q(Ak) − ρkLQ(1 − β + LC ) ≥ Q(Ak) Since Eq. (27) 
+
+βQ ∗ + (1 − β − 1) Q(Ak) ≥ ρkLQ(1 − β + LC )
+
+β[Q∗ − Q(Ak)] ≥ ρkLQ(1 − β + LC ).
+
+(28) Let cβ = β/ [LQ(1 − β + LC )] ; then we have 
+
+ρk ≤ βLQ(1 − β + LC ) [Q∗ − Q(Ak)] ≡ cβ [Q∗ − Q(Ak)] . (29) Here, since β ∈ (0 , 1) and the Lipschitz constants LQ and LC are both positive, it follows that cβ > 0.
+
+A.3. The verification of the assumptions 
+
+As mentioned in the main text, Assumption 3.1 is established on the training set T . It can be reasonably guaranteed as long as the critic model is sufficiently well-trained. Moreover, we do not require the critic to achieve perfect performance (i.e., 
+
+β → 1), instead, β ∈ (0 , 1) is sufficient, indicating any positive improvement over the initial policy. Hence, this assumption imposes only a moderately weak requirement. Therefore, Assumption 3.1 is a very mild assumption that does not require numerical verification. And, the focus of numerical validation lies on Assumption 3.2. This section mainly conducts numerical verification for Assumption 3.2 in the autonomous driving scenario. Specifically, we sample 20,000 trajectories from 12.9 million annotated 14 Judge, Then Drive: A Critic-Centric Vision Language Action Framework for Autonomous Driving 0 2 4 6 8      
+
+> L_C Value
+> 0
+> 200
+> 400
+> 600
+> 800
+> 1000
+> Frequency
+> Distribution of L_C
+> Mean=1.0587
+> Median=0.9309
+> 0.00 0.05 0.10 0.15 0.20 0.25 0.30
+> L_Q Value
+> 0
+> 500
+> 1000
+> 1500
+> 2000
+> Frequency
+> Distribution of L_Q
+> Mean=0.0264
+> Median=0.0139
+
+Figure 6. The distribution of Lipschitz constant LQ and LC in different scenarios. 
+
+trajectories for analysis. First, regarding the part of Assumption 3.2 related to the Q function: for an action A, Q(A) can be defined as the proportion of untriggered risks. If A triggers no risks, then Q(A) = 1 . In the experimental setting of this paper, d(·, ·) adopts the Euclidean norm. As shown in Fig. (6), the distributions of LQ and LC from the sampled data exhibit the following characteristics: they are concentrated near the origin, presenting long-tailed distributions that first rise and then decline. Additionally, both values have obvious upper bounds, meaning it is easy to construct LQ and LC that satisfy the inequality requirement of Assumption 3.2. In other words, Assumption 3.2 holds in the autonomous driving scenario involved in this paper. 
+
+## B. Model Architecture and Implementation Details 
+
+B.1. Overview and Terminology Explanation 
+
+This section details the architecture, training methodology, hyperparameters, and input/output specifications of our proposed CriticVLA. The framework operates sequentially: first generating an initial trajectory, then performing a natural language-based risk assessment, and finally refining the trajectory based on this semantic analysis. The model receives the following inputs: • Visual Input ( V ): A single front-facing camera image I ∈ RH×W ×3.• State Input ( S): The ego vehicle’s current speed v (scalar). • Navigation Input ( L): A 2D GPS target point defining the long-range driving goal relative to the ego vehicle. B.1.1. R OUTE WAYPOINTS AND SPEED WAYPOINTS 
+
+To achieve robust and precise autonomous navigation, our model predicts the future motion of the ego-vehicle using a dual-trajectory representation. This scheme decomposes the planning task into two complementary components: Geometric Route Waypoints and Temporal Speed Waypoints . This separation allows for the decoupling of lateral and longitudinal control, ensuring both geometric fidelity and dynamic feasibility. 
+
+Geometric Route Waypoints. We define the geometric path as a sequence of spatial coordinates P ∈ RNp×2, where Np
+
+represents the number of route waypoints. These points are generated with a fixed spatial interval (e.g., 1 meter between consecutive points), independent of the time required to traverse them. • Role: This representation captures the pure geometry of the intended driving path, focusing on curvature, lane alignment, and spatial obstacle avoidance. 15 Judge, Then Drive: A Critic-Centric Vision Language Action Framework for Autonomous Driving 
+
+• Utility: By maintaining a high spatial density, P provides a smooth and continuous reference line for the lateral controller (e.g., a PID steering controller), minimizing cross-track error and ensuring stable steering maneuvers regardless of the vehicle’s speed. It should be noted that route waypoints may also be abbreviated as route or path in the text. 
+
+Temporal Speed Waypoints. Simultaneously, the model predicts a sequence of temporal speed waypoints W ∈ RNw ×2,where Nw denotes the number of future states. Unlike the geometric path, these points are generated at fixed time intervals (e.g., ∆t = 0 .25 seconds). • Role: This representation implicitly encodes the vehicle’s longitudinal velocity profile and acceleration dynamics. The Euclidean distance between consecutive temporal points reflects the intended speed at that specific moment. • Utility: W serves as the reference for the longitudinal controller. It dictates the throttle and brake commands required to manage speed transitions, such as decelerating before a sharp turn or accelerating during a lane change. 
+
+B.2. Stage-1: Initial Trajectory Generation Input Encoding. We adopt the InternVL2-1B model from the Mini-InternVL family (Gao et al., 2024) as our primary VLA backbone. This model consists of the InternViT-300M-448px Vision Encoder and the Qwen2-0.5B-Instruct (Team et al., 2024) Language Model (LLM). The multi-view RGB images are encoded by the Vision Encoder, providing latent visual features. The navigation input ( L, the GPS target point) is processed by a dedicated Waypoint Input Adaptor, a 3-layer MLP with ReLU activations, to convert the numerical coordinate inputs into token embeddings of dimension 
+
+Dmodel = 2048 . These embeddings are then concatenated with specific navigation prompt tokens ( e.g. , <IMG CONTEXT> )for integration by the LLM. 
+
+Output Heads. The LLM processes the concatenated visual and language/navigation features. Its output hidden states are projected into the trajectory space via the Driving Adaptor, which employs a DETR-based prediction approach (Carion et al., 2020) using learnable queries. We utilize two types of learnable queries within the LLM’s structure. First are 512 vision queries, which are used for latent multimodal feature extraction and grounding within the LLM’s attention mechanism. Second are 16 trajectory queries, which interact with the contextualized hidden states and are directly mapped to the output trajectory A0 by the output heads. The Driving Adaptor comprises specialized heads acting on the hidden states corresponding to the Trajectory Queries. (1) The Route Waypoints Head. It predicts Np = 20 route waypoints. It uses an MLP (Linear → SiLU → Linear) to output cumulative deltas from the current ego-position, which are then summed to form the absolute coordinates of P ∈ R20 ×2.(2) The Speed Waypoints Head: Predicts Nw = 10 speed waypoints, which uses a similar MLP structure to predict the coordinates of W ∈ R10 ×2 at fixed time intervals. (3) The Waypoint Input Adaptor, which encodes numerical coordinate inputs into token embeddings via a 3-layer MLP with ReLU activations. The resulting output A0 is the rough route tensor P
+
+and the speed profile W, serving as the geometric foundation for the second stage. Prompt details for Stage-1 are provided in Section B.5. 
+
+Training data. To counter the overabundance of easy or uneventful data in driving logs, we implement a Weighted Bucket Sampling strategy following(Renz et al., 2025). The full training data is partitioned into specific buckets corresponding to critical driving situations ( e.g. , complex intersections, pedestrian crossings, lane changes). During each training epoch, we sample from these buckets with non-uniform probabilities that favor challenging scenarios. This significantly concentrates the training effort on critical decision-making, while still including a sufficient ratio of non-critical data. This approach results in a controlled epoch size of approximately 480,000 samples. 
+
+B.3. Stage-2: Trajectory Refinement with Language Reasoning 
+
+The architecture of the refinement stage is designed to integrate geometric priors from the rough trajectory with high-level semantic reasoning. We reuse the InternVL2-1B backbone, treating it as a multimodal critic to evaluate and optimize the rough trajectory A0 from Stage-1. This stage introduces three primary components: geometric input encoders, the language critic head, and the query-based delta adaptors. We enable Low-Rank Adaptation (LoRA) (Hu et al., 2022) on the 16 Judge, Then Drive: A Critic-Centric Vision Language Action Framework for Autonomous Driving 
+
+backbone (rank r = 32 , α = 64 , dropout 0.1) targeting all linear layers to make the model trainable for reasoning tasks while maintaining efficiency. 
+
+Geometric Input Encoders. To ingest the coarse trajectory A0 generated in Stage-1 into the LLM’s token space, we use specialized encoders that map the geometric coordinates into the model’s embedding space ( dmodel = 512 ). • The Delta Waypoint Encoder processes the rough route waypoints ( Prough ∈ R20 ×2). • The Delta Speed Encoder processes the rough speed waypoints ( Vrough ∈ R10 ×2). Both encoders share a Multi-Layer Perceptron (MLP) architecture: Linear( 2 → 256 ) → ReLU → Linear( 256 → 512 ) →
+
+ReLU → Linear( 512 → dmodel ). These projected embeddings replace placeholder tokens ( e.g. , <wpt>... </wpt> )within the Delta Prompt, allowing the LLM to contextually reason over the initial plan. 
+
+Language Head. Parallel to the trajectory heads, the Delta Language Adaptor utilizes the standard language modeling head of the backbone. It is responsible for autoregressively generating the risk analysis tokens and action recommendations, which subsequently serve as context for the Delta Adaptor in the trajectory refinement phase. The analysis includes a structured risk assessment dictionary, evaluating six categories (Collision, Speed, Direction, Pedestrian, Stop Sign, Traffic Light), followed by concrete action recommendations ( e.g. , “reduce speed from 7.4 m/s to 3.5 m/s”). This helps to inject semantic reasoning to refine the rough trajectory. 
+
+Query-Based Delta Adaptors. The final refinement is driven by a set of Learnable Refinement Queries ( Qroute ∈
+
+R1×20 ×dmodel and Qspeed ∈ R1×10 ×dmodel ). These queries anchor the model’s attention to the trajectory refinement task. The output hidden states corresponding to these queries are fed into the DeltaAdaptor. This adaptor predicts the refinement deltas ( ∆P, ∆W) rather than absolute coordinates. It employs a dedicated MLP structure: Linear( dmodel → 2dmlp ) →
+
+SiLU → Linear( 2dmlp → dmlp ) → SiLU → Linear( dmlp → 2), where dmlp = 256 .
+
+Two-Phase Inference and Output. Stage-2 inference executes in a strict two-phase forward pass driven by the Delta Prompt (which includes a zero-shot example to guide the reasoning format): 1. Semantic Analysis Phase: The model first performs an autoregressive decoding pass using the Language Critic Head, generating the complete risk assessment and action recommendations. 2. Refinement Phase: Using the generated analysis as context, the model employs the Query-based Delta Adapters to directly predict refined trajectories. 
+
+Training data. The CriticVLA refinement stage is trained exclusively on the CriticDrive dataset, which totals 3,081,848 annotated driving frames. This dataset is logically partitioned into three components: Ground Truth (GT) Data (re-formatted from the stage1 training set), the Model-Generated Subset (MGS) (2,023,499 frames), and the Extra Perturbation-Augmented Subset (EPAS) (1,058,349 frames). Details of this dataset can be found in Section C.2 We evaluate performance under two primary training regimes: • Base CriticDrive: This regime focuses on training the critic primarily on our generated error samples (MGS). Crucially, the MGS is augmented with 15% Ground Truth (GT) Data to teach the critic the necessary skill of identifying already-optimal trajectories where the required refinement delta is zero. This configuration yields a controlled epoch size of 480,000 samples. • Full CriticDrive (with Augmentation): This regime incorporates the complete set of error samples by including the Extra Perturbation-Augmented Subset (EPAS). The EPAS is included to maximize diversity in failure patterns and enhance the model’s refinement capabilities, aligning with the necessity of reducing the distance to the training set ( ρ0)as characterized by Theorem 1. Training samples are drawn with a 1 : 1 ratio from the combined (MGS + GT Data) pool and the EPAS pool. This results in a full epoch size of 960 , 000 samples. 
+
+B.4. Model Inference Details 
+
+We evaluate the driving capability of CriticVLA on Bench2Drive(Jia et al., 2024) closed-loop benchmark with the CARLA simulator version 0.9.15 (Dosovitskiy et al., 2017). The evaluation follows a multi-stage pipeline: 17 Judge, Then Drive: A Critic-Centric Vision Language Action Framework for Autonomous Driving <ORG_WAYPOINTS><ORG_SPEEDWAYPOINTS>  
+
+> Please analyze previously generated waypoints following the example format
+> and then refine the waypoints.
+> Risk analysis:\n
+> {collision risk: False,\n
+> speed risk: True,\n
+> direction risk: True,\n
+> pedestrian risk: False,\n
+> stop sign risk: False,\n
+> traffic light risk: False}\n\n
+> Action:\n
+> speed: reduce speed from 7.4 m/s to 3.5 m/s\n
+> direction: adjust direction to the left\n
+
+Stage 2 Prompt:         
+
+> Risk analysis:\n{
+> collision risk: <TRUE/FALSE> ,\n
+> speed risk: <TRUE/FALSE> ,\n
+> direction risk: <TRUE/FALSE> ,\n
+> pedestrian risk: <TRUE/FALSE> ,\n
+> stop sign risk: <TRUE/FALSE> ,\n
+> traffic light risk: <TRUE/FALSE> }\n\n
+> Action:\n
+> speed: <SPEEDACTION> \n
+> direction: <DIRACTION> \n
+> Refined Waypoints:
+> <REF_WAYPOINTS><REF_SPEEDWAYPOINTS>
+
+Stage 2 Answer: 
+
+> Current speed: {speed} m/s. {target option} Predict the waypoints.
+
+Stage 1 Prompt: 
+
+> Waypoints:
+> <ORG_WAYPOINTS><ORG_SPEEDWAYPOINTS>
+
+Stage 1 Answer: 
+
+Figure 7. The template of prompt and answer. 
+
+Input Preparation Multi-view RGB camera images are captured and preprocessed via dynamic resizing. Meanwhile, GPS and IMU sensors provide vehicle localization and orientation data. A route planner generates target points based on the global route plan, which are transformed into ego-centric coordinates along with the current vehicle speed to form the input feature set. 
+
+Model Inference CriticVLA processes multi-modal inputs through a two-stage refinement mechanism. In the first stage, conditioned on visual observations, target points, and language inputs, the model generates initial trajectory waypoints (route waypoints and speed waypoints). Subsequently, a language-guided refinement stage employs greedy sampling to generate natural language descriptions of initial trajectory risk analysis and further action suggestions, which are utilized to refine the initial predictions into better trajectory predictions (route waypoints and speed waypoints). 
+
+Vehicle control The predicted waypoints are interpolated using piecewise cubic Hermite interpolation to ensure spatial smoothness. A dual PID control framework converts the refined trajectory into low-level vehicle control commands: a lateral PID controller calculates steering angles by tracking interpolated route waypoints, while a longitudinal PID controller regulates throttle and brake based on the desired speed derived from speed waypoints. Braking logic is triggered when the desired speed falls below a threshold or the speed ratio exceeds a safety limit. The generated control signals are executed in the CARLA simulation environment to evaluate the autonomous driving performance of the agent. 
+
+B.5. Format of Prompts and Answers 
+
+For detailed specifications of the reasoning mechanism, the templates for the prompts and generated answers used are illustrated in Figure 7. 
+
+B.6. Implementation Details Hyperparameters and Optimization. The model is trained on 8 NVIDIA A100 GPUs using DeepSpeed ZeRO Stage-2 (Rasley et al., 2020) with 16-bit mixed precision. We use the AdamW optimizer (Loshchilov & Hutter, 2017) with a learning rate of 3 × 10 −5, weight decay of 0.1, and β = (0 .9, 0.999) . The learning rate follows a OneCycleLR schedule with a 5% warmup period. Gradient clipping is set to 0.3 to prevent divergence. 
+
+Data Augmentation To enhance robustness, we apply random image augmentations (probability 0.5) and image shift augmentations (probability 0.5) during training. The trajectory prediction horizon is set to T = 11 timesteps (future 2.5s at 4Hz), predicting 20 spatial waypoints. 18 Judge, Then Drive: A Critic-Centric Vision Language Action Framework for Autonomous Driving 
+
+Training We leverage DeepSpeed v2 (Rasley et al., 2020) for efficiency and memory management. The fine-tuning of CriticVLA consists of two stages, as detailed below. 
+
+Stage-1 Fine-tuning. For the Stage-1 model, we employ a mixed fine-tuning strategy. The vision encoder and all projection layers are fully fine-tuned to maximize their ability to extract driving-relevant visual features. Conversely, the Language Model is fine-tuned using LoRA (Hu et al., 2022) applied to all its linear layers. The LoRA rank dimension is set to r = 32 
+
+and the scaling factor α is 64. Stage-1 is trained for a total of 13 epochs. 
+
+Stage-2 Fine-tuning. In the critic stage, we reuse the same InternVL2-1B backbone initialized with the weights from the trained Stage-1 model. Only the parameters related to the Critic Param (as shown in Figure 1(b)) are fine-tuned, while the parameters of the Stage-1 Generator (including the Vision Encoder and LLM) are frozen. The model is trained on the synthetic CriticDrive dataset for 13 epochs. This stage adopts the same LoRA configuration ( r = 32 , α = 64 ) and optimization hyperparameters as Stage-1 to ensure consistency and facilitate efficient knowledge transfer. 
+
+Loss Function The total loss Ltotal is a weighted sum of: 
+
+Ltotal = λlang LCE + λroute Lroute −wps Smooth −L1 + λspeed Lspeed −wps Smooth −L1 (30) where LCE is the cross-entropy loss for language generation, and LL1 denotes the smooth-L1 distance between the refined predictions and ground truth waypoints. 
+
+## C. Introduction to CriticDrive 
+
+C.1. Construction Method of the CriticDrive Dataset 
+
+To enable the training of CriticVLA, we formulate a comprehensive Critic Reasoning Creator to automatically construct CriticDrive dataset. This rule-based heuristic engine evaluates predicted trajectory against expert ground truth (GT) demonstrations, environmental constraints, and dynamic actor behaviors. Our construction method decomposes the reasoning process into two stages: Risk Analysis , which identifies potential hazards across four domains, and Action Suggestion , which synthesizes corrective natural language directives. C.1.1. R ISK ANALYSIS GENERATION 
+
+The risk analysis generator performs a spatiotemporal evaluation of the predicted trajectories. We define the risk set R
+
+across four dimensions: Lateral Deviation, Longitudinal Kinematics, Collision Safety, and Contextual Complexity. 
+
+Lateral Risk Analysis 
+
+We evaluate the spatial alignment of the predicted route Ppred against the expert ground truth route Pgt .• Angular Deviation: We calculate the heading vectors by averaging the coordinates of the final k = 5 waypoints for both Ppred and Pgt . A directional risk is flagged if the angular difference ∆θ exceeds the threshold τθ = 7 .5◦.• Route Offset (Cross-Track Error): We compute the Cross-Track Error (CTE) of the predicted path relative to the expert trajectory. A Route Offset risk is identified if the maximum lateral displacement exceeds τlat = 2 .0 meters. • Topological Mismatch: We classify the route geometry (e.g., Straight, Left/Right Turn, Lane Change) based on cumulative curvature and lateral displacement. A risk is recorded if the predicted topology class differs from the expert class (e.g., predicting “Straight” when the expert executes a “Lane Change”). 
+
+Longitudinal Risk Analysis 
+
+We calculate predicted velocity profile Vpred and the ground truth profile Vgt from predicted speed waypoints Wpred and expert speed waypoints Wgt . Then, we assess the safety and intent consistency of Vpred against Vgt and the legal speed limit Vlimit .• Speed Limit Compliance: A critical risk is flagged if the current speed exceeds a safety margin of the legal limit: 
+
+vcurr > 0.9 × Vlimit .19 Judge, Then Drive: A Critic-Centric Vision Language Action Framework for Autonomous Driving 
+
+• Speed Deviation: We compare the predicted average speed (first 3 frames) and future speed (final frame) against expert data. A speed risk is identified if both the relative error exceeds τrel = 20% and the absolute difference exceeds 
+
+τabs = 0 .5 m/s. • Intent Classification: We classify the velocity trend into four categories: Accelerating , Decelerating , Maintaining , or 
+
+Braking-to-Stop . This is achieved using a time-weighted gradient of the future waypoints. A semantic risk arises if the predicted intent contradicts the expert intent (e.g., agent predicts “Maintaining” while the expert is “Braking-to-Stop”). 
+
+Collision Verification 
+
+To detect imminent hazards, we perform a rigorous intersection test. We project the ego-vehicle’s state into the future using a Kinematic Bicycle Model to generate a sequence of 3D Oriented Bounding Boxes (OBBs). • Mechanism: For each timestep t in the forecast horizon, we check for geometric overlap between the ego OBB and the OBBs of all surrounding actors (vehicles, pedestrians). • Algorithm: We utilize the Separating Axis Theorem (SAT) to determine intersection. If no separating plane exists between the ego and an actor, a collision risk is confirmed, and the specific actor ID and class are recorded. 
+
+Environmental and Contextual Analysis 
+
+We analyze the static environment and scene complexity to identify latent risks: • Scene Complexity: A scenario is deemed “Complex” if the number of dynamic participants exceeds N = 6 .• Adverse Conditions: We flag risks for poor visibility (rain, fog, night) or reduced traction (road wetness > 40% ). • Vulnerable Road Users (VRU): A specific risk is triggered if a pedestrian is detected within a radial distance of 
+
+distance < 10 meters. • Traffic Controls: Risks are flagged for active Stop Signs, red traffic lights, or traffic rule violations (e.g., entering a forbidden lane). C.1.2. A CTION SUGGESTION GENERATION 
+
+Based on the aggregated risk profile, our method synthesizes corrective action suggestions. This process employs a hierarchical logic to prioritize safety-critical maneuvers over comfort-related adjustments. 
+
+⋄ Corrective Longitudinal Action 
+
+We generate speed commands by comparing the predicted speed vpred with the expert reference vgt when a longitudinal risk is present: 
+
+Aspeed =
+
+
+
+“Reduce speed from vpred to vgt ” if vpred > v gt 
+
+“Increase speed from vpred to vgt ” if vpred < v gt 
+
+“Maintain speed at vpred ” otherwise (31) 
+
+Corrective Lateral Action 
+
+Directional suggestions are derived to negate the observed lateral offset: • If a Direction Risk is detected, we determine the offset direction Dof f set ∈ { Left , Right }. The system suggests the inverse maneuver: “Adjust direction to the [Opposite of Dof f set ]” (e.g., if offset is Left, suggest Right). • Collision Override: If a Collision Risk is identified, the standard directional suggestion is overridden by a high-priority safety directive: “Collision risk with [Actor Class], proceed with caution and yield.” 
+
+• If no deviations are found, the system suggests “Maintain direction.” 
+
+20 Judge, Then Drive: A Critic-Centric Vision Language Action Framework for Autonomous Driving 
+
+C.2. Composition of CriticDrive 
+
+To facilitate robust trajectory critique and refinement, we constructed a large-scale dataset comprising a total of 3,081,848 
+
+annotated driving frames. This dataset is structured into two distinct subsets: Model-Generated Trajectories and Extra Heuristically Perturbed Trajectories .C.2.1. M ODEL -G ENERATED SUBSET 
+
+The first subset consists of 2,023,499 frames. For each frame, we employed the Stage-1 Model to generate a corresponding coarse trajectory. These predictions were then aligned with their respective expert ground-truth trajectories to generate dense critic annotations—specifically, risk analysis and action suggestions—following the methodology described in Section C.1. Table 7 details the distribution of detected risks within this subset. It is crucial to note that the risk assessment is a multi-label classification problem; distinct risk categories frequently co-occur within a single scenario (e.g., a Pedestrian Risk may exist simultaneously with a Traffic Light Risk , or a Collision Risk may accompany a Speed Risk ). Consequently, the statistics in Table 7 represent the frequency of positive instances for each specific risk category relative to the total number of samples.    
+
+> Table 7. Distribution of Identified Risk Categories in the Model-Generated Subset. This table details the prevalence of specific risk types detected within the 2,023,499 coarse trajectories generated by the Stage-1 Model. Values represent the percentage of samples flagged with each risk. Note that the risk categories are non-exclusive , meaning a single trajectory may exhibit multiple concurrent risks (e.g., both Collision Risk and Speed Risk).
+
+Percentage Collision Speed Direction Pedestrian Traffic Light Stop Sign 13.22% 21.29% 36.98% 1.70% 11.81% 6.99% C.2.2. E XTRA PERTURBATION -A UGMENTED SUBSET 
+
+To further expand the diversity of failure patterns and enhance the model’s refinement capability across varying degrees of trajectory quality, we introduced a second subset derived from 1,058,349 frames. Rather than relying solely on model outputs, we applied systematic perturbations to the expert trajectories, synthesizing a massive set of 10,895,598 extra rough trajectories. Inspired by (Renz et al., 2025), this heuristic perturbation strategy corrupts expert demonstrations to generate plausible yet risky trajectories. We categorize these perturbations into three distinct types: longitudinal velocity modifications, lateral lane deviations, and forced collision synthesis. All perturbed trajectories are dynamically verified using a kinematic bicycle model to ensure physical feasibility. 
+
+Longitudinal Velocity Modification We generate alternative speed profiles while maintaining the original geometric route to simulate behaviors such as over-speeding, unnecessary braking, or failure to adhere to target speeds. The perturbed velocity profiles are synthesized using the profile scaling mechanisms: We apply a scalar factor γ to the expert’s speed profile Vexp . To simulate aggressive driving, we sample γ ∼ U (1 .1, 1.5) .Conversely, to simulate overly cautious driving, we sample γ ∼ U (0 .3, 0.9) .
+
+Forced Lane Deviation To simulate unsafe lateral maneuvers, such as illegal lane changes or driving on sidewalks, we geometrically transform the expert route. The system identifies all adjacent zones, including same-direction lanes, opposite-direction lanes (risking head-on collisions), parking lanes, and sidewalks. For a selected target zone with a lateral offset W relative to the ego-lane, we synthesize a shifted trajectory P′. Let 
+
+P = {p1, . . . , p T } be the original waypoints. We define a start index kstart and a transition length Ltrans . The perturbed waypoints are computed by projecting the original points along the local normal vector ⃗n i:
+
+p′ 
+
+> i
+
+= pi + αi · W ·⃗n i, where αi ∈ [0 , 1] (32) Here, αi represents the transition interpolation factor, shifting linearly from 0 to 1 over the transition duration. This geometric transformation is subsequently tracked by the bicycle model to generate the final physically grounded trajectory, simulating both successful and prohibited lane changes (e.g., crossing solid lines or entering oncoming traffic). 21 Judge, Then Drive: A Critic-Centric Vision Language Action Framework for Autonomous Driving 
+
+Forced Collision Synthesis We explicitly construct trajectories that result in collisions with static obstacles or dynamic actors to train the model’s collision avoidance reasoning. The process proceeds in three steps: 1. Candidate Selection: We identify candidate objects O (vehicles, pedestrians, static meshes) within the ego-vehicle’s future field of view. For dynamic actors, we utilize their future bounding boxes derived from the simulator’s ground truth. 2. Spatiotemporal Matching: For a selected object O at a future timestep tcrash , we calculate the precise position pobj .We then derive a constant collision speed vcrash required for the ego-vehicle to reach pobj exactly at tcrash :
+
+vcrash = ∥pego − pobj ∥ − δsaf ety 
+
+∆tcrash 
+
+(33) where δsaf ety accounts for the physical extent of the vehicle and the object. 3. Route Interpolation: We modify the geometric route to intersect with the target. The trajectory is reconstructed by interpolating between the current ego position and the collision point pobj , and then returning to the original route. The ego-vehicle is then simulated along this collision path at speed vcrash , guaranteeing a spatiotemporal overlap with the obstacle. The distribution of different perturbation types is presented in Table 8.        
+
+> Table 8. Composition of Heuristic Perturbation Types in the Augmented Dataset. We present the statistical distribution of the three augmentation strategies applied to expert trajectories to generate the 10.9 million synthetic samples. The perturbations include
+> Velocity Modification (increase / reduce speed), Forced Lane Deviation (unjustified lane changes), and Forced Collision (intersecting with obstacles), designed to diversify failure patterns for robust training.
+
+Percentage Increase Speed Reduce Speed Forced Lane Change Forced Collision 36.88% 37.18% 9.46% 16.48% C.2.3. S UMMARY 
+
+Collectively, these two data generation strategies yielded approximately 12.9 million pairs of rough trajectories and their corresponding critic annotations. This extensive dataset provides the rich supervisory signal necessary for the model to master the complex tasks of risk identification, strategic action recommendation, and subsequent trajectory refinement. 
+
+C.3. Examples of the CriticDrive Dataset 
+
+Figure 10, 11, 12, 13 present a comprehensive visualization of some data samples from our constructed CriticDrive dataset, illustrating the alignment between geometric trajectories and semantic reasoning. The visual component (left panel) depicts the driving scenario from both the egocentric front-view and the simplified Bird’s-Eye View bounding box locations. To facilitate analysis, we project future speed waypoints onto these views using a distinct color scheme: green dots represent the expert ground truth trajectory, while cyan dots indicate the initial “rough” trajectory generated by Stage-1 model. The future positions of surrounding dynamic actors are marked in blue . Crucially, potential safety hazards are visualized in red , marking specific points where the rough trajectory poses a collision risk with other traffic participants. Additionally, the bottom section illustrates the velocity profiles, comparing the speed evolution of the expert and rough trajectories over time. The semantic component (right panel) showcases the generated reasoning chain derived from the visual data. It consists of three segments: • Risk Analysis: A categorical assessment of potential hazards (e.g., Collision Risk:True , Speed Risk:False ). • Action Suggestions: Natural language commands (e.g., “ maintain speed ”, “ proceed with caution and yield ”) synthe-sized to mitigate the identified risks. 22 Judge, Then Drive: A Critic-Centric Vision Language Action Framework for Autonomous Driving 
+
+Table 9. Multi-Ability Results on Bench2Drive Benchmark. C/L refers to camera/LiDAR, * denote using expert feature distillation. We conduct three independent trials with different seeds and report the mean and variance of the results.                                                                                                  
+
+> Method Modality Venue Ability (%) ↑
+> Merging Overtaking Emergency Brake Give Way Traffic Sign Mean TCP* (Wu et al., 2022) CNeurIPS’ 22 16.18 20.00 20.00 10.00 6.99 14.63 TCP-traj* CNeurIPS’ 22 8.89 24.29 51.67 40.00 46.28 34.22 UniAD-Base (Hu et al., 2023) CCVPR’ 23 14.10 17.78 21.67 10.00 14.21 15.55 ThinkTwice* (Jia et al., 2023b) CCVPR’ 23 27.38 18.42 35.82 50.00 54.23 37.17 VAD (Jiang et al., 2023) CICCV’ 23 8.11 24.44 18.64 20.00 19.15 18.07 DriveAdaptor* (Jia et al., 2023a) C+L ICCV’ 23 28.82 26.38 48.76 50.00 56.43 42.08 DriveTrans (Jia et al., 2025) CICLR’ 25 17.57 35.00 48.36 40.00 52.10 38.60 TransFuser++ (Zimmerlin et al., 2024) C+L arXiv’ 24 58.75 57.77 83.33 40.00 82.11 64.39 ORION (Fu et al., 2025) CICCV’ 25 25.00 71.11 78.33 30.00 69.15 54.72 Simlingo (Renz et al., 2025) CCVPR’ 25 54.01 57.04 88.33 53.33 82.45 67.03 CriticVLA ( Ours )C-61.28 ±1.30 76.30 ±1.28 88.33 ±0.00 50.00 ±0.00 81.06 ±0.91 71.39 ±0.26
+
+• Detail: A log of the precise quantitative metrics—such as angular offsets, distance to collision, and velocity errors—that serve as the underlying evidence for the risk analysis and action generation. This structured format ensures that the dataset provides not only the correct trajectory but also the interpretability required for safe planning. 
+
+Figure 8. Performance improvement of our method relative to the Stage-1 Model across different scenarios. The x-axis represents scenario categories. The y-axis denotes the per-scenario success rate. 
+
+## D. Core Set Details 
+
+The standard Bench2Drive benchmark comprises 220 distinct routes, spanning 44 scenario categories with 5 variations per category. While comprehensive, we observed that a subset of these routes presents relatively trivial driving challenges, where baseline models frequently achieve near-perfect success rates. This performance saturation introduces statistical redundancy and, more critically, masks the nuanced performance gains derived from specific algorithmic improvements. To address this and facilitate a more discriminative ablation analysis, we established the Bench2Drive Core Set .• Selection Criteria: From each of the 44 semantic scenario categories, we manually selected the single most represen-tative and challenging route. This results in a compact subset of 44 routes that retains the semantic diversity of the full 23 Judge, Then Drive: A Critic-Centric Vision Language Action Framework for Autonomous Driving 
+
+benchmark while filtering out trivial samples that contribute to noise in comparative evaluations. • Statistical Validation: To ensure the Core Set remains a faithful proxy for the full distribution, we compared the performance of our CriticVLA on both sets. The model achieves a Success Rate (SR) of 72.73% on the Core Set, which aligns closely with the 73.33% SR observed on the Full Set (220 routes). This marginal deviation indicates that the Core Set successfully encapsulates the difficulty distribution of the original benchmark without introducing bias. • Utility for Ablation: By eliminating non-discriminative easy samples, the Core Set amplifies the performance signals of different model variants. We utilize this set specifically for ablation studies—such as analyzing the sensitivity to initial rough trajectory quality or the impact of iterative refinement steps—where identifying subtle capability gaps is paramount. Consequently, the Core-Set serves as a rigorous and efficient testbed, enabling us to more clearly discern performance differences between different model variants. Please refer to Table 10 for the selected routes details. 
+
+## E. Additional Results 
+
+E.1. Bench2Drive Multi-Ability Results 
+
+To assess CriticVLA’s performance beyond comprehensive route completion, we employ a fine-grained Multi-Ability Evaluation . Based on the Bench2Drive benchmark, the Multi-Ability evaluation categorizes 220 routes into five distinct driving competencies based on the dominant scenario types encountered. Multi-Ability evaluation measures 5 advanced driving capabilities: • Overtaking: This category evaluates the planner’s ability to navigate around static or dynamic obstructions blocking the ego lane. It tests the agent’s capability to perform safe lane borrowing and encroachment maneuvers while accounting for opposing traffic. 
+
+– Core Competency : Dynamic path planning and obstacle avoidance. 
+
+– Representative Scenarios : Accident, ConstructionObstacle, ParkedObstacle, and HazardAtSideLane .• Merging: This category assesses the agent’s proficiency in integrating into dynamic traffic flows and navigating complex intersections. It requires the agent to estimate gaps in traffic and execute precise lateral control. 
+
+– Core Competency: Gap acceptance and lateral maneuverability in dense traffic. 
+
+– Representative Scenarios: HighwayExit, InterurbanActorFlow, MergerIntoSlowTraffic, and various unprotected turning scenarios (e.g., NonSignalizedJunctionLeftTurn) .• Emergency Brake: This category tests the agent’s perception-reaction time and longitudinal stability when facing sudden, critical hazards. The agent must execute immediate braking to avoid collisions with vulnerable road users or erratic vehicles. 
+
+– Core Competency: Imminent hazard response and longitudinal emergency control. 
+
+– Representative Scenarios: PedestrianCrossing, DynamicObjectCrossing, OppositeVehicleRunningRedLight, and ControlLoss. 
+
+• Give Way: This category focuses on the agent’s adherence to right-of-way protocols where the ego vehicle is required to yield to other actors, prioritizing social driving behavior over trajectory efficiency. 
+
+– Core Competency: Priority prediction and yielding compliance. 
+
+– Representative Scenarios: InvadingTurn (yielding to oncoming traffic encroaching on the lane) and YieldToEmergencyVehicle. 
+
+• Traffic Signs: This category evaluates the agent’s perception logic and strict adherence to traffic regulations at intersections. It covers a wide range of junction topologies to ensure the agent correctly interprets regulatory signals. 
+
+– Core Competency: Regulatory perception and intersection handling logic. 
+
+– Representative Scenarios: SignalizedJunction, NonSignalizedJunction, StopSign, and RedLight encounters. 
+
+24 Judge, Then Drive: A Critic-Centric Vision Language Action Framework for Autonomous Driving 
+
+We show the comparison of Multi-Ability results between our proposed CriticVLA and other baselines in Table 9. Comparing with SOTA baseline Simlingo (Renz et al., 2025), CriticVLA achieves +4.36% improvements in the mean ability. Notably, the overtaking ability has increased by +19.26% to reach 76.30%, the merging ability has risen by +7.27% to 61.28%, and the emergency brake ability has achieved the same high score of 88.33%. The overall improvement in driving capabilities demonstrates the superiority of the critic paradigm in enhancing driving performance. The significant improvement in overtaking aligns with the increased efficiency values in the Table 1 of the main text, indicating that our model does not compromise success rate by reducing driving speed. The significant performance improvements compared to the baseline can be attributed to the fundamental advantages of CriticVLA paradigm (initial trajectory generation → linguistic risk analysis with improvement suggestions → refined trajectory). The initial trajectory and the risk analysis conducted on it enable the model to better understand the environment and its requirements for driving speed and direction. The subsequent refinement, guided by risk analysis, specifically resolves scenario-specific challenges: in merging, it optimizes lane-transition smoothness and conflict avoidance with surrounding vehicles; in overtaking, it enhances speed matching, safe distance maintenance, and timing judgments. This iterative process is particularly impactful for complex driving scenarios — where context-aware adjustments are critical. This conclusion is consistent with our analysis of the Table 1 in the main text. 
+
+E.2. Performance Comparison by Scenario 
+
+To comprehensively evaluate the effectiveness of our proposed CriticVLA, we conducted a comparative analysis across various driving scenarios. Figure 8 illustrates the performance gain of our CriticVLA compared to the Stage-1 Model. It can be observed that the proposed method significantly improves performance in many scenarios that previously exhibited poor driving outcomes, with some even achieving a 100% success rate. Furthermore, the difference between training using 
+
+Full CriticDrive and Base CriticDrive also indicate that EPAS subset data plays a crucial role in enhancing the model’s capabilities. E.2.1. A NALYSIS ON IMPROVED SCENARIO 
+
+Our method demonstrates significant improvements in scenarios requiring strict adherence to safety rules and longitudinal speed regulation. The core advantage stems from the explicit risk verification mechanism . By detecting four primary categories of risk (Collision, Speed, Direction, Context) and generating explicit corrective commands (e.g., “reduce speed” ,
+
+“adjust direction to the left” ), our method acts as a “safety filter” that guides the refined trajectory generation. • InterurbanActorFlow (+80%): In high-speed merging scenarios, the Base Model often fails to match the traffic flow speed. Our Speed Risk module explicitly calculates the deviation between the predicted speed and the target flow speed. By generating a specific instruction like “increase speed from vpred to vgt ”, the refinement module is conditioned to aggressively correct the longitudinal profile, ensuring a successful merge. • NonSignalizedJunctionRightTurn / LeftTurn (+40% - 60%): Unprotected turns are prone to trajectory deviations. The Base Model might generate paths that cut corners or drift into opposing lanes. Our Direction Risk analysis detects these angular and lateral offsets early. The resulting suggestion “adjust direction to the [Correct Side]” provides a coarse but effective geometric constraint, forcing the refined trajectory back into the correct lane center. • OppositeVehicleTakingPriority (+20%): The improvement here is driven by the Collision Risk check. While the Base Model might generate a path that spatially overlaps with an oncoming vehicle’s future bounding box, our OBB (Oriented Bounding Box) intersection test flags this as a collision risk . The generated command “collision risk, proceed with caution and yield” effectively suppresses the aggressive trajectory, forcing the agent to yield. • VanillaSignalizedTurnEncounterRedLight (+40%): The improvement highlights the effectiveness of the Traffic Light Risk flag. The rule-based check identifies the red light status and issues a high-priority “Stop” suggestion. This explicit semantic signal is more robust than the implicit visual features used by the Base Model, preventing red-light violations. E.2.2. F AILURE CASE ANALYSIS 
+
+We observe performance degradation in specific scenarios. These failure cases reveal the limitations of the model and provide insights into potential future improvements. 25 Judge, Then Drive: A Critic-Centric Vision Language Action Framework for Autonomous Driving 
+
+• ConstructionObstacle: Navigating construction zones requires precise, unstructured geometric maneuvering (e.g., “nudge 0.5m left”). Our Direction Risk module, which typically suggests “adjust direction to the left/right” , is too coarse for this task. The generalized instruction may cause the refinement module to over-correct, leading to collisions with cones or barriers. • SequentialLaneChange: This scenario requires a smooth, continuous multi-stage maneuver. Our method re-evaluates risks at every frame. If the risk analyzer oscillates between “maintain direction” and “adjust direction” across consecutive frames due to minor sensor noise, the resulting refined trajectory becomes jagged or unstable, leading to failure in completing the sequence. • YieldToEmergencyVehicle: It is important to note that both our proposed method and the Base Model rely exclusively on front-view sensory inputs. Consequently, perceiving and yielding to emergency vehicles approaching from the rear presents an inherent challenge. We acknowledge this as a limitation of the current architecture; however, extending the framework to process multi-view inputs holds significant potential to resolve this issue in future work. Therefore, the 20% success rate achieved by the Base Model is likely attributable to stochastic variance or chance, rather than genuine learned capability, and thus holds limited reference value. 
+
+E.3. More Visualization Results 
+
+As shown in Fig. 9, the proposed CriticVLA provides effective corrections for both speed and steering, addressing issues such as directional drift, delayed braking, and insufficient deceleration during driving. In addition, the presented failure cases show that although CriticVLA actively performs corrective actions such as avoiding other vehicles, driving failures may still occur due to other factors. 
+
+CriticVLA.mp4 demonstrates examples where CriticVLA successfully performs direction correction and speed correction. Meanwhile, it presents a comparative analysis of the performance among CriticVLA, Simlingo, and the Stage-1 model. For further details, refer to the attached video. 26 Judge, Then Drive: A Critic-Centric Vision Language Action Framework for Autonomous Driving   
+
+> Table 10. Core Set Details. We list the IDs of all 5 routes corresponding to each scenario, as well as the route ID selected by the core set. The scenarios in the table are ordered alphabetically (A-Z).
+
+Scenario All routes Core Set Selection AccidentTwoWays 6, 36, 70, 172, 174 174 Accident 32, 33, 65, 148, 162 33 BlockedIntersection 20, 21, 49, 200, 204 200 ConstructionObstacleTwoWays 4, 5, 35, 127, 170 4ConstructionObstacle 30, 31, 155, 160, 161 160 ControlLoss 80, 154, 159, 163, 190 80 CrossingBicycleFlow 54, 55, 56, 57, 58 57 DynamicObjectCrossing 122, 146, 147, 149, 153 146 EnterActorFlow 19, 93, 111, 112, 201 201 HardBreakRoute 79, 152, 158, 188, 192 158 HazardAtSideLaneTwoWays 71, 150, 173, 179, 180 180 HazardAtSideLane 2, 3, 164, 168, 171 2HighwayCutIn 24, 51, 52, 53, 96 96 HighwayExit 128, 129, 130, 131, 140 131 InterurbanActorFlow 136, 137, 138, 139, 144 137 InterurbanAdvancedActorFlow 132, 133, 134, 141, 142 142 InvadingTurn 41, 42, 81, 82, 83 81 MergerIntoSlowTrafficV2 135, 143, 184, 186, 189 135 MergerIntoSlowTraffic 22, 23, 50, 94, 95 22 NonSignalizedJunctionLeftTurnEnterFlow 208, 209, 214, 215, 216 216 NonSignalizedJunctionLeftTurn 10, 11, 12, 45, 198 10 NonSignalizedJunctionRightTurn 13, 46, 84, 85, 86 84 OppositeVehicleRunningRedLight 9, 43, 44, 194, 195 44 OppositeVehicleTakingPriority 14, 15, 16, 47, 87 47 ParkedObstacleTwoWays 37, 38, 72, 176, 177 177 ParkedObstacle 1, 34, 156, 165, 169 169 ParkingCrossingPedestrian 63, 64, 123, 145, 151 151 ParkingCutIn 0, 124, 125, 126, 157 157 ParkingExit 7, 77, 78, 183, 191 183 PedestrianCrossing 113, 175, 202, 203, 205 205 SequentialLaneChange 117, 118, 119, 120, 121 117 SignalizedJunctionLeftTurnEnterFlow 210, 213, 217, 218, 219 219 SignalizedJunctionLeftTurn 103, 104, 105, 106, 107 107 SignalizedJunctionRightTurn 8, 108, 196, 197, 199 199 StaticCutIn 39, 40, 166, 185, 187 39 T Junction 193, 206, 207, 211, 212 206 VanillaNonSignalizedTurnEncounterStopsign 29, 61, 62, 101, 102 29 VanillaNonSignalizedTurn 26, 27, 28, 60, 100 60 VanillaSignalizedTurnEncounterGreenLight 114, 115, 116, 181, 182 181 VanillaSignalizedTurnEncounterRedLight 25, 59, 97, 98, 99 98 VehicleOpensDoorTwoWays 73, 74, 75, 76, 178 75 VehicleTurningRoutePedestrian 18, 91, 92, 109, 110 110 VehicleTurningRoute 17, 48, 88, 89, 90 88 YieldToEmergencyVehicle 66, 67, 68, 69, 167 66 27 Judge, Then Drive: A Critic-Centric Vision Language Action Framework for Autonomous Driving Calibration (Left) Calibration (Right) Failed Example Calibration (Deceleration) Calibration (Braking) Failed Example Rough Route Traj. Refined Route Traj. Target Point Rough Speed Traj. Refined Speed Traj. Target Point 
+
+Figure 9. More visualization results of proposed CriticVLA. The proposed CriticVLA exhibits excellent correction effects on both speed and direction, effectively rectifying issues such as direction deviation, delayed braking, or inadequate deceleration during vehicle operation. Additionally, the presented failed cases indicate that although CriticVLA intentionally performs corrective operations like avoiding other vehicles, there may still be other factors leading to driving failures. 
+
+28 Judge, Then Drive: A Critic-Centric Vision Language Action Framework for Autonomous Driving 
+
+Figure 10. Examples of CriticDrive Dataset: collision and direction risk. Left panel: driving scenario from both the egocentric front-view and the simplified Bird’s-Eye View bounding box locations. Green dots represent the expert ground truth trajectory, while cyan dots indicate the rough trajectory. The future positions of surrounding dynamic actors are marked in blue. Crucially, potential safety hazards are visualized in red, marking specific points where the rough trajectory poses a collision risk with other traffic participants. Additionally, the bottom section illustrates the velocity profiles, comparing the speed evolution of the expert and rough trajectories over time. Right panel: generated reasoning derived based on method in C.1. Detected risks are marked in red, otherwise marked in green. 
+
+29 Judge, Then Drive: A Critic-Centric Vision Language Action Framework for Autonomous Driving 
+
+Figure 11. Examples of CriticDrive Dataset: collision and direction risk. Left panel: driving scenario from both the egocentric front-view and the simplified Bird’s-Eye View bounding box locations. Green dots represent the expert ground truth trajectory, while cyan dots indicate the rough trajectory. The future positions of surrounding dynamic actors are marked in blue. Crucially, potential safety hazards are visualized in red, marking specific points where the rough trajectory poses a collision risk with other traffic participants. Additionally, the bottom section illustrates the velocity profiles, comparing the speed evolution of the expert and rough trajectories over time. Right panel: generated reasoning derived based on method in C.1. Detected risks are marked in red, otherwise marked in green. 
+
+30 Judge, Then Drive: A Critic-Centric Vision Language Action Framework for Autonomous Driving 
+
+Figure 12. Examples of CriticDrive Dataset: speed and direction risk. Left panel: driving scenario from both the egocentric front-view and the simplified Bird’s-Eye View bounding box locations. Green dots represent the expert ground truth trajectory, while cyan dots indicate the rough trajectory. The future positions of surrounding dynamic actors are marked in blue. Crucially, potential safety hazards are visualized in red, marking specific points where the rough trajectory poses a collision risk with other traffic participants. Additionally, the bottom section illustrates the velocity profiles, comparing the speed evolution of the expert and rough trajectories over time. Right panel: generated reasoning derived based on method in C.1. Detected risks are marked in red, otherwise marked in green. 
+
+31 Judge, Then Drive: A Critic-Centric Vision Language Action Framework for Autonomous Driving 
+
+Figure 13. Examples of CriticDrive Dataset: no risk detected. Left panel: driving scenario from both the egocentric front-view and the simplified Bird’s-Eye View bounding box locations. Green dots represent the expert ground truth trajectory, while cyan dots indicate the rough trajectory. The future positions of surrounding dynamic actors are marked in blue. Crucially, potential safety hazards are visualized in red, marking specific points where the rough trajectory poses a collision risk with other traffic participants. Additionally, the bottom section illustrates the velocity profiles, comparing the speed evolution of the expert and rough trajectories over time. Right panel: generated reasoning derived based on method in C.1. Detected risks are marked in red, otherwise marked in green. 
+
+32
